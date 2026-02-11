@@ -1,0 +1,81 @@
+import { createContext, useCallback, useContext, useState } from "react";
+
+const ConfirmDialogContext = createContext(null);
+
+export function ConfirmDialogProvider({ children }) {
+  const [state, setState] = useState({
+    open: false,
+    title: "",
+    message: "",
+    confirmLabel: "Confirm",
+    cancelLabel: "Cancel",
+    resolve: null
+  });
+
+  const confirm = useCallback(({ title, message, confirmLabel = "Confirm", cancelLabel = "Cancel" }) => {
+    return new Promise(resolve => {
+      setState({
+        open: true,
+        title,
+        message,
+        confirmLabel,
+        cancelLabel,
+        resolve
+      });
+    });
+  }, []);
+
+  const handleClose = result => {
+    if (state.resolve) {
+      state.resolve(result);
+    }
+    setState(prev => ({
+      ...prev,
+      open: false,
+      resolve: null
+    }));
+  };
+
+  return (
+    <ConfirmDialogContext.Provider value={{ confirm }}>
+      {children}
+      {state.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-300 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 shadow-xl">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+              {state.title || "Are you sure?"}
+            </h2>
+            <p className="text-xs text-gray-900 dark:text-neutral-300 mb-4">
+              {state.message || "This action cannot be undone."}
+            </p>
+            <div className="flex justify-end gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => handleClose(false)}
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-gray-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800"
+              >
+                {state.cancelLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleClose(true)}
+                className="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700"
+              >
+                {state.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ConfirmDialogContext.Provider>
+  );
+}
+
+export function useConfirmDialog() {
+  const ctx = useContext(ConfirmDialogContext);
+  if (!ctx) {
+    throw new Error("useConfirmDialog must be used within a ConfirmDialogProvider");
+  }
+  return ctx;
+}
+

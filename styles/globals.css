@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light Theme (Default) */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-primary: 255 197 196;
+  --bg-secondary: 252 245 238;
+  --bg-tertiary: 243 244 246;
+  --bg-hover: 229 231 235;
+  
+  --text-primary: 17 24 39;
+  --text-secondary: 75 85 99;
+  --text-tertiary: 156 163 175;
+  
+  --border-primary: 229 231 235;
+  --border-secondary: 209 213 219;
+  
+  --primary: 133 15 53;
+  --primary-hover: 238 105 131;
+  
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+}
+
+/* Dark Theme */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-primary: 0 0 0;
+  --bg-secondary: 10 10 10;
+  --bg-tertiary: 23 23 23;
+  --bg-hover: 38 38 38;
+  
+  --text-primary: 255 255 255;
+  --text-secondary: 212 212 212;
+  --text-tertiary: 115 115 115;
+  
+  --border-primary: 38 38 38;
+  --border-secondary: 64 64 64;
+  
+  --primary: 133 15 53;
+  --primary-hover: 238 105 131;
+  
+  --shadow: 0 1px 3px 0 rgb(255 255 255 / 0.05);
+}
+
+body {
+  background-color: rgb(var(--bg-primary));
+  color: rgb(var(--text-primary));
+  @apply antialiased;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  @apply bg-neutral-700 rounded-full;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-track {
+  @apply bg-neutral-900;
+}
+
+/* Badge Components */
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+}
+.badge-success {
+  @apply bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30;
+}
+.badge-warning {
+  @apply bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30;
+}
+.badge-danger {
+  @apply bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30;
+}
+.badge-info {
+  @apply bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30;
+}
+
