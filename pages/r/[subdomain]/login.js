@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { Eye, EyeOff, Loader2, ShieldCheck, User, Store } from "lucide-react";
-import { login, getToken } from "../../../lib/apiClient";
+import { login, getToken, getStoredAuth } from "../../../lib/apiClient";
 import { buildTenantUrl } from "../../../lib/routes";
 
 const ROLES = [
@@ -25,7 +25,7 @@ export default function TenantLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // If already authenticated, skip login and go straight to tenant dashboard
+  // If already authenticated for THIS restaurant, skip login and go to dashboard
   useEffect(() => {
     if (!subdomain) return;
     if (typeof window === "undefined") return;
@@ -40,6 +40,15 @@ export default function TenantLoginPage() {
 
     const token = getToken();
     if (token) {
+      // Only auto-redirect if the stored token belongs to this restaurant
+      const auth = getStoredAuth();
+      const storedSlug = auth?.user?.tenantSlug || auth?.user?.restaurantSlug || auth?.tenantSlug;
+      if (storedSlug && storedSlug !== subdomain) {
+        // Token belongs to a different restaurant — clear it and let user log in fresh
+        window.localStorage.removeItem("restaurantos_auth");
+        document.cookie = "token=; path=/; max-age=0";
+        return;
+      }
       const roleSegment = typeof roleFromQuery === "string" ? `/${encodeURIComponent(roleFromQuery)}` : "";
       window.location.href = buildTenantUrl(subdomain, `${roleSegment}/dashboard`);
     }

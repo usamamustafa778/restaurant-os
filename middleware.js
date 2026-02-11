@@ -108,13 +108,14 @@ export async function middleware(request) {
         return NextResponse.redirect(loginUrl);
       }
 
-      // Cross-tenant protection: user can only access their own restaurant
+      // Cross-tenant protection: wrong tenant → clear stale cookie, send to this tenant's login
       if (payload.role !== "super_admin" && payload.tenantSlug && payload.tenantSlug !== tenantSubdomain) {
-        // Redirect to user's own restaurant subdomain
-        const correctUrl = request.nextUrl.clone();
-        correctUrl.host = `${payload.tenantSlug}.${ROOT_DOMAIN}`;
-        correctUrl.pathname = pathname;
-        return NextResponse.redirect(correctUrl);
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/login";
+        loginUrl.searchParams.set("from", pathname);
+        const res = NextResponse.redirect(loginUrl);
+        res.cookies.delete("token");
+        return res;
       }
     }
 
@@ -139,11 +140,14 @@ export async function middleware(request) {
         return NextResponse.redirect(url);
       }
 
-      // Cross-tenant protection: user can only access their own restaurant
+      // Cross-tenant protection: wrong tenant → clear stale cookie, send to this tenant's login
       if (payload.role !== "super_admin" && payload.tenantSlug && payload.tenantSlug !== slug) {
-        const url = request.nextUrl.clone();
-        url.pathname = `/${payload.tenantSlug}${rest}`;
-        return NextResponse.redirect(url);
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = `/${slug}/login`;
+        loginUrl.searchParams.set("from", pathname);
+        const res = NextResponse.redirect(loginUrl);
+        res.cookies.delete("token");
+        return res;
       }
     }
 
