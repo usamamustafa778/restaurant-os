@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { Eye, EyeOff, Loader2, ShieldCheck, User, Store } from "lucide-react";
 import { login, getToken, getStoredAuth, clearStoredAuth } from "../../../lib/apiClient";
-import { buildTenantUrl } from "../../../lib/routes";
 
 const ROLES = [
   { id: "restaurant_admin", label: "Admin" },
@@ -48,8 +47,8 @@ export default function TenantLoginPage() {
         clearStoredAuth();
         return;
       }
-      const roleSegment = typeof roleFromQuery === "string" ? `/${encodeURIComponent(roleFromQuery)}` : "";
-      window.location.href = buildTenantUrl(subdomain, `${roleSegment}/dashboard`);
+      // Dashboard is always on the main domain
+      window.location.href = "/dashboard/overview";
     }
   }, [router, subdomain, roleFromQuery]);
 
@@ -100,12 +99,8 @@ export default function TenantLoginPage() {
         );
       }
 
-      // Always redirect to the user's own restaurant dashboard
-      const target = userSlug
-        ? buildTenantUrl(userSlug, `/${encodeURIComponent(effectiveRole)}/dashboard`)
-        : "/dashboard/overview";
-
-      window.location.href = target;
+      // Dashboard is always on the main domain
+      window.location.href = "/dashboard/overview";
     } catch (err) {
       setError(err.message || "Login failed");
       setLoading(false);

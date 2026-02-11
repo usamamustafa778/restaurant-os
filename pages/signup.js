@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { registerRestaurant } from "../lib/apiClient";
-import { buildTenantUrl } from "../lib/routes";
 import { Store, Loader2, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 
 export default function SignupPage() {
@@ -42,13 +41,8 @@ export default function SignupPage() {
         );
       }
 
-      // Redirect to tenant-specific dashboard
-      if (slug) {
-        window.location.href = buildTenantUrl(slug, "/dashboard/overview");
-      } else {
-        // Fallback: legacy dashboard if slug missing
-        window.location.href = "/dashboard/overview";
-      }
+      // Redirect to dashboard — always on the main domain
+      window.location.href = "/dashboard/overview";
     } catch (err) {
       setError(err.message || "Registration failed");
       setLoading(false);

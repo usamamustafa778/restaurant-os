@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { login } from "../lib/apiClient";
-import { buildTenantUrl } from "../lib/routes";
 import { ShieldCheck, Loader2, Eye, EyeOff } from "lucide-react";
 
 const ALLOWED_ROLES = [
@@ -48,17 +47,15 @@ export default function LoginPage() {
         } catch (_) { /* ignore decode errors */ }
       }
 
-      // Decide target dashboard route
+      // Decide target dashboard route — always on main domain, no slug prefix
       let target = "/dashboard/overview";
       const fromQuery = router.query.from;
 
       // Prefer redirect from middleware if present
-      if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
+      if (typeof fromQuery === "string" && fromQuery.startsWith("/dashboard")) {
         target = fromQuery;
       } else if (user.role === "super_admin") {
         target = "/dashboard/super/overview";
-      } else if (restaurantSlug) {
-        target = buildTenantUrl(restaurantSlug, "/dashboard/overview");
       }
 
       // Persist auth info for client-side use (e.g. showing name/role)

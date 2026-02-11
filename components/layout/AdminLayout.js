@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { getToken } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
-import { getTenantRoute, getTenantSlugFromPath, getCurrentTenantSlug, buildTenantUrl } from "../../lib/routes";
+import { getTenantRoute } from "../../lib/routes";
 
 // Base tenant dashboard routes (tenantSlug will be injected at runtime)
 const tenantNav = [
@@ -278,12 +278,8 @@ export default function AdminLayout({ title, children, suspended = false }) {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("restaurantos_auth");
     }
-    const slug = getCurrentTenantSlug() || getTenantSlugFromPath(router.asPath || router.pathname);
-    if (slug) {
-      window.location.href = buildTenantUrl(slug, "/login");
-    } else {
-      router.push("/login");
-    }
+    // Dashboard login is always on the main domain
+    window.location.href = "/login";
   }
 
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";

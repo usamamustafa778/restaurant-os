@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import { getOverview, SubscriptionInactiveError, getStoredAuth } from "../../lib/apiClient";
-import { DollarSign, ShoppingBag, Timer } from "lucide-react";
+import { DollarSign, ShoppingBag, Timer, TrendingUp, TrendingDown } from "lucide-react";
 
-// Simple SVG line chart for static hourly trend
+// Simple SVG line chart for hourly trend
 function MiniLineChart({ data }) {
   const width = 220;
   const height = 60;
@@ -84,7 +84,7 @@ function MiniLineChart({ data }) {
         fill="#9ca3af"
         dy="6"
       >
-        {max}
+        {max >= 1000 ? `${(max / 1000).toFixed(0)}k` : max}
       </text>
 
       {/* X axis labels for each hour (tilted for readability, show every hour) */}
@@ -150,11 +150,39 @@ function MiniPieChart({ segments }) {
   );
 }
 
+// Map distribution keys to display labels and colors
+const typeColors = { DINE_IN: "#f97316", TAKEAWAY: "#22c55e", DELIVERY: "#3b82f6" };
+const typeLabels = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", DELIVERY: "Delivery" };
+const paymentColors = { CASH: "#0ea5e9", CARD: "#22c55e", ONLINE: "#6366f1", OTHER: "#f97316" };
+const paymentLabels = { CASH: "Cash", CARD: "Card", ONLINE: "Online", OTHER: "Foodpanda" };
+const sourceColors = { POS: "#3b82f6", WEBSITE: "#6366f1", FOODPANDA: "#f97316" };
+const sourceLabels = { POS: "POS", WEBSITE: "Website", FOODPANDA: "Foodpanda" };
+const productColors = ["#3b82f6", "#22c55e", "#6366f1", "#f97316", "#eab308"];
+
+function buildSegments(distribution, labels, colors) {
+  return Object.entries(distribution)
+    .filter(([, v]) => v > 0)
+    .map(([key, value]) => ({
+      label: labels[key] || key,
+      value,
+      color: colors[key] || "#9ca3af",
+    }));
+}
+
 export default function OverviewPage() {
   const [stats, setStats] = useState({
     totalOrders: 0,
     pendingOrders: 0,
-    revenue: 0
+    revenue: 0,
+    totalBudgetCost: 0,
+    totalProfit: 0,
+    lowStockItems: [],
+    hourlySales: new Array(24).fill(0),
+    salesTypeDistribution: {},
+    paymentDistribution: {},
+    sourceDistribution: {},
+    topProducts: [],
+    productsPerformance: [],
   });
 
   const [suspended, setSuspended] = useState(false);
@@ -184,6 +212,15 @@ export default function OverviewPage() {
 
   const isManager = role === "manager";
 
+  const salesTypeSegments = buildSegments(stats.salesTypeDistribution, typeLabels, typeColors);
+  const paymentSegments = buildSegments(stats.paymentDistribution, paymentLabels, paymentColors);
+  const sourceSegments = buildSegments(stats.sourceDistribution, sourceLabels, sourceColors);
+  const topProductSegments = (stats.topProducts || []).slice(0, 5).map((p, i) => ({
+    label: p.name,
+    value: p.qty,
+    color: productColors[i % productColors.length],
+  }));
+
   return (
     <AdminLayout title={isManager ? "Manager Dashboard" : "Overview"} suspended={suspended}>
       {error && (
@@ -194,7 +231,7 @@ export default function OverviewPage() {
 
       {isManager ? (
         <>
-          {/* KPIs row similar to Nimbus: sales snapshot */}
+          {/* KPIs row */}
           <div className="grid gap-4 lg:grid-cols-4 mb-6">
             <Card title="Number of Sales">
               <div className="text-2xl font-semibold">{stats.totalOrders}</div>
@@ -202,13 +239,13 @@ export default function OverviewPage() {
             </Card>
             <Card title="Total Sales">
               <div className="text-2xl font-semibold">
-                Rs {stats.revenue.toFixed(0)}
+                Rs {Math.round(stats.revenue).toLocaleString()}
               </div>
               <p className="mt-1 text-[11px] text-neutral-400">Gross revenue today</p>
             </Card>
             <Card title="Average Sale">
               <div className="text-2xl font-semibold">
-                Rs {stats.totalOrders ? Math.round(stats.revenue / stats.totalOrders) : 0}
+                Rs {stats.totalOrders ? Math.round(stats.revenue / stats.totalOrders).toLocaleString() : 0}
               </div>
               <p className="mt-1 text-[11px] text-neutral-400">Per completed order</p>
             </Card>
@@ -218,89 +255,110 @@ export default function OverviewPage() {
             </Card>
           </div>
 
-          {/* Charts row (static placeholders for now) */}
-          <div className="grid gap-4 xl:grid-cols-4 mb-6">
-            <Card title="Sales Trends - Hourly">
-              <MiniLineChart data={[0, 1, 2, 4, 3, 2, 1, 0]} />
-            </Card>
-            <Card title="Sales Type Distribution">
-              <div className="flex items-center gap-4">
-                <MiniPieChart
-                  segments={[
-                    { label: "Delivery", value: 7, color: "#3b82f6" },
-                    { label: "Takeaway", value: 7, color: "#22c55e" },
-                    { label: "Dine-in", value: 3, color: "#f97316" }
-                  ]}
-                />
-                <ul className="text-[11px] space-y-1 text-neutral-500">
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#3b82f6] mr-1" />Delivery</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#22c55e] mr-1" />Takeaway</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#f97316] mr-1" />Dine‑in</li>
-                </ul>
+          {/* Budget & Profit row */}
+          <div className="grid gap-4 lg:grid-cols-2 mb-6">
+            <Card title="Budget Cost">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-500">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold text-amber-600">
+                    Rs {stats.totalBudgetCost.toLocaleString()}
+                  </div>
+                  <p className="mt-1 text-[11px] text-neutral-400">Inventory cost for today&apos;s sales</p>
+                </div>
               </div>
             </Card>
-            <Card title="Payment Method Sales">
-              <div className="flex items-center gap-4">
-                <MiniPieChart
-                  segments={[
-                    { label: "Card", value: 9, color: "#22c55e" },
-                    { label: "Cash", value: 5, color: "#0ea5e9" },
-                    { label: "Foodpanda", value: 3, color: "#f97316" }
-                  ]}
-                />
-                <ul className="text-[11px] space-y-1 text-neutral-500">
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#22c55e] mr-1" />Card</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#0ea5e9] mr-1" />Cash</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#f97316] mr-1" />Foodpanda</li>
-                </ul>
-              </div>
-            </Card>
-            <Card title="Top 5 Products">
-              <div className="flex items-center gap-4">
-                <MiniPieChart
-                  segments={[
-                    { label: "Chicken Wrap", value: 5, color: "#3b82f6" },
-                    { label: "Beef Burger", value: 4, color: "#22c55e" },
-                    { label: "Soft Drinks", value: 3, color: "#6366f1" },
-                    { label: "Fries", value: 3, color: "#f97316" },
-                    { label: "Dessert", value: 2, color: "#eab308" }
-                  ]}
-                />
-                <ul className="text-[11px] space-y-1 text-neutral-500">
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#3b82f6] mr-1" />Chicken Wrap</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#22c55e] mr-1" />Beef Burger</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#6366f1] mr-1" />Soft Drinks</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#f97316] mr-1" />Fries</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#eab308] mr-1" />Dessert</li>
-                </ul>
+            <Card title="Profit">
+              <div className="flex items-center gap-3">
+                <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${stats.totalProfit >= 0 ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500" : "bg-rose-50 dark:bg-rose-500/10 text-rose-500"}`}>
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className={`text-2xl font-semibold ${stats.totalProfit >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                    Rs {stats.totalProfit.toLocaleString()}
+                  </div>
+                  <p className="mt-1 text-[11px] text-neutral-400">
+                    Revenue - Cost
+                    {stats.revenue > 0 && ` (${((stats.totalProfit / stats.revenue) * 100).toFixed(1)}% margin)`}
+                  </p>
+                </div>
               </div>
             </Card>
           </div>
 
-          {/* Order Sources / Score pie chart */}
+          {/* Charts row */}
+          <div className="grid gap-4 xl:grid-cols-4 mb-6">
+            <Card title="Sales Trends - Hourly">
+              <MiniLineChart data={stats.hourlySales} />
+            </Card>
+            <Card title="Sales Type Distribution">
+              {salesTypeSegments.length > 0 ? (
+                <div className="flex items-center gap-4">
+                  <MiniPieChart segments={salesTypeSegments} />
+                  <ul className="text-[11px] space-y-1 text-neutral-500">
+                    {salesTypeSegments.map(s => (
+                      <li key={s.label}><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: s.color }} />{s.label} ({s.value})</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="py-4 text-center text-xs text-neutral-500">No data yet</div>
+              )}
+            </Card>
+            <Card title="Payment Method Sales">
+              {paymentSegments.length > 0 ? (
+                <div className="flex items-center gap-4">
+                  <MiniPieChart segments={paymentSegments} />
+                  <ul className="text-[11px] space-y-1 text-neutral-500">
+                    {paymentSegments.map(s => (
+                      <li key={s.label}><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: s.color }} />{s.label} ({s.value})</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="py-4 text-center text-xs text-neutral-500">No data yet</div>
+              )}
+            </Card>
+            <Card title="Top 5 Products">
+              {topProductSegments.length > 0 ? (
+                <div className="flex items-center gap-4">
+                  <MiniPieChart segments={topProductSegments} />
+                  <ul className="text-[11px] space-y-1 text-neutral-500">
+                    {topProductSegments.map(s => (
+                      <li key={s.label}><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: s.color }} />{s.label} ({s.value})</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="py-4 text-center text-xs text-neutral-500">No data yet</div>
+              )}
+            </Card>
+          </div>
+
+          {/* Order Sources */}
           <div className="mb-6">
             <Card title="Order Sources">
-              <div className="flex items-center gap-4">
-                <MiniPieChart
-                  segments={[
-                    { label: "POS", value: 9, color: "#3b82f6" },
-                    { label: "App", value: 5, color: "#6366f1" },
-                    { label: "Foodpanda", value: 3, color: "#f97316" }
-                  ]}
-                />
-                <ul className="text-[11px] space-y-1 text-neutral-500">
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#3b82f6] mr-1" />POS</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#6366f1] mr-1" />App</li>
-                  <li><span className="inline-block w-2 h-2 rounded-full bg-[#f97316] mr-1" />Foodpanda</li>
-                </ul>
-              </div>
+              {sourceSegments.length > 0 ? (
+                <div className="flex items-center gap-4">
+                  <MiniPieChart segments={sourceSegments} />
+                  <ul className="text-[11px] space-y-1 text-neutral-500">
+                    {sourceSegments.map(s => (
+                      <li key={s.label}><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: s.color }} />{s.label} ({s.value})</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="py-4 text-center text-xs text-neutral-500">No data yet</div>
+              )}
             </Card>
           </div>
 
           {/* Products performance table */}
           <Card
             title="Products Performance"
-            description="Snapshot of items sold today. Connect this table to live order data later."
+            description="Items sold today based on completed orders."
           >
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -313,25 +371,22 @@ export default function OverviewPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800">
-                  {/* Static sample rows for now */}
-                  <tr>
-                    <td className="py-2 pr-3">Beef Burger</td>
-                    <td className="py-2 pr-3">BURGERS</td>
-                    <td className="py-2 pr-3 text-right">3</td>
-                    <td className="py-2 pr-3 text-right">1650</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 pr-3">Chicken Wrap</td>
-                    <td className="py-2 pr-3">WRAPS</td>
-                    <td className="py-2 pr-3 text-right">5</td>
-                    <td className="py-2 pr-3 text-right">2750</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 pr-3">Soft Drinks</td>
-                    <td className="py-2 pr-3">DRINKS</td>
-                    <td className="py-2 pr-3 text-right">9</td>
-                    <td className="py-2 pr-3 text-right">900</td>
-                  </tr>
+                  {(stats.productsPerformance || []).length > 0 ? (
+                    stats.productsPerformance.map((p, idx) => (
+                      <tr key={idx}>
+                        <td className="py-2 pr-3">{p.name}</td>
+                        <td className="py-2 pr-3">{p.category}</td>
+                        <td className="py-2 pr-3 text-right">{p.qtySold}</td>
+                        <td className="py-2 pr-3 text-right">Rs {p.priceSold.toLocaleString()}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-xs text-neutral-500">
+                        No sales data yet today.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -344,7 +399,7 @@ export default function OverviewPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-2xl font-semibold">{stats.totalOrders}</div>
-                  <div className="text-xs text-neutral-400 mt-1">All-time orders</div>
+                  <div className="text-xs text-neutral-400 mt-1">Today&apos;s orders</div>
                 </div>
                 <div className="h-9 w-9 rounded-lg bg-bg-primary flex items-center justify-center text-primary">
                   <ShoppingBag className="w-4 h-4" />
@@ -368,7 +423,7 @@ export default function OverviewPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-2xl font-semibold">
-                    ${stats.revenue.toFixed(2)}
+                    Rs {Math.round(stats.revenue).toLocaleString()}
                   </div>
                   <div className="text-xs text-neutral-400 mt-1">
                     Completed order revenue
@@ -381,6 +436,39 @@ export default function OverviewPage() {
             </Card>
           </div>
 
+          {/* Budget & Profit for non-manager */}
+          <div className="grid gap-4 md:grid-cols-2 mb-6">
+            <Card title="Budget Cost">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-2xl font-semibold text-amber-600">
+                    Rs {stats.totalBudgetCost.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-neutral-400 mt-1">Inventory cost today</div>
+                </div>
+                <div className="h-9 w-9 rounded-lg bg-bg-primary flex items-center justify-center text-amber-400">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+              </div>
+            </Card>
+            <Card title="Profit">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className={`text-2xl font-semibold ${stats.totalProfit >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                    Rs {stats.totalProfit.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-neutral-400 mt-1">
+                    Net profit today
+                    {stats.revenue > 0 && ` (${((stats.totalProfit / stats.revenue) * 100).toFixed(1)}%)`}
+                  </div>
+                </div>
+                <div className={`h-9 w-9 rounded-lg bg-bg-primary flex items-center justify-center ${stats.totalProfit >= 0 ? "text-green-400" : "text-rose-400"}`}>
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+              </div>
+            </Card>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <Card
               title="Operations Snapshot"
@@ -388,18 +476,22 @@ export default function OverviewPage() {
             >
               <ul className="text-xs space-y-2 text-gray-900 dark:text-neutral-300">
                 <li className="flex justify-between">
-                  <span>Average prep time</span>
-                  <span className="font-medium text-gray-900 dark:text-neutral-100">18 min</span>
-                </li>
-                <li className="flex justify-between">
                   <span>Orders in kitchen</span>
                   <span className="font-medium text-gray-900 dark:text-neutral-100">
                     {stats.pendingOrders}
                   </span>
                 </li>
                 <li className="flex justify-between">
-                  <span>Cancellation rate</span>
-                  <span className="font-medium text-green-400">2.1%</span>
+                  <span>Completed today</span>
+                  <span className="font-medium text-gray-900 dark:text-neutral-100">
+                    {stats.totalOrders}
+                  </span>
+                </li>
+                <li className="flex justify-between">
+                  <span>Revenue</span>
+                  <span className="font-medium text-green-400">
+                    Rs {Math.round(stats.revenue).toLocaleString()}
+                  </span>
                 </li>
               </ul>
             </Card>
@@ -421,4 +513,3 @@ export default function OverviewPage() {
     </AdminLayout>
   );
 }
-

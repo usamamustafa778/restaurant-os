@@ -6,6 +6,14 @@ import { Plus, Trash2 } from "lucide-react";
 import { getInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, SubscriptionInactiveError } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 
+// Helper: return the cost price label based on unit
+function costPriceLabel(unit) {
+  if (unit === "gram" || unit === "kg") return "Price per 1000g";
+  if (unit === "ml" || unit === "liter") return "Price per 1000ml";
+  if (unit === "piece") return "Price per 12 pcs";
+  return "Cost price";
+}
+
 export default function InventoryPage() {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({
@@ -13,7 +21,8 @@ export default function InventoryPage() {
     name: "",
     unit: "gram",
     initialStock: "",
-    lowStockThreshold: ""
+    lowStockThreshold: "",
+    costPrice: ""
   });
 
   const [adjustDialog, setAdjustDialog] = useState({
@@ -54,7 +63,8 @@ export default function InventoryPage() {
       name: "",
       unit: "gram",
       initialStock: "",
-      lowStockThreshold: ""
+      lowStockThreshold: "",
+      costPrice: ""
     });
   }
 
@@ -70,7 +80,8 @@ export default function InventoryPage() {
       name: item.name,
       unit: item.unit,
       initialStock: "",
-      lowStockThreshold: String(item.lowStockThreshold ?? "")
+      lowStockThreshold: String(item.lowStockThreshold ?? ""),
+      costPrice: String(item.costPrice ?? "")
     });
     setModalError("");
     setIsItemModalOpen(true);
@@ -94,6 +105,9 @@ export default function InventoryPage() {
           unit: form.unit,
           lowStockThreshold: form.lowStockThreshold
             ? Number(form.lowStockThreshold)
+            : 0,
+          costPrice: form.costPrice
+            ? Number(form.costPrice)
             : 0
         });
         setItems(prev => prev.map(i => (i.id === updated.id ? updated : i)));
@@ -104,6 +118,9 @@ export default function InventoryPage() {
           initialStock: form.initialStock ? Number(form.initialStock) : 0,
           lowStockThreshold: form.lowStockThreshold
             ? Number(form.lowStockThreshold)
+            : 0,
+          costPrice: form.costPrice
+            ? Number(form.costPrice)
             : 0
         });
         setItems(prev => [...prev, created]);
@@ -198,6 +215,7 @@ export default function InventoryPage() {
                 <tr>
                   <th className="py-2 text-left">Item</th>
                   <th className="py-2 text-right">Stock</th>
+                  <th className="py-2 text-right">Cost Price</th>
                   <th className="py-2 text-right">Low stock at</th>
                   <th className="py-2 text-right">Adjust</th>
                 </tr>
@@ -224,6 +242,16 @@ export default function InventoryPage() {
                     </td>
                     <td className="py-2 pr-3 text-right">
                       {item.currentStock} {item.unit}
+                    </td>
+                    <td className="py-2 pr-3 text-right">
+                      {item.costPrice > 0 ? (
+                        <div>
+                          <span className="font-medium">Rs {item.costPrice.toLocaleString()}</span>
+                          <div className="text-[10px] text-gray-500">{costPriceLabel(item.unit)}</div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">Not set</span>
+                      )}
                     </td>
                     <td className="py-2 pr-3 text-right">
                       {item.lowStockThreshold || 0} {item.unit}
@@ -274,7 +302,7 @@ export default function InventoryPage() {
                   }).length === 0 && (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="py-6 text-center text-xs text-neutral-500"
                     >
                       {items.length === 0 ? "No inventory items yet." : "No items match your search."}
@@ -316,7 +344,7 @@ export default function InventoryPage() {
                   className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
                 />
               </div>
-              <div className="grid gap-2 md:grid-cols-3">
+              <div className="grid gap-2 md:grid-cols-2">
                 <div className="space-y-1">
                   <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
                     Unit
@@ -333,6 +361,24 @@ export default function InventoryPage() {
                     <option value="piece">piece</option>
                   </select>
                 </div>
+                <div className="space-y-1">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                    {costPriceLabel(form.unit)} (Rs)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={form.costPrice}
+                    onChange={e =>
+                      setForm(prev => ({ ...prev, costPrice: e.target.value }))
+                    }
+                    placeholder="e.g. 250, 500, 1200"
+                    className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
                 <div className="space-y-1">
                   <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
                     Initial stock
@@ -445,4 +491,3 @@ export default function InventoryPage() {
     </AdminLayout>
   );
 }
-
