@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { Eye, EyeOff, Loader2, ShieldCheck, User, Store } from "lucide-react";
-import { login, getToken, getStoredAuth } from "../../../lib/apiClient";
+import { login, getToken, getStoredAuth, clearStoredAuth } from "../../../lib/apiClient";
 import { buildTenantUrl } from "../../../lib/routes";
 
 const ROLES = [
@@ -45,8 +45,7 @@ export default function TenantLoginPage() {
       const storedSlug = auth?.user?.tenantSlug || auth?.user?.restaurantSlug || auth?.tenantSlug;
       if (storedSlug && storedSlug !== subdomain) {
         // Token belongs to a different restaurant — clear it and let user log in fresh
-        window.localStorage.removeItem("restaurantos_auth");
-        document.cookie = "token=; path=/; max-age=0";
+        clearStoredAuth();
         return;
       }
       const roleSegment = typeof roleFromQuery === "string" ? `/${encodeURIComponent(roleFromQuery)}` : "";

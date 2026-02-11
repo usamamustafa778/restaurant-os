@@ -114,7 +114,9 @@ export async function middleware(request) {
         loginUrl.pathname = "/login";
         loginUrl.searchParams.set("from", pathname);
         const res = NextResponse.redirect(loginUrl);
-        res.cookies.delete("token");
+        // Clear cookie on root domain and current domain
+        res.cookies.set("token", "", { path: "/", maxAge: 0, domain: ROOT_DOMAIN ? `.${ROOT_DOMAIN}` : undefined });
+        res.cookies.set("token", "", { path: "/", maxAge: 0 });
         return res;
       }
     }
@@ -146,7 +148,8 @@ export async function middleware(request) {
         loginUrl.pathname = `/${slug}/login`;
         loginUrl.searchParams.set("from", pathname);
         const res = NextResponse.redirect(loginUrl);
-        res.cookies.delete("token");
+        res.cookies.set("token", "", { path: "/", maxAge: 0, domain: ROOT_DOMAIN ? `.${ROOT_DOMAIN}` : undefined });
+        res.cookies.set("token", "", { path: "/", maxAge: 0 });
         return res;
       }
     }
