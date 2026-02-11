@@ -317,21 +317,21 @@ export default function InventoryPage() {
 
       {isItemModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl border border-gray-300 dark:border-neutral-800 bg-bg-secondary dark:bg-neutral-950 p-5 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 shadow-xl">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
               {form.id ? "Edit inventory item" : "New inventory item"}
             </h2>
-            <p className="text-xs text-gray-600 dark:text-neutral-300 mb-4">
+            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
               Register ingredients or packaged items and optional starting stock.
             </p>
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                   Name
                 </label>
                 <input
@@ -341,12 +341,12 @@ export default function InventoryPage() {
                     setForm(prev => ({ ...prev, name: e.target.value }))
                   }
                   placeholder="Tomato, Burger Bun, Oil..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
               <div className="grid gap-2 md:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                     Unit
                   </label>
                   <select
@@ -354,7 +354,7 @@ export default function InventoryPage() {
                     onChange={e =>
                       setForm(prev => ({ ...prev, unit: e.target.value }))
                     }
-                    className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   >
                     <option value="gram">gram</option>
                     <option value="ml">ml</option>
@@ -362,7 +362,7 @@ export default function InventoryPage() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                     {costPriceLabel(form.unit)} (Rs)
                   </label>
                   <input
@@ -374,13 +374,13 @@ export default function InventoryPage() {
                       setForm(prev => ({ ...prev, costPrice: e.target.value }))
                     }
                     placeholder="e.g. 250, 500, 1200"
-                    className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   />
                 </div>
               </div>
               <div className="grid gap-2 md:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                     Initial stock
                   </label>
                   <input
@@ -393,11 +393,11 @@ export default function InventoryPage() {
                     }
                     disabled={!!form.id}
                     placeholder="e.g. 0.5, 5, 10"
-                    className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 disabled:opacity-60"
+                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow disabled:opacity-60"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                     Low stock threshold
                   </label>
                   <input
@@ -412,7 +412,7 @@ export default function InventoryPage() {
                       }))
                     }
                     placeholder="e.g. 0.5, 1, 2"
-                    className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   />
                 </div>
               </div>
@@ -420,7 +420,6 @@ export default function InventoryPage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-neutral-400"
                   onClick={() => {
                     resetForm();
                     setIsItemModalOpen(false);
@@ -440,17 +439,17 @@ export default function InventoryPage() {
 
       {adjustDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-300 dark:border-neutral-800 bg-bg-secondary dark:bg-neutral-950 p-5 shadow-xl">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 shadow-xl">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
               {adjustDialog.mode === "add" ? "Add stock" : "Remove stock"}
             </h2>
-            <p className="text-xs text-gray-900 dark:text-neutral-300 mb-4">
+            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
               {adjustDialog.mode === "add"
                 ? `How much stock do you want to add for "${adjustDialog.itemName}"?`
                 : `How much stock do you want to remove for "${adjustDialog.itemName}"?`}
             </p>
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
@@ -463,7 +462,7 @@ export default function InventoryPage() {
                 onChange={e =>
                   setAdjustDialog(prev => ({ ...prev, value: e.target.value }))
                 }
-                className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 placeholder="Enter quantity"
               />
             </div>

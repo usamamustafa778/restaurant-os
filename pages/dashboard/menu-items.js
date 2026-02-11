@@ -306,7 +306,7 @@ export default function MenuItemsPage() {
   return (
     <AdminLayout title="Menu Items" suspended={suspended}>
       {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
           {error}
         </div>
       )}
@@ -461,47 +461,47 @@ export default function MenuItemsPage() {
       {/* Item Create/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 p-5 text-xs max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5 text-xs max-h-[90vh] overflow-y-auto">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
               {form.id ? "Edit menu item" : "New menu item"}
             </h2>
-            <p className="text-[11px] text-neutral-500 mb-4">
+            <p className="text-[11px] text-gray-500 dark:text-neutral-400 mb-4">
               Configure name, price and category for this item.
             </p>
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3" autoComplete="off">
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">Name</label>
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Name</label>
                 <input
                   type="text"
                   autoComplete="off"
                   value={form.name}
                   onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Chicken burger, Fries..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">Price</label>
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Price</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.price}
                   onChange={e => setForm(prev => ({ ...prev, price: e.target.value }))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">Category</label>
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Category</label>
                 <select
                   value={form.categoryId}
                   onChange={e => setForm(prev => ({ ...prev, categoryId: e.target.value }))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 >
                   <option value="">Select category</option>
                   {categories.map(cat => (
@@ -510,7 +510,7 @@ export default function MenuItemsPage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">Image (optional)</label>
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Image (optional)</label>
                 <div className="flex rounded-lg border border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
                   <button
                     type="button"
@@ -544,7 +544,7 @@ export default function MenuItemsPage() {
                     value={form.imageUrl}
                     onChange={e => setForm(prev => ({ ...prev, imageUrl: e.target.value }))}
                     placeholder="https://example.com/image.jpg"
-                    className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   />
                 )}
 
@@ -590,16 +590,16 @@ export default function MenuItemsPage() {
                 )}
               </div>
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">Description (optional)</label>
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Description (optional)</label>
                 <textarea
                   rows={2}
                   value={form.description}
                   onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="ghost" className="text-neutral-400" onClick={() => { resetForm(); setIsModalOpen(false); }}>
+                <Button type="button" variant="ghost" onClick={() => { resetForm(); setIsModalOpen(false); }}>
                   Cancel
                 </Button>
                 <Button type="submit" className="gap-1">
@@ -615,15 +615,15 @@ export default function MenuItemsPage() {
       {/* Recipe / Inventory Dialog */}
       {recipeDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-gray-300 dark:border-neutral-800 bg-bg-secondary dark:bg-neutral-950 p-5 shadow-xl">
+          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
               Inventory recipe for {recipeDialog.itemName}
             </h2>
-            <p className="text-xs text-gray-900 dark:text-neutral-300 mb-4">
+            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
               For each sale of this menu item, how much of each inventory ingredient should be deducted?
             </p>
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
@@ -662,7 +662,7 @@ export default function MenuItemsPage() {
                               step="any"
                               value={existing?.quantity ?? ""}
                               onChange={e => updateConsumption(inv.id, e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                              className="w-full px-2 py-1 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                               placeholder={`0 ${displayUnit}`}
                             />
                           </td>

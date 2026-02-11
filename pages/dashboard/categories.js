@@ -205,50 +205,48 @@ export default function CategoriesPage() {
       {/* Category Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 p-5 text-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-5 shadow-xl text-xs">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
               {form.id ? "Edit category" : "New category"}
             </h2>
-            <p className="text-[11px] text-neutral-500 mb-4">
+            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
               Group related menu items together to keep your POS simple.
             </p>
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3" autoComplete="off">
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">Name</label>
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Name</label>
                 <input
                   type="text"
                   autoComplete="off"
                   value={form.name}
                   onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Burgers, Drinks, Sides..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">Description (optional)</label>
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Description (optional)</label>
                 <textarea
                   rows={2}
                   value={form.description}
                   onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-neutral-400"
                   onClick={() => { resetForm(); setIsModalOpen(false); }}
                 >
                   Cancel
                 </Button>
                 <Button type="submit" className="gap-1">
-                  <Plus className="w-3 h-3" />
                   {form.id ? "Save changes" : "Create category"}
                 </Button>
               </div>

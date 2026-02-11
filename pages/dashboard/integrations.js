@@ -353,25 +353,25 @@ export default function IntegrationsPage() {
       {/* Modal for add/edit credentials */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 p-5 text-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5 text-xs">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xl">🐼</span>
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
                 Foodpanda Integration
               </h2>
             </div>
-            <p className="text-[11px] text-neutral-500 mb-4">
+            <p className="text-[11px] text-gray-500 dark:text-neutral-400 mb-4">
               Enter your Foodpanda merchant API credentials. These are used to
               verify incoming webhook orders.
             </p>
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3" autoComplete="off">
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                   Store ID <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -383,11 +383,11 @@ export default function IntegrationsPage() {
                     setForm(prev => ({ ...prev, storeId: e.target.value }))
                   }
                   placeholder="e.g. s8dy-fnk2"
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                   API Key
                 </label>
                 <input
@@ -399,11 +399,11 @@ export default function IntegrationsPage() {
                     setForm(prev => ({ ...prev, apiKey: e.target.value }))
                   }
                   placeholder="Paste your Foodpanda API key"
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 font-mono"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow font-mono"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                   API Secret
                 </label>
                 <input
@@ -415,14 +415,13 @@ export default function IntegrationsPage() {
                     setForm(prev => ({ ...prev, apiSecret: e.target.value }))
                   }
                   placeholder="Paste your Foodpanda API secret"
-                  className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 font-mono"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow font-mono"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-neutral-400"
                   onClick={() => {
                     setIsModalOpen(false);
                     resetForm();

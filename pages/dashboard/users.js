@@ -332,118 +332,112 @@ export default function UsersPage() {
 
       {/* Create / Edit Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl overflow-hidden">
-            {/* Modal header */}
-            <div className="bg-primary px-5 py-4 relative overflow-hidden">
-              <svg className="absolute -top-4 -right-4 w-16 h-16 text-secondary opacity-40" viewBox="0 0 100 100" fill="currentColor"><circle cx="50" cy="50" r="50" /></svg>
-              <h2 className="text-sm font-bold text-white relative z-10">
-                {form.id ? "Edit Team Member" : "Add Team Member"}
-              </h2>
-              <p className="text-[11px] text-white/60 mt-0.5 relative z-10">
-                {form.id ? "Update this member's information." : "Invite a new member to your restaurant team."}
-              </p>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl rounded-2xl p-5">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+              {form.id ? "Edit Team Member" : "Add Team Member"}
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
+              {form.id ? "Update this member's information." : "Invite a new member to your restaurant team."}
+            </p>
 
-            <div className="p-5">
-              {modalError && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
-                  {modalError}
-                </div>
-              )}
+            {modalError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+                {modalError}
+              </div>
+            )}
 
-              <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-                {/* Profile Image URL */}
-                <div className="space-y-1.5">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Profile Photo URL <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0">
-                      {form.profileImageUrl ? (
-                        <img src={form.profileImageUrl} alt="Preview" className="w-11 h-11 rounded-full object-cover border-2 border-secondary" />
-                      ) : (
-                        <div className="w-11 h-11 rounded-full bg-bg-secondary dark:bg-neutral-800 flex items-center justify-center border-2 border-gray-200 dark:border-neutral-700">
-                          <User className="w-5 h-5 text-gray-400 dark:text-neutral-500" />
-                        </div>
-                      )}
-                    </div>
-                    <input
-                      type="url"
-                      autoComplete="off"
-                      value={form.profileImageUrl}
-                      onChange={e => setForm(prev => ({ ...prev, profileImageUrl: e.target.value }))}
-                      placeholder="https://example.com/photo.jpg"
-                      className="flex-1 px-3 py-2 rounded-xl bg-bg-secondary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                    />
+            <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+              {/* Profile Image URL */}
+              <div className="space-y-1.5">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Profile Photo URL <span className="text-gray-400 font-normal">(optional)</span></label>
+                <div className="flex items-center gap-3">
+                  <div className="flex-shrink-0">
+                    {form.profileImageUrl ? (
+                      <img src={form.profileImageUrl} alt="Preview" className="w-11 h-11 rounded-full object-cover border-2 border-secondary" />
+                    ) : (
+                      <div className="w-11 h-11 rounded-full bg-bg-secondary dark:bg-neutral-800 flex items-center justify-center border-2 border-gray-200 dark:border-neutral-700">
+                        <User className="w-5 h-5 text-gray-400 dark:text-neutral-500" />
+                      </div>
+                    )}
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Full Name</label>
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      value={form.name}
-                      onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="John Doe"
-                      className="w-full px-3 py-2 rounded-xl bg-bg-secondary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Role</label>
-                    <select
-                      value={form.role}
-                      onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-xl bg-bg-secondary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                    >
-                      {ROLE_OPTIONS.map(r => (
-                        <option key={r.value} value={r.value}>{r.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Email</label>
                   <input
-                    type="email"
+                    type="url"
                     autoComplete="off"
-                    value={form.email}
-                    onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="name@example.com"
-                    className="w-full px-3 py-2 rounded-xl bg-bg-secondary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    value={form.profileImageUrl}
+                    onChange={e => setForm(prev => ({ ...prev, profileImageUrl: e.target.value }))}
+                    placeholder="https://example.com/photo.jpg"
+                    className="flex-1 px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                    Password {form.id && <span className="text-gray-400 font-normal">(leave blank to keep)</span>}
-                  </label>
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Full Name</label>
                   <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={form.password}
-                    onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
-                    placeholder={form.id ? "Leave blank to keep existing" : "Min 6 characters"}
-                    className="w-full px-3 py-2 rounded-xl bg-bg-secondary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    type="text"
+                    autoComplete="off"
+                    value={form.name}
+                    onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="John Doe"
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   />
                 </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-xl text-xs font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-                    onClick={() => { resetForm(); setIsModalOpen(false); }}
+                <div className="space-y-1.5">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Role</label>
+                  <select
+                    value={form.role}
+                    onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   >
-                    Cancel
-                  </button>
-                  <Button type="submit" className="gap-1.5 rounded-xl" disabled={loading}>
-                    <UserPlus className="w-3.5 h-3.5" />
-                    {form.id ? "Save Changes" : "Add Member"}
-                  </Button>
+                    {ROLE_OPTIONS.map(r => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
                 </div>
-              </form>
-            </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Email</label>
+                <input
+                  type="email"
+                  autoComplete="off"
+                  value={form.email}
+                  onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="name@example.com"
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
+                  Password {form.id && <span className="text-gray-400 font-normal">(leave blank to keep)</span>}
+                </label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder={form.id ? "Leave blank to keep existing" : "Min 6 characters"}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg text-xs font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                  onClick={() => { resetForm(); setIsModalOpen(false); }}
+                >
+                  Cancel
+                </button>
+                <Button type="submit" className="gap-1 rounded-lg" disabled={loading}>
+                  <UserPlus className="w-3.5 h-3.5" />
+                  {form.id ? "Save Changes" : "Add Member"}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}
