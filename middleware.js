@@ -94,7 +94,6 @@ export async function middleware(request) {
   const tenantSubdomain = getSubdomain(host);
 
   if (tenantSubdomain) {
-    // Rewrite all paths on subdomain hosts to /r/<tenant>/... internally
     const url = request.nextUrl.clone();
     const internalPath = pathname === "/" ? "" : pathname;
     url.pathname = `/r/${tenantSubdomain}${internalPath}`;
@@ -107,6 +106,15 @@ export async function middleware(request) {
         loginUrl.pathname = "/login";
         loginUrl.searchParams.set("from", pathname);
         return NextResponse.redirect(loginUrl);
+      }
+
+      // Cross-tenant protection: user can only access their own restaurant
+      if (payload.role !== "super_admin" && payload.tenantSlug && payload.tenantSlug !== tenantSubdomain) {
+        // Redirect to user's own restaurant subdomain
+        const correctUrl = request.nextUrl.clone();
+        correctUrl.host = `${payload.tenantSlug}.${ROOT_DOMAIN}`;
+        correctUrl.pathname = pathname;
+        return NextResponse.redirect(correctUrl);
       }
     }
 
@@ -131,11 +139,10 @@ export async function middleware(request) {
         return NextResponse.redirect(url);
       }
 
-      // Cross-tenant protection
-      if (payload.tenantSlug && payload.tenantSlug !== slug) {
+      // Cross-tenant protection: user can only access their own restaurant
+      if (payload.role !== "super_admin" && payload.tenantSlug && payload.tenantSlug !== slug) {
         const url = request.nextUrl.clone();
-        const dashPath = rest.replace(/^\/[^/]*/, "") || "";
-        url.pathname = `/${payload.tenantSlug}${dashPath}`;
+        url.pathname = `/${payload.tenantSlug}${rest}`;
         return NextResponse.redirect(url);
       }
     }
