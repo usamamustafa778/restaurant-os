@@ -10,7 +10,7 @@ export default function DataTable({
   return (
     <div className="overflow-x-auto text-xs">
       <table className="w-full">
-        <thead className="text-[11px] uppercase text-gray-800 border-b border-gray-300">
+        <thead className="text-[11px] uppercase text-gray-800 dark:text-neutral-400 border-b border-gray-300 dark:border-neutral-700 bg-bg-secondary dark:bg-neutral-950">
           <tr>
             {columns.map(col => (
               <th
@@ -28,7 +28,7 @@ export default function DataTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200">
+        <tbody className="divide-y divide-gray-200 dark:divide-neutral-800">
           {rows.length === 0 && (
             <tr>
               <td
@@ -43,7 +43,7 @@ export default function DataTable({
           {rows.map((row, rowIndex) => (
             <tr
               key={resolveRowId(row, rowIndex)}
-              className="hover:bg-gray-50"
+              className="hover:bg-gray-50 dark:hover:bg-neutral-900/50"
             >
               {columns.map(col => {
                 const value = row[col.key];

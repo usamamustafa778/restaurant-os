@@ -67,7 +67,8 @@ const tenantNav = [
   { path: "/dashboard/history", label: "Reports", icon: History },
   { path: "/dashboard/integrations", label: "Integrations", icon: Plug, roles: ["restaurant_admin", "admin"] },
   { path: "/dashboard/users", label: "Users", icon: Users },
-  { path: "/dashboard/subscription", label: "Subscription", icon: CreditCard, roles: ["restaurant_admin", "admin"] }
+  { path: "/dashboard/subscription", label: "Subscription", icon: CreditCard, roles: ["restaurant_admin", "admin"] },
+  { path: "/dashboard/profile", label: "Profile", icon: UserCircle2 }
 ];
 
 const superNav = [
