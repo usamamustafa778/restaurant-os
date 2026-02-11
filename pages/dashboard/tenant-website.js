@@ -29,8 +29,11 @@ export default function TenantWebsiteSettingsPage() {
   const onChange = field => e =>
     setSettings(prev => ({ ...prev, [field]: e.target.value }));
 
+  const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN;
   const websiteUrl = settings?.subdomain
-    ? `${window.location.origin}/r/${settings.subdomain}`
+    ? rootDomain
+      ? `https://${settings.subdomain}.${rootDomain}`
+      : `${typeof window !== "undefined" ? window.location.origin : ""}/r/${settings.subdomain}`
     : null;
 
   const copyToClipboard = () => {
