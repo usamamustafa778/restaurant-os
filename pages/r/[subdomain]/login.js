@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { Eye, EyeOff, Loader2, ShieldCheck, User, Store } from "lucide-react";
 import { login, getToken } from "../../../lib/apiClient";
+import { buildTenantUrl } from "../../../lib/routes";
 
 const ROLES = [
   { id: "restaurant_admin", label: "Admin" },
@@ -39,9 +40,8 @@ export default function TenantLoginPage() {
 
     const token = getToken();
     if (token) {
-      const base = `/r/${encodeURIComponent(subdomain)}`;
       const roleSegment = typeof roleFromQuery === "string" ? `/${encodeURIComponent(roleFromQuery)}` : "";
-      router.replace(`${base}${roleSegment}/dashboard`);
+      window.location.href = buildTenantUrl(subdomain, `${roleSegment}/dashboard`);
     }
   }, [router, subdomain, roleFromQuery]);
 
@@ -76,7 +76,7 @@ export default function TenantLoginPage() {
 
       const slug = subdomain || user.restaurantSlug;
       const target = slug
-        ? `/r/${encodeURIComponent(slug)}/${encodeURIComponent(effectiveRole)}/dashboard`
+        ? buildTenantUrl(slug, `/${encodeURIComponent(effectiveRole)}/dashboard`)
         : "/dashboard/overview";
 
       window.location.href = target;

@@ -33,7 +33,7 @@ export default function TenantWebsiteSettingsPage() {
   const websiteUrl = settings?.subdomain
     ? rootDomain
       ? `https://${settings.subdomain}.${rootDomain}`
-      : `${typeof window !== "undefined" ? window.location.origin : ""}/r/${settings.subdomain}`
+      : `${typeof window !== "undefined" ? window.location.origin : ""}/${settings.subdomain}`
     : null;
 
   const copyToClipboard = () => {

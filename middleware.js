@@ -1,117 +1,167 @@
 import { NextResponse } from "next/server";
 import { verifyJwt } from "./lib/auth";
 
-// Root domain(s) where the main app is hosted.
-// Requests to <tenant>.sufieats.com will be rewritten to /r/<tenant>.
+// Root domain for subdomain-based tenant routing.
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "";
 
+// Paths that are NOT tenant slugs (first segment of the URL)
+const RESERVED_SEGMENTS = new Set([
+  "dashboard", "api", "_next", "login", "signup", "r", "favicon.ico", "images", "static"
+]);
+
+const ALLOWED_ROLES = [
+  "super_admin", "restaurant_admin", "staff", "admin",
+  "product_manager", "cashier", "manager", "kitchen_staff"
+];
+
 /**
- * Extract tenant subdomain from the Host header.
- * Returns null for the root domain, www, or localhost.
- *
- * Examples (ROOT_DOMAIN = "sufieats.com"):
- *   urbanspoon.sufieats.com  → "urbanspoon"
- *   www.sufieats.com         → null
- *   sufieats.com             → null
- *   localhost:3000           → null
+ * Extract tenant subdomain from the Host header (production only).
  */
 function getSubdomain(host) {
   if (!ROOT_DOMAIN || !host) return null;
-
-  // Strip port if present
   const hostname = host.split(":")[0];
-
-  // Must end with the root domain
   if (!hostname.endsWith(ROOT_DOMAIN)) return null;
-
-  // Extract the part before .rootdomain
-  const prefix = hostname.slice(0, -(ROOT_DOMAIN.length + 1)); // +1 for the dot
-
-  // Ignore empty (bare domain), "www", or multi-level subdomains
+  const prefix = hostname.slice(0, -(ROOT_DOMAIN.length + 1));
   if (!prefix || prefix === "www" || prefix.includes(".")) return null;
-
   return prefix;
 }
 
-function buildLoginRedirect(request, pathname, tenantDashboardMatch) {
-  const url = request.nextUrl.clone();
+/**
+ * Try to extract a tenant slug from a clean URL path like:
+ *   /urbanspoon/dashboard/pos      → { slug: "urbanspoon", rest: "/dashboard/pos" }
+ *   /urbanspoon/login              → { slug: "urbanspoon", rest: "/login" }
+ *   /urbanspoon/cashier/dashboard  → { slug: "urbanspoon", rest: "/cashier/dashboard" }
+ *
+ * Returns null if the first segment is a reserved/known route.
+ */
+function extractTenantFromPath(pathname) {
+  // Must have at least /<slug>/<something>
+  const match = pathname.match(/^\/([^/]+)(\/.*)?$/);
+  if (!match) return null;
 
-  if (tenantDashboardMatch) {
-    const slug = tenantDashboardMatch[1];
-    const role = tenantDashboardMatch[2];
-    url.pathname = role ? `/r/${slug}/${role}/login` : `/r/${slug}/login`;
-  } else {
-    url.pathname = "/login";
+  const firstSegment = match[1];
+  const rest = match[2] || "";
+
+  // If first segment is a known route, it's not a tenant slug
+  if (RESERVED_SEGMENTS.has(firstSegment)) return null;
+
+  // The rest must start with /dashboard, /login, or be a role-scoped dashboard
+  // e.g. /urbanspoon/dashboard/..., /urbanspoon/login, /urbanspoon/cashier/dashboard/...
+  if (
+    rest.startsWith("/dashboard") ||
+    rest.startsWith("/login") ||
+    rest === "" ||
+    /^\/[^/]+\/dashboard/.test(rest) ||
+    /^\/[^/]+\/login/.test(rest)
+  ) {
+    return { slug: firstSegment, rest };
   }
 
-  url.searchParams.set("from", pathname);
-  return NextResponse.redirect(url);
+  return null;
+}
+
+async function checkAuth(request) {
+  const token = request.cookies.get("token")?.value;
+  if (!token) return null;
+  const payload = await verifyJwt(token);
+  if (!payload || !ALLOWED_ROLES.includes(payload.role)) return null;
+  return payload;
 }
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || "";
 
-  // ─── Subdomain-based tenant website routing ───────────────────────────
-  // Rewrite urbanspoon.sufieats.com → /r/urbanspoon (internally)
-  const tenantSubdomain = getSubdomain(host);
-
-  if (tenantSubdomain) {
-    // If the path is the root or doesn't start with /r/ or /dashboard or /_next or /api,
-    // rewrite to the tenant public website page
-    if (
-      pathname === "/" ||
-      (!pathname.startsWith("/r/") &&
-        !pathname.startsWith("/dashboard") &&
-        !pathname.startsWith("/_next") &&
-        !pathname.startsWith("/api") &&
-        !pathname.startsWith("/login") &&
-        !pathname.startsWith("/signup") &&
-        !pathname.startsWith("/favicon"))
-    ) {
-      const url = request.nextUrl.clone();
-      url.pathname = `/r/${tenantSubdomain}${pathname === "/" ? "" : pathname}`;
-      return NextResponse.rewrite(url);
-    }
-  }
-
-  // ─── Dashboard auth protection ────────────────────────────────────────
-  const isPlatformDashboard = pathname.startsWith("/dashboard");
-  const tenantDashboardMatch = pathname.match(/^\/r\/([^/]+)\/(?:([^/]+)\/)?dashboard(\/.*)?$/);
-
-  if (!isPlatformDashboard && !tenantDashboardMatch) {
+  // Skip static/internal paths early
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/favicon")
+  ) {
     return NextResponse.next();
   }
 
-  const token = request.cookies.get("token")?.value;
-
-  if (!token) {
-    return buildLoginRedirect(request, pathname, tenantDashboardMatch);
+  // Block direct /r/ URLs — redirect to clean format (strip /r/)
+  // e.g. /r/urbanspoon/dashboard/website → /urbanspoon/dashboard/website
+  if (pathname.startsWith("/r/")) {
+    const withoutR = pathname.replace(/^\/r\//, "/");
+    const url = request.nextUrl.clone();
+    url.pathname = withoutR;
+    return NextResponse.redirect(url);
   }
 
-  const payload = await verifyJwt(token);
+  // ─── Subdomain-based routing (production) ──────────────────────────────
+  const tenantSubdomain = getSubdomain(host);
 
-  const allowedRoles = [
-    "super_admin",
-    "restaurant_admin",
-    "staff",
-    "admin",
-    "product_manager",
-    "cashier",
-    "manager",
-    "kitchen_staff"
-  ];
-  if (!payload || !allowedRoles.includes(payload.role)) {
-    return buildLoginRedirect(request, pathname, tenantDashboardMatch);
+  if (tenantSubdomain) {
+    // Rewrite all paths on subdomain hosts to /r/<tenant>/... internally
+    const url = request.nextUrl.clone();
+    const internalPath = pathname === "/" ? "" : pathname;
+    url.pathname = `/r/${tenantSubdomain}${internalPath}`;
+
+    // Auth-protect dashboard routes
+    if (pathname.startsWith("/dashboard")) {
+      const payload = await checkAuth(request);
+      if (!payload) {
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/login";
+        loginUrl.searchParams.set("from", pathname);
+        return NextResponse.redirect(loginUrl);
+      }
+    }
+
+    return NextResponse.rewrite(url);
   }
 
-  // Prevent cross-tenant access: redirect to the user's own restaurant dashboard
-  if (tenantDashboardMatch && payload.tenantSlug) {
-    const slugFromPath = tenantDashboardMatch[1];
-    if (slugFromPath !== payload.tenantSlug) {
+  // ─── Clean-path tenant routing (localhost & non-subdomain hosts) ───────
+  // Detect /<slug>/dashboard/... or /<slug>/login patterns
+  const tenantPath = extractTenantFromPath(pathname);
+
+  if (tenantPath) {
+    const { slug, rest } = tenantPath;
+
+    // Auth-protect dashboard routes
+    const isDashboard = rest.startsWith("/dashboard") || /^\/[^/]+\/dashboard/.test(rest);
+    if (isDashboard) {
+      const payload = await checkAuth(request);
+      if (!payload) {
+        const url = request.nextUrl.clone();
+        url.pathname = `/${slug}/login`;
+        url.searchParams.set("from", pathname);
+        return NextResponse.redirect(url);
+      }
+
+      // Cross-tenant protection
+      if (payload.tenantSlug && payload.tenantSlug !== slug) {
+        const url = request.nextUrl.clone();
+        const dashPath = rest.replace(/^\/[^/]*/, "") || "";
+        url.pathname = `/${payload.tenantSlug}${dashPath}`;
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // Rewrite /<slug>/... → /r/<slug>/... internally
+    const url = request.nextUrl.clone();
+    url.pathname = `/r/${slug}${rest}`;
+    return NextResponse.rewrite(url);
+  }
+
+  // ─── Platform-level dashboard auth (no tenant) ─────────────────────────
+  if (pathname.startsWith("/dashboard")) {
+    const payload = await checkAuth(request);
+    if (!payload) {
       const url = request.nextUrl.clone();
-      const dashPath = tenantDashboardMatch[3] || '';
-      url.pathname = `/r/${payload.tenantSlug}/dashboard${dashPath}`;
+      url.pathname = "/login";
+      url.searchParams.set("from", pathname);
+      return NextResponse.redirect(url);
+    }
+
+    // Restaurant users must always have their slug in the URL.
+    // Redirect /dashboard/... → /<slug>/dashboard/... for non-super_admin users.
+    if (payload.role !== "super_admin" && payload.tenantSlug) {
+      const url = request.nextUrl.clone();
+      const dashPath = pathname; // e.g. /dashboard/overview
+      url.pathname = `/${payload.tenantSlug}${dashPath}`;
       return NextResponse.redirect(url);
     }
   }
@@ -121,11 +171,6 @@ export async function middleware(request) {
 
 export const config = {
   matcher: [
-    // Dashboard protection
-    "/dashboard/:path*",
-    "/r/:tenantSlug/dashboard/:path*",
-    "/r/:tenantSlug/:role/dashboard/:path*",
-    // Catch-all for subdomain routing (exclude static files and api)
     "/((?!_next/static|_next/image|favicon.ico).*)"
   ]
 };

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { login } from "../lib/apiClient";
+import { buildTenantUrl } from "../lib/routes";
 import { ShieldCheck, Loader2, Eye, EyeOff } from "lucide-react";
 
 const ALLOWED_ROLES = [
@@ -43,7 +44,7 @@ export default function LoginPage() {
       const fromQuery = router.query.from;
 
       // Prefer redirect from middleware if present
-      if (typeof fromQuery === "string" && (fromQuery.startsWith("/dashboard") || fromQuery.startsWith("/r/"))) {
+      if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
         target = fromQuery;
       } else if (user.role === "super_admin") {
         target = "/dashboard/super/overview";
@@ -51,7 +52,7 @@ export default function LoginPage() {
         // For tenant users, redirect to tenant-specific dashboard when slug is available
         const slug = user.restaurantSlug || data.restaurant?.subdomain;
         if (slug) {
-          target = `/r/${encodeURIComponent(slug)}/dashboard/overview`;
+          target = buildTenantUrl(slug, "/dashboard/overview");
         } else {
           target = "/dashboard/overview";
         }
