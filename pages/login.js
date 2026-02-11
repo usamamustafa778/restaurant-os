@@ -12,7 +12,7 @@ const ALLOWED_ROLES = [
   "product_manager",
   "cashier",
   "manager",
-  "kitchen_staff"
+  "kitchen_staff",
 ];
 
 export default function LoginPage() {
@@ -44,7 +44,9 @@ export default function LoginPage() {
         try {
           const payload = JSON.parse(atob(data.token.split(".")[1]));
           restaurantSlug = payload.tenantSlug || null;
-        } catch (_) { /* ignore decode errors */ }
+        } catch (_) {
+          /* ignore decode errors */
+        }
       }
 
       // Decide target dashboard route — always on main domain, no slug prefix
@@ -66,8 +68,8 @@ export default function LoginPage() {
             user: { ...user, tenantSlug: restaurantSlug },
             token: data.token || null,
             refreshToken: data.refreshToken || null,
-            tenantSlug: restaurantSlug
-          })
+            tenantSlug: restaurantSlug,
+          }),
         );
       }
 
@@ -87,12 +89,18 @@ export default function LoginPage() {
             EO
           </div>
           <div>
-            <div className="text-sm font-semibold text-gray-900 dark:text-white">EatOut Admin</div>
-            <div className="text-xs text-gray-800 dark:text-neutral-400">Restaurant Owner Dashboard</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              EatOut Admin
+            </div>
+            <div className="text-xs text-gray-800 dark:text-neutral-400">
+              Restaurant Owner Dashboard
+            </div>
           </div>
         </div>
 
-        <h1 className="text-lg font-semibold tracking-tight mb-1 text-gray-900 dark:text-white">Admin Login</h1>
+        <h1 className="text-lg font-semibold tracking-tight mb-1 text-gray-900 dark:text-white">
+          Admin Login
+        </h1>
         <p className="text-xs text-neutral-400 mb-5">
           Sign in with your admin credentials to manage orders and menu.
         </p>
@@ -105,24 +113,28 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs text-gray-700 dark:text-neutral-300">Email</label>
+            <label className="text-xs text-gray-700 dark:text-neutral-300">
+              Email
+            </label>
             <input
               type="email"
               required
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-gray-700 dark:text-neutral-300">Password</label>
+            <label className="text-xs text-gray-700 dark:text-neutral-300">
+              Password
+            </label>
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
                 required
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3 py-2 pr-10 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
               />
               <button
@@ -131,7 +143,11 @@ export default function LoginPage() {
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-200 rounded"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
               </button>
             </div>
           </div>
@@ -158,18 +174,20 @@ export default function LoginPage() {
         <div className="mt-6 text-center">
           <p className="text-xs text-neutral-400">
             Don't have an account?{" "}
-            <Link href="/signup" className="text-primary hover:underline font-medium">
+            <Link
+              href="/signup"
+              className="text-primary hover:underline font-medium"
+            >
               Sign up as a restaurant owner
             </Link>
           </p>
         </div>
 
         <p className="mt-4 text-[11px] text-neutral-500 text-center">
-          Use your RestaurantOS credentials (super_admin, restaurant_admin, admin, product manager,
-          cashier, manager, or kitchen staff).
+          Use your RestaurantOS credentials (super_admin, restaurant_admin,
+          admin, product manager, cashier, manager, or kitchen staff).
         </p>
       </div>
     </div>
   );
 }
-
