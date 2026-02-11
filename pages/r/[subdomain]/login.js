@@ -65,8 +65,23 @@ export default function TenantLoginPage() {
 
       // Persist auth info for client-side use
       const effectiveRole = user.role || selectedRole;
-      // Use the user's ACTUAL restaurant slug, not the subdomain from the URL
-      const userSlug = user.tenantSlug || user.restaurantSlug || data.restaurant?.subdomain || subdomain;
+
+      // Determine the user's ACTUAL restaurant slug:
+      // 1. From the API response (backend looked up the restaurant)
+      // 2. From the JWT payload (backend embedded it during token generation)
+      // 3. Last resort: the URL subdomain
+      let userSlug = user.restaurantSlug || null;
+
+      // If backend didn't return restaurantSlug, decode it from the JWT
+      if (!userSlug && data.token) {
+        try {
+          const payload = JSON.parse(atob(data.token.split(".")[1]));
+          userSlug = payload.tenantSlug || null;
+        } catch (_) { /* ignore decode errors */ }
+      }
+
+      // Final fallback to URL subdomain (should rarely happen)
+      if (!userSlug) userSlug = subdomain;
 
       if (typeof window !== "undefined") {
         window.localStorage.setItem(

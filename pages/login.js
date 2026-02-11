@@ -39,6 +39,15 @@ export default function LoginPage() {
         return;
       }
 
+      // Resolve the user's actual restaurant slug from API response or JWT
+      let restaurantSlug = user.restaurantSlug || null;
+      if (!restaurantSlug && data.token) {
+        try {
+          const payload = JSON.parse(atob(data.token.split(".")[1]));
+          restaurantSlug = payload.tenantSlug || null;
+        } catch (_) { /* ignore decode errors */ }
+      }
+
       // Decide target dashboard route
       let target = "/dashboard/overview";
       const fromQuery = router.query.from;
@@ -48,14 +57,8 @@ export default function LoginPage() {
         target = fromQuery;
       } else if (user.role === "super_admin") {
         target = "/dashboard/super/overview";
-      } else {
-        // For tenant users, redirect to tenant-specific dashboard when slug is available
-        const slug = user.restaurantSlug || data.restaurant?.subdomain;
-        if (slug) {
-          target = buildTenantUrl(slug, "/dashboard/overview");
-        } else {
-          target = "/dashboard/overview";
-        }
+      } else if (restaurantSlug) {
+        target = buildTenantUrl(restaurantSlug, "/dashboard/overview");
       }
 
       // Persist auth info for client-side use (e.g. showing name/role)
@@ -63,9 +66,10 @@ export default function LoginPage() {
         window.localStorage.setItem(
           "restaurantos_auth",
           JSON.stringify({
-            user,
+            user: { ...user, tenantSlug: restaurantSlug },
             token: data.token || null,
-            refreshToken: data.refreshToken || null
+            refreshToken: data.refreshToken || null,
+            tenantSlug: restaurantSlug
           })
         );
       }
