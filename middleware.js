@@ -125,14 +125,14 @@ export async function middleware(request) {
       }
 
       // /<slug>/login → redirect to /login
-      if (rest.startsWith("/login") || rest === "") {
+      if (rest.startsWith("/login")) {
         const url = request.nextUrl.clone();
-        url.pathname = rest || "/login";
+        url.pathname = "/login";
         return NextResponse.redirect(url);
       }
 
-      // /<slug>/... → customer-facing website on localhost
-      // Rewrite to /r/<slug>/... internally
+      // /<slug> or /<slug>/... → customer-facing website (localhost fallback)
+      // Rewrite to /r/<slug> internally → serves pages/r/[subdomain].js
       const url = request.nextUrl.clone();
       url.pathname = `/r/${firstSegment}${rest}`;
       return NextResponse.rewrite(url);
