@@ -112,15 +112,27 @@ export async function middleware(request) {
     const rest = pathMatch[2] || "";
 
     if (!RESERVED_SEGMENTS.has(firstSegment)) {
-      // If it looks like /<slug>/dashboard/... → redirect to /dashboard/...
-      if (rest.startsWith("/dashboard") || rest.startsWith("/login")) {
+      // /<slug>/dashboard/... → redirect to /dashboard/...
+      if (rest.startsWith("/dashboard")) {
         const url = request.nextUrl.clone();
-        url.pathname = rest || "/dashboard/overview";
+        url.pathname = rest;
+        // Clean the 'from' param too — strip slug prefix if present
+        const fromParam = url.searchParams.get("from");
+        if (fromParam && fromParam.startsWith(`/${firstSegment}/`)) {
+          url.searchParams.set("from", fromParam.replace(`/${firstSegment}`, ""));
+        }
         return NextResponse.redirect(url);
       }
 
-      // If it looks like /<slug> with no rest → could be a restaurant website on localhost
-      // Rewrite to /r/<slug> for the customer-facing website
+      // /<slug>/login → redirect to /login
+      if (rest.startsWith("/login") || rest === "") {
+        const url = request.nextUrl.clone();
+        url.pathname = rest || "/login";
+        return NextResponse.redirect(url);
+      }
+
+      // /<slug>/... → customer-facing website on localhost
+      // Rewrite to /r/<slug>/... internally
       const url = request.nextUrl.clone();
       url.pathname = `/r/${firstSegment}${rest}`;
       return NextResponse.rewrite(url);

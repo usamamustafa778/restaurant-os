@@ -179,23 +179,46 @@ export default function POSPage() {
             <div className={`grid gap-3 grid-cols-2 md:grid-cols-3 ${sidebarOpen ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
               {filteredItems.map(item => {
                 const inCart = cart.find(c => c.id === item.id);
+                const outOfStock = item.inventorySufficient === false;
                 return (
                   <div
                     key={item.id}
-                    className="flex flex-col rounded-xl border border-gray-300 dark:border-neutral-800 bg-bg-primary dark:bg-neutral-900 hover:border-primary hover:shadow-md transition-all overflow-hidden"
+                    className={`flex flex-col rounded-xl border overflow-hidden transition-all ${
+                      outOfStock
+                        ? "border-red-200 dark:border-red-900/40 bg-gray-100 dark:bg-neutral-900/60 opacity-70"
+                        : "border-gray-300 dark:border-neutral-800 bg-bg-primary dark:bg-neutral-900 hover:border-primary hover:shadow-md"
+                    }`}
                   >
-                    {item.imageUrl && (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        className="w-full h-28 object-cover"
-                      />
-                    )}
+                    <div className="relative">
+                      {item.imageUrl && (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className={`w-full h-28 object-cover ${outOfStock ? "grayscale" : ""}`}
+                        />
+                      )}
+                      {outOfStock && (
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                          <span className="px-2 py-1 rounded-lg bg-red-600 text-white text-[10px] font-bold uppercase tracking-wide">
+                            Out of Stock
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     <div className="p-3 flex flex-col flex-1">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">{item.name}</h3>
+                      <h3 className={`text-sm font-semibold line-clamp-2 ${outOfStock ? "text-gray-400 dark:text-neutral-500" : "text-gray-900 dark:text-white"}`}>{item.name}</h3>
+                      {outOfStock && (
+                        <p className="text-[10px] text-red-500 dark:text-red-400 mt-0.5">
+                          Insufficient inventory
+                        </p>
+                      )}
                       <div className="flex items-center justify-between mt-auto pt-2">
-                        <p className="text-sm font-bold text-primary">PKR {item.price}</p>
-                        {inCart ? (
+                        <p className={`text-sm font-bold ${outOfStock ? "text-gray-400 dark:text-neutral-600" : "text-primary"}`}>PKR {item.price}</p>
+                        {outOfStock ? (
+                          <span className="px-2 py-1 rounded-lg bg-gray-200 dark:bg-neutral-800 text-gray-400 dark:text-neutral-600 text-[10px] font-medium cursor-not-allowed">
+                            Unavailable
+                          </span>
+                        ) : inCart ? (
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => updateQuantity(item.id, -1)}

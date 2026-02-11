@@ -396,6 +396,11 @@ export default function MenuItemsPage() {
                       </td>
                       <td className="py-2.5 text-center">
                         <div className="flex flex-wrap items-center justify-center gap-1">
+                          {item.inventorySufficient === false && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-[9px] font-semibold" title={item.insufficientIngredients?.join(", ")}>
+                              Insufficient Inventory
+                            </span>
+                          )}
                           {item.isFeatured && (
                             <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] font-semibold">
                               Featured
