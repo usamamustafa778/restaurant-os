@@ -66,6 +66,9 @@ export default function TenantLoginPage() {
 
       // Persist auth info for client-side use
       const effectiveRole = user.role || selectedRole;
+      // Use the user's ACTUAL restaurant slug, not the subdomain from the URL
+      const userSlug = user.tenantSlug || user.restaurantSlug || data.restaurant?.subdomain || subdomain;
+
       if (typeof window !== "undefined") {
         window.localStorage.setItem(
           "restaurantos_auth",
@@ -73,19 +76,19 @@ export default function TenantLoginPage() {
             user: {
               ...user,
               role: effectiveRole,
-              tenantSlug: user.tenantSlug || subdomain || user.restaurantSlug
+              tenantSlug: userSlug
             },
             token: data.token || null,
             refreshToken: data.refreshToken || null,
-            tenantSlug: subdomain || user.restaurantSlug || null,
+            tenantSlug: userSlug,
             shopName: shopName || null
           })
         );
       }
 
-      const slug = subdomain || user.restaurantSlug;
-      const target = slug
-        ? buildTenantUrl(slug, `/${encodeURIComponent(effectiveRole)}/dashboard`)
+      // Always redirect to the user's own restaurant dashboard
+      const target = userSlug
+        ? buildTenantUrl(userSlug, `/${encodeURIComponent(effectiveRole)}/dashboard`)
         : "/dashboard/overview";
 
       window.location.href = target;
