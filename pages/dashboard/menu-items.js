@@ -198,11 +198,16 @@ export default function MenuItemsPage() {
     await handleAsyncAction(
       async () => {
         if (currentBranch) {
-          const nextAvailable = item.branchAvailable ?? item.available ?? true;
-          await updateBranchMenuItem(item.id, { available: !nextAvailable });
+          // Use finalAvailable (branch-aware availability)
+          const currentAvailable = item.finalAvailable ?? item.available ?? true;
+          await updateBranchMenuItem(item.id, { available: !currentAvailable });
           setData(prev => ({
             ...prev,
-            items: prev.items.map(i => (i.id === item.id ? { ...i, branchAvailable: !nextAvailable } : i))
+            items: prev.items.map(i => (i.id === item.id ? { 
+              ...i, 
+              finalAvailable: !currentAvailable,
+              branchAvailable: !currentAvailable 
+            } : i))
           }));
         } else {
           const updated = await updateItem(item.id, { available: !item.available });

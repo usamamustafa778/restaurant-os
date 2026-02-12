@@ -246,24 +246,29 @@ export default function AdminLayout({ title, children, suspended = false }) {
   const [userName, setUserName] = useState("");
   const [userInitials, setUserInitials] = useState("");
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
+  // Always initialize with defaults to avoid hydration mismatch
+  const [collapsed, setCollapsed] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState([]);
+  const { theme, toggleTheme } = useTheme();
+
+  // Load sidebar state from sessionStorage after mount (client-side only)
+  useEffect(() => {
     if (typeof window !== "undefined") {
-      return sessionStorage.getItem("sidebar_collapsed") === "true";
-    }
-    return false;
-  });
-  const [expandedGroups, setExpandedGroups] = useState(() => {
-    if (typeof window !== "undefined") {
+      const storedCollapsed = sessionStorage.getItem("sidebar_collapsed");
+      if (storedCollapsed === "true") {
+        setCollapsed(true);
+      }
+      
       try {
-        const stored = sessionStorage.getItem("sidebar_expanded_groups");
-        return stored ? JSON.parse(stored) : [];
-      } catch {
-        return [];
+        const storedGroups = sessionStorage.getItem("sidebar_expanded_groups");
+        if (storedGroups) {
+          setExpandedGroups(JSON.parse(storedGroups));
+        }
+      } catch (e) {
+        console.error("Failed to parse expanded groups:", e);
       }
     }
-    return [];
-  });
-  const { theme, toggleTheme } = useTheme();
+  }, []);
 
   // Persist collapsed state and notify listeners
   const toggleCollapsed = useCallback(() => {
