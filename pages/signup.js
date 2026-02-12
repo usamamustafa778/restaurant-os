@@ -2,46 +2,102 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { registerRestaurant } from "../lib/apiClient";
-import { Store, Loader2, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, X, MapPin } from "lucide-react";
 
 export default function SignupPage() {
-  const [formData, setFormData] = useState({
-    restaurantName: "",
-    subdomain: "",
-    ownerName: "",
-    email: "",
-    password: "",
-    phone: "",
-  });
+  const [step, setStep] = useState(1);
+  const [ownerName, setOwnerName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [restaurantName, setRestaurantName] = useState("");
+  const [branches, setBranches] = useState([{ name: "", address: "" }]);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
 
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  // --- Step navigation ---
+  function goToStep2(e) {
+    e.preventDefault();
+    setError("");
+    if (!ownerName.trim()) { setError("Name is required"); return; }
+    if (!email.trim()) { setError("Email is required"); return; }
+    if (!password || password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setStep(2);
   }
 
+  function goBackToStep1() {
+    setError("");
+    setStep(1);
+  }
+
+  // --- Branch helpers ---
+  function updateBranch(index, field, value) {
+    setBranches(prev => prev.map((b, i) => (i === index ? { ...b, [field]: value } : b)));
+  }
+
+  function addBranch() {
+    setBranches(prev => [...prev, { name: "", address: "" }]);
+  }
+
+  function removeBranch(index) {
+    if (branches.length <= 1) return;
+    setBranches(prev => prev.filter((_, i) => i !== index));
+  }
+
+  // --- Submit ---
   async function handleSubmit(e) {
     e.preventDefault();
-    setLoading(true);
     setError("");
 
-    try {
-      const data = await registerRestaurant(formData);
-      const user = data.user;
-      const slug = data.restaurant?.subdomain;
+    if (!restaurantName.trim()) { setError("Restaurant name is required"); return; }
 
-      // Store auth data
+    const validBranches = branches.filter(b => b.name.trim());
+    if (validBranches.length === 0) { setError("At least one branch is required"); return; }
+
+    setLoading(true);
+
+    try {
+      const payload = {
+        restaurantName: restaurantName.trim(),
+        ownerName: ownerName.trim(),
+        email: email.trim(),
+        password,
+        phone: phone.trim() || undefined,
+        branches: validBranches.map(b => ({
+          name: b.name.trim(),
+          address: b.address.trim() || undefined,
+        })),
+      };
+
+      const data = await registerRestaurant(payload);
+      const user = data.user;
+
+      // Resolve the restaurant slug from API response or JWT
+      let restaurantSlug = user.restaurantSlug || null;
+      if (!restaurantSlug && data.token) {
+        try {
+          const payload = JSON.parse(atob(data.token.split(".")[1]));
+          restaurantSlug = payload.tenantSlug || null;
+        } catch (_) {
+          /* ignore decode errors */
+        }
+      }
+
+      // Store auth data with tenantSlug
       if (typeof window !== "undefined") {
         window.localStorage.setItem(
           "restaurantos_auth",
-          JSON.stringify({ user, token: data.token || null })
+          JSON.stringify({
+            user: { ...user, tenantSlug: restaurantSlug },
+            token: data.token || null,
+            refreshToken: data.refreshToken || null,
+            tenantSlug: restaurantSlug,
+          })
         );
       }
 
-      // Redirect to dashboard — always on the main domain
       window.location.href = "/dashboard/overview";
     } catch (err) {
       setError(err.message || "Registration failed");
@@ -49,195 +105,291 @@ export default function SignupPage() {
     }
   }
 
+  const inputClass =
+    "w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 focus:bg-white transition-all";
+
   return (
-    <div className="min-h-screen bg-bg-primary dark:bg-black flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-xl bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 rounded-2xl p-8 shadow-xl">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-lg">
-            ROS
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-8">
+      {/* Modern gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-white to-secondary/5" />
+      <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute bottom-0 left-0 w-96 h-96 bg-secondary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+      
+      <div className="relative w-full max-w-md">
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-3 mb-10">
+          <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-primary/30">
+            ED
           </div>
           <div>
-            <div className="text-base font-semibold text-gray-900 dark:text-white">RestaurantOS</div>
-            <div className="text-xs text-gray-800 dark:text-neutral-400">Start Your Free Trial</div>
+            <div className="text-lg font-bold text-gray-900">Eats Desk</div>
+            <div className="text-xs text-gray-600">Restaurant Operations Platform</div>
           </div>
         </div>
 
-        <h1 className="text-2xl font-bold tracking-tight mb-2 text-gray-900 dark:text-white">Create Your Restaurant Account</h1>
-        <p className="text-sm text-gray-900 dark:text-neutral-400 mb-6">
-          Get started with a 14-day free trial. No credit card required.
-        </p>
-
-        {error && (
-          <div className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Restaurant Details */}
-          <div className="space-y-4 p-4 bg-bg-primary dark:bg-neutral-900/50 border border-gray-300 dark:border-neutral-800 rounded-xl">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-neutral-200 flex items-center gap-2">
-              <Store className="w-4 h-4" />
-              Restaurant Details
-            </h3>
-            
-            <div className="space-y-1">
-              <label className="text-xs text-gray-700 dark:text-neutral-300">Restaurant Name *</label>
-              <input
-                type="text"
-                name="restaurantName"
-                required
-                value={formData.restaurantName}
-                onChange={handleChange}
-                placeholder="e.g., Pizza Palace"
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-              />
+        {/* Card */}
+        <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 px-10 py-12">
+          {/* Step indicator */}
+          <div className="flex items-center justify-center gap-4 mb-10">
+            <div className={`flex items-center justify-center w-10 h-10 rounded-xl text-sm font-bold transition-all shadow-lg ${
+              step === 1 ? "bg-gradient-to-br from-primary to-secondary text-white scale-110" : "bg-primary/10 text-primary"
+            }`}>
+              1
             </div>
+            <div className="w-16 h-1 rounded-full bg-gradient-to-r from-primary to-secondary opacity-30" />
+            <div className={`flex items-center justify-center w-10 h-10 rounded-xl text-sm font-bold transition-all shadow-lg ${
+              step === 2 ? "bg-gradient-to-br from-primary to-secondary text-white scale-110" : "bg-gray-100 text-gray-400"
+            }`}>
+              2
+            </div>
+          </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-700 dark:text-neutral-300">
-                Subdomain * <span className="text-neutral-500">(yourname.restaurantos.com)</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  name="subdomain"
-                  required
-                  value={formData.subdomain}
-                  onChange={handleChange}
-                  placeholder="pizzapalace"
-                  pattern="[a-z0-9-]+"
-                  title="Only lowercase letters, numbers, and hyphens"
-                  className="flex-1 px-3 py-2.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-                />
-                <span className="text-xs text-neutral-500">.restaurantos.com</span>
+          {/* Step 1: Owner Info */}
+          {step === 1 && (
+            <>
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">
+                  Create your account
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Start your 14-day free trial • No credit card required
+                </p>
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-700 dark:text-neutral-300">Phone (optional)</label>
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="+1 (555) 123-4567"
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-              />
-            </div>
-          </div>
+              {error && (
+                <div className="mb-6 text-sm text-red-600 bg-red-50/80 border border-red-200 rounded-xl px-4 py-3 backdrop-blur-sm">
+                  {error}
+                </div>
+              )}
 
-          {/* Owner Details */}
-          <div className="space-y-4 p-4 bg-bg-primary dark:bg-neutral-900/50 border border-gray-300 dark:border-neutral-800 rounded-xl">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-neutral-200">Your Account</h3>
-            
-            <div className="space-y-1">
-              <label className="text-xs text-gray-700 dark:text-neutral-300">Your Name *</label>
-              <input
-                type="text"
-                name="ownerName"
-                required
-                value={formData.ownerName}
-                onChange={handleChange}
-                placeholder="John Doe"
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-              />
-            </div>
+              <form onSubmit={goToStep2} className="space-y-5">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-700 font-semibold">Your Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={ownerName}
+                    onChange={(e) => setOwnerName(e.target.value)}
+                    placeholder="Full name"
+                    className={inputClass}
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-700 dark:text-neutral-300">Email *</label>
-              <input
-                type="email"
-                name="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="you@example.com"
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-              />
-            </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-700 font-semibold">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    className={inputClass}
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-700 dark:text-neutral-300">Password *</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  required
-                  value={formData.password}
-                  onChange={handleChange}
-                  placeholder="Create a strong password"
-                  minLength={6}
-                  className="w-full px-3 py-2.5 pr-10 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-                />
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-700 font-semibold">
+                    Phone Number <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="03XX-XXXXXXX"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-700 font-semibold">Create Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Minimum 6 characters"
+                      minLength={6}
+                      className={`${inputClass} pr-12`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
                 <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-200 rounded"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  type="submit"
+                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-base font-bold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all mt-8"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  Continue to Step 2
+                  <ArrowRight className="w-5 h-5" />
                 </button>
+              </form>
+            </>
+          )}
+
+          {/* Step 2: Restaurant Info */}
+          {step === 2 && (
+            <>
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">
+                  Set up your restaurant
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Add your restaurant name and branch locations
+                </p>
               </div>
-            </div>
+
+              {error && (
+                <div className="mb-6 text-sm text-red-600 bg-red-50/80 border border-red-200 rounded-xl px-4 py-3 backdrop-blur-sm">
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-700 font-semibold">Restaurant Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={restaurantName}
+                    onChange={(e) => setRestaurantName(e.target.value)}
+                    placeholder="e.g., Burger Palace"
+                    className={inputClass}
+                  />
+                </div>
+
+                {/* Branches */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-gray-700 font-semibold flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-primary" />
+                      Branch Locations
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addBranch}
+                      className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-secondary transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Branch
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {branches.map((branch, index) => (
+                      <div
+                        key={index}
+                        className="relative rounded-xl border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-white p-4 space-y-3"
+                      >
+                        {branches.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeBranch(index)}
+                            className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            aria-label="Remove branch"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-gray-600 font-semibold">
+                            Branch {index + 1} Name
+                          </label>
+                          <input
+                            type="text"
+                            value={branch.name}
+                            onChange={(e) => updateBranch(index, "name", e.target.value)}
+                            placeholder="e.g., DHA Phase 5, Gulberg Main"
+                            className={inputClass}
+                            required={index === 0}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-gray-600 font-semibold">
+                            Address <span className="text-gray-400 font-normal">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={branch.address}
+                            onChange={(e) => updateBranch(index, "address", e.target.value)}
+                            placeholder="Full address (Street, area, city)"
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={goBackToStep1}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-base font-bold hover:shadow-lg hover:shadow-emerald-500/30 hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Creating your account…
+                      </>
+                    ) : (
+                      <>
+                        Create Account & Start Free Trial
+                        <ArrowRight className="w-5 h-5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+
+          <div className="mt-8 pt-6 border-t border-gray-100">
+            <p className="text-center text-sm text-gray-600">
+              Already have an account?{" "}
+              <Link href="/login" className="font-bold text-primary hover:text-secondary transition-colors">
+                Sign in here →
+              </Link>
+            </p>
           </div>
-
-          {/* Features List */}
-          <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
-            <h4 className="text-xs font-semibold text-primary mb-3">What's included in your trial:</h4>
-            <div className="space-y-2 text-xs text-gray-700 dark:text-neutral-300">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-                <span>Point of Sale (POS) system</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-                <span>Inventory management</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-                <span>Free public restaurant website</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-                <span>Sales reports & analytics</span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Creating your account...
-              </>
-            ) : (
-              <>
-                <Store className="w-4 h-4" />
-                Start Free Trial
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-xs text-gray-900 dark:text-neutral-400">
-            Already have an account?{" "}
-            <Link href="/login" className="text-primary hover:underline font-medium">
-              Sign in
-            </Link>
-          </p>
         </div>
 
-        <p className="mt-4 text-[10px] text-gray-800 dark:text-neutral-600 text-center leading-relaxed">
-          By signing up, you agree to our Terms of Service and Privacy Policy.
-          <br />
-          Your 14-day trial starts immediately. Cancel anytime.
-        </p>
+        {/* Trust indicators */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5">
+            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            No credit card required
+          </span>
+          <span className="flex items-center gap-1.5">
+            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            SSL encrypted
+          </span>
+          <span className="flex items-center gap-1.5">
+            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Setup in 2 minutes
+          </span>
+        </div>
       </div>
     </div>
   );

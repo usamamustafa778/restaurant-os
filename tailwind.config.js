@@ -10,16 +10,16 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: "#850F35"
+          DEFAULT: "#F68048"
         },
         secondary: {
-          DEFAULT: "#EE6983"
+          DEFAULT: "#FF7F11"
         },
         "bg-primary": {
-          DEFAULT: "#ffffff"
+          DEFAULT: "#EAEFEF"
         },
         "bg-secondary": {
-          DEFAULT: "#FCF5EE"
+          DEFAULT: "#BFC9D1"
         }
       }
     }

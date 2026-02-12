@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { getInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, SubscriptionInactiveError } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 
@@ -184,155 +184,215 @@ export default function InventoryPage() {
     }
   }
 
+  const filtered = items.filter(item => {
+    const term = search.trim().toLowerCase();
+    if (!term) return true;
+    return item.name.toLowerCase().includes(term) || item.unit.toLowerCase().includes(term);
+  });
+
+  const lowStockItems = items.filter(item => item.currentStock <= (item.lowStockThreshold || 0));
+
   return (
     <AdminLayout title="Inventory Management" suspended={suspended}>
       {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
-      <div className="w-full">
-        <Card
-          title="Current stock levels"
-          description="Monitor what&apos;s in store and quickly adjust when you restock."
-        >
-          <div className="flex flex-row items-center justify-between gap-3 mb-4 text-xs">
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search inventory items..."
-              className="flex-1 px-3 py-1.5 max-w-sm rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-            />
-            <Button type="button" className="text-xs gap-1 shrink-0" onClick={startCreateItem}>
-              <Plus className="w-3 h-3" />
-              New inventory item
-            </Button>
+
+      {/* Low Stock Alert */}
+      {lowStockItems.length > 0 && (
+        <div className="mb-6 p-5 rounded-2xl border-2 border-orange-200 dark:border-orange-500/30 bg-gradient-to-r from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5">
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 rounded-xl bg-orange-500 flex items-center justify-center shadow-lg">
+              <AlertTriangle className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-bold text-orange-900 dark:text-orange-300">Low Stock Alert</h3>
+              <p className="text-sm text-orange-700 dark:text-orange-400 mt-0.5">
+                {lowStockItems.length} item{lowStockItems.length > 1 ? 's are' : ' is'} running low: {lowStockItems.map(i => i.name).join(', ')}
+              </p>
+            </div>
           </div>
-          <div className="max-h-[70vh] overflow-y-auto text-xs">
-            <table className="w-full text-xs">
-              <thead className="text-[11px] uppercase text-gray-800 border-b border-gray-300 sticky top-0 z-10 bg-bg-secondary dark:bg-neutral-950">
+        </div>
+      )}
+
+      {/* Search and Add Button */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+        <div className="flex-1">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search inventory items..."
+            className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={startCreateItem}
+          className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+        >
+          <Plus className="w-4 h-4" />
+          Add Item
+        </button>
+      </div>
+
+      {/* Inventory Table */}
+      <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+              <Package className="w-10 h-10 text-primary" />
+            </div>
+            <p className="text-base font-bold text-gray-700 dark:text-neutral-300">
+              {items.length === 0 ? "No inventory items yet" : "No results found"}
+            </p>
+            <p className="text-sm text-gray-500 dark:text-neutral-400 mt-2 max-w-md">
+              {items.length === 0 ? "Start by adding ingredients or raw materials to track" : "Try a different search term"}
+            </p>
+            {items.length === 0 && (
+              <button
+                onClick={startCreateItem}
+                className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                Add Your First Item
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
                 <tr>
-                  <th className="py-2 text-left">Item</th>
-                  <th className="py-2 text-right">Stock</th>
-                  <th className="py-2 text-right">Cost Price</th>
-                  <th className="py-2 text-right">Low stock at</th>
-                  <th className="py-2 text-right">Adjust</th>
+                  <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Item</th>
+                  <th className="py-4 px-6 text-center font-bold text-gray-700 dark:text-neutral-300">Current Stock</th>
+                  <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Cost Price</th>
+                  <th className="py-4 px-6 text-center font-bold text-gray-700 dark:text-neutral-300">Low Stock Alert</th>
+                  <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {items
-                  .filter(item => {
-                    const term = search.trim().toLowerCase();
-                    if (!term) return true;
-                    return (
-                      item.name.toLowerCase().includes(term) ||
-                      item.unit.toLowerCase().includes(term)
-                    );
-                  })
-                  .map(item => (
-                  <tr key={item.id} className="hover:bg-bg-primary">
-                    <td className="py-2 pr-3">
-                      <div className="font-medium text-gray-900">
-                        {item.name}
-                      </div>
-                      <div className="text-[11px] text-gray-800">
-                        Unit: {item.unit}
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      {item.currentStock} {item.unit}
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      {item.costPrice > 0 ? (
-                        <div>
-                          <span className="font-medium">Rs {item.costPrice.toLocaleString()}</span>
-                          <div className="text-[10px] text-gray-500">{costPriceLabel(item.unit)}</div>
+              <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
+                {filtered.map(item => {
+                  const isLowStock = item.currentStock <= (item.lowStockThreshold || 0);
+                  return (
+                    <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-3">
+                          <div className={`h-10 w-10 rounded-xl flex items-center justify-center shadow-lg ${
+                            isLowStock 
+                              ? 'bg-gradient-to-br from-orange-500 to-orange-600' 
+                              : 'bg-gradient-to-br from-primary to-secondary'
+                          }`}>
+                            <Package className="w-5 h-5 text-white" />
+                          </div>
+                          <div>
+                            <div className="font-bold text-gray-900 dark:text-white">{item.name}</div>
+                            <div className="text-xs text-gray-500 dark:text-neutral-500">
+                              Unit: {item.unit}
+                            </div>
+                          </div>
                         </div>
-                      ) : (
-                        <span className="text-gray-400">Not set</span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      {item.lowStockThreshold || 0} {item.unit}
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      <div className="inline-flex gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="px-2 text-[11px]"
-                          onClick={() => startEditItem(item)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="px-2 text-[11px]"
-                          onClick={() => openAdjustDialog(item, "add")}
-                        >
-                          + Add
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="px-2 text-[11px] text-amber-300"
-                          onClick={() => openAdjustDialog(item, "remove")}
-                        >
-                          − Remove
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="px-2 text-red-600 dark:text-red-400 border-red-300 dark:border-red-500/40 hover:bg-red-50 dark:hover:bg-secondary/10"
-                          onClick={() => handleDelete(item)}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-
-                {items.filter(item => {
-                    const term = search.trim().toLowerCase();
-                    if (!term) return true;
-                    return item.name.toLowerCase().includes(term) || item.unit.toLowerCase().includes(term);
-                  }).length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="py-6 text-center text-xs text-neutral-500"
-                    >
-                      {items.length === 0 ? "No inventory items yet." : "No items match your search."}
-                    </td>
-                  </tr>
-                )}
+                      </td>
+                      <td className="py-4 px-6 text-center">
+                        <span className={`inline-flex items-center justify-center min-w-[80px] px-3 py-1.5 rounded-lg font-bold ${
+                          isLowStock
+                            ? 'bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400'
+                            : 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                        }`}>
+                          {item.currentStock} {item.unit}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        {item.costPrice > 0 ? (
+                          <div>
+                            <span className="text-base font-bold text-primary">Rs {item.costPrice.toLocaleString()}</span>
+                            <div className="text-xs text-gray-500 dark:text-neutral-500">{costPriceLabel(item.unit)}</div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 dark:text-neutral-500 text-sm">Not set</span>
+                        )}
+                      </td>
+                      <td className="py-4 px-6 text-center">
+                        <span className="text-sm text-gray-600 dark:text-neutral-400">
+                          {item.lowStockThreshold || 0} {item.unit}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditItem(item)}
+                            className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openAdjustDialog(item, "add")}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center gap-1"
+                            title="Add stock"
+                          >
+                            <TrendingUp className="w-3.5 h-3.5" />
+                            Add
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openAdjustDialog(item, "remove")}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors flex items-center gap-1"
+                            title="Remove stock"
+                          >
+                            <TrendingDown className="w-3.5 h-3.5" />
+                            Remove
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(item)}
+                            className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </Card>
+        )}
       </div>
 
       {isItemModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 shadow-xl">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-              {form.id ? "Edit inventory item" : "New inventory item"}
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
-              Register ingredients or packaged items and optional starting stock.
-            </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                <Package className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                  {form.id ? "Edit Inventory Item" : "New Inventory Item"}
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400">
+                  {form.id ? "Update item details" : "Register ingredients or materials"}
+                </p>
+              </div>
+            </div>
+
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-3 text-xs">
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  Name
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
+                  Item Name
                 </label>
                 <input
                   type="text"
@@ -341,12 +401,12 @@ export default function InventoryPage() {
                     setForm(prev => ({ ...prev, name: e.target.value }))
                   }
                   placeholder="Tomato, Burger Bun, Oil..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                  className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                 />
               </div>
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
                     Unit
                   </label>
                   <select
@@ -354,15 +414,15 @@ export default function InventoryPage() {
                     onChange={e =>
                       setForm(prev => ({ ...prev, unit: e.target.value }))
                     }
-                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   >
-                    <option value="gram">gram</option>
-                    <option value="ml">ml</option>
-                    <option value="piece">piece</option>
+                    <option value="gram">Gram (g)</option>
+                    <option value="ml">Milliliter (ml)</option>
+                    <option value="piece">Piece</option>
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
                     {costPriceLabel(form.unit)} (Rs)
                   </label>
                   <input
@@ -374,14 +434,14 @@ export default function InventoryPage() {
                       setForm(prev => ({ ...prev, costPrice: e.target.value }))
                     }
                     placeholder="e.g. 250, 500, 1200"
-                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   />
                 </div>
               </div>
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                    Initial stock
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
+                    Initial Stock
                   </label>
                   <input
                     type="number"
@@ -393,12 +453,12 @@ export default function InventoryPage() {
                     }
                     disabled={!!form.id}
                     placeholder="e.g. 0.5, 5, 10"
-                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow disabled:opacity-60"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                    Low stock threshold
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
+                    Low Stock Alert
                   </label>
                   <input
                     type="number"
@@ -412,25 +472,28 @@ export default function InventoryPage() {
                       }))
                     }
                     placeholder="e.g. 0.5, 1, 2"
-                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   />
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
+              <div className="flex justify-end gap-3 pt-4">
+                <button
                   type="button"
-                  variant="ghost"
+                  className="px-5 py-3 rounded-xl text-sm font-bold text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
                   onClick={() => {
                     resetForm();
                     setIsItemModalOpen(false);
                   }}
                 >
                   Cancel
-                </Button>
-                <Button type="submit" className="gap-1">
-                  <Plus className="w-3 h-3" />
-                  {form.id ? "Save changes" : "Create item"}
-                </Button>
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  {form.id ? "Save Changes" : "Create Item"}
+                </button>
               </div>
             </form>
           </div>
@@ -438,22 +501,43 @@ export default function InventoryPage() {
       )}
 
       {adjustDialog.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 shadow-xl">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-              {adjustDialog.mode === "add" ? "Add stock" : "Remove stock"}
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-lg ${
+                adjustDialog.mode === "add"
+                  ? 'bg-gradient-to-br from-emerald-500 to-emerald-600'
+                  : 'bg-gradient-to-br from-orange-500 to-orange-600'
+              }`}>
+                {adjustDialog.mode === "add" ? (
+                  <TrendingUp className="w-6 h-6 text-white" />
+                ) : (
+                  <TrendingDown className="w-6 h-6 text-white" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                  {adjustDialog.mode === "add" ? "Add Stock" : "Remove Stock"}
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400">
+                  {adjustDialog.itemName}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-neutral-400 mb-4">
               {adjustDialog.mode === "add"
-                ? `How much stock do you want to add for "${adjustDialog.itemName}"?`
-                : `How much stock do you want to remove for "${adjustDialog.itemName}"?`}
+                ? "Enter the quantity to add to current stock"
+                : "Enter the quantity to remove from current stock"}
             </p>
+
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
-            <div className="mb-4">
+
+            <div className="mb-6">
               <input
                 type="number"
                 min="0"
@@ -462,27 +546,42 @@ export default function InventoryPage() {
                 onChange={e =>
                   setAdjustDialog(prev => ({ ...prev, value: e.target.value }))
                 }
-                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                className="w-full px-4 py-3.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-base font-semibold text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                 placeholder="Enter quantity"
+                autoFocus
               />
             </div>
-            <div className="flex justify-end gap-2 text-xs">
-              <Button
+
+            <div className="flex justify-end gap-3">
+              <button
                 type="button"
-                variant="ghost"
-                className="px-3"
+                className="px-5 py-3 rounded-xl text-sm font-bold text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
                 onClick={closeAdjustDialog}
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
                 type="button"
-                className="px-3"
+                className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl text-white font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${
+                  adjustDialog.mode === "add"
+                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-500/30 hover:shadow-emerald-500/40'
+                    : 'bg-gradient-to-r from-orange-500 to-orange-600 shadow-orange-500/30 hover:shadow-orange-500/40'
+                }`}
                 onClick={handleConfirmAdjust}
                 disabled={!adjustDialog.value.trim()}
               >
-                {adjustDialog.mode === "add" ? "Confirm add" : "Confirm remove"}
-              </Button>
+                {adjustDialog.mode === "add" ? (
+                  <>
+                    <TrendingUp className="w-4 h-4" />
+                    Confirm Add
+                  </>
+                ) : (
+                  <>
+                    <TrendingDown className="w-4 h-4" />
+                    Confirm Remove
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

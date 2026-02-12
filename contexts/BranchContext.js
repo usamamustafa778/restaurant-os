@@ -1,0 +1,113 @@
+import { createContext, useContext, useCallback, useEffect, useState } from "react";
+import { getStoredAuth, getBranches } from "../lib/apiClient";
+
+const BRANCH_STORAGE_KEY = "restaurantos_branch_id";
+
+const BranchContext = createContext(null);
+
+export function BranchProvider({ children }) {
+  const [branches, setBranches] = useState([]);
+  const [currentBranch, setCurrentBranchState] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const setCurrentBranch = useCallback((branch) => {
+    setCurrentBranchState(branch);
+    if (typeof window !== "undefined") {
+      if (branch) {
+        window.localStorage.setItem(BRANCH_STORAGE_KEY, branch.id);
+      } else {
+        window.localStorage.setItem(BRANCH_STORAGE_KEY, "all");
+      }
+    }
+  }, []);
+
+  // Load branches when user is logged in (tenant dashboard, not super_admin)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const auth = getStoredAuth();
+    const token = auth?.token;
+    const role = auth?.user?.role;
+
+    // No branch context for super_admin or when not logged in
+    if (role === "super_admin" || !token) {
+      setBranches([]);
+      setCurrentBranchState(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    getBranches()
+      .then((data) => {
+        if (cancelled) return;
+        const list = data?.branches ?? (Array.isArray(data) ? data : []);
+        setBranches(list);
+
+        const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
+        const defaultBranch = savedId === "all" || !savedId
+          ? null
+          : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
+        setCurrentBranchState(defaultBranch);
+        if (defaultBranch && defaultBranch.id !== savedId) {
+          window.localStorage.setItem(BRANCH_STORAGE_KEY, defaultBranch.id);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBranches([]);
+          setCurrentBranchState(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []); // Re-run on mount; auth changes handled by storage listener or full reload after login
+
+  // Re-run branch load when auth storage might have changed (e.g. after login)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onStorage = (e) => {
+      if (e.key === "restaurantos_auth" && e.newValue) {
+        const auth = JSON.parse(e.newValue);
+        if (auth?.user?.role !== "super_admin" && auth?.token) {
+          getBranches()
+            .then((data) => {
+              const list = data?.branches ?? (Array.isArray(data) ? data : []);
+              setBranches(list);
+              const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
+              const defaultBranch = savedId === "all" || !savedId
+                ? null
+                : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
+              setCurrentBranchState(defaultBranch);
+            })
+            .catch(() => setBranches([]));
+        }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const value = {
+    branches,
+    currentBranch,
+    setCurrentBranch,
+    loading,
+    hasMultipleBranches: branches.length > 1,
+  };
+
+  return (
+    <BranchContext.Provider value={value}>
+      {children}
+    </BranchContext.Provider>
+  );
+}
+
+export function useBranch() {
+  const context = useContext(BranchContext);
+  return context;
+}

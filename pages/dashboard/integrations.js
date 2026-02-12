@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import Card from "../../components/ui/Card";
-import Button from "../../components/ui/Button";
 import {
   getIntegrations,
   saveIntegration,
@@ -9,15 +7,14 @@ import {
   deleteIntegration,
   SubscriptionInactiveError
 } from "../../lib/apiClient";
-import { Plus, Trash2, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, RefreshCw, Link2 } from "lucide-react";
+import { Plus, Trash2, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, RefreshCw, Link2, Package } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 
 const PLATFORMS = [
   {
     value: "FOODPANDA",
     label: "Foodpanda",
-    color: "bg-pink-100 text-pink-700 border-pink-300",
-    logo: "🐼",
+    color: "bg-primary/10 text-primary border-primary/30",
     description: "Sync delivery orders from Foodpanda directly into your order board."
   }
 ];
@@ -153,11 +150,11 @@ export default function IntegrationsPage() {
   return (
     <AdminLayout title="Integrations" suspended={suspended}>
       {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
-          {error}
+        <div className="mb-5 rounded-xl border-2 border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm text-red-700 dark:text-red-400 flex items-center justify-between shadow-sm">
+          <span className="font-medium">{error}</span>
           <button
             type="button"
-            className="ml-2 underline"
+            className="text-xs underline hover:no-underline"
             onClick={() => setError("")}
           >
             dismiss
@@ -165,46 +162,62 @@ export default function IntegrationsPage() {
         </div>
       )}
 
-      <Card
-        title="Third-party Integrations"
-        description="Connect food delivery platforms to receive orders automatically."
-      >
-        <div className="flex items-center justify-between mb-4">
-          <Button
+      <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+            <Link2 className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-base font-bold text-gray-900 dark:text-white">Third-party Integrations</h3>
+            <p className="text-xs text-gray-500 dark:text-neutral-400">Connected platforms and webhooks</p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mb-5 pb-4 border-b-2 border-gray-100 dark:border-neutral-800">
+          <button
             type="button"
-            variant="ghost"
-            className="text-xs gap-1"
             onClick={loadIntegrations}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
           >
-            <RefreshCw className="w-3 h-3" />
+            <RefreshCw className="w-4 h-4" />
             Refresh
-          </Button>
+          </button>
           {!configuredPlatforms.has("FOODPANDA") && (
-            <Button type="button" className="gap-1 text-xs" onClick={openAddModal}>
-              <Plus className="w-3 h-3" />
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all text-sm"
+            >
+              <Plus className="w-4 h-4" />
               Add Foodpanda
-            </Button>
+            </button>
           )}
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : integrations.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-3xl mb-2">🐼</div>
-            <p className="text-sm text-neutral-500 mb-1">No integrations configured</p>
-            <p className="text-xs text-neutral-400 mb-4">
-              Connect Foodpanda to receive delivery orders directly on your order board.
+          <div className="text-center py-16">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mx-auto mb-4">
+              <Package className="w-10 h-10 text-primary" />
+            </div>
+            <p className="text-base font-bold text-gray-900 dark:text-white mb-2">No integrations configured</p>
+            <p className="text-sm text-gray-500 dark:text-neutral-400 mb-6 max-w-md mx-auto">
+              Connect Foodpanda to receive delivery orders directly on your order board
             </p>
-            <Button type="button" className="gap-1 text-xs" onClick={openAddModal}>
-              <Plus className="w-3 h-3" />
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all"
+            >
+              <Plus className="w-5 h-5" />
               Connect Foodpanda
-            </Button>
+            </button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {integrations.map(integration => {
               const platform = PLATFORMS.find(p => p.value === integration.platform);
               const isToggling = togglingId === integration.id;
@@ -212,110 +225,116 @@ export default function IntegrationsPage() {
               return (
                 <div
                   key={integration.id}
-                  className={`rounded-xl border p-4 ${
+                  className={`rounded-2xl border-2 p-5 transition-all shadow-sm hover:shadow-lg ${
                     integration.isActive
-                      ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-500/5 dark:border-emerald-500/30"
-                      : "border-gray-300 bg-bg-primary dark:bg-neutral-950 dark:border-neutral-800"
+                      ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-500/10 dark:to-emerald-500/5 dark:border-emerald-500/30"
+                      : "border-gray-200 bg-gray-50 dark:bg-neutral-900 dark:border-neutral-800"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{platform?.logo || "🔗"}</span>
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-4">
+                    <div className={`h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg ${
+                      integration.isActive
+                        ? "bg-gradient-to-br from-primary to-secondary"
+                        : "bg-gradient-to-br from-gray-400 to-gray-500"
+                    }`}>
+                      <Package className="w-7 h-7 text-white" />
+                    </div>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-base font-bold text-gray-900 dark:text-white">
                             {platform?.label || integration.platform}
                           </h3>
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                            className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold border ${
                               integration.isActive
-                                ? "bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/40"
-                                : "bg-bg-primary text-gray-500 border-gray-300 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700"
+                                ? "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/40"
+                                : "bg-gray-100 text-gray-600 border-gray-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700"
                             }`}
                           >
                             {integration.isActive ? "Active" : "Inactive"}
                           </span>
                         </div>
-                        <p className="text-[11px] text-neutral-500 mt-0.5">
+                        <p className="text-sm text-gray-600 dark:text-neutral-400">
                           {platform?.description}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleToggle(integration.id)}
                         disabled={isToggling}
-                        className="inline-flex items-center gap-1 text-[11px] text-gray-700 dark:text-neutral-300 hover:text-primary transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/50 dark:hover:bg-neutral-800 transition-colors"
                       >
                         {isToggling ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Loader2 className="w-6 h-6 animate-spin text-primary" />
                         ) : integration.isActive ? (
-                          <ToggleRight className="w-5 h-5 text-emerald-500" />
+                          <ToggleRight className="w-7 h-7 text-emerald-500" />
                         ) : (
-                          <ToggleLeft className="w-5 h-5 text-gray-400" />
+                          <ToggleLeft className="w-7 h-7 text-gray-400" />
                         )}
                       </button>
-                      <Button
+                      <button
                         type="button"
-                        variant="ghost"
-                        className="px-2"
                         onClick={() => openEditModal(integration)}
+                        className="p-2 rounded-lg hover:bg-white dark:hover:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:text-primary transition-colors"
                       >
-                        <Link2 className="w-3 h-3" />
-                      </Button>
-                      <Button
+                        <Link2 className="w-5 h-5" />
+                      </button>
+                      <button
                         type="button"
-                        variant="ghost"
-                        className="px-2 text-red-500 hover:bg-red-50 dark:hover:bg-secondary/10"
                         onClick={() => handleDelete(integration.id)}
+                        className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors"
                       >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                        <Trash2 className="w-5 h-5" />
+                      </button>
                     </div>
                   </div>
 
                   {/* Credentials summary */}
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3 text-xs">
-                    <div className="space-y-0.5">
-                      <label className="text-[10px] uppercase tracking-wide text-neutral-500">
-                        Store ID
+                  <div className="grid gap-4 sm:grid-cols-3 text-sm">
+                    <div className="space-y-1.5">
+                      <label className="text-xs uppercase tracking-wider text-gray-500 dark:text-neutral-500 font-bold flex items-center gap-1">
+                        🏪 Store ID
                       </label>
-                      <p className="font-mono text-gray-900 dark:text-neutral-200">
+                      <p className="font-mono text-base font-bold text-gray-900 dark:text-white px-3 py-2 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
                         {integration.storeId || "—"}
                       </p>
                     </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[10px] uppercase tracking-wide text-neutral-500">
-                        API Key
+                    <div className="space-y-1.5">
+                      <label className="text-xs uppercase tracking-wider text-gray-500 dark:text-neutral-500 font-bold flex items-center gap-1">
+                        🔑 API Key
                       </label>
-                      <div className="flex items-center gap-1">
-                        <p className="font-mono text-gray-900 dark:text-neutral-200">
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
+                        <p className="flex-1 font-mono text-base font-bold text-gray-900 dark:text-white">
                           {showSecrets[integration.id]
                             ? integration.apiKey || "—"
                             : integration.apiKey
                             ? "••••" + integration.apiKey.slice(-4)
                             : "—"}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => toggleShowSecret(integration.id)}
-                          className="text-neutral-400 hover:text-neutral-600"
-                        >
-                          {showSecrets[integration.id] ? (
-                            <EyeOff className="w-3 h-3" />
-                          ) : (
-                            <Eye className="w-3 h-3" />
-                          )}
-                        </button>
+                        {integration.apiKey && (
+                          <button
+                            type="button"
+                            onClick={() => toggleShowSecret(integration.id)}
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
+                          >
+                            {showSecrets[integration.id] ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div className="space-y-0.5">
-                      <label className="text-[10px] uppercase tracking-wide text-neutral-500">
-                        Last Synced
+                    <div className="space-y-1.5">
+                      <label className="text-xs uppercase tracking-wider text-gray-500 dark:text-neutral-500 font-bold flex items-center gap-1">
+                        ⏱️ Last Synced
                       </label>
-                      <p className="text-gray-900 dark:text-neutral-200">
+                      <p className="font-semibold text-base text-gray-900 dark:text-white px-3 py-2 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
                         {integration.lastSyncAt
                           ? new Date(integration.lastSyncAt).toLocaleString()
                           : "Never"}
@@ -325,11 +344,12 @@ export default function IntegrationsPage() {
 
                   {/* Webhook URL hint */}
                   {integration.isActive && (
-                    <div className="mt-3 p-2 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800 text-[11px]">
-                      <label className="text-[10px] uppercase tracking-wide text-neutral-500 block mb-1">
-                        Webhook URL (share with Foodpanda)
+                    <div className="mt-4 p-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-blue-200 dark:border-blue-500/30">
+                      <label className="text-xs uppercase tracking-wider text-blue-600 dark:text-blue-400 font-bold mb-2 flex items-center gap-1">
+                        🔗 Webhook URL
+                        <span className="text-[10px] normal-case font-normal text-gray-500">(share with Foodpanda)</span>
                       </label>
-                      <code className="text-primary break-all font-mono text-[11px]">
+                      <code className="text-primary break-all font-mono text-sm block p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
                         {typeof window !== "undefined"
                           ? `${window.location.origin.replace(":3000", ":5001")}/api/webhooks/foodpanda/${integration.restaurantId}`
                           : `/api/webhooks/foodpanda/[restaurantId]`}
@@ -341,38 +361,41 @@ export default function IntegrationsPage() {
             })}
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Test Sync Card */}
       {integrations.some(i => i.isActive) && (
-        <div className="mt-4">
+        <div className="mt-6">
           <TestSyncCard integrations={integrations} onOrderCreated={loadIntegrations} />
         </div>
       )}
 
       {/* Modal for add/edit credentials */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5 text-xs">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xl">🐼</span>
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-                Foodpanda Integration
-              </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 shadow-2xl p-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                <Package className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Foodpanda Integration
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400">
+                  Configure merchant API credentials
+                </p>
+              </div>
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-neutral-400 mb-4">
-              Enter your Foodpanda merchant API credentials. These are used to
-              verify incoming webhook orders.
-            </p>
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+              <div className="mb-4 rounded-xl border-2 border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm font-medium text-red-700 dark:text-red-400">
                 {modalError}
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-3" autoComplete="off">
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  Store ID <span className="text-red-500">*</span>
+            <form onSubmit={handleSubmit} className="space-y-5 mt-5" autoComplete="off">
+              <div className="space-y-2">
+                <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
+                  🏪 Store ID <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -383,12 +406,12 @@ export default function IntegrationsPage() {
                     setForm(prev => ({ ...prev, storeId: e.target.value }))
                   }
                   placeholder="e.g. s8dy-fnk2"
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                  className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  API Key
+              <div className="space-y-2">
+                <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
+                  🔑 API Key
                 </label>
                 <input
                   type="text"
@@ -399,12 +422,12 @@ export default function IntegrationsPage() {
                     setForm(prev => ({ ...prev, apiKey: e.target.value }))
                   }
                   placeholder="Paste your Foodpanda API key"
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow font-mono"
+                  className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-mono"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  API Secret
+              <div className="space-y-2">
+                <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
+                  🔐 API Secret
                 </label>
                 <input
                   type="text"
@@ -415,28 +438,37 @@ export default function IntegrationsPage() {
                     setForm(prev => ({ ...prev, apiSecret: e.target.value }))
                   }
                   placeholder="Paste your Foodpanda API secret"
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow font-mono"
+                  className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-mono"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
+              <div className="flex justify-end gap-3 pt-3">
+                <button
                   type="button"
-                  variant="ghost"
                   onClick={() => {
                     setIsModalOpen(false);
                     resetForm();
                   }}
+                  className="px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
                 >
                   Cancel
-                </Button>
-                <Button type="submit" className="gap-1" disabled={saving}>
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                >
                   {saving ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Saving...
+                    </>
                   ) : (
-                    <Plus className="w-3 h-3" />
+                    <>
+                      <Plus className="w-5 h-5" />
+                      Save credentials
+                    </>
                   )}
-                  {saving ? "Saving..." : "Save credentials"}
-                </Button>
+                </button>
               </div>
             </form>
           </div>
@@ -553,14 +585,21 @@ function TestSyncCard({ integrations, onOrderCreated }) {
   }
 
   return (
-    <Card
-      title="Test Foodpanda Sync"
-      description="Simulate a Foodpanda order to verify your integration works. The order will appear on your All Orders page."
-    >
-      <form onSubmit={handleTest} className="space-y-3 text-xs">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+    <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+          <RefreshCw className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h3 className="text-base font-bold text-gray-900 dark:text-white">Test Foodpanda Sync</h3>
+          <p className="text-xs text-gray-500 dark:text-neutral-400">Simulate an order to verify your integration</p>
+        </div>
+      </div>
+
+      <form onSubmit={handleTest} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
               Customer Name
             </label>
             <input
@@ -570,11 +609,11 @@ function TestSyncCard({ integrations, onOrderCreated }) {
                 setTestForm(prev => ({ ...prev, customerName: e.target.value }))
               }
               placeholder="Foodpanda Customer"
-              className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+          <div className="space-y-2">
+            <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
               Phone
             </label>
             <input
@@ -587,12 +626,12 @@ function TestSyncCard({ integrations, onOrderCreated }) {
                 }))
               }
               placeholder="+923001234567"
-              className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
             />
           </div>
         </div>
-        <div className="space-y-1">
-          <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+        <div className="space-y-2">
+          <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
             Delivery Address
           </label>
           <input
@@ -605,12 +644,12 @@ function TestSyncCard({ integrations, onOrderCreated }) {
               }))
             }
             placeholder="Food Street Phase 7, Bahria Town RWP"
-            className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+            className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
           />
         </div>
-        <div className="space-y-1">
-          <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
-            Items (format: name:qty:price, separated by commas)
+        <div className="space-y-2">
+          <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
+            Items <span className="text-xs font-normal text-gray-500">(format: name:qty:price, separated by commas)</span>
           </label>
           <input
             type="text"
@@ -619,12 +658,12 @@ function TestSyncCard({ integrations, onOrderCreated }) {
               setTestForm(prev => ({ ...prev, items: e.target.value }))
             }
             placeholder="Cheezy Pizza:2:1300, Crunch Burger:1:550"
-            className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 font-mono"
+            className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-mono"
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
               Payment Method
             </label>
             <select
@@ -635,15 +674,15 @@ function TestSyncCard({ integrations, onOrderCreated }) {
                   paymentMethod: e.target.value
                 }))
               }
-              className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
             >
               <option value="ONLINE">Online</option>
               <option value="CASH">Cash on Delivery</option>
             </select>
           </div>
-          <div className="space-y-1">
-            <label className="text-gray-700 dark:text-neutral-300 text-[11px]">
-              Total (auto-calculated if empty)
+          <div className="space-y-2">
+            <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">
+              Total <span className="text-xs font-normal text-gray-500">(auto-calculated if empty)</span>
             </label>
             <input
               type="number"
@@ -653,32 +692,43 @@ function TestSyncCard({ integrations, onOrderCreated }) {
                 setTestForm(prev => ({ ...prev, total: e.target.value }))
               }
               placeholder="Auto"
-              className="w-full px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
             />
           </div>
         </div>
 
         {testError && (
-          <p className="text-[11px] text-red-600">{testError}</p>
+          <div className="rounded-xl border-2 border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm font-medium text-red-700 dark:text-red-400">
+            {testError}
+          </div>
         )}
         {result && (
-          <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 text-[11px] text-emerald-700 dark:text-emerald-400">
+          <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 dark:border-emerald-500/30 px-4 py-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
             Order created successfully! Order number:{" "}
-            <span className="font-semibold">{result.orderNumber}</span>
+            <span className="font-bold">{result.orderNumber}</span>
           </div>
         )}
 
-        <div className="flex justify-end pt-1">
-          <Button type="submit" className="gap-1 text-xs" disabled={testing}>
+        <div className="flex justify-end pt-2">
+          <button
+            type="submit"
+            disabled={testing}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+          >
             {testing ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Sending...
+              </>
             ) : (
-              <RefreshCw className="w-3 h-3" />
+              <>
+                <RefreshCw className="w-5 h-5" />
+                Send Test Order
+              </>
             )}
-            {testing ? "Sending..." : "Send Test Order"}
-          </Button>
+          </button>
         </div>
       </form>
-    </Card>
+    </div>
   );
 }

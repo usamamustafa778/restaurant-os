@@ -1,39 +1,80 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
+import DataTable from "../../components/ui/DataTable";
+import PageLoader from "../../components/ui/PageLoader";
+import ViewToggle from "../../components/ui/ViewToggle";
+import ActionDropdown from "../../components/ui/ActionDropdown";
 import {
   getMenu,
+  getBranchMenu,
   getInventory,
   createItem,
   updateItem,
   deleteItem,
   uploadImage,
-  SubscriptionInactiveError
+  updateBranchMenuItem,
+  deleteBranchMenuItem,
+  getStoredAuth
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, RotateCcw, ShoppingBag } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
+import { useBranch } from "../../contexts/BranchContext";
+import { usePageData } from "../../hooks/usePageData";
+import { useViewMode } from "../../hooks/useViewMode";
+import { useDropdown } from "../../hooks/useDropdown";
+import { handleAsyncAction } from "../../utils/toastActions";
+import toast from "react-hot-toast";
 
 export default function MenuItemsPage() {
-  const [categories, setCategories] = useState([]);
-  const [items, setItems] = useState([]);
-  const [inventoryItems, setInventoryItems] = useState([]);
+  const { currentBranch } = useBranch() || {};
+  
+  // Fetch menu and inventory data
+  const fetchData = async () => {
+    const auth = getStoredAuth();
+    const restaurantId = auth?.user?.restaurantId;
+    
+    // Use branch-aware menu if branch is selected, otherwise use base menu
+    let menuData;
+    if (currentBranch?.id && restaurantId) {
+      menuData = await getBranchMenu(currentBranch.id, restaurantId);
+    } else {
+      menuData = await getMenu();
+    }
+    
+    const inv = await getInventory();
+    
+    return {
+      categories: menuData.categories || [],
+      items: menuData.items || [],
+      inventoryItems: inv || []
+    };
+  };
+  
+  const { data, loading: pageLoading, error, suspended, setData } = usePageData(fetchData, [currentBranch?.id]);
+  const categories = data?.categories || [];
+  const items = data?.items || [];
+  const inventoryItems = data?.inventoryItems || [];
+  
+  const { viewMode, setViewMode } = useViewMode("table");
+  const { toggle: toggleDropdown, close: closeDropdown, isOpen: isDropdownOpen } = useDropdown();
+  const { confirm } = useConfirmDialog();
+
   const [form, setForm] = useState({
     id: null,
     name: "",
     price: "",
     categoryId: "",
     imageUrl: "",
-    description: ""
+    description: "",
+    availableAtAllBranches: true
   });
-
-  const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
-  const { confirm } = useConfirmDialog();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [modalError, setModalError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const [imageTab, setImageTab] = useState("link");
   const [uploading, setUploading] = useState(false);
@@ -45,23 +86,7 @@ export default function MenuItemsPage() {
     itemName: "",
     consumptions: []
   });
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [menuData, inv] = await Promise.all([getMenu(), getInventory()]);
-        setCategories(menuData.categories || []);
-        setItems(menuData.items || []);
-        setInventoryItems(inv || []);
-      } catch (err) {
-        if (err instanceof SubscriptionInactiveError) {
-          setSuspended(true);
-        } else {
-          setError(err.message || "Failed to load menu items");
-        }
-      }
-    })();
-  }, []);
+  const [branchPriceEditing, setBranchPriceEditing] = useState({});
 
   function resetForm() {
     setForm({
@@ -70,7 +95,8 @@ export default function MenuItemsPage() {
       price: "",
       categoryId: categories[0]?.id || "",
       imageUrl: "",
-      description: ""
+      description: "",
+      availableAtAllBranches: true
     });
   }
 
@@ -89,7 +115,8 @@ export default function MenuItemsPage() {
       price: String(item.price ?? ""),
       categoryId: item.categoryId,
       imageUrl: item.imageUrl || "",
-      description: item.description || ""
+      description: item.description || "",
+      availableAtAllBranches: item.availableAtAllBranches ?? true
     });
     setImageTab(item.imageUrl ? "link" : "link");
     setUploadError("");
@@ -99,40 +126,144 @@ export default function MenuItemsPage() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name.trim()) { setModalError("Item name is required"); return; }
-    if (!form.price) { setModalError("Price is required"); return; }
-    if (!form.categoryId) { setModalError("Please select a category"); return; }
+    if (!form.name.trim()) { 
+      setModalError("Item name is required"); 
+      toast.error("Item name is required");
+      return; 
+    }
+    if (!form.price) { 
+      setModalError("Price is required"); 
+      toast.error("Price is required");
+      return; 
+    }
+    if (!form.categoryId) { 
+      setModalError("Please select a category"); 
+      toast.error("Please select a category");
+      return; 
+    }
+    
     setModalError("");
-    try {
-      if (form.id) {
-        const updated = await updateItem(form.id, {
-          name: form.name,
-          price: parseFloat(form.price),
-          categoryId: form.categoryId,
-          imageUrl: form.imageUrl,
-          description: form.description
-        });
-        setItems(prev => prev.map(i => (i.id === updated.id ? updated : i)));
-      } else {
-        const created = await createItem({
-          name: form.name,
-          price: parseFloat(form.price),
-          categoryId: form.categoryId,
-          imageUrl: form.imageUrl,
-          description: form.description
-        });
-        setItems(prev => [...prev, created]);
+    setIsLoading(true);
+    
+    const result = await handleAsyncAction(
+      async () => {
+        if (form.id) {
+          const updated = await updateItem(form.id, {
+            name: form.name,
+            price: parseFloat(form.price),
+            categoryId: form.categoryId,
+            imageUrl: form.imageUrl,
+            description: form.description,
+            availableAtAllBranches: form.availableAtAllBranches
+          });
+          setData(prev => ({
+            ...prev,
+            items: prev.items.map(i => (i.id === updated.id ? updated : i))
+          }));
+          return updated;
+        } else {
+          const created = await createItem({
+            name: form.name,
+            price: parseFloat(form.price),
+            categoryId: form.categoryId,
+            imageUrl: form.imageUrl,
+            description: form.description,
+            availableAtAllBranches: form.availableAtAllBranches
+          });
+          setData(prev => ({
+            ...prev,
+            items: [...prev.items, created]
+          }));
+          return created;
+        }
+      },
+      {
+        loading: form.id ? "Updating menu item..." : "Creating menu item...",
+        success: form.id ? "Menu item updated successfully" : "Menu item created successfully",
+        error: "Failed to save menu item"
       }
+    );
+    
+    setIsLoading(false);
+    
+    if (result.success) {
       resetForm();
       setIsModalOpen(false);
-    } catch (err) {
-      setModalError(err.message || "Failed to save menu item");
+    } else {
+      setModalError(result.error);
     }
   }
 
   async function handleToggleAvailability(item) {
-    const updated = await updateItem(item.id, { available: !item.available });
-    setItems(prev => prev.map(i => (i.id === item.id ? updated : i)));
+    await handleAsyncAction(
+      async () => {
+        if (currentBranch) {
+          const nextAvailable = item.branchAvailable ?? item.available ?? true;
+          await updateBranchMenuItem(item.id, { available: !nextAvailable });
+          setData(prev => ({
+            ...prev,
+            items: prev.items.map(i => (i.id === item.id ? { ...i, branchAvailable: !nextAvailable } : i))
+          }));
+        } else {
+          const updated = await updateItem(item.id, { available: !item.available });
+          setData(prev => ({
+            ...prev,
+            items: prev.items.map(i => (i.id === item.id ? updated : i))
+          }));
+        }
+      },
+      {
+        loading: "Updating availability...",
+        success: "Availability updated",
+        error: "Failed to update availability"
+      }
+    );
+  }
+
+  async function handleBranchPriceOverride(itemId, priceOverride) {
+    await handleAsyncAction(
+      async () => {
+        if (priceOverride === "" || priceOverride == null) {
+          await deleteBranchMenuItem(itemId);
+          setData(prev => ({
+            ...prev,
+            items: prev.items.map(i => (i.id === itemId ? { ...i, branchPriceOverride: null, effectivePrice: i.price } : i))
+          }));
+        } else {
+          const num = parseFloat(priceOverride);
+          if (!isNaN(num) && num >= 0) {
+            await updateBranchMenuItem(itemId, { priceOverride: num });
+            setData(prev => ({
+              ...prev,
+              items: prev.items.map(i => (i.id === itemId ? { ...i, branchPriceOverride: num, effectivePrice: num } : i))
+            }));
+          }
+        }
+      },
+      {
+        loading: "Updating price...",
+        success: "Branch price updated",
+        error: "Failed to update branch price"
+      }
+    );
+  }
+
+  async function handleRevertBranchOverride(itemId) {
+    await handleAsyncAction(
+      async () => {
+        await deleteBranchMenuItem(itemId);
+        const item = items.find(i => i.id === itemId);
+        setData(prev => ({
+          ...prev,
+          items: prev.items.map(i => (i.id === itemId ? { ...i, branchAvailable: undefined, branchPriceOverride: null, effectivePrice: item?.price } : i))
+        }));
+      },
+      {
+        loading: "Reverting override...",
+        success: "Override reverted",
+        error: "Failed to revert override"
+      }
+    );
   }
 
   async function handleFileUpload(e) {
@@ -156,8 +287,25 @@ export default function MenuItemsPage() {
       message: "Delete this menu item? This cannot be undone."
     });
     if (!ok) return;
-    await deleteItem(id);
-    setItems(prev => prev.filter(i => i.id !== id));
+    
+    setDeletingId(id);
+    
+    await handleAsyncAction(
+      async () => {
+        await deleteItem(id);
+        setData(prev => ({
+          ...prev,
+          items: prev.items.filter(i => i.id !== id)
+        }));
+      },
+      {
+        loading: "Deleting menu item...",
+        success: "Menu item deleted successfully",
+        error: "Failed to delete menu item"
+      }
+    );
+    
+    setDeletingId(null);
   }
 
   // Unit conversion helpers
@@ -272,22 +420,36 @@ export default function MenuItemsPage() {
   async function handleSaveRecipe() {
     if (!recipeDialog.itemId) return;
     setModalError("");
-    try {
-      // Convert display values back to base units before saving
-      const payloadConsumptions = recipeDialog.consumptions
-        .map(c => {
-          const inv = inventoryItems.find(i => i.id === c.inventoryItemId);
-          const displayUnit = recipeUnits[c.inventoryItemId];
-          const rawQty = Number(c.quantity || "0");
-          const baseQty = displayUnit && inv ? toBaseUnit(rawQty, displayUnit, inv.unit) : rawQty;
-          return { inventoryItemId: c.inventoryItemId, quantity: parseFloat(baseQty.toFixed(6)) };
-        })
-        .filter(c => !Number.isNaN(c.quantity) && c.quantity > 0);
-      const updated = await updateItem(recipeDialog.itemId, { inventoryConsumptions: payloadConsumptions });
-      setItems(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+    
+    const result = await handleAsyncAction(
+      async () => {
+        // Convert display values back to base units before saving
+        const payloadConsumptions = recipeDialog.consumptions
+          .map(c => {
+            const inv = inventoryItems.find(i => i.id === c.inventoryItemId);
+            const displayUnit = recipeUnits[c.inventoryItemId];
+            const rawQty = Number(c.quantity || "0");
+            const baseQty = displayUnit && inv ? toBaseUnit(rawQty, displayUnit, inv.unit) : rawQty;
+            return { inventoryItemId: c.inventoryItemId, quantity: parseFloat(baseQty.toFixed(6)) };
+          })
+          .filter(c => !Number.isNaN(c.quantity) && c.quantity > 0);
+        const updated = await updateItem(recipeDialog.itemId, { inventoryConsumptions: payloadConsumptions });
+        setData(prev => ({
+          ...prev,
+          items: prev.items.map(i => (i.id === updated.id ? updated : i))
+        }));
+      },
+      {
+        loading: "Saving recipe...",
+        success: "Recipe saved successfully",
+        error: "Failed to save recipe"
+      }
+    );
+    
+    if (result.success) {
       closeRecipeDialog();
-    } catch (err) {
-      setModalError(err.message || "Failed to save recipe");
+    } else {
+      setModalError(result.error);
     }
   }
 
@@ -305,158 +467,397 @@ export default function MenuItemsPage() {
 
   return (
     <AdminLayout title="Menu Items" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
-          {error}
-        </div>
-      )}
-      <div className="grid gap-4">
-        <Card
-          title="Menu Items"
-          description="Manage availability, pricing, and link items to inventory usage."
-        >
-          <div className="flex flex-row items-center justify-between gap-3 mb-4 text-xs">
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, category or price..."
-              className="flex-1 px-3 py-1.5 max-w-sm rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
-            />
-            <Button type="button" className="gap-2 shrink-0" onClick={startCreate}>
-              <Plus className="w-3 h-3" />
-              New item
-            </Button>
+      {pageLoading ? (
+        <PageLoader message="Loading menu items..." />
+      ) : (
+        <>
+          {error && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+              {error}
+            </div>
+          )}
+          
+          {/* Search, View Toggle and Add Button */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+            <div className="flex-1">
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by name, category or price..."
+                className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+              />
+            </div>
+            <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+            <button
+              type="button"
+              onClick={startCreate}
+              className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              Add New Item
+            </button>
           </div>
-          <div className="max-h-[70vh] overflow-y-auto text-xs">
-            <table className="w-full text-xs">
-              <thead className="text-[11px] uppercase text-gray-800 dark:text-neutral-400 border-b border-gray-300 dark:border-neutral-700 sticky top-0 z-10 bg-bg-secondary dark:bg-neutral-950">
-                <tr>
-                  <th className="py-2 text-left">Item</th>
-                  <th className="py-2 text-left">Category</th>
-                  <th className="py-2 text-right">Price</th>
-                  <th className="py-2 text-center">Status</th>
-                  <th className="py-2 text-center">Badges</th>
-                  <th className="py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-neutral-800">
-                {filtered.map(item => {
-                  const category = categories.find(c => c.id === item.categoryId);
-                  return (
-                    <tr key={item.id} className="hover:bg-bg-primary dark:hover:bg-neutral-900/50">
-                      <td className="py-2.5 pr-3">
-                        <div className="flex items-center gap-2.5">
-                          {item.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={item.imageUrl}
-                              alt={item.name}
-                              className="h-9 w-9 rounded-lg object-cover border border-gray-200 dark:border-neutral-700 shrink-0"
-                            />
-                          ) : (
-                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-bg-primary dark:bg-neutral-800 text-gray-400 dark:text-neutral-500 shrink-0 text-[10px] font-bold">
-                              {item.name.charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900 dark:text-neutral-100 truncate">{item.name}</div>
-                            {item.description && (
-                              <div className="text-[10px] text-gray-500 dark:text-neutral-500 truncate max-w-[180px]">
-                                {item.description}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-2.5 pr-3 text-gray-600 dark:text-neutral-400">
-                        {category ? category.name : "Uncategorized"}
-                      </td>
-                      <td className="py-2.5 pr-3 text-right font-medium text-gray-900 dark:text-neutral-100">
-                        PKR {item.price?.toFixed(0)}
-                      </td>
-                      <td className="py-2.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleAvailability(item)}
-                          className="inline-flex items-center gap-1 text-[11px]"
-                        >
-                          {item.available ? (
-                            <>
-                              <ToggleRight className="w-4 h-4 text-green-500" />
-                              <span className="text-green-600 dark:text-green-400">Available</span>
-                            </>
-                          ) : (
-                            <>
-                              <ToggleLeft className="w-4 h-4 text-gray-400" />
-                              <span className="text-gray-500">Unavailable</span>
-                            </>
-                          )}
-                        </button>
-                      </td>
-                      <td className="py-2.5 text-center">
-                        <div className="flex flex-wrap items-center justify-center gap-1">
-                          {item.inventorySufficient === false && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-[9px] font-semibold" title={item.insufficientIngredients?.join(", ")}>
-                              Insufficient Inventory
-                            </span>
-                          )}
-                          {item.isFeatured && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] font-semibold">
-                              Featured
-                            </span>
-                          )}
-                          {item.isBestSeller && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 text-[9px] font-semibold">
-                              Best Seller
-                            </span>
-                          )}
-                          {Array.isArray(item.inventoryConsumptions) && item.inventoryConsumptions.length > 0 && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 text-[9px] font-semibold">
-                              {item.inventoryConsumptions.length} ingredient{item.inventoryConsumptions.length > 1 ? "s" : ""}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-2.5 text-right">
-                        <div className="inline-flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            type="button"
-                            className="px-2 text-[11px]"
-                            onClick={() => openRecipeDialog(item)}
-                          >
-                            Recipe
-                          </Button>
-                          <Button variant="ghost" type="button" className="px-2" onClick={() => startEdit(item)}>
-                            <Edit2 className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            type="button"
-                            onClick={() => handleDelete(item.id)}
-                            className="px-2 text-red-600 dark:text-red-400 border-red-300 dark:border-red-500/40 hover:bg-red-50 dark:hover:bg-secondary/10"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
 
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-xs text-gray-500 dark:text-neutral-500">
-                      {items.length === 0 ? "No menu items yet. Add your first dish." : "No items match your search."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+          {/* Grid View */}
+          {viewMode === "grid" && (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filtered.map(item => {
+                const category = categories.find(c => c.id === item.categoryId);
+                const isDeleting = deletingId === item.id;
+                const displayPrice = item.finalPrice ?? item.price;
+                const isAvailable = item.finalAvailable ?? item.available;
+                const hasPriceOverride = item.hasBranchOverride && item.finalPrice !== item.price;
+                
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-5 hover:shadow-lg hover:border-primary/30 transition-all relative"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      {item.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className="h-16 w-16 rounded-xl object-cover border-2 border-gray-200 dark:border-neutral-700"
+                        />
+                      ) : (
+                        <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
+                          <span className="text-2xl font-bold text-primary">
+                            {item.name.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                      
+                      <ActionDropdown
+                        isOpen={isDropdownOpen(item.id)}
+                        onToggle={() => toggleDropdown(item.id)}
+                        onClose={closeDropdown}
+                        disabled={isDeleting}
+                        actions={[
+                          {
+                            label: "Recipe",
+                            icon: <ShoppingBag className="w-4 h-4" />,
+                            onClick: () => openRecipeDialog(item),
+                            disabled: isDeleting
+                          },
+                          {
+                            label: "Edit",
+                            icon: <Edit2 className="w-4 h-4" />,
+                            onClick: () => startEdit(item),
+                            disabled: isDeleting
+                          },
+                          {
+                            label: isDeleting ? "Deleting..." : "Delete",
+                            icon: isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />,
+                            onClick: () => handleDelete(item.id),
+                            variant: "danger",
+                            disabled: isDeleting
+                          }
+                        ]}
+                      />
+                    </div>
+                    
+                    <h3 className="font-bold text-gray-900 dark:text-white mb-1">{item.name}</h3>
+                    {item.description && (
+                      <p className="text-xs text-gray-500 dark:text-neutral-500 mb-2 line-clamp-2 min-h-[2rem]">
+                        {item.description}
+                      </p>
+                    )}
+                    
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="inline-flex px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-medium">
+                        {category ? category.name : "Uncategorized"}
+                      </span>
+                      <div className="text-right">
+                        <div className="font-bold text-gray-900 dark:text-white">Rs {displayPrice?.toFixed(0)}</div>
+                        {hasPriceOverride && (
+                          <span className="text-[10px] text-primary font-semibold">
+                            (Was Rs {item.price?.toFixed(0)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Availability and Badges */}
+                    {!item.availableAtAllBranches && (
+                      <div className="mb-2">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
+                          ⭐ Location-Specific
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-800">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAvailability(item)}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                      >
+                        {isAvailable ? (
+                          <>
+                            <ToggleRight className="w-5 h-5 text-emerald-500" />
+                            <span className="text-emerald-600 dark:text-emerald-400">Available</span>
+                          </>
+                        ) : (
+                          <>
+                            <ToggleLeft className="w-5 h-5 text-gray-400" />
+                            <span className="text-gray-500">Unavailable</span>
+                          </>
+                        )}
+                      </button>
+                      
+                      {item.inventorySufficient === false && (
+                        <span className="px-2 py-1 rounded-lg bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-[10px] font-bold">
+                          ⚠️ Low Stock
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+      {/* Table View */}
+      {viewMode === "table" && (
+        <DataTable
+          variant="card"
+          columns={[
+            {
+              key: "item",
+              header: "Item",
+              render: (_, item) => (
+                <div className="flex items-center gap-3">
+                  {item.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      className="h-12 w-12 rounded-xl object-cover border-2 border-gray-200 dark:border-neutral-700 shrink-0"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center shrink-0">
+                      <span className="text-lg font-bold text-primary">
+                        {item.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</div>
+                    {item.description && (
+                      <div className="text-xs text-gray-500 dark:text-neutral-500 truncate max-w-[200px] mt-0.5">
+                        {item.description}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            },
+            {
+              key: "category",
+              header: "Category",
+              render: (_, item) => {
+                const category = categories.find(c => c.id === item.categoryId);
+                return (
+                  <span className="inline-flex px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-medium">
+                    {category ? category.name : "Uncategorized"}
+                  </span>
+                );
+              }
+            },
+            {
+              key: "price",
+              header: "Price",
+              align: "right",
+              render: (_, item) => {
+                const displayPrice = item.finalPrice ?? item.price;
+                const hasPriceOverride = item.hasBranchOverride && item.finalPrice !== item.price;
+                return (
+                  <div>
+                    <div className="font-bold text-gray-900 dark:text-white">Rs {displayPrice?.toFixed(0)}</div>
+                    {hasPriceOverride && (
+                      <span className="text-[10px] text-primary font-semibold">
+                        (Was Rs {item.price?.toFixed(0)})
+                      </span>
+                    )}
+                  </div>
+                );
+              }
+            },
+            ...(currentBranch ? [{
+              key: "branchOverride",
+              header: "Branch Override",
+              align: "center",
+              render: (_, item) => (
+                <div className="flex items-center justify-center gap-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Override"
+                    value={branchPriceEditing[item.id] !== undefined ? branchPriceEditing[item.id] : (item.branchPriceOverride ?? "")}
+                    onChange={e => setBranchPriceEditing(prev => ({ ...prev, [item.id]: e.target.value }))}
+                    onBlur={async () => {
+                      const v = branchPriceEditing[item.id] !== undefined ? branchPriceEditing[item.id] : (item.branchPriceOverride ?? "");
+                      setBranchPriceEditing(prev => { const next = { ...prev }; delete next[item.id]; return next; });
+                      await handleBranchPriceOverride(item.id, v === "" ? null : v);
+                    }}
+                    className="w-16 px-1.5 py-0.5 rounded border border-gray-200 dark:border-neutral-700 text-[10px] bg-white dark:bg-neutral-900"
+                  />
+                  {(item.branchAvailable != null || item.branchPriceOverride != null) && (
+                    <button
+                      type="button"
+                      onClick={() => handleRevertBranchOverride(item.id)}
+                      className="p-1 rounded text-gray-400 hover:text-red-500"
+                      title="Revert to base"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )
+            }] : []),
+            {
+              key: "status",
+              header: "Status",
+              align: "center",
+              render: (_, item) => {
+                const isAvailable = item.finalAvailable ?? item.available;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAvailability(item)}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  >
+                    {isAvailable ? (
+                      <>
+                        <ToggleRight className="w-5 h-5 text-emerald-500" />
+                        <span className="text-emerald-600 dark:text-emerald-400">Available</span>
+                      </>
+                    ) : (
+                      <>
+                        <ToggleLeft className="w-5 h-5 text-gray-400" />
+                        <span className="text-gray-500">Unavailable</span>
+                      </>
+                    )}
+                  </button>
+                );
+              }
+            },
+            {
+              key: "tags",
+              header: "Tags",
+              align: "center",
+              render: (_, item) => (
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {!item.availableAtAllBranches && (
+                    <span className="px-2.5 py-1 rounded-lg bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-[10px] font-bold">
+                      📍 Location-Specific
+                    </span>
+                  )}
+                  {item.hasBranchOverride && item.finalPrice !== item.price && (
+                    <span className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-bold">
+                      💰 Special Price
+                    </span>
+                  )}
+                  {item.inventorySufficient === false && (
+                    <span className="px-2.5 py-1 rounded-lg bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-[10px] font-bold" title={item.insufficientIngredients?.join(", ")}>
+                      ⚠️ Low Stock
+                    </span>
+                  )}
+                  {item.isFeatured && (
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
+                      ⭐ Featured
+                    </span>
+                  )}
+                  {item.isBestSeller && (
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                      🔥 Best Seller
+                    </span>
+                  )}
+                  {Array.isArray(item.inventoryConsumptions) && item.inventoryConsumptions.length > 0 && (
+                    <span className="px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-[10px] font-bold">
+                      📦 {item.inventoryConsumptions.length} ingredient{item.inventoryConsumptions.length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              )
+            },
+            {
+              key: "actions",
+              header: "Actions",
+              align: "right",
+              render: (_, item) => {
+                const isDeleting = deletingId === item.id;
+                return (
+                  <div className="inline-flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openRecipeDialog(item)}
+                      disabled={isDeleting}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                    >
+                      Recipe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startEdit(item)}
+                      disabled={isDeleting}
+                      className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      disabled={isDeleting}
+                      className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                    >
+                      {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </button>
+                  </div>
+                );
+              }
+            }
+          ]}
+          rows={filtered}
+          emptyMessage={
+            items.length === 0 
+              ? "No menu items yet. Create your first item to get started." 
+              : "No items match your search"
+          }
+        />
+          )}
+
+          {/* Grid View Empty State */}
+          {viewMode === "grid" && filtered.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+                <ShoppingBag className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
+              </div>
+              <p className="text-sm font-medium text-gray-600 dark:text-neutral-400 mb-1">
+                {items.length === 0 ? "No menu items yet" : "No items match your search"}
+              </p>
+              {items.length === 0 && (
+                <>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mb-4">
+                    Create your first menu item to get started
+                  </p>
+                  <button
+                    onClick={startCreate}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Your First Item
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
 
       {/* Item Create/Edit Modal */}
       {isModalOpen && (
@@ -598,13 +999,54 @@ export default function MenuItemsPage() {
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
+              
+              {/* Available at All Branches Toggle */}
+              <div className="space-y-2 pt-2 pb-1">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.availableAtAllBranches}
+                    onChange={e => setForm(prev => ({ ...prev, availableAtAllBranches: e.target.checked }))}
+                    className="mt-0.5 w-4 h-4 text-primary bg-white dark:bg-neutral-900 border-gray-300 dark:border-neutral-700 rounded focus:ring-2 focus:ring-primary/20"
+                  />
+                  <div>
+                    <div className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
+                      Available at all branches
+                    </div>
+                    <div className="text-[10px] text-gray-500 dark:text-neutral-500 mt-0.5">
+                      {form.availableAtAllBranches 
+                        ? "This item will appear at all branches automatically. You can disable it at specific locations if needed."
+                        : "This is a location-exclusive item. You must manually enable it at specific branches."}
+                    </div>
+                  </div>
+                </label>
+              </div>
+              
               <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="ghost" onClick={() => { resetForm(); setIsModalOpen(false); }}>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  onClick={() => { resetForm(); setIsModalOpen(false); }}
+                  disabled={isLoading}
+                >
                   Cancel
                 </Button>
-                <Button type="submit" className="gap-1">
-                  <Plus className="w-3 h-3" />
-                  {form.id ? "Save changes" : "Create item"}
+                <Button 
+                  type="submit" 
+                  className="gap-1.5"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      {form.id ? "Saving..." : "Creating..."}
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3 h-3" />
+                      {form.id ? "Save changes" : "Create item"}
+                    </>
+                  )}
                 </Button>
               </div>
             </form>

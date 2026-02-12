@@ -1,6 +1,6 @@
 import Head from "next/head";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Phone, Mail, MapPin, Clock, Facebook, Instagram, Twitter, Youtube, ChevronLeft, ChevronRight, Star, ShoppingBag, X, Plus, Minus, ShoppingCart, Trash2, ArrowRight, CheckCircle, AlertTriangle } from "lucide-react";
+import { Phone, Mail, MapPin, Clock, Facebook, Instagram, Twitter, Youtube, ChevronLeft, ChevronRight, Star, ShoppingBag, X, Plus, Minus, ShoppingCart, Trash2, ArrowRight, CheckCircle, AlertTriangle, ChevronDown, Tag, Sparkles } from "lucide-react";
 
 function groupByCategory(menu) {
   const byCategory = {};
@@ -377,7 +377,7 @@ function CartDrawer({ cart, onClose, onUpdateQty, onRemove, onCheckout, primaryC
 /* ─────────────────────────────────────────────
    Checkout Modal
    ───────────────────────────────────────────── */
-function CheckoutModal({ cart, restaurant, allowOrders, onClose, onOrderPlaced, onBlocked, primaryColor, subdomain }) {
+function CheckoutModal({ cart, restaurant, allowOrders, onClose, onOrderPlaced, onBlocked, primaryColor, subdomain, branchId }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -394,16 +394,18 @@ function CheckoutModal({ cart, restaurant, allowOrders, onClose, onOrderPlaced, 
 
     try {
       const base = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_BASE_URL || "") : "";
+      const body = {
+        subdomain,
+        customerName: name,
+        customerPhone: phone,
+        deliveryAddress: address,
+        items: cart.map(c => ({ menuItemId: c.item.id, quantity: c.qty })),
+      };
+      if (branchId) body.branchId = branchId;
       const res = await fetch(`${base}/api/orders/website`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subdomain,
-          customerName: name,
-          customerPhone: phone,
-          deliveryAddress: address,
-          items: cart.map(c => ({ menuItemId: c.item.id, quantity: c.qty })),
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -608,10 +610,11 @@ function OrderSuccessModal({ orderData, onClose, primaryColor }) {
 /* ═════════════════════════════════════════════
    Main Page Component
    ═════════════════════════════════════════════ */
-export default function TenantWebsitePage({ restaurant, menu, categories, suspended }) {
+export default function TenantWebsitePage({ restaurant, menu, categories, branches = [], deals = [], suspended }) {
   const grouped = groupByCategory(menu);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeCategory, setActiveCategory] = useState("all");
+  const [selectedBranch, setSelectedBranch] = useState(() => (branches.length > 0 ? branches[0] : null));
 
   // Cart & modal state
   const [cart, setCart] = useState([]);
@@ -620,6 +623,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
   const [showCheckout, setShowCheckout] = useState(false);
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null);
+  const hasMultipleBranches = branches.length > 1;
   
   const featuredItems = menu.filter(item => item.isFeatured).slice(0, 8);
   const bestSellers = menu.filter(item => item.isBestSeller).slice(0, 6);
@@ -693,7 +697,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
     return (
       <>
         <Head>
-          <title>Restaurant Suspended &bull; RestaurantOS</title>
+          <title>Restaurant Suspended &bull; Eats Desk</title>
         </Head>
         <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-amber-200 px-6 py-8 text-center">
@@ -711,7 +715,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
   return (
     <>
       <Head>
-        <title>{restaurant?.name || "Restaurant"} &bull; RestaurantOS</title>
+        <title>{restaurant?.name || "Restaurant"} &bull; Eats Desk</title>
         <meta
           name="description"
           content={restaurant?.description || "Order delicious food online"}
@@ -752,6 +756,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
           onOrderPlaced={() => {}}
           primaryColor={primaryColor}
           subdomain={restaurant?.subdomain}
+          branchId={selectedBranch?.id}
         />
       )}
       {showCheckout && (
@@ -764,6 +769,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
           onBlocked={() => { setShowCheckout(false); setShowBlockedModal(true); }}
           primaryColor={primaryColor}
           subdomain={restaurant?.subdomain}
+          branchId={selectedBranch?.id}
         />
       )}
       {orderSuccess && (
@@ -836,7 +842,37 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
                 </div>
               </div>
               <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-700">
+                {hasMultipleBranches && (
+                  <div className="relative group">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-left"
+                    >
+                      <MapPin className="w-4 h-4 text-gray-500" />
+                      <span className="text-gray-700">{selectedBranch?.name ?? "Select branch"}</span>
+                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                    </button>
+                    <div className="absolute left-0 top-full mt-1 z-50 min-w-[180px] rounded-xl bg-white border border-gray-200 shadow-lg py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                      {branches.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => setSelectedBranch(b)}
+                          className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium transition-colors ${
+                            selectedBranch?.id === b.id
+                              ? "bg-gray-100 text-gray-900"
+                              : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          <MapPin className="w-4 h-4 flex-shrink-0" />
+                          {b.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <a href="#menu" className="hover:text-gray-900">Menu</a>
+                {deals && deals.length > 0 && <a href="#deals" className="hover:text-gray-900">Deals</a>}
                 {websiteSections.length > 0 ? (
                   websiteSections.filter(s => s.items && s.items.length > 0).map((section, sIdx) => (
                     <a key={sIdx} href={`#section-${sIdx}`} className="hover:text-gray-900">{section.title || `Section ${sIdx + 1}`}</a>
@@ -849,18 +885,37 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
                 )}
                 <a href="#contact" className="hover:text-gray-900">Contact</a>
               </div>
-              <button
-                onClick={() => setShowCart(true)}
-                className="relative flex items-center justify-center w-11 h-11 rounded-full text-white hover:opacity-90 transition-opacity"
-                style={{ backgroundColor: primaryColor }}
-              >
-                <ShoppingCart className="w-5 h-5" />
-                {cartCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
-                    {cartCount}
-                  </span>
+              <div className="flex items-center gap-2">
+                {hasMultipleBranches && (
+                  <div className="md:hidden relative">
+                    <select
+                      value={selectedBranch?.id ?? ""}
+                      onChange={(e) => {
+                        const b = branches.find((x) => x.id === e.target.value);
+                        if (b) setSelectedBranch(b);
+                      }}
+                      className="text-xs font-medium rounded-lg border border-gray-200 px-2.5 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-0"
+                      style={{ maxWidth: "120px", ["--tw-ring-color"]: primaryColor }}
+                    >
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 )}
-              </button>
+                <button
+                  onClick={() => setShowCart(true)}
+                  className="relative flex items-center justify-center w-11 h-11 rounded-full text-white hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <ShoppingCart className="w-5 h-5" />
+                  {cartCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">
+                      {cartCount}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </nav>
@@ -1149,6 +1204,122 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
           </>
         )}
 
+        {/* Active Deals & Promotions Section */}
+        {deals && deals.length > 0 && (
+          <section id="deals" className="py-16 bg-gradient-to-br from-emerald-50 to-teal-50">
+            <div className="max-w-7xl mx-auto px-4">
+              <div className="text-center mb-10">
+                <p className="text-sm font-bold uppercase tracking-widest mb-2 text-emerald-600">
+                  Special Offers
+                </p>
+                <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-2">
+                  Deals & Promotions
+                </h2>
+                <p className="text-gray-600">Save more with our exclusive offers</p>
+              </div>
+
+              <SectionSlider
+                items={deals}
+                visibleDesktop={3}
+                visibleMobile={1}
+                primaryColor={primaryColor}
+                autoSlideDelay={4000}
+                renderItem={(deal) => {
+                  const getDealValue = () => {
+                    switch (deal.dealType) {
+                      case "PERCENTAGE_DISCOUNT":
+                        return `${deal.discountPercentage}% OFF`;
+                      case "FIXED_DISCOUNT":
+                        return `PKR ${deal.discountAmount} OFF`;
+                      case "COMBO":
+                        return `PKR ${deal.comboPrice}`;
+                      case "BUY_X_GET_Y":
+                        return `Buy ${deal.buyQuantity} Get ${deal.getQuantity}`;
+                      case "MINIMUM_PURCHASE":
+                        return `Spend PKR ${deal.minimumPurchase}`;
+                      default:
+                        return "Special Deal";
+                    }
+                  };
+
+                  return (
+                    <div className="bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all hover:-translate-y-2 border-2 border-transparent hover:border-emerald-500 relative">
+                      {/* Badge */}
+                      {deal.badgeText && (
+                        <div className="absolute top-4 right-4 z-10">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gradient-to-r from-yellow-400 to-orange-400 text-gray-900 text-xs font-bold shadow-lg">
+                            <Star className="w-3 h-3 fill-current" />
+                            {deal.badgeText}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Deal Value Badge */}
+                      <div className="relative h-32 bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white overflow-hidden">
+                        <div className="absolute inset-0 opacity-10">
+                          <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-white transform translate-x-16 -translate-y-16" />
+                          <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full bg-white transform -translate-x-12 translate-y-12" />
+                        </div>
+                        <div className="text-center relative z-10">
+                          <div className="text-3xl font-black mb-1">{getDealValue()}</div>
+                          <div className="text-xs font-semibold uppercase tracking-wider opacity-90">
+                            {deal.dealType === "PERCENTAGE_DISCOUNT" && "Discount"}
+                            {deal.dealType === "FIXED_DISCOUNT" && "Save Now"}
+                            {deal.dealType === "COMBO" && "Combo Deal"}
+                            {deal.dealType === "BUY_X_GET_Y" && "Free Items"}
+                            {deal.dealType === "MINIMUM_PURCHASE" && "Min Purchase"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-5">
+                        <h3 className="font-bold text-gray-900 text-lg mb-2 line-clamp-1">
+                          {deal.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 mb-4 line-clamp-2 min-h-[2.5rem]">
+                          {deal.description || "Don't miss out on this amazing offer!"}
+                        </p>
+
+                        {/* Deal Details */}
+                        <div className="space-y-2 mb-4 text-xs text-gray-500">
+                          {(deal.startTime || deal.endTime) && (
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>
+                                {deal.startTime || "00:00"} - {deal.endTime || "23:59"}
+                              </span>
+                            </div>
+                          )}
+                          {deal.daysOfWeek && deal.daysOfWeek.length > 0 && deal.daysOfWeek.length < 7 && (
+                            <div className="flex items-center gap-2">
+                              <Star className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>
+                                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                                  .filter((_, i) => deal.daysOfWeek.includes(i))
+                                  .join(", ")}
+                              </span>
+                            </div>
+                          )}
+                          {deal.maxTotalUsage && (
+                            <div className="flex items-center gap-2">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Limited offer - {deal.maxTotalUsage} uses only!</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="w-full py-2.5 rounded-xl text-center font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
+                          Available Now
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+            </div>
+          </section>
+        )}
+
         {/* Food Menu Section */}
         <section id="menu" className="py-16 bg-orange-50/40">
           <div className="max-w-6xl mx-auto px-4">
@@ -1324,7 +1495,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, suspen
 
             <div className="pt-8 border-t border-gray-800 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-800">
               <p>&copy; {new Date().getFullYear()} {restaurant?.name || "Restaurant"}. All rights reserved.</p>
-              <p>Powered by <span className="font-semibold" style={{ color: primaryColor }}>RestaurantOS</span></p>
+              <p>Powered by <span className="font-semibold" style={{ color: primaryColor }}>Eats Desk</span></p>
             </div>
           </div>
         </footer>
@@ -1355,6 +1526,8 @@ export async function getServerSideProps({ params }) {
             restaurant: null,
             menu: [],
             categories: [],
+            branches: [],
+            deals: [],
             suspended: true
           }
         };
@@ -1365,11 +1538,27 @@ export async function getServerSideProps({ params }) {
 
     const data = await res.json();
 
+    // Fetch active deals
+    let activeDeals = [];
+    try {
+      const dealsRes = await fetch(`${base}/api/deals/active?subdomain=${encodeURIComponent(subdomain)}`);
+      if (dealsRes.ok) {
+        const dealsData = await dealsRes.json();
+        // Filter only deals that should be shown on website
+        activeDeals = (Array.isArray(dealsData) ? dealsData : []).filter(deal => deal.showOnWebsite);
+      }
+    } catch (err) {
+      console.error("Failed to fetch deals:", err);
+      // Continue without deals if fetch fails
+    }
+
     return {
       props: {
         restaurant: data.restaurant || null,
         menu: data.menu || [],
         categories: data.categories || [],
+        branches: data.branches || [],
+        deals: activeDeals,
         suspended: false
       },
     };

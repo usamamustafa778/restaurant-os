@@ -29,28 +29,35 @@ import {
 
 const PLANS = [
   {
-    key: "1_month",
-    label: "1 Month",
+    key: "starter_monthly",
+    label: "Starter",
     days: 30,
-    price: "PKR 2,999",
+    price: "$39",
+    monthlyEquivalent: "$39",
     icon: Zap,
     badge: null,
+    features: ["Single Branch", "Basic POS", "Order Management", "Customer Database", "Email Support"],
   },
   {
-    key: "3_month",
-    label: "3 Months",
-    days: 90,
-    price: "PKR 7,999",
+    key: "professional_monthly",
+    label: "Professional",
+    days: 30,
+    price: "$79",
+    monthlyEquivalent: "$79",
     icon: Crown,
     badge: "Popular",
+    features: ["Up to 5 Branches", "Full POS + KDS", "Inventory Management", "Analytics & Reports", "Integrations (Foodpanda)", "Custom Website", "Priority Support"],
   },
   {
-    key: "6_month",
-    label: "6 Months",
-    days: 180,
-    price: "PKR 13,999",
+    key: "enterprise_quarterly",
+    label: "Enterprise",
+    days: 90,
+    price: "$399",
+    monthlyEquivalent: "$133",
     icon: Shield,
     badge: "Best Value",
+    features: ["Unlimited Branches", "Advanced Analytics", "Multi-user Management", "API Access", "White-label Options", "Dedicated Support", "Custom Features"],
+    savings: "Save $138 vs monthly",
   },
 ];
 
@@ -73,25 +80,25 @@ function StatusBadge({ status }) {
   const map = {
     trial_active: {
       label: "Trial Active",
-      bg: "bg-primary/10 text-primary",
+      bg: "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border-2 border-blue-200 dark:border-blue-500/30",
       icon: Clock,
     },
     active: {
       label: "Active",
-      bg: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+      bg: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-2 border-emerald-200 dark:border-emerald-500/30",
       icon: CheckCircle2,
     },
     expired: {
       label: "Expired (Read-only)",
-      bg: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+      bg: "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border-2 border-red-200 dark:border-red-500/30",
       icon: AlertTriangle,
     },
   };
   const s = map[status] || map.expired;
   const Icon = s.icon;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${s.bg}`}>
-      <Icon size={14} />
+    <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-base font-bold shadow-sm ${s.bg}`}>
+      <Icon className="w-5 h-5" />
       {s.label}
     </span>
   );
@@ -99,12 +106,12 @@ function StatusBadge({ status }) {
 
 function RequestStatusBadge({ status }) {
   const map = {
-    pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
-    approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-    rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+    pending: "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-500/30",
+    approved: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30",
+    rejected: "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30",
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${map[status] || map.pending}`}>
+    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-bold capitalize ${map[status] || map.pending}`}>
       {status}
     </span>
   );
@@ -240,65 +247,84 @@ export default function SubscriptionPage() {
   const hasPending = history?.requests?.some((r) => r.status === "pending");
 
   return (
-    <AdminLayout>
-      <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Subscription</h1>
-          <p className="text-gray-500 dark:text-neutral-400 text-sm mt-1">
-            Manage your subscription plan and billing.
-          </p>
-        </div>
-
+    <AdminLayout title="Subscription">
+      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
         {/* Current Status Card */}
-        <div className="bg-bg-secondary dark:bg-neutral-900 rounded-xl border border-gray-200 dark:border-neutral-800 p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="bg-gradient-to-br from-primary/5 via-white to-secondary/5 dark:from-primary/10 dark:via-neutral-950 dark:to-secondary/10 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 p-6 shadow-lg">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
             <div>
-              <p className="text-xs uppercase tracking-wider text-gray-500 dark:text-neutral-500 font-medium mb-2">
+              <p className="text-sm uppercase tracking-wider text-gray-600 dark:text-neutral-400 font-bold mb-3 flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
                 Current Status
               </p>
               <StatusBadge status={subStatus?.currentStatus} />
             </div>
-            <div className="text-sm text-gray-500 dark:text-neutral-400">
-              Plan: <span className="font-medium text-gray-900 dark:text-white">{subStatus?.plan || "Essential"}</span>
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                <Crown className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500 dark:text-neutral-400">Current Plan</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{subStatus?.plan || "Essential"}</p>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
             {/* Trial Info */}
-            <div className="bg-primary/5 rounded-lg p-4 border border-primary/10">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock size={16} className="text-primary" />
-                <span className="text-xs font-medium uppercase tracking-wider text-primary">
-                  Free Trial
+            <div className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-xl p-5 border-2 border-primary/20 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-blue-500 flex items-center justify-center shadow-lg">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-sm font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
+                  Free Trial Period
                 </span>
               </div>
-              <div className="text-sm text-gray-700 dark:text-neutral-300 space-y-1">
-                <p>Start: <strong>{formatDate(subStatus?.freeTrialStartDate)}</strong></p>
-                <p>End: <strong>{formatDate(subStatus?.freeTrialEndDate)}</strong></p>
+              <div className="text-base text-gray-700 dark:text-neutral-300 space-y-2">
+                <p className="flex justify-between">
+                  <span>Start:</span>
+                  <strong>{formatDate(subStatus?.freeTrialStartDate)}</strong>
+                </p>
+                <p className="flex justify-between">
+                  <span>End:</span>
+                  <strong>{formatDate(subStatus?.freeTrialEndDate)}</strong>
+                </p>
                 {trialDays > 0 && subStatus?.currentStatus === "trial_active" && (
-                  <p className="text-primary font-medium mt-1">
-                    {trialDays} day{trialDays !== 1 ? "s" : ""} remaining
-                  </p>
+                  <div className="mt-3 pt-3 border-t-2 border-blue-200 dark:border-blue-500/20">
+                    <p className="text-blue-700 dark:text-blue-400 font-bold text-lg">
+                      {trialDays} day{trialDays !== 1 ? "s" : ""} remaining
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
 
             {/* Subscription Info */}
-            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-100 dark:border-green-800/40">
-              <div className="flex items-center gap-2 mb-2">
-                <CreditCard size={16} className="text-green-500" />
-                <span className="text-xs font-medium uppercase tracking-wider text-green-600 dark:text-green-400">
-                  Subscription
+            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-500/10 dark:to-emerald-500/5 rounded-xl p-5 border-2 border-emerald-200 dark:border-emerald-500/20 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg">
+                  <CheckCircle2 className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-sm font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                  Active Subscription
                 </span>
               </div>
-              <div className="text-sm text-gray-700 dark:text-neutral-300 space-y-1">
-                <p>Start: <strong>{formatDate(subStatus?.subscriptionStartDate)}</strong></p>
-                <p>End: <strong>{formatDate(subStatus?.subscriptionEndDate)}</strong></p>
+              <div className="text-base text-gray-700 dark:text-neutral-300 space-y-2">
+                <p className="flex justify-between">
+                  <span>Start:</span>
+                  <strong>{formatDate(subStatus?.subscriptionStartDate)}</strong>
+                </p>
+                <p className="flex justify-between">
+                  <span>End:</span>
+                  <strong>{formatDate(subStatus?.subscriptionEndDate)}</strong>
+                </p>
                 {subDays > 0 && subStatus?.currentStatus === "active" && (
-                  <p className="text-green-600 dark:text-green-400 font-medium mt-1">
-                    {subDays} day{subDays !== 1 ? "s" : ""} remaining
-                  </p>
+                  <div className="mt-3 pt-3 border-t-2 border-emerald-200 dark:border-emerald-500/20">
+                    <p className="text-emerald-700 dark:text-emerald-400 font-bold text-lg">
+                      {subDays} day{subDays !== 1 ? "s" : ""} remaining
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -306,11 +332,13 @@ export default function SubscriptionPage() {
 
           {/* Read-only warning */}
           {subStatus?.readonly && (
-            <div className="mt-4 bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800/40 flex items-start gap-3">
-              <AlertTriangle size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
+            <div className="mt-5 bg-gradient-to-r from-red-50 to-red-100/50 dark:from-red-500/10 dark:to-red-500/5 rounded-xl p-5 border-2 border-red-200 dark:border-red-500/30 flex items-start gap-4 shadow-lg">
+              <div className="h-10 w-10 rounded-xl bg-red-500 flex items-center justify-center flex-shrink-0 shadow-lg">
+                <AlertTriangle className="w-5 h-5 text-white" />
+              </div>
               <div className="text-sm text-red-700 dark:text-red-300">
-                <strong>Your account is in read-only mode.</strong> You can view your data but cannot create, edit, or delete anything.
-                Please subscribe to restore full access.
+                <p className="font-bold text-base mb-1">Account in Read-Only Mode</p>
+                <p>You can view your data but cannot create, edit, or delete anything. Please subscribe to restore full access.</p>
               </div>
             </div>
           )}
@@ -318,8 +346,8 @@ export default function SubscriptionPage() {
 
         {/* Plan Cards */}
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Choose a Plan</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Choose Your Plan</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {PLANS.map((plan) => {
               const isSelected = selectedPlan === plan.key;
               const Icon = plan.icon;
@@ -332,62 +360,92 @@ export default function SubscriptionPage() {
                   }}
                   disabled={hasPending}
                   className={`
-                    relative text-left rounded-xl border-2 p-5 transition-all
+                    relative text-left rounded-2xl border-2 p-6 transition-all group
                     ${isSelected
-                      ? "border-primary ring-2 ring-primary/20 bg-primary/5"
-                      : "border-gray-200 dark:border-neutral-700 bg-bg-secondary dark:bg-neutral-900 hover:border-gray-300 dark:hover:border-neutral-600"
+                      ? "border-primary shadow-2xl shadow-primary/20 bg-gradient-to-br from-primary/10 to-primary/5 scale-105"
+                      : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 hover:border-primary/50 hover:shadow-xl hover:scale-105"
                     }
-                    ${hasPending ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                    ${hasPending ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
                   `}
                 >
                   {plan.badge && (
-                    <span className="absolute -top-2.5 right-3 bg-primary text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full">
+                    <span className="absolute -top-3 right-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full shadow-lg">
                       {plan.badge}
                     </span>
                   )}
-                  <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center mb-3">
-                    <Icon size={20} className="text-white" />
-                  </div>
-                  <div className="text-lg font-bold text-gray-900 dark:text-white">{plan.label}</div>
-                  <div className="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">{plan.days} days</div>
-                  <div className="text-xl font-bold mt-3 text-primary">{plan.price}</div>
-                  {isSelected && (
-                    <div className="mt-2 text-xs text-primary font-medium flex items-center gap-1">
-                      <CheckCircle2 size={12} /> Selected
+                  <div className="flex items-center justify-between mb-4">
+                    <div className={`h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
+                      isSelected ? "bg-gradient-to-br from-primary to-secondary" : "bg-gradient-to-br from-gray-400 to-gray-500 group-hover:from-primary group-hover:to-secondary"
+                    }`}>
+                      <Icon className="w-7 h-7 text-white" />
                     </div>
+                    {isSelected && (
+                      <div className="flex items-center gap-1.5 text-xs text-primary font-bold">
+                        <CheckCircle2 className="w-4 h-4" /> Selected
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{plan.label}</div>
+                  <div className="flex items-baseline gap-1 mb-1">
+                    <div className="text-4xl font-bold text-primary">{plan.price}</div>
+                    {plan.days > 30 && (
+                      <div className="text-sm text-gray-500 dark:text-neutral-400">/{plan.days === 90 ? '3 months' : plan.days === 180 ? '6 months' : `${plan.days}d`}</div>
+                    )}
+                  </div>
+                  <div className="text-sm font-semibold text-gray-600 dark:text-neutral-400 mb-4">
+                    {plan.monthlyEquivalent}/month {plan.savings && <span className="text-emerald-600 dark:text-emerald-400">• {plan.savings}</span>}
+                  </div>
+                  
+                  {/* Features list */}
+                  {plan.features && (
+                    <ul className="space-y-2 mt-4 pt-4 border-t-2 border-gray-100 dark:border-neutral-800">
+                      {plan.features.slice(0, 4).map((feature, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-neutral-300">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                      {plan.features.length > 4 && (
+                        <li className="text-xs text-gray-500 dark:text-neutral-500 pl-6">
+                          +{plan.features.length - 4} more features
+                        </li>
+                      )}
+                    </ul>
                   )}
                 </button>
               );
             })}
           </div>
           {hasPending && (
-            <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-3 flex items-center gap-1.5">
-              <Clock size={14} />
-              You have a pending request. Please wait for approval before submitting a new one.
-            </p>
+            <div className="mt-5 flex items-center gap-3 p-4 rounded-xl bg-yellow-50 dark:bg-yellow-500/10 border-2 border-yellow-200 dark:border-yellow-500/20">
+              <Clock className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+              <p className="text-sm font-semibold text-yellow-700 dark:text-yellow-400">
+                You have a pending request. Please wait for approval before submitting a new one.
+              </p>
+            </div>
           )}
         </div>
 
         {/* Payment Method Tabs + Upload & Submit */}
         {selectedPlan && !hasPending && (
-          <div className="bg-bg-secondary dark:bg-neutral-900 rounded-xl border border-gray-200 dark:border-neutral-800 p-5 space-y-5">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 p-6 space-y-6 shadow-lg">
             {/* Payment Method Tabs */}
             {paymentMethods.length > 0 && (
               <div>
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                  <Wallet size={18} /> Select Payment Method
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Wallet className="w-6 h-6" /> Select Payment Method
                 </h3>
                 {/* Tabs */}
-                <div className="flex gap-1 overflow-x-auto pb-1">
+                <div className="flex gap-3 overflow-x-auto pb-1">
                   {paymentMethods.map((pm) => (
                     <button
                       key={pm.id}
                       onClick={() => setSelectedPaymentMethod(pm.id)}
                       className={`
-                        px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all flex-shrink-0
+                        px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0
                         ${selectedPaymentMethod === pm.id
-                          ? "bg-primary text-white shadow-sm"
-                          : "bg-bg-primary dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
+                          ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/30"
+                          : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
                         }
                       `}
                     >
@@ -401,33 +459,37 @@ export default function SubscriptionPage() {
                   const activePm = paymentMethods.find((pm) => pm.id === selectedPaymentMethod);
                   if (!activePm) return null;
                   return (
-                    <div className="mt-3 bg-primary/5 rounded-lg p-4 border border-primary/10">
-                      <p className="text-xs font-medium uppercase tracking-wider text-primary mb-3">
+                    <div className="mt-5 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-xl p-5 border-2 border-primary/20 shadow-inner">
+                      <p className="text-sm font-bold uppercase tracking-wider text-primary mb-4 flex items-center gap-2">
+                        <Wallet className="w-4 h-4" />
                         {activePm.name} Account Details
                       </p>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {activePm.fields.map((f, i) => {
                           const fKey = `${activePm.id}-${i}`;
                           return (
-                            <div key={i} className="flex items-center justify-between gap-3 bg-bg-secondary dark:bg-neutral-900 rounded-lg px-3 py-2.5 border border-primary/10">
+                            <div key={i} className="flex items-center justify-between gap-3 bg-white dark:bg-neutral-900 rounded-xl px-4 py-3.5 border-2 border-gray-200 dark:border-neutral-700 shadow-sm">
                               <div className="min-w-0">
-                                <span className="text-[11px] text-gray-500 dark:text-neutral-500 block">{f.label}</span>
-                                <span className="text-sm font-medium text-gray-900 dark:text-white break-all">{f.value}</span>
+                                <span className="text-xs text-gray-500 dark:text-neutral-500 block font-semibold mb-1">{f.label}</span>
+                                <span className="text-base font-bold text-gray-900 dark:text-white break-all">{f.value}</span>
                               </div>
                               <button
                                 onClick={() => handleCopy(f.value, fKey)}
-                                className="flex-shrink-0 p-1.5 rounded-md hover:bg-bg-primary dark:hover:bg-neutral-800 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
+                                className="flex-shrink-0 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
                                 title="Copy"
                               >
-                                {copiedField === fKey ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                                {copiedField === fKey ? <Check className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5" />}
                               </button>
                             </div>
                           );
                         })}
                       </div>
-                      <p className="text-xs text-primary mt-3">
-                        Transfer <strong>{PLANS.find((p) => p.key === selectedPlan)?.price}</strong> to the account above and upload the screenshot below.
-                      </p>
+                      <div className="mt-4 p-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
+                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">
+                          💰 Transfer <strong className="text-lg">{PLANS.find((p) => p.key === selectedPlan)?.price}</strong> to the account above
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">Then upload payment screenshot below to activate your subscription</p>
+                      </div>
                     </div>
                   );
                 })()}
@@ -436,36 +498,46 @@ export default function SubscriptionPage() {
 
             {/* Upload Section */}
             <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">Upload Payment Screenshot</h3>
-              <p className="text-sm text-gray-500 dark:text-neutral-400 mt-1">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                <Upload className="w-5 h-5" />
+                Upload Payment Screenshot
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-neutral-400">
                 {paymentMethods.length > 0
-                  ? "After transferring, upload a screenshot of the payment confirmation."
-                  : `Transfer the amount for ${PLANS.find((p) => p.key === selectedPlan)?.label} and upload a screenshot.`}
+                  ? "After transferring, upload a screenshot of the payment confirmation"
+                  : `Transfer the amount for ${PLANS.find((p) => p.key === selectedPlan)?.label} and upload a screenshot`}
               </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 items-start">
-              <label className="flex-1 w-full">
+            <div className="flex flex-col gap-4">
+              <label className="w-full cursor-pointer">
                 <div className={`
-                  border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
+                  border-2 border-dashed rounded-2xl p-8 text-center transition-all hover:shadow-lg
                   ${screenshotPreview
-                    ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/10"
-                    : "border-gray-300 dark:border-neutral-600 hover:border-gray-400 dark:hover:border-neutral-500"
+                    ? "border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10"
+                    : "border-gray-300 dark:border-neutral-600 hover:border-primary hover:bg-gray-50 dark:hover:bg-neutral-900"
                   }
                 `}>
                   {screenshotPreview ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={screenshotPreview} alt="Screenshot preview" className="max-h-48 mx-auto rounded-lg shadow" />
-                      <p className="text-xs text-green-600 dark:text-green-400 font-medium">Click to change</p>
+                      <img src={screenshotPreview} alt="Screenshot preview" className="max-h-64 mx-auto rounded-xl shadow-xl border-2 border-emerald-200 dark:border-emerald-500/30" />
+                      <div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Screenshot uploaded · Click to change
+                      </div>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      <Upload size={28} className="mx-auto text-gray-400" />
-                      <p className="text-sm text-gray-500 dark:text-neutral-400">
-                        Click to upload or drag & drop
-                      </p>
-                      <p className="text-xs text-gray-400">PNG, JPG up to 5MB</p>
+                    <div className="space-y-3">
+                      <div className="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
+                        <Upload className="w-8 h-8 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+                          Click to upload or drag & drop
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-neutral-500 mt-1">PNG, JPG up to 5MB</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -479,10 +551,10 @@ export default function SubscriptionPage() {
             </div>
 
             {submitMsg && (
-              <div className={`rounded-lg p-3 text-sm ${
+              <div className={`rounded-xl p-4 text-sm font-medium border-2 ${
                 submitMsg.type === "success"
-                  ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800"
-                  : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
+                  ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30"
+                  : "bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30"
               }`}>
                 {submitMsg.text}
               </div>
@@ -492,20 +564,20 @@ export default function SubscriptionPage() {
               onClick={handleSubmit}
               disabled={!screenshotFile || submitting}
               className={`
-                w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-sm text-white transition-colors flex items-center justify-center gap-2
+                w-full px-6 py-4 rounded-2xl font-bold text-base text-white transition-all flex items-center justify-center gap-2 shadow-xl
                 ${!screenshotFile || submitting
-                  ? "bg-gray-300 dark:bg-neutral-700 cursor-not-allowed"
-                  : "bg-primary hover:bg-secondary"
+                  ? "bg-gray-300 dark:bg-neutral-700 cursor-not-allowed opacity-50"
+                  : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-2xl hover:shadow-emerald-500/40 hover:-translate-y-1 shadow-emerald-500/30"
                 }
               `}
             >
               {submitting ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" /> Submitting...
+                  <Loader2 className="w-5 h-5 animate-spin" /> Submitting Payment...
                 </>
               ) : (
                 <>
-                  <CreditCard size={16} /> Submit Payment
+                  <CreditCard className="w-5 h-5" /> Submit Payment Request
                 </>
               )}
             </button>
@@ -516,61 +588,68 @@ export default function SubscriptionPage() {
         <div>
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+            className="flex items-center gap-2 px-5 py-3 rounded-xl text-base font-bold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 transition-all"
           >
-            <History size={16} />
+            <History className="w-5 h-5" />
             Subscription History
-            <ChevronRight size={14} className={`transition-transform ${showHistory ? "rotate-90" : ""}`} />
+            <ChevronRight className={`w-4 h-4 transition-transform ${showHistory ? "rotate-90" : ""}`} />
           </button>
 
           {showHistory && history?.requests && (
-            <div className="mt-3 bg-bg-secondary dark:bg-neutral-900 rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+            <div className="mt-4 bg-white dark:bg-neutral-950 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 overflow-hidden shadow-sm">
               {history.requests.length === 0 ? (
-                <p className="p-4 text-sm text-gray-500 dark:text-neutral-400 text-center">No subscription requests yet.</p>
+                <div className="p-12 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mx-auto mb-3">
+                    <History className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No subscription requests yet</p>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-bg-primary dark:bg-neutral-800 text-left text-xs uppercase tracking-wider text-gray-500 dark:text-neutral-500">
-                        <th className="px-4 py-3">Plan</th>
-                        <th className="px-4 py-3">Method</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3">Requested</th>
-                        <th className="px-4 py-3">Approved</th>
-                        <th className="px-4 py-3">Screenshot</th>
+                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
+                      <tr>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Plan</th>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Method</th>
+                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">Status</th>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Requested</th>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Approved</th>
+                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">Screenshot</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
                       {history.requests.map((r) => (
-                        <tr key={r.id} className="hover:bg-bg-primary dark:hover:bg-neutral-800/50">
-                          <td className="px-4 py-3 font-medium text-gray-900 dark:text-white capitalize">
-                            {r.planType.replace("_", " ")}
-                            <span className="block text-xs text-gray-400 font-normal">{r.durationInDays} days</span>
+                        <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors">
+                          <td className="px-5 py-4">
+                            <div className="font-bold text-gray-900 dark:text-white capitalize">
+                              {r.planType.replace("_", " ")}
+                            </div>
+                            <span className="text-xs text-gray-500 dark:text-neutral-500">{r.durationInDays} days</span>
                           </td>
-                          <td className="px-4 py-3 text-gray-500 dark:text-neutral-400 text-xs">{r.paymentMethodName || "—"}</td>
-                          <td className="px-4 py-3"><RequestStatusBadge status={r.status} /></td>
-                          <td className="px-4 py-3 text-gray-500 dark:text-neutral-400">{formatDate(r.createdAt)}</td>
-                          <td className="px-4 py-3 text-gray-500 dark:text-neutral-400">{formatDate(r.approvedAt)}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
+                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">{r.paymentMethodName || "—"}</td>
+                          <td className="px-5 py-4 text-center"><RequestStatusBadge status={r.status} /></td>
+                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">{formatDate(r.createdAt)}</td>
+                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">{formatDate(r.approvedAt)}</td>
+                          <td className="px-5 py-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
                               {r.paymentScreenshot ? (
                                 <a
                                   href={r.paymentScreenshot}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
+                                  className="inline-flex items-center gap-1.5 text-primary hover:text-primary/80 font-semibold"
                                 >
-                                  <ImageIcon size={14} /> View
+                                  <ImageIcon className="w-4 h-4" /> View
                                 </a>
                               ) : (
-                                "—"
+                                <span className="text-gray-400">—</span>
                               )}
                               {r.status === "pending" && (
-                                <label className="cursor-pointer text-xs text-gray-500 hover:text-primary font-medium flex items-center gap-1">
+                                <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 font-semibold flex items-center gap-1 transition-colors">
                                   {reuploadingId === r.id ? (
-                                    <Loader2 size={12} className="animate-spin" />
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                   ) : (
-                                    <Upload size={12} />
+                                    <Upload className="w-3.5 h-3.5" />
                                   )}
                                   Change
                                   <input

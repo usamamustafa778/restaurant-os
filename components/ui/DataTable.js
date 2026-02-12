@@ -2,26 +2,27 @@ export default function DataTable({
   columns,
   rows,
   getRowId,
-  emptyMessage = "No records found."
+  emptyMessage = "No records found.",
+  variant = "default" // "default" or "card"
 }) {
   const resolveRowId =
     getRowId || ((row, index) => (row && row.id ? row.id : index));
 
-  return (
-    <div className="overflow-x-auto text-xs">
+  const tableContent = (
+    <div className="overflow-x-auto">
       <table className="w-full">
-        <thead className="text-[11px] uppercase text-gray-800 dark:text-neutral-400 border-b border-gray-300 dark:border-neutral-700 bg-bg-secondary dark:bg-neutral-950">
+        <thead className="bg-gray-50 dark:bg-neutral-900/50 border-b border-gray-200 dark:border-neutral-800">
           <tr>
             {columns.map(col => (
               <th
                 key={col.key || col.header}
-                className={`py-2 px-2 ${
+                className={`px-6 py-4 text-xs font-semibold text-gray-600 dark:text-neutral-400 uppercase tracking-wider ${
                   col.align === "right"
                     ? "text-right"
                     : col.align === "center"
                     ? "text-center"
                     : "text-left"
-                }`}
+                } ${col.className || ""} ${col.hideOnMobile ? "hidden md:table-cell" : ""} ${col.hideOnTablet ? "hidden lg:table-cell" : ""}`}
               >
                 {col.header}
               </th>
@@ -33,7 +34,7 @@ export default function DataTable({
             <tr>
               <td
                 colSpan={columns.length}
-                className="py-6 text-center text-xs text-neutral-500"
+                className="py-12 text-center text-sm text-gray-500 dark:text-neutral-400"
               >
                 {emptyMessage}
               </td>
@@ -43,7 +44,7 @@ export default function DataTable({
           {rows.map((row, rowIndex) => (
             <tr
               key={resolveRowId(row, rowIndex)}
-              className="hover:bg-gray-50 dark:hover:bg-neutral-900/50"
+              className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors"
             >
               {columns.map(col => {
                 const value = row[col.key];
@@ -53,13 +54,13 @@ export default function DataTable({
                 return (
                   <td
                     key={col.key || col.header}
-                    className={`py-2 px-2 ${
+                    className={`px-6 py-4 text-sm ${
                       col.align === "right"
                         ? "text-right"
                         : col.align === "center"
                         ? "text-center"
                         : "text-left"
-                    }`}
+                    } ${col.className || ""} ${col.hideOnMobile ? "hidden md:table-cell" : ""} ${col.hideOnTablet ? "hidden lg:table-cell" : ""}`}
                   >
                     {content}
                   </td>
@@ -71,5 +72,15 @@ export default function DataTable({
       </table>
     </div>
   );
+
+  if (variant === "card") {
+    return (
+      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+        {tableContent}
+      </div>
+    );
+  }
+
+  return tableContent;
 }
 

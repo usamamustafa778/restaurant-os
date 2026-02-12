@@ -110,11 +110,11 @@ export default function Home() {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2.5">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white font-bold text-sm">
-                EO
+                ED
               </span>
               <div>
-                <div className="text-sm font-bold tracking-tight text-gray-900">RestaurantOS</div>
-                <div className="text-[10px] text-gray-500 -mt-0.5">POS · Inventory · Website</div>
+                <div className="text-sm font-bold tracking-tight text-gray-900">Eats Desk</div>
+                <div className="text-[10px] text-gray-500 -mt-0.5">Restaurant & Cafe Operations Desk</div>
               </div>
             </div>
 
@@ -191,7 +191,7 @@ export default function Home() {
 
               <Reveal delay={200}>
                 <p className="text-lg text-gray-600 mb-8 max-w-lg leading-relaxed">
-                  RestaurantOS combines POS, inventory tracking, and a free branded website — all in one platform designed for how you actually work.
+                  Eats Desk combines POS, inventory tracking, and a free branded website — all in one platform designed for how you actually work.
                 </p>
               </Reveal>
 
@@ -410,7 +410,7 @@ export default function Home() {
                   Built by people who understand restaurants
                 </h2>
                 <p className="text-gray-600 leading-relaxed mb-6">
-                  RestaurantOS was born from a simple frustration: most restaurant software is either too complex, too expensive, or not built for how Pakistani restaurants actually work. We&apos;re changing that.
+                  Eats Desk was born from a simple frustration: most restaurant software is either too complex, too expensive, or not built for how Pakistani restaurants actually work. We&apos;re changing that.
                 </p>
                 <p className="text-gray-600 leading-relaxed mb-8">
                   Our platform is designed from the ground up for fast-food counters, dine-in restaurants, and delivery kitchens across Pakistan. From Islamabad to Karachi, we help restaurant owners focus on food — not spreadsheets.
@@ -519,7 +519,7 @@ export default function Home() {
                 Loved by restaurant owners
               </h2>
               <p className="text-gray-600 leading-relaxed">
-                Hear from business owners who transformed their operations with RestaurantOS.
+                Hear from business owners who transformed their operations with Eats Desk.
               </p>
             </div>
           </Reveal>
@@ -530,7 +530,7 @@ export default function Home() {
                 name: "Ahmed Khan",
                 role: "Owner, Taste Bistro",
                 city: "Islamabad",
-                text: "RestaurantOS replaced our paper system completely. The POS is incredibly fast and my staff picked it up in one day. The automatic inventory tracking alone saves us hours every week.",
+                text: "Eats Desk replaced our paper system completely. The POS is incredibly fast and my staff picked it up in one day. The automatic inventory tracking alone saves us hours every week.",
                 stars: 5,
               },
               {
@@ -584,7 +584,7 @@ export default function Home() {
                 Simple, transparent pricing
               </h2>
               <p className="text-gray-600 leading-relaxed">
-                Monthly plans in PKR. All include POS, inventory, menu management and a free restaurant website. Start with a 14-day free trial.
+                Flexible pricing plans for restaurants of all sizes. All include POS, inventory, menu management and a free restaurant website. Start with a 14-day free trial.
               </p>
             </div>
           </Reveal>
@@ -592,30 +592,33 @@ export default function Home() {
           <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
             {[
               {
-                plan: "Essential",
-                price: "9,999",
-                period: "per outlet / month",
-                desc: "Perfect for single-outlet restaurants getting started.",
-                features: ["1 POS counter", "Inventory & menu management", "Free restaurant website", "1 admin + 2 staff users", "Standard email support"],
-                cta: "Start Essential",
+                plan: "Starter",
+                price: "39",
+                currency: "$",
+                period: "per month",
+                desc: "Perfect for small restaurants getting started.",
+                features: ["Single branch support", "Basic POS system", "Order management", "Customer database", "Menu & inventory", "Email support"],
+                cta: "Start Free Trial",
                 popular: false,
               },
               {
                 plan: "Professional",
-                price: "17,999",
-                period: "per outlet / month",
-                desc: "For growing restaurants that need more power.",
-                features: ["Up to 3 POS counters", "Unlimited staff users", "Low-stock alerts & reports", "Website branding & SEO", "Priority support"],
-                cta: "Start Professional",
+                price: "79",
+                currency: "$",
+                period: "per month",
+                desc: "Everything you need to grow your restaurant.",
+                features: ["Up to 5 branches", "Full POS + Kitchen Display", "Inventory management", "Analytics & reports", "Foodpanda integration", "Custom website", "Priority support"],
+                cta: "Start Free Trial",
                 popular: true,
               },
               {
                 plan: "Enterprise",
-                price: "29,999",
-                period: "for chains & operators",
-                desc: "For multi-branch chains and serious operations.",
-                features: ["Multiple branches", "Centralized analytics", "Custom domain & branding", "Dedicated account manager", "API access"],
-                cta: "Talk to Us",
+                price: "133",
+                currency: "$",
+                period: "per month (billed quarterly)",
+                desc: "Advanced features for multi-location operations.",
+                features: ["Unlimited branches", "Advanced analytics", "Multi-user management", "API access", "White-label options", "Dedicated support", "Custom features"],
+                cta: "Contact Sales",
                 popular: false,
               },
             ].map((plan, i) => (
@@ -631,7 +634,7 @@ export default function Home() {
                     </span>
                   )}
                   <p className={`text-sm font-semibold mb-1 ${plan.popular ? "text-white/80" : "text-gray-500"}`}>{plan.plan}</p>
-                  <p className="text-3xl font-bold mb-1">PKR {plan.price}</p>
+                  <p className="text-3xl font-bold mb-1">{plan.currency}{plan.price}</p>
                   <p className={`text-xs mb-3 ${plan.popular ? "text-white/60" : "text-gray-400"}`}>{plan.period}</p>
                   <p className={`text-sm mb-6 ${plan.popular ? "text-white/80" : "text-gray-600"}`}>{plan.desc}</p>
 
@@ -670,7 +673,7 @@ export default function Home() {
                 Frequently asked questions
               </h2>
               <p className="text-gray-600">
-                Everything you need to know about RestaurantOS.
+                Everything you need to know about Eats Desk.
               </p>
             </div>
           </Reveal>
@@ -679,11 +682,11 @@ export default function Home() {
             <div>
               <FAQItem
                 question="Is my data safe and separated from other restaurants?"
-                answer="Absolutely. RestaurantOS is a multi-tenant platform where each restaurant has its own isolated data space. Your data is never shared with or accessible to other tenants. We use industry-standard encryption and secure authentication."
+                answer="Absolutely. Eats Desk is a multi-tenant platform where each restaurant has its own isolated data space. Your data is never shared with or accessible to other tenants. We use industry-standard encryption and secure authentication."
               />
               <FAQItem
                 question="Do I get a website immediately?"
-                answer="Yes! As soon as you sign up and create your restaurant, a professional website is automatically generated on your subdomain (e.g., yourrestaurant.sufieats.com). Your menu syncs in real-time and you can customize branding, colors, and content."
+                answer="Yes! As soon as you sign up and create your restaurant, a professional website is automatically generated on your subdomain (e.g., yourrestaurant.eatsdesk.com). Your menu syncs in real-time and you can customize branding, colors, and content."
               />
               <FAQItem
                 question="Can staff access reports and analytics?"
@@ -730,7 +733,7 @@ export default function Home() {
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Email</p>
-                      <p className="text-sm text-gray-600">support@restaurantos.pk</p>
+                      <p className="text-sm text-gray-600">support@eatsdesk.com</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -842,9 +845,9 @@ export default function Home() {
             <div>
               <div className="flex items-center gap-2.5 mb-4">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white font-bold text-sm">
-                  EO
+                  ED
                 </span>
-                <div className="text-sm font-bold">RestaurantOS</div>
+                <div className="text-sm font-bold">Eats Desk</div>
               </div>
               <p className="text-sm text-gray-400 leading-relaxed">
                 The all-in-one restaurant management platform for Pakistan. POS, inventory, and a free website — from one dashboard.
@@ -880,7 +883,7 @@ export default function Home() {
           </div>
 
           <div className="pt-8 border-t border-gray-800 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
-            <p>&copy; {new Date().getFullYear()} RestaurantOS. All rights reserved.</p>
+            <p>&copy; {new Date().getFullYear()} Eats Desk. All rights reserved.</p>
             <p>Made with ❤️ for restaurants in Pakistan.</p>
           </div>
         </div>

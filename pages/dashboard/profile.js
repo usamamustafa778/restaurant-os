@@ -1,7 +1,5 @@
 import { useEffect, useState, useRef } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import Card from "../../components/ui/Card";
-import Button from "../../components/ui/Button";
 import {
   getProfile,
   updateProfile,
@@ -21,7 +19,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Trash2,
   Loader2,
 } from "lucide-react";
 
@@ -174,176 +171,207 @@ export default function ProfilePage() {
 
   return (
     <AdminLayout title="Profile">
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
 
         {/* ══════ Left Column: Avatar & Quick Info ══════ */}
-        <div className="lg:col-span-1">
-          <Card>
-            <div className="flex flex-col items-center text-center">
-              {/* Avatar */}
-              <div className="relative group">
-                {profile?.profileImageUrl ? (
-                  <img
-                    src={profile.profileImageUrl}
-                    alt={profile.name}
-                    className="w-28 h-28 rounded-full object-cover border-4 border-secondary shadow-lg"
-                  />
-                ) : (
-                  <div className="w-28 h-28 rounded-full bg-bg-secondary dark:bg-neutral-800 border-4 border-secondary flex items-center justify-center shadow-lg">
-                    <User className="w-12 h-12 text-primary/40 dark:text-neutral-500" />
-                  </div>
-                )}
-                {/* Overlay button */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={avatarUploading}
-                  className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  {avatarUploading ? (
-                    <Loader2 className="w-6 h-6 text-white animate-spin" />
-                  ) : (
-                    <Camera className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                  )}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleAvatarUpload}
+        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex flex-col items-center text-center">
+            {/* Avatar */}
+            <div className="relative group mb-5">
+              {profile?.profileImageUrl ? (
+                <img
+                  src={profile.profileImageUrl}
+                  alt={profile.name}
+                  className="w-32 h-32 rounded-full object-cover border-4 border-primary shadow-2xl"
                 />
-              </div>
+              ) : (
+                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 border-4 border-primary/30 flex items-center justify-center shadow-2xl">
+                  <User className="w-16 h-16 text-primary" />
+                </div>
+              )}
+              {/* Overlay button */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarUploading}
+                className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/60 flex items-center justify-center transition-all cursor-pointer"
+              >
+                {avatarUploading ? (
+                  <Loader2 className="w-8 h-8 text-white animate-spin" />
+                ) : (
+                  <Camera className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
+            </div>
 
-              {/* Upload / Remove buttons */}
-              <div className="flex items-center gap-2 mt-3">
+            {/* Upload / Remove buttons */}
+            <div className="flex items-center gap-3 mb-5">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarUploading}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-primary hover:bg-primary/10 transition-colors"
+              >
+                {avatarUploading ? "Uploading..." : "Change Photo"}
+              </button>
+              {profile?.profileImageUrl && (
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={handleRemoveAvatar}
                   disabled={avatarUploading}
-                  className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                 >
-                  {avatarUploading ? "Uploading..." : "Change Photo"}
+                  Remove
                 </button>
-                {profile?.profileImageUrl && (
-                  <>
-                    <span className="text-gray-300 dark:text-neutral-700">|</span>
-                    <button
-                      type="button"
-                      onClick={handleRemoveAvatar}
-                      disabled={avatarUploading}
-                      className="text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {avatarMsg.text && (
-                <p className={`mt-2 text-[11px] ${avatarMsg.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                  {avatarMsg.text}
-                </p>
               )}
+            </div>
 
-              {/* Name & Role */}
-              <h3 className="mt-4 text-base font-bold text-gray-900 dark:text-white">{profile?.name}</h3>
-              <span className="mt-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 dark:bg-primary/20 text-[11px] font-semibold text-primary dark:text-secondary">
-                <Shield className="w-3 h-3" />
-                {getRoleLabel(profile?.role)}
-              </span>
+            {avatarMsg.text && (
+              <div className={`mb-4 px-3 py-2 rounded-lg text-sm font-medium ${
+                avatarMsg.type === "error" 
+                  ? "bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400" 
+                  : "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              }`}>
+                {avatarMsg.text}
+              </div>
+            )}
 
-              {/* Quick info */}
-              <div className="w-full mt-5 pt-4 border-t border-gray-200 dark:border-neutral-800 space-y-3 text-left">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Mail className="w-3.5 h-3.5 text-primary dark:text-secondary" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-gray-500 dark:text-neutral-500 uppercase tracking-wider font-semibold">Email</p>
-                    <p className="text-xs text-gray-800 dark:text-neutral-300 truncate">{profile?.email}</p>
-                  </div>
+            {/* Name & Role */}
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{profile?.name}</h3>
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20 text-sm font-bold text-primary dark:text-secondary">
+              <Shield className="w-4 h-4" />
+              {getRoleLabel(profile?.role)}
+            </span>
+
+            {/* Quick info */}
+            <div className="w-full mt-6 pt-6 border-t-2 border-gray-100 dark:border-neutral-800 space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-neutral-900">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
+                  <Mail className="w-5 h-5 text-white" />
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Calendar className="w-3.5 h-3.5 text-primary dark:text-secondary" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-gray-500 dark:text-neutral-500 uppercase tracking-wider font-semibold">Joined</p>
-                    <p className="text-xs text-gray-800 dark:text-neutral-300">
-                      {profile?.createdAt
-                        ? new Date(profile.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
-                        : "—"}
-                    </p>
-                  </div>
+                <div className="min-w-0 text-left">
+                  <p className="text-xs text-gray-500 dark:text-neutral-500 uppercase font-bold mb-0.5">Email</p>
+                  <p className="text-sm text-gray-900 dark:text-white font-semibold truncate">{profile?.email}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-neutral-900">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0 shadow-lg">
+                  <Calendar className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="text-xs text-gray-500 dark:text-neutral-500 uppercase font-bold mb-0.5">Joined</p>
+                  <p className="text-sm text-gray-900 dark:text-white font-semibold">
+                    {profile?.createdAt
+                      ? new Date(profile.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+                      : "—"}
+                  </p>
                 </div>
               </div>
             </div>
-          </Card>
+          </div>
         </div>
 
         {/* ══════ Right Column: Edit Forms ══════ */}
-        <div className="lg:col-span-2 space-y-5">
+        <div className="space-y-6">
 
           {/* Personal Information */}
-          <Card title="Personal Information" description="Update your name and email address.">
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                <User className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">Personal Information</h3>
+                <p className="text-xs text-gray-500 dark:text-neutral-400">Update your name and email address</p>
+              </div>
+            </div>
+
             {infoMsg.text && (
-              <div className={`mb-4 rounded-lg border px-3 py-2 text-[11px] ${
+              <div className={`mb-5 rounded-xl border-2 px-4 py-3 text-sm font-medium ${
                 infoMsg.type === "error"
-                  ? "border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 text-red-700 dark:text-red-400"
-                  : "border-green-300 bg-green-50 dark:bg-green-500/10 dark:border-green-500/30 text-green-700 dark:text-green-400"
+                  ? "border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 text-red-700 dark:text-red-400"
+                  : "border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
               }`}>
                 {infoMsg.text}
               </div>
             )}
-            <form onSubmit={handleInfoSave} className="space-y-4" autoComplete="off">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Full Name</label>
+
+            <form onSubmit={handleInfoSave} className="space-y-5" autoComplete="off">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
+                    <User className="w-3.5 h-3.5" />
+                    Full Name
+                  </label>
                   <input
                     type="text"
                     autoComplete="off"
                     value={name}
                     onChange={e => setName(e.target.value)}
                     placeholder="Your name"
-                    className="w-full px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 transition-shadow"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Email Address</label>
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
+                    <Mail className="w-3.5 h-3.5" />
+                    Email Address
+                  </label>
                   <input
                     type="email"
                     autoComplete="off"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className="w-full px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 transition-shadow"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   />
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button type="submit" className="gap-1.5" disabled={infoSaving}>
-                  {infoSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                <button
+                  type="submit"
+                  disabled={infoSaving}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                >
+                  {infoSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                   Save Changes
-                </Button>
+                </button>
               </div>
             </form>
-          </Card>
+          </div>
 
           {/* Change Password */}
-          <Card title="Change Password" description="Keep your account secure with a strong password.">
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                <Lock className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">Change Password</h3>
+                <p className="text-xs text-gray-500 dark:text-neutral-400">Keep your account secure with a strong password</p>
+              </div>
+            </div>
+
             {pwMsg.text && (
-              <div className={`mb-4 rounded-lg border px-3 py-2 text-[11px] ${
+              <div className={`mb-5 rounded-xl border-2 px-4 py-3 text-sm font-medium ${
                 pwMsg.type === "error"
-                  ? "border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 text-red-700 dark:text-red-400"
-                  : "border-green-300 bg-green-50 dark:bg-green-500/10 dark:border-green-500/30 text-green-700 dark:text-green-400"
+                  ? "border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 text-red-700 dark:text-red-400"
+                  : "border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
               }`}>
                 {pwMsg.text}
               </div>
             )}
-            <form onSubmit={handlePasswordChange} className="space-y-4" autoComplete="off">
-              <div className="space-y-1.5">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Current Password</label>
+
+            <form onSubmit={handlePasswordChange} className="space-y-5" autoComplete="off">
+              <div className="space-y-2">
+                <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">Current Password</label>
                 <div className="relative">
                   <input
                     type={showCurrent ? "text" : "password"}
@@ -351,20 +379,20 @@ export default function ProfilePage() {
                     value={currentPassword}
                     onChange={e => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
-                    className="w-full px-3 py-2 pr-10 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 transition-shadow"
+                    className="w-full px-4 py-3 pr-12 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrent(!showCurrent)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
                   >
-                    {showCurrent ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showCurrent ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">New Password</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">New Password</label>
                   <div className="relative">
                     <input
                       type={showNew ? "text" : "password"}
@@ -372,19 +400,19 @@ export default function ProfilePage() {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       placeholder="Min 6 characters"
-                      className="w-full px-3 py-2 pr-10 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 transition-shadow"
+                      className="w-full px-4 py-3 pr-12 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowNew(!showNew)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
                     >
-                      {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showNew ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Confirm New Password</label>
+                <div className="space-y-2">
+                  <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">Confirm New Password</label>
                   <div className="relative">
                     <input
                       type={showConfirm ? "text" : "password"}
@@ -392,26 +420,30 @@ export default function ProfilePage() {
                       value={confirmPassword}
                       onChange={e => setConfirmPassword(e.target.value)}
                       placeholder="Re-enter new password"
-                      className="w-full px-3 py-2 pr-10 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60 transition-shadow"
+                      className="w-full px-4 py-3 pr-12 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirm(!showConfirm)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
                     >
-                      {showConfirm ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button type="submit" className="gap-1.5" disabled={pwSaving}>
-                  {pwSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                <button
+                  type="submit"
+                  disabled={pwSaving}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                >
+                  {pwSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
                   Update Password
-                </Button>
+                </button>
               </div>
             </form>
-          </Card>
+          </div>
         </div>
       </div>
     </AdminLayout>

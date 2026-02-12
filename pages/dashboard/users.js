@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
-import { getUsers, createUser, updateUser, deleteUser, SubscriptionInactiveError } from "../../lib/apiClient";
-import { UserPlus, Trash2, Edit3, User, Mail, Calendar, Briefcase, Hash, LayoutGrid, List } from "lucide-react";
+import { getUsers, createUser, updateUser, deleteUser, getBranches, SubscriptionInactiveError } from "../../lib/apiClient";
+import { UserPlus, Trash2, Edit3, User, Mail, Briefcase, LayoutGrid, List, MapPin } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import DataTable from "../../components/ui/DataTable";
+import { useBranch } from "../../contexts/BranchContext";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -36,8 +37,9 @@ function getInitials(name) {
 }
 
 export default function UsersPage() {
+  const { branches: branchList } = useBranch() || {};
   const [users, setUsers] = useState([]);
-  const [form, setForm] = useState({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "" });
+  const [form, setForm] = useState({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "", branchIds: [] });
   const [loading, setLoading] = useState(false);
   const [suspended, setSuspended] = useState(false);
   const [error, setError] = useState("");
@@ -46,6 +48,8 @@ export default function UsersPage() {
   const [modalError, setModalError] = useState("");
   const [viewMode, setViewMode] = useState("card"); // "card" | "table"
   const { confirm } = useConfirmDialog();
+
+  const branches = branchList?.length ? branchList : [];
 
   useEffect(() => {
     (async () => {
@@ -60,11 +64,12 @@ export default function UsersPage() {
   }, []);
 
   function resetForm() {
-    setForm({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "" });
+    setForm({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "", branchIds: [] });
   }
 
   function startEdit(user) {
-    setForm({ id: user.id, name: user.name, email: user.email, password: "", role: user.role, profileImageUrl: user.profileImageUrl || "" });
+    const branchIds = (user.branches || []).map(b => b.branchId).filter(Boolean);
+    setForm({ id: user.id, name: user.name, email: user.email, password: "", role: user.role, profileImageUrl: user.profileImageUrl || "", branchIds });
     setModalError("");
     setIsModalOpen(true);
   }
@@ -82,13 +87,14 @@ export default function UsersPage() {
         email: form.email,
         role: form.role,
         profileImageUrl: form.profileImageUrl || null,
-        ...(form.password ? { password: form.password } : {})
+        ...(form.password ? { password: form.password } : {}),
+        ...(branches.length > 0 ? { branchIds: form.branchIds } : {})
       };
       if (form.id) {
         const updated = await updateUser(form.id, payload);
         setUsers(prev => prev.map(u => (u.id === updated.id ? updated : u)));
       } else {
-        payload.password = form.password;
+        if (form.password) payload.password = form.password;
         const created = await createUser(payload);
         setUsers(prev => [created, ...prev]);
       }
@@ -120,49 +126,53 @@ export default function UsersPage() {
   return (
     <AdminLayout title="User Management" suspended={suspended}>
       {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-2 text-xs text-red-700 dark:text-red-400">{error}</div>
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">{error}</div>
       )}
 
-      <Card title="Team Members" description="Manage your restaurant team and staff members.">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+      {/* Header */}
+      <div className="flex items-center justify-end mb-6">
+        <button
+          type="button"
+          onClick={() => { resetForm(); setModalError(""); setIsModalOpen(true); }}
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+        >
+          <UserPlus className="w-4 h-4" />
+          Add Team Member
+        </button>
+      </div>
+
+      {/* Search & View Toggle */}
+      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by name, email or role..."
-            className="flex-1 w-full sm:max-w-xs px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+            className="flex-1 w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 focus:bg-white transition-all"
           />
-          <div className="flex items-center gap-2">
-            {/* View toggle */}
-            <div className="inline-flex rounded-lg border border-gray-300 dark:border-neutral-700 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setViewMode("card")}
-                className={`p-2 transition-colors ${viewMode === "card" ? "bg-primary text-white" : "bg-bg-secondary dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}
-                title="Card view"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("table")}
-                className={`p-2 transition-colors ${viewMode === "table" ? "bg-primary text-white" : "bg-bg-secondary dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}
-                title="Table view"
-              >
-                <List className="w-4 h-4" />
-              </button>
-            </div>
-            <Button
+          <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
+            <button
               type="button"
-              className="gap-2 shrink-0"
-              onClick={() => { resetForm(); setModalError(""); setIsModalOpen(true); }}
+              onClick={() => setViewMode("card")}
+              className={`px-4 py-2.5 transition-all ${viewMode === "card" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
+              title="Card view"
             >
-              <UserPlus className="w-3.5 h-3.5" />
-              Add Team Member
-            </Button>
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              className={`px-4 py-2.5 transition-all ${viewMode === "table" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
+              title="Table view"
+            >
+              <List className="w-5 h-5" />
+            </button>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
 
         {/* Empty state */}
         {filtered.length === 0 ? (
@@ -205,6 +215,17 @@ export default function UsersPage() {
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 dark:bg-primary/20 text-[10px] font-semibold text-primary dark:text-secondary">
                   <Briefcase className="w-2.5 h-2.5" />
                   {getRoleLabel(val)}
+                </span>
+              ),
+            },
+            {
+              key: "branches",
+              header: "Branches",
+              render: (_, row) => (
+                <span className="text-xs text-gray-600 dark:text-neutral-400">
+                  {(row.branches || []).length > 0
+                    ? (row.branches || []).map(b => b.branchName).join(", ")
+                    : "—"}
                 </span>
               ),
             },
@@ -302,6 +323,14 @@ export default function UsersPage() {
                       <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">Role</span>
                       <span className="text-xs text-gray-800 dark:text-neutral-300">{getRoleLabel(user.role)}</span>
                     </div>
+                    {(user.branches || []).length > 0 && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">Branches</span>
+                        <span className="text-xs text-gray-800 dark:text-neutral-300">
+                          {(user.branches || []).map(b => b.branchName).join(", ")}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-3">
                       <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">ID No</span>
                       <span className="text-xs text-gray-800 dark:text-neutral-300 font-mono">{String(idx + 1).padStart(5, "0")}</span>
@@ -328,7 +357,7 @@ export default function UsersPage() {
           })}
         </div>
       )}
-      </Card>
+      </div>
 
       {/* Create / Edit Modal */}
       {isModalOpen && (
@@ -423,6 +452,34 @@ export default function UsersPage() {
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
+
+              {branches.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium flex items-center gap-1.5">
+                    <MapPin className="w-3 h-3" />
+                    Branches
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {branches.map((b) => (
+                      <label key={b.id} className="inline-flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.branchIds.includes(b.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setForm(prev => ({ ...prev, branchIds: [...prev.branchIds, b.id] }));
+                            } else {
+                              setForm(prev => ({ ...prev, branchIds: prev.branchIds.filter(id => id !== b.id) }));
+                            }
+                          }}
+                          className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
+                        />
+                        <span className="text-xs text-gray-700 dark:text-neutral-300">{b.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <button

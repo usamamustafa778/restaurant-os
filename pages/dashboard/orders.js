@@ -60,7 +60,7 @@ function printBill(order) {
   </style>
 </head>
 <body>
-  <div class="center bold" style="font-size:16px;margin-bottom:4px;">RestaurantOS</div>
+  <div class="center bold" style="font-size:16px;margin-bottom:4px;">Eats Desk</div>
   <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">Order Receipt</div>
   <hr/>
   <div><strong>Order:</strong> ${order.id}</div>
@@ -172,264 +172,240 @@ export default function OrdersPage() {
   return (
     <AdminLayout title="All Orders" suspended={suspended}>
       {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-2.5 text-xs text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
-      <Card
-        title="Orders"
-        description="View, manage and print orders."
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 text-xs">
+      
+      {/* Filters Bar */}
+      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3">
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by order ID, customer, phone..."
-            className="flex-1 px-3 py-1.5 min-w-[180px] max-w-sm rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/60"
+            className="flex-1 min-w-[200px] px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
-          <div className="flex items-center gap-2">
-            <select
-              value={sourceFilter}
-              onChange={e => setSourceFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white"
-            >
-              <option value="All Sources">All Sources</option>
-              <option value="POS">POS</option>
-              <option value="FOODPANDA">Foodpanda</option>
-              <option value="WEBSITE">Website</option>
-            </select>
-            <select
-              value={sortOrder}
-              onChange={e => setSortOrder(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-bg-secondary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-xs text-gray-900 dark:text-white"
-            >
-              <option>Newest First</option>
-              <option>Oldest First</option>
-            </select>
-            <Button type="button" variant="ghost" className="text-xs" onClick={loadOrders}>
-              Refresh
-            </Button>
-          </div>
+          <select
+            value={sourceFilter}
+            onChange={e => setSourceFilter(e.target.value)}
+            className="px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="All Sources">All Sources</option>
+            <option value="POS">POS</option>
+            <option value="FOODPANDA">Foodpanda</option>
+            <option value="WEBSITE">Website</option>
+          </select>
+          <select
+            value={sortOrder}
+            onChange={e => setSortOrder(e.target.value)}
+            className="px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          >
+            <option>Newest First</option>
+            <option>Oldest First</option>
+          </select>
+          <button
+            type="button"
+            onClick={loadOrders}
+            className="px-4 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            Refresh
+          </button>
         </div>
+      </div>
 
-        {/* Status tabs */}
-        <div className="flex flex-wrap gap-2 mb-4 text-xs">
-          {ORDER_STATUSES.map(s => {
-            const isActive = statusFilter === s;
-            const count =
-              s === "All Orders"
-                ? orders.length
-                : orders.filter(o => o.status === s).length;
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors ${isActive
-                    ? "bg-primary text-white border-primary"
-                    : "bg-bg-primary dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 border-gray-300 dark:border-neutral-700 hover:bg-bg-primary dark:hover:bg-neutral-800"
-                  }`}
-              >
-                {STATUS_TAB_LABELS[s]} ({count})
-              </button>
-            );
-          })}
-        </div>
+      {/* Status tabs */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        {ORDER_STATUSES.map(s => {
+          const isActive = statusFilter === s;
+          const count =
+            s === "All Orders"
+              ? orders.length
+              : orders.filter(o => o.status === s).length;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStatusFilter(s)}
+              className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${isActive
+                  ? "bg-primary text-white shadow-md"
+                  : "bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-primary"
+                }`}
+            >
+              {STATUS_TAB_LABELS[s]} <span className={`ml-1.5 ${isActive ? "opacity-90" : "opacity-60"}`}>({count})</span>
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Order cards grid */}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {filtered.map(order => {
-            const nextStatuses = getNextStatuses(order.status);
-            const primaryNext = nextStatuses[0];
-            const isUpdating = updatingId === order.id || updatingId === order._id;
+      {/* Order cards grid */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {filtered.map(order => {
+          const nextStatuses = getNextStatuses(order.status);
+          const primaryNext = nextStatuses[0];
+          const isUpdating = updatingId === order.id || updatingId === order._id;
 
-            const statusAccent =
-              order.status === "UNPROCESSED"
-                ? "border-orange-300 bg-orange-50"
-                : order.status === "PENDING"
-                  ? "border-amber-300 bg-amber-50"
-                  : order.status === "READY"
-                    ? "border-sky-300 bg-sky-50"
-                    : order.status === "COMPLETED"
-                      ? "border-emerald-300 bg-emerald-50"
-                      : order.status === "CANCELLED"
-                        ? "border-red-300 bg-red-50"
-                        : "border-gray-300 bg-bg-primary";
+          const NEXT_LABELS = {
+            PENDING: "Mark Pending",
+            READY: "Mark Ready",
+            COMPLETED: "Mark Completed"
+          };
 
-            const NEXT_LABELS = {
-              PENDING: "Mark Pending",
-              READY: "Mark Ready",
-              COMPLETED: "Mark Completed"
-            };
+          const orderDate = new Date(order.createdAt);
+          const dateStr = orderDate.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+          const timeStr = orderDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+          const discountPercent = order.subtotal > 0 ? ((order.discountAmount / order.subtotal) * 100) : 0;
 
-            const orderDate = new Date(order.createdAt);
-            const dateStr = orderDate.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
-            const timeStr = orderDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
-            const discountPercent = order.subtotal > 0 ? ((order.discountAmount / order.subtotal) * 100) : 0;
-
-            return (
-              <div
-                key={order.id}
-                className={`flex flex-col rounded-xl border ${statusAccent} dark:bg-neutral-950 dark:border-neutral-800 shadow-sm`}
-              >
-                {/* Header: ID + Source + Status */}
-                <div className="flex items-start justify-between gap-2 px-4 pt-3 pb-2">
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <span className="font-bold text-gray-900 dark:text-white">ID: {order.id}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      {order.source === "FOODPANDA" && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700 border border-pink-300 text-[9px] font-bold dark:bg-pink-500/20 dark:text-pink-400 dark:border-pink-500/40">
-                          🐼 FoodPanda Order
-                        </span>
-                      )}
-                      {order.source === "WEBSITE" && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300 text-[9px] font-bold dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/40">
-                          🌐 Website Order
-                        </span>
-                      )}
-                      {order.externalOrderId && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400">
-                          <ExternalLink className="w-2.5 h-2.5" />
-                          #{order.externalOrderId}
-                        </span>
-                      )}
-                    </div>
+          return (
+            <div
+              key={order.id}
+              className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden hover:shadow-lg transition-shadow"
+            >
+              {/* Header: ID + Status */}
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">#{order.id?.slice(0, 8) || "N/A"}</span>
+                    {order.source === "FOODPANDA" && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-500/10 dark:text-pink-400 font-semibold">
+                        Foodpanda
+                      </span>
+                    )}
+                    {order.source === "WEBSITE" && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-semibold">
+                        Website
+                      </span>
+                    )}
                   </div>
                   <StatusBadge status={order.status} />
                 </div>
-
-                {/* Order Details */}
-                <div className="px-4 space-y-1.5 text-[12px] text-neutral-700 dark:text-neutral-300">
-                  <div className="flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-neutral-400" />
-                    <span><strong>Customer Name:</strong> {order.customerName || "Walk‑in Customer"}</span>
-                  </div>
-                  {order.deliveryAddress && (
-                    <div className="flex items-start gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-neutral-400 mt-0.5" />
-                      <span><strong>Address:</strong> {order.deliveryAddress}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-neutral-400" />
-                    <span><strong>Phone:</strong> {order.customerPhone || "N/A"}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-neutral-400" />
-                    <span><strong>Order Date:</strong> {dateStr}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-neutral-400" />
-                    <span><strong>Order Time:</strong> {timeStr}</span>
-                  </div>
-                </div>
-
-                {/* Items */}
-                {order.items && order.items.length > 0 && (
-                  <div className="px-4 mt-2">
-                    <p className="font-semibold text-[11px] text-neutral-700 dark:text-neutral-200 mb-1">Items</p>
-                    <ul className="space-y-0.5">
-                      {order.items.slice(0, 4).map((it, idx) => (
-                        <li key={idx} className="flex justify-between text-[11px] text-neutral-600 dark:text-neutral-300">
-                          <span className="truncate max-w-[150px]">{it.name}</span>
-                          <span className="ml-2 text-neutral-500">x{it.qty}</span>
-                        </li>
-                      ))}
-                      {order.items.length > 4 && (
-                        <li className="text-[10px] text-neutral-500">+{order.items.length - 4} more</li>
-                      )}
-                    </ul>
+                {order.externalOrderId && (
+                  <div className="flex items-center gap-1 mt-1 text-xs text-gray-500 dark:text-neutral-500">
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Ext: #{order.externalOrderId}</span>
                   </div>
                 )}
+              </div>
 
-                {/* Totals */}
-                <div className="px-4 mt-3 pt-2 border-t border-neutral-200 dark:border-neutral-700 space-y-1 text-[12px] text-neutral-700 dark:text-neutral-300">
-                  <div className="flex justify-between">
-                    <span><strong>Total Amount:</strong></span>
-                    <span>PKR {(order.subtotal || order.total).toFixed(2)}/-</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span><strong>Discount:</strong> {discountPercent.toFixed(2)}%</span>
-                    <span><strong>Tax:</strong> 0.00%</span>
-                  </div>
-                  <div className="flex justify-between text-[13px] font-bold text-gray-900 dark:text-white pt-1">
-                    <span>Grand Total:</span>
-                    <span className="text-primary">PKR {order.total.toFixed(2)}/-</span>
-                  </div>
+              {/* Order Details */}
+              <div className="px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="w-4 h-4 text-gray-400 dark:text-neutral-500" />
+                  <span className="font-medium text-gray-900 dark:text-white">{order.customerName || "Walk-in"}</span>
                 </div>
-
-                {/* Actions */}
-                <div className="mt-auto px-4 pb-3 pt-2 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-2 mt-2">
-                  {order.status === "COMPLETED" ? (
-                    <button
-                      type="button"
-                      onClick={() => printBill(order)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-[11px] font-medium hover:bg-emerald-700 transition-colors"
-                    >
-                      <Printer className="w-3 h-3" />
-                      Print Receipt
-                    </button>
-                  ) : (
-                    <div />
-                  )}
-
-                  <div className="flex gap-1">
-                    {primaryNext && (
-                      <Button
-                        type="button"
-                        variant="subtle"
-                        disabled={isUpdating}
-                        onClick={() =>
-                          handleUpdateStatus(order._id || order.id, primaryNext)
-                        }
-                        className="px-3 py-1.5 text-[11px] bg-primary text-white hover:bg-secondary border border-primary"
-                      >
-                        {isUpdating ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          NEXT_LABELS[primaryNext] || `Mark ${primaryNext.toLowerCase()}`
-                        )}
-                      </Button>
-                    )}
-                    {order.status !== "CANCELLED" &&
-                      order.status !== "COMPLETED" && (
-                        <Button
-                          type="button"
-                          variant="subtle"
-                          disabled={isUpdating}
-                          onClick={() =>
-                            handleUpdateStatus(
-                              order._id || order.id,
-                              "CANCELLED"
-                            )
-                          }
-                          className="px-3 py-1.5 text-[11px] bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-                        >
-                          {isUpdating ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            "Cancel"
-                          )}
-                        </Button>
-                      )}
+                {order.customerPhone && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-neutral-400">
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>{order.customerPhone}</span>
                   </div>
+                )}
+                {order.deliveryAddress && (
+                  <div className="flex items-start gap-2 text-xs text-gray-600 dark:text-neutral-400">
+                    <MapPin className="w-3.5 h-3.5 mt-0.5" />
+                    <span className="line-clamp-2">{order.deliveryAddress}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-500">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{dateStr} at {timeStr}</span>
                 </div>
               </div>
+
+              {/* Items */}
+              {order.items && order.items.length > 0 && (
+                <div className="px-4 pb-3 border-b border-gray-100 dark:border-neutral-800">
+                  <p className="font-semibold text-xs text-gray-700 dark:text-neutral-300 mb-2">Order Items</p>
+                  <div className="space-y-1.5">
+                    {order.items.slice(0, 3).map((it, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs">
+                        <span className="text-gray-700 dark:text-neutral-300 truncate max-w-[150px]">{it.name}</span>
+                        <span className="text-gray-500 dark:text-neutral-500 font-medium">x{it.qty}</span>
+                      </div>
+                    ))}
+                    {order.items.length > 3 && (
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500">+{order.items.length - 3} more items</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Payment & Pricing */}
+              <div className="px-4 py-3 space-y-2">
+                {order.paymentMethod && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 dark:text-neutral-500">Payment</span>
+                    <span className="font-semibold text-gray-700 dark:text-neutral-300">{order.paymentMethod}</span>
+                  </div>
+                )}
+                {discountPercent > 0 && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 dark:text-neutral-500">Discount</span>
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">-{discountPercent.toFixed(0)}%</span>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">Total</span>
+                  <span className="text-xl font-bold text-primary">Rs {order.total.toFixed(0)}</span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-auto px-4 pb-4 pt-3 border-t border-gray-100 dark:border-neutral-800 flex items-center gap-2">
+                {order.status === "COMPLETED" ? (
+                  <button
+                    type="button"
+                    onClick={() => printBill(order)}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 text-white px-4 py-2.5 text-xs font-semibold hover:bg-emerald-600 transition-colors"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Print Receipt
+                  </button>
+                ) : (
+                  <>
+                    {primaryNext && (
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() => handleUpdateStatus(order._id || order.id, primaryNext)}
+                        className="flex-1 rounded-lg bg-primary text-white px-4 py-2.5 text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isUpdating ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" />
+                        ) : (
+                          NEXT_LABELS[primaryNext] || `Mark ${primaryNext}`
+                        )}
+                      </button>
+                    )}
+                    {order.status !== "CANCELLED" && (
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() => handleUpdateStatus(order._id || order.id, "CANCELLED")}
+                        className="px-4 py-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                      >
+                        {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cancel"}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
             );
           })}
 
-          {filtered.length === 0 && (
-            <div className="col-span-full flex items-center justify-center py-12">
-              <p className="text-sm text-neutral-500">
-                No orders match your filters.
-              </p>
+        {filtered.length === 0 && (
+          <div className="col-span-full flex flex-col items-center justify-center py-20">
+            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+              <CircleDot className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
             </div>
-          )}
-        </div>
-      </Card>
+            <p className="text-sm font-medium text-gray-600 dark:text-neutral-400">No orders found</p>
+            <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+              Try adjusting your filters
+            </p>
+          </div>
+        )}
+      </div>
     </AdminLayout>
   );
 }
