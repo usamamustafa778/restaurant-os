@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import SEO from "../SEO";
 import {
   LayoutDashboard,
   Receipt,
@@ -233,7 +234,14 @@ function decodeRoleFromToken(token) {
   }
 }
 
-export default function AdminLayout({ title, children, suspended = false }) {
+export default function AdminLayout({ 
+  title, 
+  children, 
+  suspended = false,
+  seoTitle,
+  seoDescription,
+  seoKeywords,
+}) {
   const router = useRouter();
   const {
     branches,
@@ -362,6 +370,13 @@ export default function AdminLayout({ title, children, suspended = false }) {
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";
 
   return (
+    <>
+      <SEO
+        title={seoTitle || title}
+        description={seoDescription}
+        keywords={seoKeywords}
+        noindex={true}
+      />
     <div className="h-screen overflow-hidden bg-gray-50 dark:bg-black flex text-gray-900 dark:text-white text-sm">
       <aside
         className={`hidden md:flex ${sidebarWidthClass} flex-col border-r-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 relative z-40 transition-[width] duration-300 ease-in-out shadow-sm`}
@@ -613,17 +628,6 @@ export default function AdminLayout({ title, children, suspended = false }) {
             );
           })}
         </nav>
-        <NavItemWrapper collapsed={collapsed} label="Logout">
-          <div className="p-4 border-t-2 border-gray-100 dark:border-neutral-800">
-            <button
-              onClick={handleLogout}
-              className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 border-2 border-red-200 dark:border-red-500/30 hover:border-red-300 dark:hover:border-red-500/40 transition-all shadow-sm hover:shadow-md"
-            >
-              <LogOut className="w-5 h-5" />
-              {!collapsed && <span>Logout</span>}
-            </button>
-          </div>
-        </NavItemWrapper>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -677,6 +681,14 @@ export default function AdminLayout({ title, children, suspended = false }) {
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs">
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 border-2 border-red-200 dark:border-red-500/30 hover:border-red-300 dark:hover:border-red-500/40 transition-all shadow-sm hover:shadow-md text-sm font-bold"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
             {role !== "super_admin" && !branchLoading && (
               <div className="relative flex-shrink-0">
                 <button
@@ -841,5 +853,6 @@ export default function AdminLayout({ title, children, suspended = false }) {
         </main>
       </div>
     </div>
+    </>
   );
 }

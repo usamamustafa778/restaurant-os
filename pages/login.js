@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { login } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight } from "lucide-react";
+import SEO from "../components/SEO";
 
 const ALLOWED_ROLES = [
   "super_admin",
@@ -85,6 +86,13 @@ export default function LoginPage() {
     "w-full px-3.5 py-2.5 rounded-lg bg-white border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow";
 
   return (
+    <>
+      <SEO
+        title="Login - Eats Desk Restaurant Management System"
+        description="Sign in to your Eats Desk account to access your restaurant dashboard, POS system, inventory management, and more."
+        keywords="eats desk login, restaurant dashboard login, POS login, restaurant management system login"
+        noindex={true}
+      />
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-8">
       {/* Modern gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-white to-secondary/5" />
@@ -216,5 +224,6 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { registerRestaurant } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, X, MapPin } from "lucide-react";
+import SEO from "../components/SEO";
 
 export default function SignupPage() {
   const [step, setStep] = useState(1);
@@ -109,6 +110,12 @@ export default function SignupPage() {
     "w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 focus:bg-white transition-all";
 
   return (
+    <>
+      <SEO
+        title="Start Free Trial - Eats Desk Restaurant Management System"
+        description="Start your 14-day free trial of Eats Desk. Get a complete restaurant management system with POS, inventory, and free website. No credit card required!"
+        keywords="restaurant management free trial, POS system trial, restaurant software demo, free restaurant website, start restaurant business"
+      />
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-8">
       {/* Modern gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-white to-secondary/5" />
@@ -392,5 +399,6 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

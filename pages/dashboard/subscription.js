@@ -36,7 +36,16 @@ const PLANS = [
     monthlyEquivalent: "$39",
     icon: Zap,
     badge: null,
-    features: ["Single Branch", "Basic POS", "Order Management", "Customer Database", "Email Support"],
+    features: [
+      "Single Branch Support",
+      "Basic POS System",
+      "Order Management",
+      "Menu & Inventory Tracking",
+      "Customer Database",
+      "Free Restaurant Website",
+      "Sales Reports",
+      "Email Support"
+    ],
   },
   {
     key: "professional_monthly",
@@ -46,7 +55,18 @@ const PLANS = [
     monthlyEquivalent: "$79",
     icon: Crown,
     badge: "Popular",
-    features: ["Up to 5 Branches", "Full POS + KDS", "Inventory Management", "Analytics & Reports", "Integrations (Foodpanda)", "Custom Website", "Priority Support"],
+    features: [
+      "Up to 5 Branches",
+      "Full POS + Kitchen Display System",
+      "Advanced Inventory Management",
+      "Deals & Promotions Engine",
+      "Reservations Management",
+      "Multi-user with Role Permissions",
+      "Day-end Reports & Analytics",
+      "Foodpanda Integration",
+      "Custom Branded Website",
+      "Priority Support"
+    ],
   },
   {
     key: "enterprise_quarterly",
@@ -56,7 +76,17 @@ const PLANS = [
     monthlyEquivalent: "$133",
     icon: Shield,
     badge: "Best Value",
-    features: ["Unlimited Branches", "Advanced Analytics", "Multi-user Management", "API Access", "White-label Options", "Dedicated Support", "Custom Features"],
+    features: [
+      "Unlimited Branches",
+      "Everything in Professional",
+      "Advanced Analytics Dashboard",
+      "Custom Deal Configurations",
+      "API Access for Integrations",
+      "White-label Options",
+      "Dedicated Account Manager",
+      "Custom Feature Development",
+      "24/7 Priority Support"
+    ],
     savings: "Save $138 vs monthly",
   },
 ];
@@ -399,15 +429,15 @@ export default function SubscriptionPage() {
                   {/* Features list */}
                   {plan.features && (
                     <ul className="space-y-2 mt-4 pt-4 border-t-2 border-gray-100 dark:border-neutral-800">
-                      {plan.features.slice(0, 4).map((feature, idx) => (
+                      {plan.features.slice(0, 6).map((feature, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-neutral-300">
                           <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
                           <span>{feature}</span>
                         </li>
                       ))}
-                      {plan.features.length > 4 && (
+                      {plan.features.length > 6 && (
                         <li className="text-xs text-gray-500 dark:text-neutral-500 pl-6">
-                          +{plan.features.length - 4} more features
+                          +{plan.features.length - 6} more features
                         </li>
                       )}
                     </ul>

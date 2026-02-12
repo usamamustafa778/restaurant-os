@@ -1,0 +1,18 @@
+# robots.txt for Eats Desk
+
+# Allow all bots to crawl public pages
+User-agent: *
+Allow: /
+Allow: /r/*
+
+# Disallow dashboard and admin pages
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /login
+Disallow: /signup
+
+# Crawl delay (optional)
+Crawl-delay: 1
+
+# Sitemap
+Sitemap: https://eatsdesk.com/sitemap.xml
