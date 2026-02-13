@@ -10,14 +10,17 @@ const ALLOWED_ROLES = [
 ];
 
 /**
- * Extract tenant subdomain from the Host header (production only).
- * e.g. urbanspoon.sufieats.com → "urbanspoon"
+ * Extract tenant subdomain from the Host header.
+ * e.g. urbanspoon.eatsdesk.com → "urbanspoon"
+ *      urbanspoon.localhost:3000 → "urbanspoon"
  */
 function getSubdomain(host) {
   if (!ROOT_DOMAIN || !host) return null;
+  // Strip port from both host and ROOT_DOMAIN so comparison works on localhost:3000 too
   const hostname = host.split(":")[0];
-  if (!hostname.endsWith(ROOT_DOMAIN)) return null;
-  const prefix = hostname.slice(0, -(ROOT_DOMAIN.length + 1));
+  const rootHostname = ROOT_DOMAIN.split(":")[0];
+  if (!hostname.endsWith(rootHostname)) return null;
+  const prefix = hostname.slice(0, -(rootHostname.length + 1));
   if (!prefix || prefix === "www" || prefix.includes(".")) return null;
   return prefix;
 }
