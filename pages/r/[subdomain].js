@@ -656,16 +656,14 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
               <div className="flex items-center gap-3">
                 {restaurant?.logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={restaurant.logoUrl} alt={restaurant.name} className="h-14 w-14 rounded-xl object-cover" />
+                  <img src={restaurant.logoUrl} alt={restaurant.name} className="h-14 w-14 rounded-xl object-cover flex-shrink-0" />
                 ) : (
-                  <div className="h-14 w-14 rounded-xl flex items-center justify-center text-2xl font-bold text-white" style={{ backgroundColor: primaryColor }}>
-                    {(restaurant?.name || "R")[0]}
+                  <div className="flex-shrink-0 px-2 py-1 rounded-xl flex items-center justify-center border-2" style={{ borderColor: primaryColor }}>
+                    <span className="text-sm md:text-lg font-bold text-gray-900 truncate max-w-[140px]" style={{ color: primaryColor }}>
+                      {restaurant?.name || "Restaurant"}
+                    </span>
                   </div>
                 )}
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">{restaurant?.name || "Restaurant"}</h1>
-                  <p className="text-xs text-gray-800">{restaurant?.tagline || "Delicious food, delivered fast"}</p>
-                </div>
               </div>
               <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-700">
                 {hasMultipleBranches && (
@@ -1153,13 +1151,12 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
 
               <div>
                 <h4 className="font-bold text-lg mb-4">Opening Hours</h4>
-                <div className="space-y-1 text-sm text-gray-400">
-                  {restaurant?.openingHours && Object.entries(restaurant.openingHours).slice(0, 3).map(([day, hours]) => (
-                    <p key={day} className="flex justify-between">
-                      <span className="capitalize">{day}:</span>
-                      <span>{hours}</span>
-                    </p>
-                  ))}
+                <div className="text-sm text-gray-400">
+                  {restaurant?.openingHoursText?.trim() ? (
+                    <p className="whitespace-pre-line">{restaurant.openingHoursText.trim()}</p>
+                  ) : (
+                    <p className="text-gray-500">—</p>
+                  )}
                 </div>
               </div>
 

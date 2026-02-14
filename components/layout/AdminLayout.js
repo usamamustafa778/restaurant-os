@@ -23,6 +23,7 @@ import {
   UserCircle2,
   ChevronRight,
   ChevronDown,
+  ChevronLeft,
   Plug,
   FolderOpen,
   ShoppingBag,
@@ -241,6 +242,8 @@ export default function AdminLayout({
   seoTitle,
   seoDescription,
   seoKeywords,
+  backHref,
+  backLabel = "Back",
 }) {
   const router = useRouter();
   const {
@@ -631,19 +634,29 @@ export default function AdminLayout({
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="md:hidden flex items-center justify-between px-4 py-4 border-b-2 border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm">
+        <header className="sticky top-0 z-30 flex-shrink-0 md:hidden flex items-center justify-between px-4 py-4 border-b-2 border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20">
-              ED
-            </div>
-            <div>
-              <div className="text-sm font-bold text-gray-900 dark:text-white">
-                Eats Desk
-              </div>
-              <div className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-                {role === "super_admin" ? "Platform" : "Restaurant OS"}
-              </div>
-            </div>
+            {backHref && (
+              <Link href={backHref} className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90">
+                <ChevronLeft className="w-5 h-5" />
+                {backLabel}
+              </Link>
+            )}
+            {!backHref && (
+              <>
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20">
+                  ED
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-gray-900 dark:text-white">
+                    Eats Desk
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
+                    {role === "super_admin" ? "Platform" : "Restaurant OS"}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -667,8 +680,14 @@ export default function AdminLayout({
           </div>
         </header>
 
-        <header className="hidden md:flex items-center justify-between px-8 py-2 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-white via-white to-gray-50 dark:from-neutral-950 dark:via-neutral-950 dark:to-black shadow-sm">
+        <header className="sticky top-0 z-30 flex-shrink-0 hidden md:flex items-center justify-between px-8 py-2 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-white via-white to-gray-50 dark:from-neutral-950 dark:via-neutral-950 dark:to-black shadow-sm">
           <div className="flex items-center gap-4 min-w-0">
+            {backHref && (
+              <Link href={backHref} className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90 flex-shrink-0">
+                <ChevronLeft className="w-5 h-5" />
+                {backLabel}
+              </Link>
+            )}
             <div className="min-w-0">
               <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white truncate bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-neutral-300 bg-clip-text text-transparent">
                 {title}
@@ -821,7 +840,7 @@ export default function AdminLayout({
           </div>
         </header>
 
-        <main className="relative flex-1 px-6 py-6 overflow-y-auto bg-gray-100 dark:bg-black">
+        <main className="relative flex-1 px-6 pt-4 pb-6 overflow-y-auto bg-gray-100 dark:bg-black">
           {!suspended && children}
 
           {suspended && role !== "super_admin" && (

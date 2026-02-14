@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyJwt } from "./lib/auth";
 
 // Root domain for subdomain-based tenant routing.
+// In production set NEXT_PUBLIC_ROOT_DOMAIN=eatsdesk.com so urbanspoon.eatsdesk.com → /r/urbanspoon
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "";
 
 const ALLOWED_ROLES = [

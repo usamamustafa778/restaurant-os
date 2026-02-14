@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import { getWebsiteSettings, updateWebsiteSettings, getMenu, SubscriptionInactiveError } from "../../lib/apiClient";
-import { Plus, Trash2, Save, Image as ImageIcon, Search, X, ChevronDown, ChevronUp, GripVertical, LayoutGrid, Smartphone, Monitor, Eye, RefreshCw } from "lucide-react";
+import { getWebsiteSettings, updateWebsiteSettings, getMenu, SubscriptionInactiveError, uploadImage } from "../../lib/apiClient";
+import toast from "react-hot-toast";
+import { Plus, Trash2, Save, Image as ImageIcon, Search, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripVertical, LayoutGrid, Smartphone, Monitor, Eye, RefreshCw, Phone, Mail, ShoppingCart, Link as LinkIcon, Upload, Loader2 } from "lucide-react";
 import WebsiteSectionsView from "../../components/website/WebsiteSectionsView";
 
 // Default sections for new restaurants
@@ -13,18 +15,10 @@ const DEFAULT_SECTIONS = [
   { title: "Special Offers", subtitle: "Don't miss our exclusive deals", isActive: true, items: [] },
 ];
 
-// Multi-select dropdown component for picking menu items
+// Modal for selecting menu items for a section
 function ItemSelector({ allItems, categories, selectedIds, onChange }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const ref = useRef(null);
-  useEffect(() => {
-    function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
 
   const selectedSet = new Set(selectedIds);
 
@@ -33,7 +27,6 @@ function ItemSelector({ allItems, categories, selectedIds, onChange }) {
     return item.name.toLowerCase().includes(search.toLowerCase());
   });
 
-  // Group by category
   const grouped = {};
   for (const item of filtered) {
     const catName = categories.find(c => c.id === item.categoryId)?.name || "Uncategorized";
@@ -56,71 +49,88 @@ function ItemSelector({ allItems, categories, selectedIds, onChange }) {
   const selectedItems = allItems.filter((item) => selectedSet.has(item.id));
 
   return (
-    <div ref={ref} className="relative">
-      {/* Selected items chips */}
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-700 dark:text-neutral-300 hover:border-gray-400 dark:hover:border-neutral-600 transition-colors"
+      >
+        <span>{selectedIds.length ? `${selectedIds.length} item(s) selected` : "Add items..."}</span>
+        <ChevronDown className="w-4 h-4 text-gray-500" />
+      </button>
+
       {selectedItems.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {selectedItems.map((item) => (
             <span
               key={item.id}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-xs font-medium border border-red-200 dark:border-red-500/20"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 dark:bg-primary/20 text-gray-800 dark:text-gray-200 border border-primary/30 dark:border-primary/40 text-xs font-medium"
             >
-              {item.imageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.imageUrl} alt="" className="w-4 h-4 rounded-full object-cover" />
-              )}
               {item.name}
-              <button onClick={() => removeItem(item.id)} className="ml-0.5 hover:text-red-900 dark:hover:text-red-300">
+              <button
+                type="button"
+                onClick={() => removeItem(item.id)}
+                className="ml-0.5 p-0.5 rounded hover:bg-primary/20 dark:hover:bg-primary/30 transition-colors"
+                aria-label={`Remove ${item.name}`}
+              >
                 <X className="w-3 h-3" />
               </button>
             </span>
           ))}
         </div>
       )}
-      {/* Trigger button */}
+
+      {open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden />
+          <div
+            className="relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl bg-white dark:bg-neutral-950 shadow-2xl border border-gray-200 dark:border-neutral-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-neutral-800">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">Select items for this section</h3>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-700 dark:text-neutral-300 hover:border-gray-400 dark:hover:border-neutral-600 transition-colors"
+                onClick={() => setOpen(false)}
+                className="p-1.5 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                aria-label="Close"
       >
-        <span>{selectedIds.length ? `${selectedIds.length} item(s) selected` : "Select menu items..."}</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
+                <X className="w-5 h-5" />
       </button>
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-50 mt-1 w-full bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 rounded-lg shadow-xl max-h-72 overflow-hidden">
-          <div className="p-2 border-b border-gray-200 dark:border-neutral-800">
+            </div>
+            <div className="p-3 border-b border-gray-200 dark:border-neutral-800">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search items..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-md bg-bg-primary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
                 autoFocus
               />
             </div>
           </div>
-          <div className="overflow-y-auto max-h-56">
+            <div className="flex-1 overflow-y-auto min-h-0 p-2">
             {Object.keys(grouped).length === 0 ? (
-              <p className="text-xs text-gray-500 dark:text-neutral-500 p-3 text-center">No items found</p>
+                <p className="text-sm text-gray-500 dark:text-neutral-500 py-6 text-center">No items found</p>
             ) : (
               Object.entries(grouped).map(([catName, catItems]) => (
-                <div key={catName}>
-                  <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-500 bg-bg-primary dark:bg-neutral-900 sticky top-0">
+                  <div key={catName} className="mb-3">
+                    <div className="px-2 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-500 bg-gray-50 dark:bg-neutral-900 rounded-lg sticky top-0">
                     {catName}
                   </div>
+                    <div className="mt-1 space-y-0.5">
                   {catItems.map((item) => (
                     <button
                       key={item.id}
                       type="button"
                       onClick={() => toggleItem(item.id)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-bg-primary dark:hover:bg-neutral-900 transition-colors ${
-                        selectedSet.has(item.id) ? "bg-red-50/50 dark:bg-red-500/5" : ""
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                            selectedSet.has(item.id) ? "bg-primary/10 dark:bg-primary/20" : "hover:bg-gray-50 dark:hover:bg-neutral-800/50"
                       }`}
                     >
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                         selectedSet.has(item.id) ? "bg-primary border-primary" : "border-gray-300 dark:border-neutral-600"
                       }`}>
                         {selectedSet.has(item.id) && (
@@ -131,9 +141,9 @@ function ItemSelector({ allItems, categories, selectedIds, onChange }) {
                       </div>
                       {item.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                            <img src={item.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
                       ) : (
-                        <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-neutral-800 flex-shrink-0" />
+                            <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center text-gray-400 text-lg">🍽</div>
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.name}</p>
@@ -141,13 +151,24 @@ function ItemSelector({ allItems, categories, selectedIds, onChange }) {
                       </div>
                     </button>
                   ))}
+                    </div>
                 </div>
               ))
             )}
+            </div>
+            <div className="p-4 border-t border-gray-200 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="w-full py-2.5 rounded-xl bg-primary text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -191,8 +212,8 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
   };
 
   const isMobile = viewMode === "mobile";
-  const frameWidth = isMobile ? 375 : 1200;
-  const scale = isMobile ? 0.85 : 0.38;
+  const frameWidth = isMobile ? 390 : 900;
+  const scale = isMobile ? 0.8 : 0.67
   const viewportWidth = Math.round(frameWidth * scale);
 
   useEffect(() => {
@@ -218,7 +239,7 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
   }, [scale, resolvedSections?.length, heroSlides.length, menuItems.length]);
 
   return (
-    <div className="w-full h-full relative bg-gray-100 dark:bg-neutral-900 rounded-xl overflow-hidden">
+    <div className="w-full h-full relative bg-gray-100 dark:bg-neutral-900  rounded-xl overflow-hidden">
       {/* Chevron scroll buttons – right side of preview pane */}
       <button
         type="button"
@@ -241,7 +262,7 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
       {/* Scroll area: absolute fill so it always has a definite height and can scroll */}
       <div
         ref={scrollRef}
-        className="absolute inset-0 overflow-y-scroll overflow-x-hidden py-4 flex justify-center"
+        className="absolute inset-0 overflow-y-scroll  overflow-x-hidden py-4 flex justify-center"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         <div
@@ -259,50 +280,69 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
               transformOrigin: "top left",
             }}
           >
-            {/* Top Bar */}
-          <div className="bg-black text-white py-1 text-[6px] px-2">
-            <div className="flex items-center justify-between">
-              {settings?.contactPhone && (
-                <span className="text-[6px]">{settings.contactPhone}</span>
-              )}
-              <div className="flex gap-1">
+            {/* Top Bar – same as website: phone + email left, social right */}
+          <div className="bg-black text-white py-1.5 px-3">
+            <div className="flex items-center justify-between text-[6px] max-w-[850px] w-full mx-auto">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {settings?.contactPhone && (
+                  <span className="flex items-center gap-0.5 truncate">
+                    <Phone className="w-2.5 h-2.5 flex-shrink-0" />
+                    <span className="truncate">{settings.contactPhone}</span>
+                  </span>
+                )}
+                {settings?.contactEmail && (
+                  <span className="flex items-center gap-0.5 truncate">
+                    <Mail className="w-2.5 h-2.5 flex-shrink-0" />
+                    <span className="truncate">{settings.contactEmail}</span>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
                 {settings?.socialMedia?.facebook && <span className="text-[6px]">FB</span>}
                 {settings?.socialMedia?.instagram && <span className="text-[6px]">IG</span>}
               </div>
             </div>
           </div>
 
-          {/* Navigation – same links as live website (Menu, sections, Contact); stacks on mobile */}
-          <nav className="bg-white shadow-sm sticky top-0 z-10 px-2 py-1.5">
-            <div className={`flex items-center justify-between ${isMobile ? "flex-col gap-2" : ""}`}>
+          {/* Navigation – same as website: logo left; on mobile only logo + cart (no Menu/section links) */}
+          <nav className="bg-white shadow-sm sticky top-0 z-10 px-3 py-1.5 max-w-[850px] w-full mx-auto">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 {settings?.logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={settings.logoUrl} alt="" className="h-5 w-5 rounded object-cover" />
                 ) : (
-                  <div className="h-5 w-5 rounded flex items-center justify-center text-[8px] font-bold text-white" style={{ backgroundColor: primaryColor }}>
-                    {(settings?.name || "R")[0]}
+                  <div className="flex-shrink-0 h-5 px-1.5 rounded flex items-center justify-center border" style={{ borderColor: primaryColor }}>
+                    <span className="text-[8px] font-bold truncate max-w-[80px]" style={{ color: primaryColor }}>
+                      {settings?.name || "Restaurant"}
+                    </span>
                   </div>
                 )}
-                <div>
-                  <h1 className="text-[10px] font-bold text-gray-900 leading-tight">{settings?.name || "Restaurant"}</h1>
-                  <p className="text-[6px] text-gray-600">{settings?.tagline || "Delicious food"}</p>
-                </div>
               </div>
               <div className="flex items-center gap-2">
-                <a href="#menu" className="text-[8px] font-medium text-gray-700 hover:text-gray-900">Menu</a>
-                {resolvedSections.length > 0 && resolvedSections.map((sec, i) => (
-                  <a key={i} href={`#section-${i}`} className="text-[8px] font-medium text-gray-700 hover:text-gray-900 truncate max-w-[48px]">{sec.title || `S${i + 1}`}</a>
-                ))}
-                <a href="#contact" className="text-[8px] font-medium text-gray-700 hover:text-gray-900">Contact</a>
-                <div className="h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px]" style={{ backgroundColor: primaryColor }}>🛒</div>
+                {!isMobile && (
+                  <>
+                    <a href="#menu" className="text-[8px] font-medium text-gray-700 hover:text-gray-900">Menu</a>
+                    {resolvedSections.length > 0 && resolvedSections.map((sec, i) => (
+                      <a key={i} href={`#section-${i}`} className="text-[8px] font-medium text-gray-700 hover:text-gray-900 truncate max-w-[48px]">{sec.title || `S${i + 1}`}</a>
+                    ))}
+                    <a href="#contact" className="text-[8px] font-medium text-gray-700 hover:text-gray-900">Contact</a>
+                  </>
+                )}
+                <div
+                  className="rounded-full flex items-center justify-center text-white flex-shrink-0"
+                  style={{ backgroundColor: primaryColor, width: isMobile ? 20 : 18, height: isMobile ? 20 : 18 }}
+                  title="Cart"
+                >
+                  <ShoppingCart className={isMobile ? "w-2.5 h-2.5" : "w-2.5 h-2.5"} />
+                </div>
               </div>
             </div>
           </nav>
 
-          {/* Hero Carousel */}
+          {/* Hero Carousel – same as website: image, overlay, title, subtitle, CTA button, arrows, dots */}
           {heroSlides.length > 0 && (
-            <div className="relative h-24 overflow-hidden">
+            <div className="relative h-[250px] overflow-hidden">
               {heroSlides.map((slide, index) => (
                 <div
                   key={index}
@@ -320,34 +360,58 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
                   ) : (
                     <div className="w-full h-full bg-gradient-to-r from-gray-200 to-gray-300" />
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-transparent flex items-center px-2">
-                    <div>
-                      <h2 className="text-[10px] font-bold text-white mb-0.5">{slide.title || "Welcome"}</h2>
-                      <p className="text-[6px] text-gray-200">{slide.subtitle || ""}</p>
+                  <div className="absolute px-5 inset-0 bg-gradient-to-r from-black/70 to-transparent flex items-center ">
+                    <div className="flex flex-col gap-1">
+                      <h2 className="text-[18px] font-bold text-white mb-0.5">{slide.title || "Welcome"}</h2>
+                      <p className="text-[16px] text-gray-200 mb-1">{slide.subtitle || ""}</p>
+                      {(slide.buttonText || slide.title) && (
+                        <span
+                          className="inline-block px-2 py-1 rounded-full text-[12px] font-bold text-white"
+                          style={{ backgroundColor: primaryColor }}
+                        >
+                          {slide.buttonText || "Order Now"}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               ))}
               {heroSlides.length > 1 && (
-                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-1">
-                  {heroSlides.map((_, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => setCurrentSlide(index)}
-                      className={`h-1 rounded-full transition-all ${
-                        index === currentSlide ? 'w-3 bg-white' : 'w-1 bg-white/50'
-                      }`}
-                    />
-                  ))}
-                </div>
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev - 1 + heroSlides.length) % heroSlides.length); }}
+                    className="absolute left-0.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white/90 flex items-center justify-center"
+                  >
+                    <ChevronLeft className="w-2.5 h-2.5 text-gray-800" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setCurrentSlide((prev) => (prev + 1) % heroSlides.length); }}
+                    className="absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white/90 flex items-center justify-center"
+                  >
+                    <ChevronRight className="w-2.5 h-2.5 text-gray-800" />
+                  </button>
+                  <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-1">
+                    {heroSlides.map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setCurrentSlide(index)}
+                        className={`h-1 rounded-full transition-all ${
+                          index === currentSlide ? 'w-3 bg-white' : 'w-1 bg-white/50'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           )}
 
           {/* Website sections – same component as live site, compact in preview */}
           {resolvedSections.length > 0 && (
-            <div className="flex-1">
+            <div className="flex-1 ">
               <WebsiteSectionsView
                 websiteSections={resolvedSections}
                 primaryColor={primaryColor}
@@ -359,9 +423,9 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
             </div>
           )}
 
-          {/* Food Menu section – same as on website (categories + menu list) */}
-          <section id="menu" className="py-4 bg-orange-50/40">
-            <div className="max-w-6xl mx-auto px-4">
+          {/* Food Menu section – same as website: title center, categories scroll, list left-aligned (image left, price right) */}
+          <section id="menu" className={`py-4 bg-orange-50/40 ${isMobile ? "px-3" : ""}`}>
+            <div className="px-3 max-w-[850px] w-full mx-auto">
               <div className="text-center mb-4">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: secondaryColor }}>
                   Food Menu
@@ -371,20 +435,26 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
                 </h2>
               </div>
               {categories.length > 0 && (
-                <div className="flex items-center gap-1.5 mb-4 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                <div className="flex items-center gap-1.5 mb-4 overflow-x-auto pb-1 sl-hide-sb" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
                   <span className="flex-shrink-0 px-2 py-1 rounded-full text-[8px] font-semibold text-white" style={{ backgroundColor: primaryColor }}>All</span>
                   {categories.slice(0, 5).map((cat) => (
-                    <span key={cat.id} className="flex-shrink-0 px-2 py-1 rounded-full text-[8px] font-medium text-gray-700 bg-white border border-gray-200">
+                    <span key={cat.id} className="flex-shrink-0 flex items-center gap-2 px-3 py-1 rounded-full text-[8px] font-medium text-gray-700 bg-white border border-gray-200">
+                      {cat.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={cat.imageUrl} alt={cat.name} className="w-4 h-4 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 text-[10px]">🍽</div>
+                      )}
                       {cat.name}
                     </span>
                   ))}
-                  {categories.length > 5 && <span className="text-[8px] text-gray-500">+{categories.length - 5}</span>}
+                  {categories.length > 5 && <span className="text-[8px] text-gray-500 flex-shrink-0">+{categories.length - 5}</span>}
                 </div>
               )}
               <div className="w-full h-px bg-gray-200 mb-3" />
-              <div className={`grid gap-x-4 gap-y-3 ${isMobile ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
+              <div className={`grid gap-y-3 text-left ${isMobile ? "grid-cols-1 gap-x-0" : "grid-cols-1 md:grid-cols-2 gap-x-4"}`}>
                 {menuItems.slice(0, 6).map((item) => (
-                  <div key={item.id} className="flex items-center gap-2">
+                  <div key={item.id} className="flex items-center gap-2 w-full">
                     <div className="w-8 h-8 flex-shrink-0 rounded-full overflow-hidden bg-gray-200">
                       {item.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -393,11 +463,11 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
                         <div className="w-full h-full flex items-center justify-center text-gray-400 text-[10px]">🍽</div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 text-left">
                       <p className="text-[10px] font-bold text-gray-900 truncate">{item.name}</p>
                       <p className="text-[8px] text-gray-500 truncate">{item.description || ""}</p>
                     </div>
-                    <span className="text-[10px] font-bold whitespace-nowrap" style={{ color: primaryColor }}>PKR {item.price}</span>
+                    <span className="text-[10px] font-bold whitespace-nowrap flex-shrink-0" style={{ color: primaryColor }}>PKR {item.price}</span>
                   </div>
                 ))}
               </div>
@@ -407,15 +477,28 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
             </div>
           </section>
 
-          {/* Footer Preview */}
-          <footer className="bg-gray-900 text-white px-2 py-1.5 mt-auto">
-            <div className="text-center">
-              <h4 className="text-[7px] font-bold mb-0.5">{settings?.name || "Restaurant"}</h4>
-              <p className="text-[5px] text-gray-400 mb-1">{settings?.description?.substring(0, 50) || "Delicious food, great service."}</p>
-              {settings?.contactPhone && (
-                <p className="text-[5px] text-gray-400">{settings.contactPhone}</p>
-              )}
+          {/* Footer Preview – mobile: single column left-aligned; desktop: 3 columns; match website */}
+          <footer className="bg-gray-900 text-white px-3 py-3 mt-auto">
+            <div className={`grid gap-4 text-[6px] max-w-[850px] w-full mx-auto ${isMobile ? "grid-cols-1 text-left" : "grid-cols-1 sm:grid-cols-3 text-left"}`}>
+              <div>
+                <h4 className="font-bold text-[7px] mb-0.5">{settings?.name || "Restaurant"}</h4>
+                <p className="text-gray-400">{settings?.tagline || settings?.description?.substring(0, 40) || "Delicious food, great service."}</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-[7px] mb-0.5">Contact Us</h4>
+                {settings?.contactPhone && <p className="text-gray-400 flex items-center gap-0.5"><Phone className="w-2.5 h-2.5 flex-shrink-0" /> {settings.contactPhone}</p>}
+                {settings?.contactEmail && <p className="text-gray-400 flex items-center gap-0.5"><Mail className="w-2.5 h-2.5 flex-shrink-0" /> {settings.contactEmail}</p>}
+              </div>
+              <div>
+                <h4 className="font-bold text-[7px] mb-0.5">Opening Hours</h4>
+                {settings?.openingHoursText?.trim() ? (
+                  <p className="text-gray-400 whitespace-pre-line">{settings.openingHoursText.trim()}</p>
+                ) : (
+                  <p className="text-gray-500 text-[6px]">Add opening hours in the Opening Hours tab.</p>
+                )}
+              </div>
             </div>
+            <p className="text-center text-[5px] text-gray-500 mt-3">© {new Date().getFullYear()} {settings?.name || "Restaurant"}. Powered by Eats Desk</p>
           </footer>
           </div>
         </div>
@@ -430,10 +513,12 @@ export default function WebsiteContentPage() {
   const [activeTab, setActiveTab] = useState("hero");
   const [suspended, setSuspended] = useState(false);
   const [error, setError] = useState("");
-  const [saveMessage, setSaveMessage] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [previewMode, setPreviewMode] = useState("desktop"); // "desktop" or "mobile"
+  const [heroSlideImageTabs, setHeroSlideImageTabs] = useState({}); // index -> "link" | "upload"
+  const [uploadingHeroSlideIndex, setUploadingHeroSlideIndex] = useState(null);
+  const heroSlideFileRefs = useRef({});
 
   useEffect(() => {
     loadSettings();
@@ -456,7 +541,8 @@ export default function WebsiteContentPage() {
       // Initialize default structures if they don't exist
       if (!data.heroSlides) data.heroSlides = [];
       if (!data.socialMedia) data.socialMedia = {};
-      if (!data.openingHours) data.openingHours = {};
+      if (data.openingHoursText === undefined) data.openingHoursText = "";
+      delete data.openingHours;
       if (!data.themeColors) data.themeColors = { primary: '#EF4444', secondary: '#FFA500' };
       if (data.allowWebsiteOrders === undefined) data.allowWebsiteOrders = true;
       // Initialize website sections with defaults if not present
@@ -478,10 +564,11 @@ export default function WebsiteContentPage() {
     if (!settings) return;
     setSaving(true);
     try {
-      await updateWebsiteSettings(settings);
-      setSaveMessage({ type: "success", text: "Website content saved successfully!" });
+      const { openingHours, ...payload } = settings;
+      await updateWebsiteSettings(payload);
+      toast.success("Website content saved successfully!");
     } catch (err) {
-      setSaveMessage({ type: "error", text: "Failed to save: " + (err.message || "Unknown error") });
+      toast.error("Failed to save: " + (err.message || "Unknown error"));
     } finally {
       setSaving(false);
     }
@@ -517,6 +604,23 @@ export default function WebsiteContentPage() {
     }));
   };
 
+  async function handleHeroSlideImageUpload(index, e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingHeroSlideIndex(index);
+    try {
+      const { url } = await uploadImage(file);
+      updateHeroSlide(index, "imageUrl", url);
+      toast.success("Image uploaded");
+    } catch (err) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploadingHeroSlideIndex(null);
+      const ref = heroSlideFileRefs.current[index];
+      if (ref) ref.value = "";
+    }
+  }
+
   if (!settings) {
     return (
       <AdminLayout title="Website Content" suspended={suspended}>
@@ -527,23 +631,22 @@ export default function WebsiteContentPage() {
 
   return (
     <AdminLayout title="Website Content" suspended={suspended}>
-      {saveMessage && (
-        <div
-          className={`mb-4 rounded-lg border px-4 py-2 text-xs ${
-            saveMessage.type === "success"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : "border-red-300 bg-red-50 text-red-700"
-          }`}
-        >
-          {saveMessage.text}
-        </div>
-      )}
+      <div className="sticky top-0 z-20 -mx-6 px-6 py-4 bg-gray-100 dark:bg-black border-b border-gray-200 dark:border-neutral-800 mb-6">
       {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
+          <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
           {error}
         </div>
       )}
-      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/dashboard/website"
+            className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90"
+          >
+            <ChevronLeft className="w-5 h-5" />
+            Website Settings
+          </Link>
+          <div className="h-5 w-px bg-gray-300 dark:bg-neutral-600" aria-hidden />
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab("hero")}
@@ -606,108 +709,222 @@ export default function WebsiteContentPage() {
             Order Settings
           </button>
         </div>
+        </div>
         <Button onClick={handleSave} disabled={saving} className="gap-2">
           <Save className="w-4 h-4" />
           {saving ? "Saving..." : "Save Changes"}
         </Button>
+        </div>
       </div>
 
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Two Column Layout: left scrolls, right preview fixed */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         {/* Left Column - Management */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0">
 
-          {/* Hero Slides Tab */}
-          {activeTab === "hero" && (
-            <Card title="Hero Slides" description="Manage homepage banner carousel">
-              <div className="space-y-4">
-                {settings.heroSlides?.map((slide, index) => (
-                  <div key={index} className="p-4 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Slide {index + 1}</h3>
-                      <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-2 text-xs text-gray-900 dark:text-neutral-400">
-                          <input
-                            type="checkbox"
-                            checked={slide.isActive}
-                            onChange={(e) => updateHeroSlide(index, 'isActive', e.target.checked)}
-                            className="rounded"
-                          />
-                          Active
-                        </label>
-                        <button
-                          onClick={() => removeHeroSlide(index)}
-                          className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-secondary/10 rounded"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
+      {/* Hero Slides Tab */}
+      {activeTab === "hero" && (
+        <Card title="Hero Slides" description="Manage homepage banner carousel">
+          <div className="space-y-4">
+            {settings.heroSlides?.map((slide, index) => (
+              <div key={index} className="p-4 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-800">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Slide {index + 1}</h3>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-900 dark:text-neutral-400">
                       <input
-                        type="text"
-                        placeholder="Title"
-                        value={slide.title || ''}
-                        onChange={(e) => updateHeroSlide(index, 'title', e.target.value)}
-                        className="px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                        type="checkbox"
+                        checked={slide.isActive}
+                        onChange={(e) => updateHeroSlide(index, 'isActive', e.target.checked)}
+                        className="rounded"
                       />
-                      <input
-                        type="text"
-                        placeholder="Subtitle"
-                        value={slide.subtitle || ''}
-                        onChange={(e) => updateHeroSlide(index, 'subtitle', e.target.value)}
-                        className="px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Image URL"
-                        value={slide.imageUrl || ''}
-                        onChange={(e) => updateHeroSlide(index, 'imageUrl', e.target.value)}
-                        className="px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Button Text"
-                        value={slide.buttonText || ''}
-                        onChange={(e) => updateHeroSlide(index, 'buttonText', e.target.value)}
-                        className="px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
-                      />
-                    </div>
+                      Active
+                    </label>
+                    <button
+                      onClick={() => removeHeroSlide(index)}
+                      className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-secondary/10 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                ))}
-                <button
-                  onClick={addHeroSlide}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 dark:border-neutral-700 text-gray-900 dark:text-neutral-400 hover:border-primary hover:text-primary transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Hero Slide
-                </button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input
+                    type="text"
+                    placeholder="Title"
+                    value={slide.title || ''}
+                    onChange={(e) => updateHeroSlide(index, 'title', e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Subtitle"
+                    value={slide.subtitle || ''}
+                    onChange={(e) => updateHeroSlide(index, 'subtitle', e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Button Text"
+                    value={slide.buttonText || ''}
+                    onChange={(e) => updateHeroSlide(index, 'buttonText', e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-neutral-300">Slide image</label>
+                  <div className="flex rounded-lg border border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setHeroSlideImageTabs(prev => ({ ...prev, [index]: "link" }))}
+                      className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+                        (heroSlideImageTabs[index] || "link") === "link"
+                          ? "bg-primary text-white"
+                          : "bg-bg-secondary dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-bg-primary dark:hover:bg-neutral-800"
+                      }`}
+                    >
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      Paste URL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHeroSlideImageTabs(prev => ({ ...prev, [index]: "upload" }))}
+                      className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-l border-gray-300 dark:border-neutral-700 transition-colors ${
+                        heroSlideImageTabs[index] === "upload"
+                          ? "bg-primary text-white"
+                          : "bg-bg-secondary dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-bg-primary dark:hover:bg-neutral-800"
+                      }`}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload from PC
+                    </button>
+                  </div>
+                  {(heroSlideImageTabs[index] || "link") === "link" && (
+                    <input
+                      type="text"
+                      placeholder="https://..."
+                      value={slide.imageUrl || ''}
+                      onChange={(e) => updateHeroSlide(index, 'imageUrl', e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                    />
+                  )}
+                  {heroSlideImageTabs[index] === "upload" && (
+                    <label className="flex flex-col items-center justify-center w-full h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-neutral-700 bg-bg-primary dark:bg-neutral-900 hover:border-primary/60 cursor-pointer transition-colors">
+                      {uploadingHeroSlideIndex === index ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                          <span className="text-xs font-medium text-primary">Uploading...</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1">
+                          <Upload className="w-5 h-5 text-gray-400" />
+                          <span className="text-xs text-gray-500 dark:text-neutral-400">Click to browse</span>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        ref={el => { if (el) heroSlideFileRefs.current[index] = el; }}
+                        onChange={(e) => handleHeroSlideImageUpload(index, e)}
+                        disabled={uploadingHeroSlideIndex === index}
+                      />
+                    </label>
+                  )}
+                </div>
               </div>
-            </Card>
-          )}
+            ))}
+            <button
+              onClick={addHeroSlide}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 dark:border-neutral-700 text-gray-900 dark:text-neutral-400 hover:border-primary hover:text-primary transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Hero Slide
+            </button>
+          </div>
+        </Card>
+      )}
 
-          {/* Social Media Tab */}
-          {activeTab === "social" && (
-            <Card title="Social Media Links" description="Add your social media profiles">
-              <div className="space-y-3">
-                {/* existing social fields ... */}
-              </div>
-            </Card>
-          )}
-
-          {/* Opening Hours Tab */}
-          {activeTab === "hours" && (
-            <Card title="Opening Hours" description="Set your restaurant opening hours">
-              <div className="space-y-3">
-                {/* existing opening hours fields ... */}
-              </div>
-            </Card>
-          )}
-
-          {/* Theme Colors Tab */}
-          {activeTab === "theme" && (
-            <Card title="Theme Colors" description="Customize your website colors">
+      {/* Social Media Tab */}
+      {activeTab === "social" && (
+        <Card title="Social Media Links" description="Add your social media profiles">
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-neutral-300">Facebook URL</label>
+              <input
+                type="url"
+                    value={settings.socialMedia?.facebook || ""}
+                onChange={(e) => setSettings(prev => ({
+                  ...prev,
+                      socialMedia: { ...(prev.socialMedia || {}), facebook: e.target.value }
+                }))}
+                    placeholder="https://facebook.com/yourpage"
+                    className="w-full px-3 py-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-neutral-300">Instagram URL</label>
+              <input
+                type="url"
+                    value={settings.socialMedia?.instagram || ""}
+                onChange={(e) => setSettings(prev => ({
+                  ...prev,
+                      socialMedia: { ...(prev.socialMedia || {}), instagram: e.target.value }
+                }))}
+                    placeholder="https://instagram.com/yourpage"
+                    className="w-full px-3 py-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-neutral-300">Twitter / X URL</label>
+              <input
+                type="url"
+                    value={settings.socialMedia?.twitter || ""}
+                onChange={(e) => setSettings(prev => ({
+                  ...prev,
+                      socialMedia: { ...(prev.socialMedia || {}), twitter: e.target.value }
+                }))}
+                    placeholder="https://twitter.com/yourpage"
+                    className="w-full px-3 py-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-neutral-300">YouTube URL</label>
+              <input
+                type="url"
+                    value={settings.socialMedia?.youtube || ""}
+                onChange={(e) => setSettings(prev => ({
+                  ...prev,
+                      socialMedia: { ...(prev.socialMedia || {}), youtube: e.target.value }
+                }))}
+                    placeholder="https://youtube.com/yourchannel"
+                    className="w-full px-3 py-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Opening Hours Tab */}
+      {activeTab === "hours" && (
+            <Card title="Opening Hours" description="Add your opening hours as free text. For example: 24/7, All day 9am to 4pm, or list days and times.">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-neutral-300">Opening hours (paragraph)</label>
+                <textarea
+                  value={settings.openingHoursText || ""}
+                  onChange={(e) => setSettings(prev => ({ ...prev, openingHoursText: e.target.value }))}
+                  placeholder={"e.g. 24/7\n\nOr:\nMonday – Friday: 9am to 10pm\nSaturday – Sunday: 10am to 11pm\nOr: All day 9am to 4pm"}
+                  rows={6}
+                  className="w-full px-3 py-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-y"
+                />
+          </div>
+        </Card>
+      )}
+
+      {/* Theme Colors Tab */}
+      {activeTab === "theme" && (
+        <Card title="Theme Colors" description="Customize your website colors">
+          <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700 dark:text-neutral-300">Primary Color</label>
               <div className="flex items-center gap-3">
@@ -837,12 +1054,7 @@ export default function WebsiteContentPage() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                        Menu Items
-                        <span className="ml-1 font-normal text-gray-500 dark:text-neutral-500">
-                          ({(section.items || []).length} selected)
-                        </span>
-                      </label>
+                      <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">Menu Items</label>
                       <ItemSelector
                         allItems={menuItems}
                         categories={categories}
@@ -854,38 +1066,6 @@ export default function WebsiteContentPage() {
                         }}
                       />
                     </div>
-
-                    {/* Preview of selected items */}
-                    {(section.items || []).length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500 dark:text-neutral-500 mb-2">Preview</p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                          {(section.items || []).slice(0, 8).map((itemId) => {
-                            const item = menuItems.find(m => m.id === itemId);
-                            if (!item) return null;
-                            return (
-                              <div key={itemId} className="flex items-center gap-2 p-2 rounded-lg bg-bg-secondary dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-                                {item.imageUrl ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={item.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-neutral-800 flex-shrink-0" />
-                                )}
-                                <div className="min-w-0">
-                                  <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{item.name}</p>
-                                  <p className="text-[10px] text-gray-500 dark:text-neutral-500">PKR {item.price}</p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {(section.items || []).length > 8 && (
-                            <div className="flex items-center justify-center p-2 rounded-lg bg-bg-primary dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800">
-                              <p className="text-xs text-gray-500 dark:text-neutral-500">+{(section.items || []).length - 8} more</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
@@ -962,10 +1142,10 @@ export default function WebsiteContentPage() {
       )}
         </div>
 
-        {/* Right Column - Preview */}
-        <div className="lg:sticky lg:top-6 h-fit">
+        {/* Right Column - Preview (sticky below header; top = header height so it doesn’t scroll by header height) */}
+        <div className="lg:sticky lg:top-[89px] lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto w-full">
           <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl px-0 py-4 shadow-sm">
-            <div className="flex items-center justify-between mb-4 px-4">
+            <div className="flex items-center justify-between mb-4 px-4 flex-shrink-0">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">Live Preview</h3>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-neutral-900 rounded-lg p-1">

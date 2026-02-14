@@ -13,7 +13,9 @@ export default function SectionSlider({
   primaryColor,
   autoSlideDelay = 3000,
   forceMobile = false,
+  gapPx: gapPxProp = 20,
 }) {
+  const gapPx = gapPxProp;
   const scrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -47,11 +49,11 @@ export default function SectionSlider({
     setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
     const card = el.querySelector(`[data-slide-item]`);
     if (card) {
-      const cardW = card.offsetWidth + 20;
+      const cardW = card.offsetWidth + gapPx;
       const idx = Math.round(el.scrollLeft / cardW);
       setActiveIndex(idx);
     }
-  }, []);
+  }, [gapPx]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -63,7 +65,7 @@ export default function SectionSlider({
       el.removeEventListener("scroll", checkScroll);
       window.removeEventListener("resize", checkScroll);
     };
-  }, [checkScroll, items, mounted]);
+  }, [checkScroll, items, mounted, gapPx]);
 
   const smoothScrollTo = useCallback((el, target, duration = 800) => {
     const start = el.scrollLeft;
@@ -93,12 +95,11 @@ export default function SectionSlider({
         smoothScrollTo(el, 0);
       } else {
         const card = el.querySelector(`[data-slide-item]`);
-        const gap = 20;
-        const cardW = card ? card.offsetWidth + gap : 240;
+        const cardW = card ? card.offsetWidth + gapPx : 240;
         smoothScrollTo(el, el.scrollLeft + cardW);
       }
     }, autoSlideDelay);
-  }, [needsSlider, autoSlideDelay, smoothScrollTo]);
+  }, [needsSlider, autoSlideDelay, smoothScrollTo, gapPx]);
 
   useEffect(() => {
     startAutoSlide();
@@ -116,8 +117,7 @@ export default function SectionSlider({
     const el = scrollRef.current;
     if (!el) return;
     const card = el.querySelector(`[data-slide-item]`);
-    const gap = 20;
-    const cardW = card ? card.offsetWidth + gap : 240;
+    const cardW = card ? card.offsetWidth + gapPx : 240;
     smoothScrollTo(el, el.scrollLeft + dir * cardW);
   };
 
@@ -125,12 +125,10 @@ export default function SectionSlider({
     const el = scrollRef.current;
     if (!el) return;
     const card = el.querySelector(`[data-slide-item]`);
-    const gap = 20;
-    const cardW = card ? card.offsetWidth + gap : 240;
+    const cardW = card ? card.offsetWidth + gapPx : 240;
     smoothScrollTo(el, dotIdx * cardW);
   };
 
-  const gapPx = 20;
   const mobileWidth = `calc((100% - ${(visibleMobile - 1) * gapPx}px) / ${visibleMobile})`;
   const desktopWidth = `calc((100% - ${(visibleDesktop - 1) * gapPx}px) / ${visibleDesktop})`;
   const itemWidth = mounted ? (effectiveMobile ? mobileWidth : desktopWidth) : mobileWidth;
@@ -156,8 +154,9 @@ export default function SectionSlider({
 
       <div
         ref={scrollRef}
-        className={`flex gap-5 scroll-smooth sl-hide-sb pb-12 -my-4 ${needsSlider ? "overflow-x-auto" : "overflow-x-hidden justify-center"}`}
+        className={`flex scroll-smooth sl-hide-sb pb-12 -my-4 ${needsSlider ? "overflow-x-auto" : "overflow-x-hidden justify-center"}`}
         style={{
+          gap: `${gapPx}px`,
           scrollbarWidth: "none",
           msOverflowStyle: "none",
           WebkitOverflowScrolling: "touch",

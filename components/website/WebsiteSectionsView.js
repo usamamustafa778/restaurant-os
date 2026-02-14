@@ -22,12 +22,6 @@ export default function WebsiteSectionsView({
   isPreview = false,
   forceMobile = false,
 }) {
-  const sections = websiteSections.filter(
-    (s) => s && s.items && s.items.length > 0 && s.isActive !== false
-  );
-
-  if (sections.length === 0) return null;
-
   const sectionPy = isPreview ? "py-4" : "py-16";
   const headerMb = isPreview ? "mb-4" : "mb-10";
   const subtitleClass = isPreview ? "text-[10px] font-bold uppercase tracking-wider mb-1" : "text-sm font-bold uppercase tracking-widest mb-2";
@@ -35,13 +29,18 @@ export default function WebsiteSectionsView({
 
   return (
     <>
-      {sections.map((section, sIdx) => (
+      {websiteSections.map((section, originalIdx) => {
+        if (!section || !section.items || section.items.length === 0 || section.isActive === false) {
+          return null;
+        }
+        const layoutIndex = originalIdx;
+        return (
         <section
-          key={sIdx}
-          id={`section-${sIdx}`}
-          className={`${sectionPy} ${sIdx % 2 === 0 ? "bg-gray-50" : "bg-white"} ${sectionClassName}`}
+          key={originalIdx}
+          id={`section-${originalIdx}`}
+          className={` ${sectionPy} ${layoutIndex % 2 === 0 ? "bg-gray-50" : "bg-white"} ${sectionClassName}`}
         >
-          <div className="max-w-7xl mx-auto px-4">
+          <div className="max-w-7xl mx-auto px-4 ">
             <div className={`text-center ${headerMb}`}>
               <p
                 className={subtitleClass}
@@ -50,11 +49,11 @@ export default function WebsiteSectionsView({
                 {section.subtitle || ""}
               </p>
               <h2 className={titleClass}>
-                {section.title || `Section ${sIdx + 1}`}
+                {section.title || `Section ${layoutIndex + 1}`}
               </h2>
             </div>
 
-            {sIdx === 0 && (
+            {layoutIndex === 0 && (
               <SectionSlider
                 items={section.items}
                 visibleDesktop={4}
@@ -63,7 +62,7 @@ export default function WebsiteSectionsView({
                 forceMobile={forceMobile}
                 renderItem={(item) => (
                   <div
-                    className="group text-center cursor-pointer"
+                    className="group text-center cursor-pointer "
                     onClick={() => onItemClick(item)}
                   >
                     <div className={`relative mx-auto ${isPreview ? "w-20 h-20 md:w-24 md:h-24" : "w-36 h-36 md:w-44 md:h-44"}`}>
@@ -101,13 +100,14 @@ export default function WebsiteSectionsView({
               />
             )}
 
-            {sIdx === 1 && (
+            {layoutIndex === 1 && (
               <SectionSlider
                 items={section.items}
                 visibleDesktop={5}
                 visibleMobile={2}
                 primaryColor={primaryColor}
                 forceMobile={forceMobile}
+                gapPx={12}
                 renderItem={(item) => (
                   <div
                     className="bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-all group cursor-pointer"
@@ -129,9 +129,9 @@ export default function WebsiteSectionsView({
                       <h3 className={isPreview ? "font-semibold text-gray-900 text-xs truncate" : "font-semibold text-gray-900 text-sm"}>
                         {item.name}
                       </h3>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {item.category || "Menu"}
-                      </p>
+                      {/* <p className="text-xs text-gray-500 mt-0.5">
+                        {item.category || "Menu"}kkkk
+                      </p> */}
                       <p
                         className={isPreview ? "text-xs font-bold mt-0.5" : "text-base font-bold mt-1"}
                         style={{ color: primaryColor }}
@@ -144,13 +144,14 @@ export default function WebsiteSectionsView({
               />
             )}
 
-            {sIdx === 2 && (
+            {layoutIndex === 2 && (
               <SectionSlider
                 items={section.items}
                 visibleDesktop={3}
                 visibleMobile={1}
                 primaryColor={primaryColor}
                 forceMobile={forceMobile}
+                gapPx={12}
                 renderItem={(item) => (
                   <div
                     className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-lg group transition-shadow cursor-pointer"
@@ -200,7 +201,7 @@ export default function WebsiteSectionsView({
               />
             )}
 
-            {sIdx > 2 && (
+            {layoutIndex > 2 && (
               <SectionSlider
                 items={section.items}
                 visibleDesktop={4}
@@ -246,7 +247,8 @@ export default function WebsiteSectionsView({
             )}
           </div>
         </section>
-      ))}
+        );
+      })}
     </>
   );
 }

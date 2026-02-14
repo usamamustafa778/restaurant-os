@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import { getWebsiteSettings, updateWebsiteSettings, getBranches } from "../../lib/apiClient";
-import { ExternalLink, Globe, Copy, CheckCircle2, Settings, Eye, EyeOff, Phone, Mail, Image, FileText, ShoppingCart, X } from "lucide-react";
+import { getWebsiteSettings, updateWebsiteSettings, getBranches, uploadImage } from "../../lib/apiClient";
+import { ExternalLink, Globe, Copy, CheckCircle2, Settings, Eye, EyeOff, Phone, Mail, Image, FileText, ShoppingCart, X, Upload, Link, Loader2 } from "lucide-react";
 
 export default function TenantWebsiteSettingsPage() {
   const router = useRouter();
@@ -15,6 +15,12 @@ export default function TenantWebsiteSettingsPage() {
   const [branches, setBranches] = useState([]);
   const [branchOrderSettings, setBranchOrderSettings] = useState({});
   const [savingOrderSettings, setSavingOrderSettings] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [logoTab, setLogoTab] = useState("link");
+  const [bannerTab, setBannerTab] = useState("link");
+  const logoInputRef = useRef(null);
+  const bannerInputRef = useRef(null);
 
   useEffect(() => {
     getWebsiteSettings().then(setSettings);
@@ -96,6 +102,36 @@ export default function TenantWebsiteSettingsPage() {
   const onChange = field => e =>
     setSettings(prev => ({ ...prev, [field]: e.target.value }));
 
+  async function handleLogoUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    try {
+      const { url } = await uploadImage(file);
+      setSettings(prev => ({ ...prev, logoUrl: url }));
+    } catch (err) {
+      alert(err.message || "Logo upload failed");
+    } finally {
+      setUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  }
+
+  async function handleBannerUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingBanner(true);
+    try {
+      const { url } = await uploadImage(file);
+      setSettings(prev => ({ ...prev, bannerUrl: url }));
+    } catch (err) {
+      alert(err.message || "Banner upload failed");
+    } finally {
+      setUploadingBanner(false);
+      if (bannerInputRef.current) bannerInputRef.current.value = "";
+    }
+  }
+
   const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN;
   const websiteUrl = settings?.subdomain
     ? rootDomain
@@ -130,7 +166,7 @@ export default function TenantWebsiteSettingsPage() {
   return (
     <AdminLayout title="Website Settings">
       {/* Website URL Banner */}
-      {websiteUrl && (
+      {/* {websiteUrl && (
         <div className="mb-6 rounded-2xl border-2 border-primary/30 dark:border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-6 shadow-lg">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
             <div className="flex items-start gap-4 flex-1">
@@ -190,9 +226,9 @@ export default function TenantWebsiteSettingsPage() {
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+      <div className="grid gap-6  lg:grid-cols-[1.2fr_1fr]">
         {/* Settings Form */}
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-center gap-3 mb-6">
@@ -231,28 +267,130 @@ export default function TenantWebsiteSettingsPage() {
               <div className="space-y-2">
                 <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
                   <Image className="w-3.5 h-3.5" />
-                  Logo URL
+                  Logo
                 </label>
-                <input
-                  type="text"
-                  value={settings.logoUrl || ""}
-                  onChange={onChange("logoUrl")}
-                  placeholder="https://..."
-                  className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                />
+                <div className="flex rounded-lg border-2 border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setLogoTab("link")}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+                      logoTab === "link"
+                        ? "bg-primary text-white"
+                        : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    }`}
+                  >
+                    <Link className="w-3.5 h-3.5" />
+                    Paste URL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogoTab("upload")}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-l-2 border-gray-300 dark:border-neutral-700 transition-colors ${
+                      logoTab === "upload"
+                        ? "bg-primary text-white"
+                        : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Upload from PC
+                  </button>
+                </div>
+                {logoTab === "link" && (
+                  <input
+                    type="text"
+                    value={settings.logoUrl || ""}
+                    onChange={onChange("logoUrl")}
+                    placeholder="https://..."
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                  />
+                )}
+                {logoTab === "upload" && (
+                  <label className="flex flex-col items-center justify-center w-full h-24 rounded-xl border-2 border-dashed border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 cursor-pointer transition-colors">
+                    {uploadingLogo ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                        <span className="text-xs font-medium text-primary">Uploading...</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <Upload className="w-5 h-5 text-gray-400" />
+                        <span className="text-xs text-gray-500 dark:text-neutral-400">Click to browse</span>
+                      </div>
+                    )}
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleLogoUpload}
+                      disabled={uploadingLogo}
+                    />
+                  </label>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
                   <Image className="w-3.5 h-3.5" />
-                  Banner URL
+                  Banner
                 </label>
-                <input
-                  type="text"
-                  value={settings.bannerUrl || ""}
-                  onChange={onChange("bannerUrl")}
-                  placeholder="https://..."
-                  className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                />
+                <div className="flex rounded-lg border-2 border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setBannerTab("link")}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+                      bannerTab === "link"
+                        ? "bg-primary text-white"
+                        : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    }`}
+                  >
+                    <Link className="w-3.5 h-3.5" />
+                    Paste URL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBannerTab("upload")}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-l-2 border-gray-300 dark:border-neutral-700 transition-colors ${
+                      bannerTab === "upload"
+                        ? "bg-primary text-white"
+                        : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Upload from PC
+                  </button>
+                </div>
+                {bannerTab === "link" && (
+                  <input
+                    type="text"
+                    value={settings.bannerUrl || ""}
+                    onChange={onChange("bannerUrl")}
+                    placeholder="https://..."
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                  />
+                )}
+                {bannerTab === "upload" && (
+                  <label className="flex flex-col items-center justify-center w-full h-24 rounded-xl border-2 border-dashed border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 cursor-pointer transition-colors">
+                    {uploadingBanner ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                        <span className="text-xs font-medium text-primary">Uploading...</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <Upload className="w-5 h-5 text-gray-400" />
+                        <span className="text-xs text-gray-500 dark:text-neutral-400">Click to browse</span>
+                      </div>
+                    )}
+                    <input
+                      ref={bannerInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleBannerUpload}
+                      disabled={uploadingBanner}
+                    />
+                  </label>
+                )}
               </div>
             </div>
 
@@ -350,15 +488,17 @@ export default function TenantWebsiteSettingsPage() {
                   <img
                     src={settings.logoUrl}
                     alt="Logo"
-                    className="h-12 w-12 rounded-xl object-cover border-2 border-white shadow-lg"
+                    className="h-12 w-12 rounded-xl object-cover border-2 border-white shadow-lg flex-shrink-0"
                   />
                 ) : (
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary text-white flex items-center justify-center text-lg font-bold shadow-lg">
-                    {(settings.name || "R")[0].toUpperCase()}
+                  <div className="h-12 px-3 rounded-xl flex items-center justify-center border-2 border-white/80 bg-white/10 shadow-lg flex-shrink-0">
+                    <span className="text-sm font-bold text-white drop-shadow-lg truncate max-w-[120px]">
+                      {settings.name || "Restaurant Name"}
+                    </span>
                   </div>
                 )}
-                <div>
-                  <div className="text-base font-bold text-white drop-shadow-lg">
+                <div className="min-w-0">
+                  <div className="text-base font-bold text-white drop-shadow-lg truncate">
                     {settings.name || "Restaurant Name"}
                   </div>
                   {settings.contactPhone && (
