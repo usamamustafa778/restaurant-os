@@ -18,6 +18,7 @@ import {
   deletePosTransaction,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
+import toast from "react-hot-toast";
 import {
   ShoppingCart,
   Plus,
@@ -61,7 +62,6 @@ export default function POSPage() {
   const [loading, setLoading] = useState(false);
   const [suspended, setSuspended] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== "undefined") {
       return sessionStorage.getItem("sidebar_collapsed") !== "true";
@@ -344,7 +344,6 @@ export default function POSPage() {
 
     setLoading(true);
     setError("");
-    setSuccess("");
 
     try {
       const result = await createPosOrder({
@@ -372,7 +371,7 @@ export default function POSPage() {
         branchId: currentBranch?.id ?? undefined,
       });
 
-      setSuccess(
+      toast.success(
         `Order ${result.orderNumber || ""} placed successfully! Total: PKR ${result.total}`,
       );
       setCart([]);
@@ -449,7 +448,7 @@ export default function POSPage() {
         branchId: currentBranch?.id ?? undefined,
       });
 
-      setSuccess("Order saved as draft successfully!");
+      toast.success("Order saved as draft successfully!");
       await loadDrafts();
       
       // Clear cart after saving draft
@@ -485,7 +484,7 @@ export default function POSPage() {
       }
 
       setShowDraftModal(false);
-      setSuccess("Draft loaded successfully!");
+      toast.success("Draft loaded successfully!");
     } catch (err) {
       setError(err.message || "Failed to load draft");
     }
@@ -496,7 +495,7 @@ export default function POSPage() {
 
     try {
       await deletePosDraft(id);
-      setSuccess("Draft deleted successfully!");
+      toast.success("Draft deleted successfully!");
       await loadDrafts();
     } catch (err) {
       setError(err.message || "Failed to delete draft");
@@ -508,7 +507,7 @@ export default function POSPage() {
 
     try {
       await deletePosTransaction(id);
-      setSuccess("Transaction deleted successfully!");
+      toast.success("Transaction deleted successfully!");
       await loadTransactions();
     } catch (err) {
       setError(err.message || "Failed to delete transaction");
@@ -558,11 +557,6 @@ export default function POSPage() {
       {error && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">
           {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/80 dark:bg-emerald-500/10 dark:border-emerald-500/30 px-5 py-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
-          {success}
         </div>
       )}
 

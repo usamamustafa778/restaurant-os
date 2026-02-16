@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
-import { getOverview, SubscriptionInactiveError, getStoredAuth } from "../../lib/apiClient";
-import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Calendar, Package, CreditCard, BarChart3 } from "lucide-react";
+import { getOverview, getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
+import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3 } from "lucide-react";
 
 // Simple SVG line chart for hourly trend
 function MiniLineChart({ data }) {
@@ -187,10 +187,14 @@ export default function OverviewPage() {
 
   const [suspended, setSuspended] = useState(false);
   const [error, setError] = useState("");
-
-  // Get restaurant name from stored auth
-  const auth = getStoredAuth();
-  const restaurantName = auth?.user?.restaurantName || "Overview";
+  const [monthlyReport, setMonthlyReport] = useState({
+    totalRevenue: 0,
+    totalProfit: 0,
+    totalOrders: 0,
+    topItems: [],
+  });
+  const [topSellingPeriod, setTopSellingPeriod] = useState("today");
+  const [revenuePeriod, setRevenuePeriod] = useState("weekly");
 
   useEffect(() => {
     (async () => {
@@ -208,6 +212,28 @@ export default function OverviewPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      const now = new Date();
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      try {
+        const report = await getSalesReport({
+          from: from.toISOString().split("T")[0],
+          to: to.toISOString().split("T")[0],
+        });
+        setMonthlyReport({
+          totalRevenue: report.totalRevenue ?? 0,
+          totalProfit: report.totalProfit ?? 0,
+          totalOrders: report.totalOrders ?? 0,
+          topItems: report.topItems ?? [],
+        });
+      } catch (err) {
+        console.error("Failed to load monthly report:", err);
+      }
+    })();
+  }, []);
+
   const salesTypeSegments = buildSegments(stats.salesTypeDistribution, typeLabels, typeColors);
   const paymentSegments = buildSegments(stats.paymentDistribution, paymentLabels, paymentColors);
   const sourceSegments = buildSegments(stats.sourceDistribution, sourceLabels, sourceColors);
@@ -216,9 +242,21 @@ export default function OverviewPage() {
     value: p.qty,
     color: productColors[i % productColors.length],
   }));
+  const displayTopProductSegments =
+    topSellingPeriod === "monthly"
+      ? (monthlyReport.topItems || []).slice(0, 5).map((p, i) => ({
+          label: p.name,
+          value: p.quantity,
+          color: productColors[i % productColors.length],
+        }))
+      : topProductSegments;
 
   return (
-    <AdminLayout title={restaurantName} suspended={suspended}>
+    <AdminLayout
+      title="Monthly Report"
+      subtitle={new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+      suspended={suspended}
+    >
       {error && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">
           {error}
@@ -299,17 +337,58 @@ export default function OverviewPage() {
         </div>
       </div>
 
+      {/* Monthly Report row */}
+      <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-emerald-300 dark:border-emerald-500/30 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="relative flex items-center gap-4">
+            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+              <TrendingUp className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">This Month Profit</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">Rs {Math.round(monthlyReport.totalProfit ?? 0).toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+        <div className="sm:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
+              <BarChart3 className="w-5 h-5 text-white" />
+            </div>
+            <h3 className="text-base font-bold text-gray-900 dark:text-white">Top Selling This Month</h3>
+          </div>
+          {monthlyReport.topItems.length > 0 ? (
+            <div className="space-y-2">
+              {monthlyReport.topItems.slice(0, 5).map((item, i) => (
+                <div key={item.menuItemId || i} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-neutral-800 last:border-0">
+                  <span className="text-sm font-medium text-gray-700 dark:text-neutral-300">{item.name}</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">{item.quantity} sold · Rs {Math.round(item.revenue || 0).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-neutral-400 py-2">No sales data this month yet</p>
+          )}
+        </div>
+      </div>
+
       {/* Top Selling & Sales Performance row */}
       <div className="grid gap-5 lg:grid-cols-3 mb-6">
         {/* Top Selling Item */}
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-base font-bold text-gray-900 dark:text-white">🔥 Top Selling Items</h3>
-            <select className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-2 py-1 outline-none">
-              <option>All Time</option>
+            <select
+              value={topSellingPeriod}
+              onChange={(e) => setTopSellingPeriod(e.target.value)}
+              className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-2 py-1 outline-none"
+            >
+              <option value="today">Today</option>
+              <option value="monthly">Monthly</option>
             </select>
           </div>
-          {topProductSegments.length > 0 ? (
+          {displayTopProductSegments.length > 0 ? (
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5 border border-orange-200 dark:border-orange-500/20">
                 <div className="flex items-center gap-3 mb-2">
@@ -318,16 +397,16 @@ export default function OverviewPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-base font-bold text-gray-900 dark:text-white truncate">
-                      {topProductSegments[0]?.label || "No data"}
+                      {displayTopProductSegments[0]?.label || "No data"}
                     </p>
                     <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium">
-                      {topProductSegments[0]?.value || 0} orders
+                      {displayTopProductSegments[0]?.value || 0} {topSellingPeriod === "monthly" ? "sold" : "orders"}
                     </p>
                   </div>
                 </div>
               </div>
               
-              {topProductSegments.slice(1, 5).map((item, i) => (
+              {displayTopProductSegments.slice(1, 5).map((item, i) => (
                 <div key={item.label} className="flex items-center justify-between py-3 border-t border-gray-100 dark:border-neutral-800">
                   <div className="flex items-center gap-3">
                     <span className="flex items-center justify-center h-6 w-6 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-bold text-gray-600 dark:text-neutral-400">
@@ -340,7 +419,7 @@ export default function OverviewPage() {
                       <div 
                         className="h-full rounded-full transition-all" 
                         style={{ 
-                          width: `${(item.value / topProductSegments[0].value) * 100}%`,
+                          width: `${(displayTopProductSegments[0].value ? (item.value / displayTopProductSegments[0].value) * 100 : 0)}%`,
                           backgroundColor: item.color 
                         }} 
                       />
@@ -455,11 +534,23 @@ export default function OverviewPage() {
                 <BarChart3 className="w-5 h-5 text-blue-500" />
                 <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
               </div>
-              <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">Weekly performance</p>
+              <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
+                {revenuePeriod === "monthly" ? "Monthly performance" : "Weekly performance"}
+              </p>
             </div>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
-              <input type="checkbox" id="revenue-toggle" className="rounded" defaultChecked />
-              <label htmlFor="revenue-toggle" className="text-xs font-semibold text-blue-700 dark:text-blue-400 cursor-pointer">Revenue</label>
+            <div className="flex items-center gap-2">
+              <select
+                value={revenuePeriod}
+                onChange={(e) => setRevenuePeriod(e.target.value)}
+                className="text-xs font-semibold text-gray-600 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-2 py-1.5 outline-none"
+              >
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
+                <input type="checkbox" id="revenue-toggle" className="rounded" defaultChecked />
+                <label htmlFor="revenue-toggle" className="text-xs font-semibold text-blue-700 dark:text-blue-400 cursor-pointer">Revenue</label>
+              </div>
             </div>
           </div>
           <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
@@ -468,12 +559,24 @@ export default function OverviewPage() {
                 <TrendingUp className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium mb-0.5">This Week</p>
-                <span className="text-3xl font-bold text-gray-900 dark:text-white">Rs {stats.revenue.toLocaleString()}</span>
+                <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium mb-0.5">
+                  {revenuePeriod === "monthly" ? "This Month" : "This Week"}
+                </p>
+                <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                  Rs {(revenuePeriod === "monthly" ? monthlyReport.totalRevenue : stats.revenue).toLocaleString()}
+                </span>
               </div>
             </div>
           </div>
-          {/* Enhanced bar chart for weekly view */}
+          {/* Bar chart: weekly days or monthly single bar */}
+          {revenuePeriod === "monthly" ? (
+            <div className="flex items-end gap-3 h-40 mt-4 px-2">
+              <div className="flex-1 flex flex-col items-center gap-2">
+                <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
+                <span className="text-xs font-semibold mt-1 text-gray-600 dark:text-neutral-400">This month</span>
+              </div>
+            </div>
+          ) : (
           <div className="flex items-end gap-3 h-40 mt-4 px-2">
             {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, i) => {
               const heights = [40, 35, 52, 45, 38, 42, 48];
@@ -507,6 +610,7 @@ export default function OverviewPage() {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Category Statistics */}
@@ -514,7 +618,8 @@ export default function OverviewPage() {
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-base font-bold text-gray-900 dark:text-white">📈 Order Types</h3>
             <select className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-2 py-1 outline-none">
-              <option>Weekly</option>
+              <option>Today</option>
+              <option>Monthly</option>
             </select>
           </div>
           <div className="flex items-center justify-center mb-6 py-4">

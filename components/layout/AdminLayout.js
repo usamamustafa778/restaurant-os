@@ -237,6 +237,7 @@ function decodeRoleFromToken(token) {
 
 export default function AdminLayout({ 
   title, 
+  subtitle,
   children, 
   suspended = false,
   seoTitle,
@@ -693,9 +694,11 @@ export default function AdminLayout({
                 {title}
               </h1>
               <p className="text-sm text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
-                {role === "super_admin"
-                  ? "Manage restaurants, subscriptions and platform configuration"
-                  : "Manage your restaurant operations"}
+                {subtitle != null
+                  ? subtitle
+                  : role === "super_admin"
+                    ? "Manage restaurants, subscriptions and platform configuration"
+                    : "Manage your restaurant operations"}
               </p>
             </div>
           </div>
@@ -744,6 +747,7 @@ export default function AdminLayout({
                           onClick={() => {
                             setCurrentBranch(null);
                             setBranchDropdownOpen(false);
+                            window.location.reload();
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold transition-all ${
                             !currentBranch
@@ -770,8 +774,11 @@ export default function AdminLayout({
                             onClick={() => {
                               if (b.id !== "none") {
                                 setCurrentBranch(b);
+                                setBranchDropdownOpen(false);
+                                window.location.reload();
+                              } else {
+                                setBranchDropdownOpen(false);
                               }
-                              setBranchDropdownOpen(false);
                             }}
                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold transition-all mt-1 ${
                               currentBranch?.id === b.id

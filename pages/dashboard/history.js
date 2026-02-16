@@ -3,9 +3,10 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import { getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
-import { Filter, BarChart3, DollarSign, ShoppingBag, TrendingUp, Calendar } from "lucide-react";
+import { Filter, BarChart3, DollarSign, ShoppingBag, TrendingUp, Calendar, HelpCircle } from "lucide-react";
 
 export default function HistoryPage() {
+  const [showDateHelpModal, setShowDateHelpModal] = useState(false);
   const [filters, setFilters] = useState({
     from: "",
     to: ""
@@ -63,14 +64,25 @@ export default function HistoryPage() {
 
       {/* Filters */}
       <div className="mb-6 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-            <Calendar className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between gap-3 mb-5">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+              <Calendar className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">Date Range Filter</h3>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">Select a custom date range for your report</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">Date Range Filter</h3>
-            <p className="text-xs text-gray-500 dark:text-neutral-400">Select a custom date range for your report</p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowDateHelpModal(true)}
+            className="p-2 rounded-lg text-gray-500 dark:text-neutral-400 hover:text-primary dark:hover:text-primary hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+            title="How does date filtering work?"
+            aria-label="How does date filtering work?"
+          >
+            <HelpCircle className="w-5 h-5" />
+          </button>
         </div>
 
         <form
@@ -231,6 +243,43 @@ export default function HistoryPage() {
           </table>
         </div>
       </div>
+
+      {/* Date filter help modal */}
+      {showDateHelpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDateHelpModal(false)}>
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-2xl shadow-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+                <HelpCircle className="w-5 h-5 text-primary" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">How date filtering works</h3>
+            </div>
+            <div className="space-y-3 text-sm text-gray-700 dark:text-neutral-300">
+              <p>
+                <strong>From date</strong> — Report includes from the <strong>start of this day</strong> (00:00).
+              </p>
+              <p>
+                <strong>To date</strong> — Report includes up to the <strong>start of this day</strong> (00:00). So the &quot;To&quot; date itself is not included; only the moment at midnight is.
+              </p>
+              <p className="text-gray-600 dark:text-neutral-400">
+                <strong>Example:</strong> If you select From <strong>14 Feb</strong> and To <strong>15 Feb</strong>, you get completed orders from the <strong>full day of the 14th only</strong>. To include the 15th as well, select To <strong>16 Feb</strong> (or the day after your last desired day).
+              </p>
+              <p className="text-gray-600 dark:text-neutral-400">
+                Only <strong>completed</strong> orders are included in revenue, orders count, and top selling items.
+              </p>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDateHelpModal(false)}
+                className="px-4 py-2.5 rounded-xl bg-primary text-white font-semibold hover:opacity-90 transition-opacity"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }

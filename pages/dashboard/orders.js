@@ -7,9 +7,11 @@ import {
   getOrders,
   getNextStatuses,
   updateOrderStatus,
+  deleteOrder,
   SubscriptionInactiveError
 } from "../../lib/apiClient";
-import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink } from "lucide-react";
+import toast from "react-hot-toast";
+import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2 } from "lucide-react";
 
 const ORDER_STATUSES = [
   "All Orders",
@@ -28,6 +30,13 @@ const STATUS_TAB_LABELS = {
   COMPLETED: "Completed",
   CANCELLED: "Cancelled"
 };
+
+// Display order ID as YYYYMMDD-XXXX (strip "ORD-" prefix when present)
+function getDisplayOrderId(order) {
+  const id = order.id || order.orderNumber || order._id || "";
+  if (typeof id === "string" && id.startsWith("ORD-")) return id.replace(/^ORD-/, "");
+  return id;
+}
 
 function printBill(order) {
   const win = window.open("", "_blank", "width=360,height=600");
@@ -49,7 +58,7 @@ function printBill(order) {
   win.document.write(`<!DOCTYPE html>
 <html>
 <head>
-  <title>Receipt – ${order.id}</title>
+  <title>Receipt – ${getDisplayOrderId(order)}</title>
   <style>
     body { font-family: 'Courier New', monospace; margin: 0; padding: 16px; font-size: 13px; color: #222; }
     .center { text-align: center; }
@@ -63,7 +72,7 @@ function printBill(order) {
   <div class="center bold" style="font-size:16px;margin-bottom:4px;">Eats Desk</div>
   <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">Order Receipt</div>
   <hr/>
-  <div><strong>Order:</strong> ${order.id}</div>
+  <div><strong>Order:</strong> ${getDisplayOrderId(order)}</div>
   <div><strong>Date:</strong> ${new Date(order.createdAt).toLocaleString()}</div>
   <div><strong>Customer:</strong> ${order.customerName || "Walk‑in"}</div>
   <div><strong>Type:</strong> ${order.type || "dine-in"}</div>
@@ -106,6 +115,7 @@ function printBill(order) {
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Orders");
   const [sourceFilter, setSourceFilter] = useState("All Sources");
@@ -141,6 +151,23 @@ export default function OrdersPage() {
       setError(err.message || "Failed to update status");
     } finally {
       setUpdatingId(null);
+    }
+  }
+
+  async function handleDeleteOrder(order) {
+    const orderId = order._id || order.id;
+    const displayId = getDisplayOrderId(order);
+    if (!window.confirm(`Delete order #${displayId}? This cannot be undone.`)) return;
+    setDeletingId(orderId);
+    try {
+      await deleteOrder(orderId);
+      setOrders(prev => prev.filter(o => (o._id || o.id) !== orderId));
+      toast.success("Order deleted");
+    } catch (err) {
+      setError(err.message || "Failed to delete order");
+      toast.error(err.message || "Failed to delete order");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -266,7 +293,7 @@ export default function OrdersPage() {
               <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-gray-900 dark:text-white">#{order.id?.slice(0, 8) || "N/A"}</span>
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">#{getDisplayOrderId(order)}</span>
                     {order.source === "FOODPANDA" && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-500/10 dark:text-pink-400 font-semibold">
                         Foodpanda
@@ -353,14 +380,30 @@ export default function OrdersPage() {
               {/* Actions */}
               <div className="mt-auto px-4 pb-4 pt-3 border-t border-gray-100 dark:border-neutral-800 flex items-center gap-2">
                 {order.status === "COMPLETED" ? (
-                  <button
-                    type="button"
-                    onClick={() => printBill(order)}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 text-white px-4 py-2.5 text-xs font-semibold hover:bg-emerald-600 transition-colors"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    Print Receipt
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => printBill(order)}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 text-white px-4 py-2.5 text-xs font-semibold hover:bg-emerald-600 transition-colors"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Print Receipt
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deletingId === (order._id || order.id)}
+                      onClick={() => handleDeleteOrder(order)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 px-4 py-2.5 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                      title="Delete order"
+                    >
+                      {deletingId === (order._id || order.id) ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                      Delete
+                    </button>
+                  </>
                 ) : (
                   <>
                     {primaryNext && (
@@ -387,6 +430,19 @@ export default function OrdersPage() {
                         {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cancel"}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      disabled={deletingId === (order._id || order.id)}
+                      onClick={() => handleDeleteOrder(order)}
+                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
+                      title="Delete order"
+                    >
+                      {deletingId === (order._id || order.id) ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
                   </>
                 )}
               </div>

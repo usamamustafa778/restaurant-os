@@ -5,6 +5,8 @@ import Button from "../../components/ui/Button";
 import { Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { getInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, SubscriptionInactiveError } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
+import { useBranch } from "../../contexts/BranchContext";
+import toast from "react-hot-toast";
 
 // Helper: return the cost price label based on unit
 function costPriceLabel(unit) {
@@ -38,6 +40,7 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [modalError, setModalError] = useState("");
   const { confirm } = useConfirmDialog();
+  const { currentBranch } = useBranch() || {};
 
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
 
@@ -69,6 +72,10 @@ export default function InventoryPage() {
   }
 
   function startCreateItem() {
+    if (!currentBranch) {
+      toast.error("Please select a branch from the header dropdown to add inventory items.");
+      return;
+    }
     resetForm();
     setModalError("");
     setIsItemModalOpen(true);
@@ -184,13 +191,16 @@ export default function InventoryPage() {
     }
   }
 
-  const filtered = items.filter(item => {
+  // When a branch is selected, only show items that have a BranchInventory record for this branch
+  const branchFilteredItems = items.filter(item => item.hasBranchRecord !== false);
+
+  const filtered = branchFilteredItems.filter(item => {
     const term = search.trim().toLowerCase();
     if (!term) return true;
     return item.name.toLowerCase().includes(term) || item.unit.toLowerCase().includes(term);
   });
 
-  const lowStockItems = items.filter(item => item.currentStock <= (item.lowStockThreshold || 0));
+  const lowStockItems = branchFilteredItems.filter(item => item.currentStock <= (item.lowStockThreshold || 0));
 
   return (
     <AdminLayout title="Inventory Management" suspended={suspended}>
@@ -246,12 +256,12 @@ export default function InventoryPage() {
               <Package className="w-10 h-10 text-primary" />
             </div>
             <p className="text-base font-bold text-gray-700 dark:text-neutral-300">
-              {items.length === 0 ? "No inventory items yet" : "No results found"}
+              {branchFilteredItems.length === 0 ? "No inventory items yet" : "No results found"}
             </p>
             <p className="text-sm text-gray-500 dark:text-neutral-400 mt-2 max-w-md">
-              {items.length === 0 ? "Start by adding ingredients or raw materials to track" : "Try a different search term"}
+              {branchFilteredItems.length === 0 ? "Start by adding ingredients or raw materials to track" : "Try a different search term"}
             </p>
-            {items.length === 0 && (
+            {branchFilteredItems.length === 0 && (
               <button
                 onClick={startCreateItem}
                 className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"

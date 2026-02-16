@@ -55,7 +55,9 @@ export default function MenuItemsPage() {
   const categories = data?.categories || [];
   const items = data?.items || [];
   const inventoryItems = data?.inventoryItems || [];
-  
+  // When a branch is selected, only show ingredients that have a BranchInventory record
+  const branchFilteredInventoryItems = inventoryItems.filter(item => item.hasBranchRecord !== false);
+
   const { viewMode, setViewMode } = useViewMode("table");
   const { toggle: toggleDropdown, close: closeDropdown, isOpen: isDropdownOpen } = useDropdown();
   const { confirm } = useConfirmDialog();
@@ -435,9 +437,10 @@ export default function MenuItemsPage() {
             const displayUnit = recipeUnits[c.inventoryItemId];
             const rawQty = Number(c.quantity || "0");
             const baseQty = displayUnit && inv ? toBaseUnit(rawQty, displayUnit, inv.unit) : rawQty;
-            return { inventoryItemId: c.inventoryItemId, quantity: parseFloat(baseQty.toFixed(6)) };
+            const id = c.inventoryItemId != null ? String(c.inventoryItemId).trim() : "";
+            return { inventoryItemId: id || undefined, quantity: parseFloat(baseQty.toFixed(6)) };
           })
-          .filter(c => !Number.isNaN(c.quantity) && c.quantity > 0);
+          .filter(c => c.inventoryItemId && !Number.isNaN(c.quantity) && c.quantity > 0);
         const updated = await updateItem(recipeDialog.itemId, { inventoryConsumptions: payloadConsumptions });
         setData(prev => ({
           ...prev,
@@ -1075,7 +1078,7 @@ export default function MenuItemsPage() {
               </div>
             )}
             <div className="max-h-72 overflow-y-auto text-xs mb-4">
-              {inventoryItems.length === 0 ? (
+              {branchFilteredInventoryItems.length === 0 ? (
                 <p className="text-xs text-gray-800 dark:text-neutral-500">
                   No inventory items yet. Create ingredients in the Inventory page first.
                 </p>
@@ -1089,7 +1092,7 @@ export default function MenuItemsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-neutral-800">
-                    {inventoryItems.map(inv => {
+                    {branchFilteredInventoryItems.map(inv => {
                       const existing = recipeDialog.consumptions.find(c => c.inventoryItemId === inv.id);
                       // Always show gram/ml/piece — map legacy kg→gram, liter→ml
                       const UNIT_DISPLAY = { kg: "gram", liter: "ml", gram: "gram", ml: "ml", piece: "piece" };
@@ -1124,7 +1127,7 @@ export default function MenuItemsPage() {
               <Button type="button" variant="ghost" className="px-3" onClick={closeRecipeDialog}>
                 Cancel
               </Button>
-              <Button type="button" className="px-3" onClick={handleSaveRecipe} disabled={inventoryItems.length === 0}>
+              <Button type="button" className="px-3" onClick={handleSaveRecipe} disabled={branchFilteredInventoryItems.length === 0}>
                 Save recipe
               </Button>
             </div>
