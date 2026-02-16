@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getMenu,
   getBranchMenu,
   createPosOrder,
+  getOrder,
+  updateOrder,
   SubscriptionInactiveError,
   getActiveDealsByBranch,
   findApplicableDeals,
@@ -16,6 +19,9 @@ import {
   getPosTransactions,
   getPosTransaction,
   deletePosTransaction,
+  getTables,
+  getCustomers,
+  createCustomer,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
@@ -46,9 +52,13 @@ import {
 } from "lucide-react";
 
 export default function POSPage() {
+  const router = useRouter();
   const { currentBranch } = useBranch() || {};
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
+  const [editingOrderId, setEditingOrderId] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [loadingEditOrder, setLoadingEditOrder] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -71,9 +81,11 @@ export default function POSPage() {
 
   // New features from Dream POS
   const [dietaryFilter, setDietaryFilter] = useState("all"); // all, veg, non-veg, egg
-  const [orderFilter, setOrderFilter] = useState("all"); // all, dine-in, takeaway, delivery, table
+  const [orderFilter, setOrderFilter] = useState("all"); // all, dine-in, takeaway, delivery
   const [selectedWaiter, setSelectedWaiter] = useState("");
   const [tableNumber, setTableNumber] = useState("");
+  const [tableName, setTableName] = useState("");
+  const [tables, setTables] = useState([]);
   const [itemNotes, setItemNotes] = useState({}); // { itemId: "note text" }
   const [recentOrders, setRecentOrders] = useState([]);
   const [currentOrderIndex, setCurrentOrderIndex] = useState(0);
@@ -104,11 +116,21 @@ export default function POSPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("newest");
 
+  // Customer modal (select or add)
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customerModalMode, setCustomerModalMode] = useState("select"); // 'select' | 'add'
+  const [customersList, setCustomersList] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerModalLoading, setCustomerModalLoading] = useState(false);
+  const [customerModalError, setCustomerModalError] = useState("");
+  const [customerAddForm, setCustomerAddForm] = useState({ name: "", phone: "", address: "", notes: "" });
+
   useEffect(() => {
     loadMenu();
     loadActiveDeals();
     loadDrafts();
     loadTransactions();
+    loadTables();
 
     // Listen for sidebar toggle events from AdminLayout
     function handleSidebarToggle(e) {
@@ -118,6 +140,144 @@ export default function POSPage() {
     return () =>
       window.removeEventListener("sidebar-toggle", handleSidebarToggle);
   }, [currentBranch]);
+
+  // Load order for edit when ?edit=id is in URL
+  useEffect(() => {
+    const editId = router.query.edit;
+    if (!editId || !menu?.items?.length) return;
+
+    let cancelled = false;
+    setLoadingEditOrder(true);
+    setEditingOrderId(null);
+    setEditingOrder(null);
+
+    getOrder(editId)
+      .then((order) => {
+        if (cancelled) return;
+        const items = order.items || [];
+        const menuItems = menu.items || [];
+        const cartItems = items.map((it) => {
+          const menuItemId = it.menuItemId || null;
+          let id = menuItemId;
+          let price = it.unitPrice ?? 0;
+          let imageUrl = "";
+          if (!id) {
+            const byName = menuItems.find((m) => (m.name || "").toLowerCase() === (it.name || "").toLowerCase());
+            if (byName) {
+              id = byName.id;
+              price = byName.finalPrice ?? byName.price ?? price;
+              imageUrl = byName.imageUrl || "";
+            } else {
+              id = `edit-${it.name}-${Math.random().toString(36).slice(2)}`;
+            }
+          } else {
+            const mi = menuItems.find((m) => (m.id || m._id) === id);
+            if (mi) {
+              imageUrl = mi.imageUrl || "";
+              price = mi.finalPrice ?? mi.price ?? price;
+            }
+          }
+          return {
+            id,
+            name: it.name,
+            price,
+            quantity: it.qty ?? 1,
+            imageUrl,
+          };
+        });
+        setCart(cartItems);
+        setCustomerName(order.customerName || "");
+        setCustomerPhone(order.customerPhone || "");
+        setCustomerAddress(order.deliveryAddress || "");
+        setOrderType(
+          order.type === "takeaway" ? "TAKEAWAY" : order.type === "delivery" ? "DELIVERY" : "DINE_IN"
+        );
+        setTableName(order.tableName || "");
+        setDiscountAmount(order.discountAmount ? String(order.discountAmount) : "");
+        setEditingOrderId(order._id || order.id);
+        setEditingOrder(order);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          toast.error(err.message || "Failed to load order");
+          router.replace("/dashboard/pos");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingEditOrder(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [router.query.edit, menu?.items?.length]);
+
+  async function loadTables() {
+    try {
+      const data = await getTables();
+      setTables(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setTables([]);
+    }
+  }
+
+  async function loadCustomersForModal() {
+    setCustomerModalLoading(true);
+    setCustomerModalError("");
+    try {
+      const list = await getCustomers(false);
+      setCustomersList(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setCustomerModalError(err.message || "Failed to load customers");
+      setCustomersList([]);
+    } finally {
+      setCustomerModalLoading(false);
+    }
+  }
+
+  function openCustomerModal() {
+    setShowCustomerModal(true);
+    setCustomerModalMode("select");
+    setCustomerSearch("");
+    setCustomerModalError("");
+    setCustomerAddForm({ name: "", phone: "", address: "", notes: "" });
+    loadCustomersForModal();
+  }
+
+  function closeCustomerModal() {
+    setShowCustomerModal(false);
+    setCustomerModalError("");
+  }
+
+  function selectCustomerForOrder(customer) {
+    setCustomerName(customer.name || "");
+    setCustomerPhone(customer.phone || "");
+    setCustomerAddress(customer.address || "");
+    closeCustomerModal();
+  }
+
+  async function handleAddCustomerSubmit(e) {
+    e.preventDefault();
+    const { name, phone, address, notes } = customerAddForm;
+    if (!name?.trim() || !phone?.trim()) {
+      setCustomerModalError("Name and phone are required");
+      return;
+    }
+    setCustomerModalLoading(true);
+    setCustomerModalError("");
+    try {
+      const created = await createCustomer({
+        name: name.trim(),
+        phone: phone.trim(),
+        address: (address || "").trim() || undefined,
+        notes: (notes || "").trim() || undefined,
+      });
+      selectCustomerForOrder(created);
+      toast.success("Customer added");
+    } catch (err) {
+      setCustomerModalError(err.message || "Failed to add customer");
+    } finally {
+      setCustomerModalLoading(false);
+    }
+  }
 
   // Check for applicable deals when cart changes
   useEffect(() => {
@@ -296,11 +456,11 @@ export default function POSPage() {
     setCart(
       cart
         .map((item) => {
-          if (item.id === itemId) {
-            const newQty = item.quantity + change;
-            return newQty > 0 ? { ...item, quantity: newQty } : item;
-          }
-          return item;
+      if (item.id === itemId) {
+        const newQty = item.quantity + change;
+        return newQty > 0 ? { ...item, quantity: newQty } : item;
+      }
+      return item;
         })
         .filter((item) => item.quantity > 0),
     );
@@ -315,6 +475,7 @@ export default function POSPage() {
     setShowCheckout(false);
     setItemNotes({});
     setTableNumber("");
+    setTableName("");
     setSelectedWaiter("");
     setSelectedDeals([]);
     setDealDiscount(0);
@@ -352,7 +513,7 @@ export default function POSPage() {
           quantity: item.quantity,
         })),
         orderType,
-        paymentMethod,
+        paymentMethod: "PENDING",
         discountAmount: totalDiscount,
         appliedDeals:
           selectedDeals.length > 0
@@ -369,6 +530,7 @@ export default function POSPage() {
         customerPhone: customerPhone.trim(),
         deliveryAddress: customerAddress.trim(),
         branchId: currentBranch?.id ?? undefined,
+        tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
       });
 
       toast.success(
@@ -383,8 +545,49 @@ export default function POSPage() {
       setDealDiscount(0);
       setShowCustomerDetails(false);
       setShowCheckout(false);
+      setTableName("");
     } catch (err) {
       setError(err.message || "Failed to place order");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateOrder = async () => {
+    if (!editingOrderId || cart.length === 0) {
+      setError("Cart is empty");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await updateOrder(editingOrderId, {
+        items: cart.map((item) => ({
+          menuItemId: String(item.id).startsWith("edit-") ? null : item.id,
+          quantity: item.quantity,
+          unitPrice: item.price,
+          name: item.name,
+        })),
+        discountAmount: totalDiscount,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        deliveryAddress: customerAddress.trim(),
+        orderType,
+        tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+      });
+      toast.success("Order updated");
+      setEditingOrderId(null);
+      setEditingOrder(null);
+      setCart([]);
+      setCustomerName("");
+      setCustomerPhone("");
+      setCustomerAddress("");
+      setDiscountAmount("");
+      setTableName("");
+      setShowCheckout(false);
+      router.replace("/dashboard/pos");
+    } catch (err) {
+      setError(err.message || "Failed to update order");
     } finally {
       setLoading(false);
     }
@@ -444,6 +647,7 @@ export default function POSPage() {
         total,
         itemNotes,
         tableNumber,
+        tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
         selectedWaiter,
         branchId: currentBranch?.id ?? undefined,
       });
@@ -477,6 +681,7 @@ export default function POSPage() {
       setCustomerPhone(draft.customerPhone || "");
       setCustomerAddress(draft.deliveryAddress || "");
       setTableNumber(draft.tableNumber || "");
+      setTableName(draft.tableName || "");
       setSelectedWaiter(draft.selectedWaiter || "");
       
       if (draft.itemNotes) {
@@ -518,7 +723,7 @@ export default function POSPage() {
   const filteredDrafts = drafts
     .filter((draft) => {
       const searchLower = searchQuery.toLowerCase();
-      return (
+  return (
         draft.customerName?.toLowerCase().includes(searchLower) ||
         draft.orderNumber?.toLowerCase().includes(searchLower) ||
         draft.ref?.toLowerCase().includes(searchLower)
@@ -577,7 +782,6 @@ export default function POSPage() {
                     { value: "dine-in", label: "Dine" },
                     { value: "takeaway", label: "Take" },
                     { value: "delivery", label: "Del." },
-                    { value: "table", label: "Table" },
                   ].map((filter) => (
                     <button
                       key={filter.value}
@@ -591,7 +795,7 @@ export default function POSPage() {
                       {filter.label}
                     </button>
                   ))}
-                </div>
+        </div>
                 {/* Navigation Arrows - Compact */}
                 <button
                   onClick={() =>
@@ -692,7 +896,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Menu Items Section */}
+        {/* Menu Items Section */}
           <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1">
             {/* Header with Filters - Compact */}
             <div className="p-2 border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
@@ -712,7 +916,7 @@ export default function POSPage() {
                       key={filter.value}
                       className="flex items-center gap-1 cursor-pointer"
                     >
-                      <input
+            <input
                         type="checkbox"
                         checked={dietaryFilter === filter.value}
                         onChange={() =>
@@ -734,10 +938,10 @@ export default function POSPage() {
 
               {/* Category Cards - Compact */}
               <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2 mb-2">
-                <button
-                  onClick={() => setSelectedCategory("all")}
+              <button
+                onClick={() => setSelectedCategory("all")}
                   className={`relative p-2 rounded-lg border transition-all ${
-                    selectedCategory === "all"
+                  selectedCategory === "all"
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900"
                   }`}
@@ -755,18 +959,18 @@ export default function POSPage() {
                       </div>
                     </div>
                   </div>
-                </button>
+              </button>
 
                 {menu.categories.slice(0, 4).map((cat) => {
                   const catItemCount = menu.items.filter(
                     (item) => item.categoryId === cat.id,
                   ).length;
                   return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
                       className={`relative p-2 rounded-lg border transition-all ${
-                        selectedCategory === cat.id
+                    selectedCategory === cat.id
                           ? "border-primary bg-primary/5 shadow-sm"
                           : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900"
                       }`}
@@ -788,14 +992,14 @@ export default function POSPage() {
                         </div>
                         <div className="text-left flex-1 min-w-0">
                           <div className="font-bold text-gray-900 dark:text-white text-xs truncate">
-                            {cat.name}
+                  {cat.name}
                           </div>
                           <div className="text-[10px] text-gray-500 dark:text-neutral-400">
                             {catItemCount}
                           </div>
                         </div>
                       </div>
-                    </button>
+                </button>
                   );
                 })}
               </div>
@@ -812,8 +1016,8 @@ export default function POSPage() {
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
                   🔍
                 </div>
-              </div>
             </div>
+          </div>
 
             {/* Menu Grid - Compact */}
             <div className="flex-1 overflow-y-auto p-2 bg-gray-50 dark:bg-neutral-900/50">
@@ -830,9 +1034,9 @@ export default function POSPage() {
                   const isTrending = idx % 3 === 0;
                   const isMustTry = idx % 5 === 0;
 
-                  return (
-                    <div
-                      key={item.id}
+                return (
+                  <div
+                    key={item.id}
                       className={`group relative flex flex-col rounded-lg overflow-hidden transition-all ${
                         outOfStock
                           ? "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 opacity-60"
@@ -865,9 +1069,9 @@ export default function POSPage() {
                         )}
 
                         {item.imageUrl ? (
-                          <img
-                            src={item.imageUrl}
-                            alt={item.name}
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
                             className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
                           />
                         ) : (
@@ -928,37 +1132,37 @@ export default function POSPage() {
                                 className="flex items-center gap-0.5 bg-gray-100 dark:bg-neutral-800 rounded p-0.5"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <button
-                                  onClick={() => updateQuantity(item.id, -1)}
+                            <button
+                              onClick={() => updateQuantity(item.id, -1)}
                                   className="w-5 h-5 flex items-center justify-center rounded hover:bg-white dark:hover:bg-neutral-700 transition-colors"
-                                >
-                                  <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
-                                </button>
+                            >
+                              <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
+                            </button>
                                 <span className="w-6 text-center text-xs font-bold text-gray-900 dark:text-white">
                                   {inCart.quantity}
                                 </span>
-                                <button
-                                  onClick={() => updateQuantity(item.id, 1)}
+                            <button
+                              onClick={() => updateQuantity(item.id, 1)}
                                   className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => addToCart(item)}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => addToCart(item)}
                                 className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
                             ))}
-                        </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-              {filteredItems.length === 0 && (
+                  </div>
+                );
+              })}
+            </div>
+            {filteredItems.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full py-20">
                   <div className="w-24 h-24 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
                     <ShoppingCart className="w-12 h-12 text-gray-300 dark:text-neutral-700" />
@@ -969,19 +1173,44 @@ export default function POSPage() {
                   <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
                     Try a different search or category
                   </p>
-                </div>
-              )}
+              </div>
+            )}
             </div>
           </div>
         </div>
 
         {/* Cart Section - Compact Style */}
         <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+          {editingOrderId && (
+            <div className="px-3 py-2 bg-amber-500/15 dark:bg-amber-500/20 border-b border-amber-500/30 flex items-center justify-between">
+              <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                Editing order #{editingOrder?.id || editingOrderId}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingOrderId(null);
+                  setEditingOrder(null);
+                  setCart([]);
+                  router.replace("/dashboard/pos");
+                }}
+                className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
+              >
+                Cancel edit
+              </button>
+            </div>
+          )}
+          {loadingEditOrder && (
+            <div className="px-3 py-4 flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-neutral-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading order...
+            </div>
+          )}
           {/* Order Header */}
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                Order #56998
+                {editingOrderId ? `Order #${editingOrder?.id || editingOrderId}` : "Order #56998"}
               </h3>
               <span className="text-xs text-gray-500 dark:text-neutral-400">
                 {new Date().toLocaleDateString("en-US", {
@@ -991,7 +1220,7 @@ export default function POSPage() {
                   minute: "2-digit",
                 })}
               </span>
-            </div>
+          </div>
 
             {/* Order Type Buttons */}
             <div className="grid grid-cols-4 gap-2 mb-2">
@@ -999,11 +1228,13 @@ export default function POSPage() {
                 { type: "DINE_IN", icon: "🍽️", label: "Dine In" },
                 { type: "TAKEAWAY", icon: "📦", label: "Take" },
                 { type: "DELIVERY", icon: "🚚", label: "Delivery" },
-                { type: "TABLE", icon: "🪑", label: "Table" },
               ].map((option) => (
                 <button
                   key={option.type}
-                  onClick={() => setOrderType(option.type)}
+                  onClick={() => {
+                    setOrderType(option.type);
+                    if (option.type !== "DINE_IN") setTableName("");
+                  }}
                   className={`px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
                     orderType === option.type
                       ? "bg-primary text-white"
@@ -1016,14 +1247,38 @@ export default function POSPage() {
               ))}
             </div>
 
+            {/* Table selection (optional, only for DINE_IN) */}
+            {orderType === "DINE_IN" && (
+              <div className="mb-2">
+                <label className="block text-xs font-semibold text-gray-600 dark:text-neutral-400 mb-1">Table (optional)</label>
+                <select
+                  value={tableName}
+                  onChange={(e) => setTableName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
+                >
+                  <option value="">No table</option>
+                  {tables.filter((t) => t.isAvailable).map((t) => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))}
+                  {tables.filter((t) => !t.isAvailable).map((t) => (
+                    <option key={t.id} value={t.name}>{t.name} (occupied)</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Waiter & Customer Selection */}
             <div className="grid grid-cols-2 gap-2">
               <select className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white">
                 <option>Waiter</option>
               </select>
-              <button className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white flex items-center justify-between">
-                <span>Select Customer</span>
-                <Plus className="w-3.5 h-3.5" />
+              <button
+                type="button"
+                onClick={openCustomerModal}
+                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white flex items-center justify-between hover:border-gray-300 dark:hover:border-neutral-600"
+              >
+                <span>{customerName ? `${customerName}${customerPhone ? ` • ${customerPhone}` : ""}` : "Select Customer"}</span>
+                <Plus className="w-3.5 h-3.5 flex-shrink-0" />
               </button>
             </div>
           </div>
@@ -1058,8 +1313,8 @@ export default function POSPage() {
               cart.map((item) => {
                 const isExpanded = expandedCartItems.includes(item.id);
                 return (
-                  <div
-                    key={item.id}
+                <div
+                  key={item.id}
                     onClick={() => {
                       setExpandedCartItems((prev) =>
                         prev.includes(item.id)
@@ -1098,7 +1353,7 @@ export default function POSPage() {
                               </span>
                             </h4>
                           </div>
-                          <button
+                    <button
                             onClick={(e) => {
                               e.stopPropagation();
                               removeFromCart(item.id);
@@ -1106,8 +1361,8 @@ export default function POSPage() {
                             className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
                           >
                             <span className="text-lg">✕</span>
-                          </button>
-                        </div>
+                    </button>
+                  </div>
 
                         {/* Quantity and Add Note Row */}
                         <div className="flex items-center justify-between gap-2">
@@ -1115,7 +1370,7 @@ export default function POSPage() {
                             className="flex items-center gap-1 bg-gray-100 dark:bg-neutral-900 rounded-md p-0.5"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <button
+                      <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 updateQuantity(item.id, -1);
@@ -1123,11 +1378,11 @@ export default function POSPage() {
                               className="w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors"
                             >
                               <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-400" />
-                            </button>
+                      </button>
                             <span className="w-8 scale-105 text-center text-xs font-semibold text-gray-900 dark:text-white">
                               {item.quantity}
                             </span>
-                            <button
+                      <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 updateQuantity(item.id, 1);
@@ -1135,8 +1390,8 @@ export default function POSPage() {
                               className="w-4 h-4 flex items-center justify-center bg-primary hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors"
                             >
                               <Plus className="w-3 h-3 dark:text-neutral-400" />
-                            </button>
-                          </div>
+                      </button>
+                    </div>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1155,8 +1410,8 @@ export default function POSPage() {
                       <div className="mt-3 p-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
                         <p className="text-xs text-blue-700 dark:text-blue-400">
                           📝 {itemNotes[item.id]}
-                        </p>
-                      </div>
+                    </p>
+                  </div>
                     )}
 
                     {/* Price Grid - Only shown when expanded */}
@@ -1166,7 +1421,7 @@ export default function POSPage() {
                           <div>
                             <div className="text-gray-500 dark:text-neutral-500 mb-1.5">
                               Item Rate
-                            </div>
+                </div>
                             <div className="font-semibold text-gray-900 dark:text-white">
                               Rs {item.price}
                             </div>
@@ -1210,7 +1465,7 @@ export default function POSPage() {
                     <span className="flex items-center gap-2">
                       <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-emerald-500/10 to-emerald-600/10 flex items-center justify-center">
                         <Tag className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      </div>
+                </div>
                       <span className="flex items-center gap-2">
                         Deals
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
@@ -1256,13 +1511,13 @@ export default function POSPage() {
                                       {deal.badgeText}
                                     </span>
                                   )}
-                                </div>
+                </div>
                                 {deal.description && (
                                   <p className="text-xs text-gray-600 dark:text-neutral-400 line-clamp-1">
                                     {deal.description}
                                   </p>
                                 )}
-                              </div>
+              </div>
                               <div className="text-right shrink-0">
                                 {isSelected && (
                                   <CircleCheckBig className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mb-1" />
@@ -1340,27 +1595,48 @@ export default function POSPage() {
                 </div>
               </div>
 
-              {/* Place Order Button */}
-              <button
-                onClick={handleCheckout}
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Receipt className="w-4 h-4" />
-                    Place an Order
-                  </>
-                )}
-              </button>
+              {/* Place Order / Update Order Button */}
+              {editingOrderId ? (
+                <button
+                  onClick={handleUpdateOrder}
+                  disabled={loading || cart.length === 0}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-500 text-white font-semibold text-sm hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Receipt className="w-4 h-4" />
+                      Update order
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleCheckout}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Receipt className="w-4 h-4" />
+                      Place an Order
+                    </>
+                  )}
+                </button>
+              )}
 
-              {/* Save as Draft Button */}
-              <button
+              {/* Save as Draft Button (only when not editing) */}
+              {!editingOrderId && (
+                <button
                 onClick={saveDraft}
                 disabled={loading || cart.length === 0}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1368,6 +1644,7 @@ export default function POSPage() {
                 <FileText className="w-4 h-4" />
                 Save as Draft
               </button>
+              )}
 
               {/* Action Buttons Grid */}
               <div className="grid grid-cols-3 gap-2">
@@ -1378,8 +1655,8 @@ export default function POSPage() {
                   <span className="text-lg">🖨️</span>
                   <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
                     Print
-                  </span>
-                </button>
+                      </span>
+                    </button>
                 <button 
                   onClick={() => setShowInvoiceModal(true)}
                   className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
@@ -1483,8 +1760,8 @@ export default function POSPage() {
             <div className="px-6 py-4 border-b border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50">
               <div className="flex items-center gap-4">
                 <div className="flex-1 relative">
-                  <input
-                    type="text"
+                        <input
+                          type="text"
                     placeholder="Search"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -1492,8 +1769,8 @@ export default function POSPage() {
                   />
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     🔍
-                  </div>
-                </div>
+                      </div>
+                    </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-600 dark:text-neutral-400">
                     Sort by :
@@ -1506,7 +1783,7 @@ export default function POSPage() {
                     <option value="newest">Newest</option>
                     <option value="oldest">Oldest</option>
                   </select>
-                </div>
+                  </div>
               </div>
             </div>
 
@@ -1898,9 +2175,9 @@ export default function POSPage() {
                         </span>
                         <span className="text-sm font-semibold text-red-600 dark:text-red-400">
                           -${totalDiscount.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
+                      </span>
+                    </div>
+                  )}
                     <div className="pt-3 border-t border-gray-200 dark:border-neutral-800">
                       <div className="flex justify-between items-center">
                         <span className="text-base font-bold text-gray-900 dark:text-white">
@@ -1918,7 +2195,7 @@ export default function POSPage() {
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-200 dark:border-neutral-800 flex gap-3 bg-gray-50 dark:bg-neutral-900/50">
-              <button
+                    <button
                 onClick={() => {
                   // Download PDF logic here
                   alert("Download PDF functionality to be implemented");
@@ -1927,8 +2204,8 @@ export default function POSPage() {
               >
                 <FileText className="w-4 h-4" />
                 Download PDF
-              </button>
-              <button
+                    </button>
+                    <button
                 onClick={() => {
                   window.print();
                 }}
@@ -1936,8 +2213,8 @@ export default function POSPage() {
               >
                 <Receipt className="w-4 h-4" />
                 Print Invoice
-              </button>
-            </div>
+                    </button>
+                  </div>
           </div>
         </div>
       )}
@@ -1951,12 +2228,12 @@ export default function POSPage() {
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                 Print Reciept
               </h2>
-              <button
+                    <button
                 onClick={() => setShowPrintModal(false)}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
               >
                 <span className="text-2xl">×</span>
-              </button>
+                    </button>
             </div>
 
             {/* Modal Body */}
@@ -2015,12 +2292,10 @@ export default function POSPage() {
                     </span>
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
                       {orderType === "DINE_IN"
-                        ? "Dine In (Table 4)"
+                        ? (tableName ? `Dine In (${tableName})` : "Dine In")
                         : orderType === "TAKEAWAY"
                           ? "Take Away"
-                          : orderType === "DELIVERY"
-                            ? "Delivery"
-                            : "Table"}
+                          : "Delivery"}
                     </span>
                   </div>
                 </div>
@@ -2091,7 +2366,7 @@ export default function POSPage() {
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-200 dark:border-neutral-800 flex gap-3">
-              <button
+                    <button
                 onClick={() => setShowPrintModal(false)}
                 className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
               >
@@ -2104,7 +2379,164 @@ export default function POSPage() {
                 className="flex-1 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors"
               >
                 Print
+                    </button>
+                  </div>
+          </div>
+        </div>
+      )}
+
+      {/* Select / Add Customer Modal */}
+      {showCustomerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                Customer
+              </h2>
+                  <button
+                type="button"
+                onClick={closeCustomerModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+              >
+                <span className="text-2xl">×</span>
+                  </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 dark:border-neutral-800">
+                  <button
+                type="button"
+                onClick={() => { setCustomerModalMode("select"); setCustomerModalError(""); }}
+                className={`flex-1 py-2.5 text-sm font-medium ${customerModalMode === "select" ? "text-primary border-b-2 border-primary" : "text-gray-500 dark:text-neutral-400"}`}
+              >
+                Select customer
               </button>
+              <button
+                type="button"
+                onClick={() => { setCustomerModalMode("add"); setCustomerModalError(""); }}
+                className={`flex-1 py-2.5 text-sm font-medium ${customerModalMode === "add" ? "text-primary border-b-2 border-primary" : "text-gray-500 dark:text-neutral-400"}`}
+              >
+                Add customer
+                  </button>
+                </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {customerModalError && (
+                <p className="mb-3 text-sm text-red-600 dark:text-red-400">{customerModalError}</p>
+              )}
+
+              {customerModalMode === "select" ? (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Search by name or phone..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white mb-3"
+                  />
+                  {customerModalLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+                  ) : (
+                    <>
+                      <ul className="space-y-1">
+                        {customersList
+                          .filter(
+                            (c) =>
+                              !customerSearch.trim() ||
+                              (c.name || "").toLowerCase().includes(customerSearch.toLowerCase()) ||
+                              (c.phone || "").includes(customerSearch)
+                          )
+                          .map((c) => (
+                            <li key={c.id}>
+                              <button
+                                type="button"
+                                onClick={() => selectCustomerForOrder(c)}
+                                className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800/50 text-sm"
+                              >
+                                <span className="font-medium text-gray-900 dark:text-white">{c.name}</span>
+                                {c.phone && <span className="text-gray-500 dark:text-neutral-400 ml-2">{c.phone}</span>}
+                              </button>
+                            </li>
+                          ))}
+                      </ul>
+                      {!customerModalLoading && customersList.length === 0 && (
+                        <p className="text-sm text-gray-500 dark:text-neutral-400 py-4">No customers yet. Add one with the &quot;Add customer&quot; tab.</p>
+                      )}
+                      {!customerModalLoading && customersList.length > 0 && customersList.filter(
+                        (c) =>
+                          !customerSearch.trim() ||
+                          (c.name || "").toLowerCase().includes(customerSearch.toLowerCase()) ||
+                          (c.phone || "").includes(customerSearch)
+                      ).length === 0 && (
+                        <p className="text-sm text-gray-500 dark:text-neutral-400 py-4">No matching customers.</p>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <form onSubmit={handleAddCustomerSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={customerAddForm.name}
+                      onChange={(e) => setCustomerAddForm((f) => ({ ...f, name: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                      placeholder="Customer name"
+                    />
+        </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Phone *</label>
+                    <input
+                      type="text"
+                      required
+                      value={customerAddForm.phone}
+                      onChange={(e) => setCustomerAddForm((f) => ({ ...f, phone: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                      placeholder="Phone number"
+                    />
+      </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Address (optional)</label>
+                    <input
+                      type="text"
+                      value={customerAddForm.address}
+                      onChange={(e) => setCustomerAddForm((f) => ({ ...f, address: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                      placeholder="Address"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Note (optional)</label>
+                    <input
+                      type="text"
+                      value={customerAddForm.notes}
+                      onChange={(e) => setCustomerAddForm((f) => ({ ...f, notes: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                      placeholder="Note"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={closeCustomerModal}
+                      className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={customerModalLoading}
+                      className="flex-1 px-3 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-50"
+                    >
+                      {customerModalLoading ? "Adding…" : "Add & use"}
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>

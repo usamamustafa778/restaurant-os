@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
@@ -8,10 +9,11 @@ import {
   getNextStatuses,
   updateOrderStatus,
   deleteOrder,
+  recordOrderPayment,
   SubscriptionInactiveError
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
-import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2 } from "lucide-react";
+import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil } from "lucide-react";
 
 const ORDER_STATUSES = [
   "All Orders",
@@ -77,6 +79,7 @@ function printBill(order) {
   <div><strong>Customer:</strong> ${order.customerName || "Walk‑in"}</div>
   <div><strong>Type:</strong> ${order.type || "dine-in"}</div>
   <div><strong>Payment:</strong> ${order.paymentMethod || "Cash"}</div>
+  ${(order.paymentAmountReceived != null && order.paymentAmountReceived > 0) ? `<div><strong>Amount received:</strong> Rs ${order.paymentAmountReceived.toFixed(0)}</div><div><strong>Return:</strong> Rs ${(order.paymentAmountReturned != null ? order.paymentAmountReturned : 0).toFixed(0)}</div>` : ""}
   <hr/>
   <table>
     <thead>
@@ -113,6 +116,7 @@ function printBill(order) {
 }
 
 export default function OrdersPage() {
+  const router = useRouter();
   const [orders, setOrders] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -122,6 +126,13 @@ export default function OrdersPage() {
   const [sortOrder, setSortOrder] = useState("Newest First");
   const [suspended, setSuspended] = useState(false);
   const [error, setError] = useState("");
+
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentOrder, setPaymentOrder] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [amountReceived, setAmountReceived] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
   async function loadOrders() {
     try {
@@ -168,6 +179,54 @@ export default function OrdersPage() {
       toast.error(err.message || "Failed to delete order");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  function openPaymentModal(order) {
+    setPaymentOrder(order);
+    setPaymentMethod("CASH");
+    setAmountReceived("");
+    setPaymentError("");
+    setShowPaymentModal(true);
+  }
+
+  function closePaymentModal() {
+    setShowPaymentModal(false);
+    setPaymentOrder(null);
+    setPaymentError("");
+  }
+
+  async function handleRecordPayment(e) {
+    e.preventDefault();
+    if (!paymentOrder) return;
+    const orderId = paymentOrder._id || paymentOrder.id;
+    const billTotal = Number(paymentOrder.total) || 0;
+    if (paymentMethod === "CASH") {
+      const received = Number(amountReceived);
+      if (isNaN(received) || received < billTotal) {
+        setPaymentError(`Amount received must be at least Rs ${billTotal}`);
+        return;
+      }
+    }
+    setPaymentLoading(true);
+    setPaymentError("");
+    try {
+      const payload = { paymentMethod };
+      if (paymentMethod === "CASH") {
+        const received = Number(amountReceived);
+        payload.amountReceived = received;
+        payload.amountReturned = received - billTotal;
+      }
+      const updated = await recordOrderPayment(orderId, payload);
+      setOrders(prev =>
+        prev.map(o => (o._id === orderId || o.id === orderId ? { ...o, ...updated } : o))
+      );
+      toast.success("Payment recorded");
+      closePaymentModal();
+    } catch (err) {
+      setPaymentError(err.message || "Failed to record payment");
+    } finally {
+      setPaymentLoading(false);
     }
   }
 
@@ -378,22 +437,40 @@ export default function OrdersPage() {
               </div>
 
               {/* Actions */}
-              <div className="mt-auto px-4 pb-4 pt-3 border-t border-gray-100 dark:border-neutral-800 flex items-center gap-2">
+              <div className="mt-auto px-4 pb-4 pt-3 border-t border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2">
                 {order.status === "COMPLETED" ? (
                   <>
+                    {(order.paymentMethod === "To be paid" || order.paymentMethod === "PENDING") && (
+                      <button
+                        type="button"
+                        onClick={() => openPaymentModal(order)}
+                        className="p-2.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                        title="Record payment"
+                      >
+                        <Banknote className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => printBill(order)}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 text-white px-4 py-2.5 text-xs font-semibold hover:bg-emerald-600 transition-colors"
+                      className="p-2.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+                      title="Print receipt"
                     >
                       <Printer className="w-3.5 h-3.5" />
-                      Print Receipt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
+                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
+                      title="Edit order"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
                       disabled={deletingId === (order._id || order.id)}
                       onClick={() => handleDeleteOrder(order)}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 px-4 py-2.5 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
                       title="Delete order"
                     >
                       {deletingId === (order._id || order.id) ? (
@@ -401,11 +478,20 @@ export default function OrdersPage() {
                       ) : (
                         <Trash2 className="w-3.5 h-3.5" />
                       )}
-                      Delete
                     </button>
                   </>
                 ) : (
                   <>
+                    {order.status !== "CANCELLED" && (
+                      <button
+                        type="button"
+                        onClick={() => openPaymentModal(order)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-white px-4 py-2.5 text-xs font-semibold hover:bg-emerald-700 transition-colors"
+                      >
+                        <Banknote className="w-3.5 h-3.5" />
+                        Take payment
+                      </button>
+                    )}
                     {primaryNext && (
                       <button
                         type="button"
@@ -430,6 +516,14 @@ export default function OrdersPage() {
                         {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cancel"}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
+                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
+                      title="Edit order"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       type="button"
                       disabled={deletingId === (order._id || order.id)}
@@ -462,6 +556,98 @@ export default function OrdersPage() {
           </div>
         )}
       </div>
+
+      {/* Take payment modal */}
+      {showPaymentModal && paymentOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Take payment</h2>
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+              >
+                <span className="text-2xl">×</span>
+              </button>
+            </div>
+            <form onSubmit={handleRecordPayment} className="p-4 space-y-4">
+              <p className="text-sm text-gray-600 dark:text-neutral-400">
+                Order #{getDisplayOrderId(paymentOrder)} · Rs {Number(paymentOrder.total).toFixed(0)}
+              </p>
+              {paymentError && (
+                <p className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-2">Payment method</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("CASH")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === "CASH" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300"}`}
+                  >
+                    <Banknote className="w-4 h-4" /> Cash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("CARD")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === "CARD" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300"}`}
+                  >
+                    <CreditCard className="w-4 h-4" /> Card
+                  </button>
+                </div>
+              </div>
+              {paymentMethod === "CASH" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Bill total (Rs)</label>
+                    <div className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white">
+                      Rs {Number(paymentOrder.total).toFixed(0)}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Amount received (Rs) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      required={paymentMethod === "CASH"}
+                      value={amountReceived}
+                      onChange={e => setAmountReceived(e.target.value)}
+                      placeholder="e.g. 5000"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  {amountReceived !== "" && !isNaN(Number(amountReceived)) && Number(amountReceived) >= Number(paymentOrder.total) && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Return to customer (Rs)</label>
+                      <div className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                        Rs {(Number(amountReceived) - Number(paymentOrder.total)).toFixed(0)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={paymentLoading || (paymentMethod === "CASH" && (amountReceived === "" || Number(amountReceived) < Number(paymentOrder.total)))}
+                  className="flex-1 px-3 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {paymentLoading ? "Recording…" : "Record payment"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }

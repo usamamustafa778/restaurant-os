@@ -59,6 +59,7 @@ const tenantNav = [
   { type: "section", label: "ADMINISTRATION" },
   { path: "/dashboard/users", label: "Users", icon: Users },
   { path: "/dashboard/branches", label: "Branches", icon: MapPin },
+  { path: "/dashboard/tables", label: "Tables", icon: UtensilsCrossed },
   { path: "/dashboard/history", label: "Reports", icon: BarChart3 },
 
   // SETTINGS Section

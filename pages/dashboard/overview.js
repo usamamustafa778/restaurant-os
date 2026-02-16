@@ -169,6 +169,92 @@ function buildSegments(distribution, labels, colors) {
     }));
 }
 
+// Daily/hourly sales line chart (non-cumulative): X = day or hour, Y = sales (Rs). Shows remaining days/hours.
+function DailySalesLineChart({ period, dailySales, hourlySales, remainingHoursStart }) {
+  const width = 1000;
+  const height = 220;
+  const leftMargin = 40;
+  const bottomMargin = 28;
+  const rightMargin = 12;
+  const topMargin = 12;
+  const innerWidth = width - leftMargin - rightMargin;
+  const innerHeight = height - topMargin - bottomMargin;
+
+  const isMonthly = period === "monthly";
+  const data = isMonthly
+    ? (dailySales || []).map((d) => ({ x: d.day, y: d.sales, label: String(d.day), isRemaining: !!d.isRemaining }))
+    : Array.from({ length: hourlySales?.length || 0 }, (_, i) => ({
+        x: i,
+        y: (hourlySales || [])[i] || 0,
+        label: `${i}:00`,
+        isRemaining: remainingHoursStart != null && i >= remainingHoursStart,
+      }));
+
+  const maxY = data.length > 0 ? Math.max(...data.map((d) => d.y), 0) : 1;
+  const formatY = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
+
+  const n = data.length;
+  const xScale = n > 1 ? (i) => (i / (n - 1)) * innerWidth : () => innerWidth / 2;
+  const yScale = (y) => (maxY > 0 ? (y / maxY) * innerHeight : 0);
+
+  const points = data
+    .map((d, i) => {
+      const x = leftMargin + xScale(i);
+      const y = topMargin + innerHeight - yScale(d.y);
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="w-full min-w-0 ">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-52 text-gray-600 dark:text-neutral-400" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="dailySalesLineFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {/* Axes */}
+        <line x1={leftMargin} y1={topMargin} x2={leftMargin} y2={topMargin + innerHeight} stroke="currentColor" strokeWidth="1" opacity={0.3} />
+        <line x1={leftMargin} y1={topMargin + innerHeight} x2={leftMargin + innerWidth} y2={topMargin + innerHeight} stroke="currentColor" strokeWidth="1" opacity={0.3} />
+        {/* Y labels: 0 and max (dynamic to highest single-day/hour sale) */}
+        <text x={leftMargin - 6} y={topMargin + innerHeight} textAnchor="end" fontSize="10" fill="currentColor" opacity={0.7}>0</text>
+        <text x={leftMargin - 6} y={topMargin} textAnchor="end" fontSize="10" fill="currentColor" opacity={0.7}>{formatY(maxY)}</text>
+        {/* Area under line */}
+        <polygon
+          fill="url(#dailySalesLineFill)"
+          points={`${points} ${leftMargin + innerWidth},${topMargin + innerHeight} ${leftMargin},${topMargin + innerHeight}`}
+        />
+        {/* Line (goes up and down with daily/hourly sales) */}
+        <polyline
+          fill="none"
+          stroke="#0ea5e9"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+          className="dark:stroke-sky-400"
+        />
+        {/* X-axis labels: remaining times/days in muted style */}
+        {data.map((d, i) => (
+          <text
+            key={i}
+            x={leftMargin + xScale(i)}
+            y={topMargin + innerHeight + 16}
+            textAnchor="middle"
+            fontSize="9"
+            fill={d.isRemaining ? "#94a3b8" : "currentColor"}
+            opacity={d.isRemaining ? 0.7 : 0.8}
+            className={d.isRemaining ? "dark:fill-neutral-500" : ""}
+          >
+            {d.label}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 export default function OverviewPage() {
   const [stats, setStats] = useState({
     totalOrders: 0,
@@ -187,14 +273,15 @@ export default function OverviewPage() {
 
   const [suspended, setSuspended] = useState(false);
   const [error, setError] = useState("");
-  const [monthlyReport, setMonthlyReport] = useState({
+  const [periodReport, setPeriodReport] = useState({
     totalRevenue: 0,
     totalProfit: 0,
     totalOrders: 0,
     topItems: [],
+    dailySales: [],
   });
-  const [topSellingPeriod, setTopSellingPeriod] = useState("today");
-  const [revenuePeriod, setRevenuePeriod] = useState("weekly");
+  const [reportPeriod, setReportPeriod] = useState("monthly"); // "today" | "monthly" – applies to full page
+  const [periodLoading, setPeriodLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -212,27 +299,43 @@ export default function OverviewPage() {
     })();
   }, []);
 
+  // Fetch report from backend for the selected period (today or current month)
   useEffect(() => {
+    let cancelled = false;
+    setPeriodLoading(true);
     (async () => {
       const now = new Date();
-      const from = new Date(now.getFullYear(), now.getMonth(), 1);
-      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      let fromStr;
+      let toStr;
+      if (reportPeriod === "today") {
+        fromStr = now.toISOString().slice(0, 10);
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        toStr = tomorrow.toISOString().slice(0, 10);
+      } else {
+        fromStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+        const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        toStr = firstNextMonth.toISOString().slice(0, 10);
+      }
       try {
-        const report = await getSalesReport({
-          from: from.toISOString().split("T")[0],
-          to: to.toISOString().split("T")[0],
-        });
-        setMonthlyReport({
-          totalRevenue: report.totalRevenue ?? 0,
-          totalProfit: report.totalProfit ?? 0,
-          totalOrders: report.totalOrders ?? 0,
-          topItems: report.topItems ?? [],
-        });
+        const report = await getSalesReport({ from: fromStr, to: toStr });
+        if (!cancelled) {
+          setPeriodReport({
+            totalRevenue: report.totalRevenue ?? 0,
+            totalProfit: report.totalProfit ?? 0,
+            totalOrders: report.totalOrders ?? 0,
+            topItems: report.topItems ?? [],
+            dailySales: report.dailySales ?? [],
+          });
+        }
       } catch (err) {
-        console.error("Failed to load monthly report:", err);
+        if (!cancelled) console.error("Failed to load period report:", err);
+      } finally {
+        if (!cancelled) setPeriodLoading(false);
       }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [reportPeriod]);
 
   const salesTypeSegments = buildSegments(stats.salesTypeDistribution, typeLabels, typeColors);
   const paymentSegments = buildSegments(stats.paymentDistribution, paymentLabels, paymentColors);
@@ -242,19 +345,34 @@ export default function OverviewPage() {
     value: p.qty,
     color: productColors[i % productColors.length],
   }));
-  const displayTopProductSegments =
-    topSellingPeriod === "monthly"
-      ? (monthlyReport.topItems || []).slice(0, 5).map((p, i) => ({
-          label: p.name,
-          value: p.quantity,
-          color: productColors[i % productColors.length],
-        }))
-      : topProductSegments;
+  const displayTopProductSegments = (periodReport.topItems || []).slice(0, 5).map((p, i) => ({
+    label: p.name,
+    value: p.quantity,
+    color: productColors[i % productColors.length],
+  }));
+
+  const periodSubtitle =
+    reportPeriod === "today"
+      ? new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
+      : new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+  const now = new Date();
+  const todayDayOfMonth = now.getDate();
+  const currentHour = now.getHours();
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const salesByDay = {};
+  (periodReport.dailySales || []).forEach((d) => { salesByDay[d.day] = d.sales; });
+  const fullMonthDailySales = Array.from({ length: lastDayOfMonth }, (_, i) => {
+    const day = i + 1;
+    return { day, sales: salesByDay[day] ?? 0, isRemaining: day > todayDayOfMonth };
+  });
+  const fullDayHourlySales = Array.from({ length: 24 }, (_, i) => (i <= currentHour ? (stats.hourlySales[i] || 0) : 0));
+  const remainingHoursStart = currentHour + 1;
 
   return (
     <AdminLayout
-      title="Monthly Report"
-      subtitle={new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+      title="Overview"
+      subtitle={periodSubtitle}
       suspended={suspended}
     >
       {error && (
@@ -263,10 +381,43 @@ export default function OverviewPage() {
         </div>
       )}
 
+      {/* Period filter – applies to full page data from backend */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <span className="text-sm font-semibold text-gray-600 dark:text-neutral-400">Report period:</span>
+        <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setReportPeriod("today")}
+            disabled={periodLoading}
+            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              reportPeriod === "today"
+                ? "bg-primary text-white shadow-md"
+                : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-neutral-800"
+            }`}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setReportPeriod("monthly")}
+            disabled={periodLoading}
+            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              reportPeriod === "monthly"
+                ? "bg-primary text-white shadow-md"
+                : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-neutral-800"
+            }`}
+          >
+            Monthly
+          </button>
+        </div>
+        {periodLoading && (
+          <span className="text-xs text-gray-500 dark:text-neutral-400">Loading…</span>
+        )}
+      </div>
 
       {/* KPIs row - Premium style with gradients */}
       <div className="grid gap-5 lg:grid-cols-4 mb-6">
-        {/* Total Orders */}
+        {/* Total Orders (this month) */}
         <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-purple-300 dark:hover:border-purple-500/30 transition-all overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative">
@@ -275,15 +426,15 @@ export default function OverviewPage() {
                 <ShoppingBag className="w-7 h-7 text-white" />
               </div>
               <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                +{stats.totalOrders > 0 ? Math.round((stats.totalOrders / (stats.totalOrders + 10)) * 100) : 0}%
+                +{periodReport.totalOrders > 0 ? Math.round((periodReport.totalOrders / (periodReport.totalOrders + 10)) * 100) : 0}%
               </span>
             </div>
             <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Orders</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalOrders}</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white">{periodReport.totalOrders}</p>
           </div>
         </div>
 
-        {/* Total Sales */}
+        {/* Total Sales (this month) */}
         <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-primary/30 transition-all overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative">
@@ -292,15 +443,15 @@ export default function OverviewPage() {
                 <DollarSign className="w-7 h-7 text-white" />
               </div>
               <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                +{stats.revenue > 0 ? Math.round((stats.revenue / (stats.revenue + 1000)) * 100) : 0}%
+                +{periodReport.totalRevenue > 0 ? Math.round((periodReport.totalRevenue / (periodReport.totalRevenue + 1000)) * 100) : 0}%
               </span>
             </div>
             <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Sales</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">Rs {Math.round(stats.revenue).toLocaleString()}</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalRevenue ?? 0).toLocaleString()}</p>
           </div>
         </div>
 
-        {/* Average Value */}
+        {/* Average Value (this month) */}
         <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-orange-300 dark:hover:border-orange-500/30 transition-all overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative">
@@ -314,7 +465,7 @@ export default function OverviewPage() {
             </div>
             <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Average Value</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">
-              Rs {stats.totalOrders ? Math.round(stats.revenue / stats.totalOrders).toLocaleString() : 0}
+              Rs {periodReport.totalOrders ? Math.round((periodReport.totalRevenue ?? 0) / periodReport.totalOrders).toLocaleString() : 0}
             </p>
           </div>
         </div>
@@ -346,29 +497,32 @@ export default function OverviewPage() {
               <TrendingUp className="w-7 h-7 text-white" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">This Month Profit</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">Rs {Math.round(monthlyReport.totalProfit ?? 0).toLocaleString()}</p>
+              <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "monthly" ? "This Month Profit" : "Today's Profit"}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalProfit ?? 0).toLocaleString()}</p>
             </div>
           </div>
         </div>
-        <div className="sm:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+        <div className="sm:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all w-full">
           <div className="flex items-center gap-3 mb-4">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
               <BarChart3 className="w-5 h-5 text-white" />
             </div>
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">Top Selling This Month</h3>
+            <h3 className="text-base font-bold text-gray-900 dark:text-white">Daily sales</h3>
           </div>
-          {monthlyReport.topItems.length > 0 ? (
-            <div className="space-y-2">
-              {monthlyReport.topItems.slice(0, 5).map((item, i) => (
-                <div key={item.menuItemId || i} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-neutral-800 last:border-0">
-                  <span className="text-sm font-medium text-gray-700 dark:text-neutral-300">{item.name}</span>
-                  <span className="text-sm font-bold text-gray-900 dark:text-white">{item.quantity} sold · Rs {Math.round(item.revenue || 0).toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
+          {/* <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
+            X-axis: {reportPeriod === "monthly"
+              ? (todayDayOfMonth < lastDayOfMonth ? `day of month (1–${lastDayOfMonth}); days ${todayDayOfMonth + 1}–${lastDayOfMonth} remaining` : `day of month (1–${lastDayOfMonth})`)
+              : (currentHour < 23 ? `hour (0–23); hours ${remainingHoursStart}–23 remaining` : "hour (0–23)")
+            }. Y-axis: sales (Rs). Not cumulative. Data up to {reportPeriod === "monthly" ? "today" : "current hour"}.
+          </p> */}
+          {reportPeriod === "monthly" ? (
+            fullMonthDailySales.length > 0 ? (
+              <DailySalesLineChart period="monthly" dailySales={fullMonthDailySales} hourlySales={null} remainingHoursStart={null} />
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data yet this month</p>
+            )
           ) : (
-            <p className="text-sm text-gray-500 dark:text-neutral-400 py-2">No sales data this month yet</p>
+            <DailySalesLineChart period="today" dailySales={null} hourlySales={fullDayHourlySales} remainingHoursStart={remainingHoursStart} />
           )}
         </div>
       </div>
@@ -379,14 +533,7 @@ export default function OverviewPage() {
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-base font-bold text-gray-900 dark:text-white">🔥 Top Selling Items</h3>
-            <select
-              value={topSellingPeriod}
-              onChange={(e) => setTopSellingPeriod(e.target.value)}
-              className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-2 py-1 outline-none"
-            >
-              <option value="today">Today</option>
-              <option value="monthly">Monthly</option>
-            </select>
+            <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "monthly" ? "Monthly" : "Today"}</span>
           </div>
           {displayTopProductSegments.length > 0 ? (
             <div className="space-y-4">
@@ -400,7 +547,7 @@ export default function OverviewPage() {
                       {displayTopProductSegments[0]?.label || "No data"}
                     </p>
                     <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium">
-                      {displayTopProductSegments[0]?.value || 0} {topSellingPeriod === "monthly" ? "sold" : "orders"}
+                      {displayTopProductSegments[0]?.value || 0} {reportPeriod === "monthly" ? "sold" : "orders"}
                     </p>
                   </div>
                 </div>
@@ -535,18 +682,10 @@ export default function OverviewPage() {
                 <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
               </div>
               <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-                {revenuePeriod === "monthly" ? "Monthly performance" : "Weekly performance"}
+                {reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <select
-                value={revenuePeriod}
-                onChange={(e) => setRevenuePeriod(e.target.value)}
-                className="text-xs font-semibold text-gray-600 dark:text-neutral-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-2 py-1.5 outline-none"
-              >
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
               <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
                 <input type="checkbox" id="revenue-toggle" className="rounded" defaultChecked />
                 <label htmlFor="revenue-toggle" className="text-xs font-semibold text-blue-700 dark:text-blue-400 cursor-pointer">Revenue</label>
@@ -560,16 +699,16 @@ export default function OverviewPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium mb-0.5">
-                  {revenuePeriod === "monthly" ? "This Month" : "This Week"}
+                  {reportPeriod === "monthly" ? "This Month" : "Today"}
                 </p>
                 <span className="text-3xl font-bold text-gray-900 dark:text-white">
-                  Rs {(revenuePeriod === "monthly" ? monthlyReport.totalRevenue : stats.revenue).toLocaleString()}
+                  Rs {(periodReport.totalRevenue ?? 0).toLocaleString()}
                 </span>
               </div>
             </div>
           </div>
-          {/* Bar chart: weekly days or monthly single bar */}
-          {revenuePeriod === "monthly" ? (
+          {/* Bar chart: period summary */}
+          {reportPeriod === "monthly" ? (
             <div className="flex items-end gap-3 h-40 mt-4 px-2">
               <div className="flex-1 flex flex-col items-center gap-2">
                 <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
@@ -577,39 +716,12 @@ export default function OverviewPage() {
               </div>
             </div>
           ) : (
-          <div className="flex items-end gap-3 h-40 mt-4 px-2">
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, i) => {
-              const heights = [40, 35, 52, 45, 38, 42, 48];
-              const isToday = i === 3; // Thu for demo
-              return (
-                <div key={day} className="flex-1 flex flex-col items-center gap-2 group">
-                  <div className="relative w-full flex items-end justify-center h-full">
-                    <div 
-                      className={`w-full rounded-t-xl transition-all duration-300 group-hover:opacity-80 ${
-                        isToday 
-                          ? "bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30" 
-                          : "bg-gray-200 dark:bg-neutral-800 group-hover:bg-gray-300 dark:group-hover:bg-neutral-700"
-                      }`}
-                      style={{ height: `${heights[i]}%` }}
-                    >
-                      {isToday && (
-                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-lg bg-blue-500 text-white text-[10px] font-bold shadow-lg">
-                          {heights[i]}%
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <span className={`text-xs font-semibold mt-1 ${
-                    isToday 
-                      ? "text-blue-600 dark:text-blue-400" 
-                      : "text-gray-500 dark:text-neutral-500"
-                  }`}>
-                    {day}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+            <div className="flex items-end gap-3 h-40 mt-4 px-2">
+              <div className="flex-1 flex flex-col items-center gap-2">
+                <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
+                <span className="text-xs font-semibold mt-1 text-gray-600 dark:text-neutral-400">Today</span>
+              </div>
+            </div>
           )}
         </div>
 
