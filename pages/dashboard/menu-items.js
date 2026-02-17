@@ -67,6 +67,7 @@ export default function MenuItemsPage() {
     name: "",
     price: "",
     categoryId: "",
+    dietaryType: "non_veg",
     imageUrl: "",
     description: "",
     availableAtAllBranches: true
@@ -96,6 +97,7 @@ export default function MenuItemsPage() {
       name: "",
       price: "",
       categoryId: categories[0]?.id || "",
+      dietaryType: "non_veg",
       imageUrl: "",
       description: "",
       availableAtAllBranches: true
@@ -116,6 +118,7 @@ export default function MenuItemsPage() {
       name: item.name,
       price: String(item.price ?? ""),
       categoryId: item.categoryId,
+      dietaryType: item.dietaryType || "non_veg",
       imageUrl: item.imageUrl || "",
       description: item.description || "",
       availableAtAllBranches: item.availableAtAllBranches ?? true
@@ -154,6 +157,7 @@ export default function MenuItemsPage() {
             name: form.name,
             price: parseFloat(form.price),
             categoryId: form.categoryId,
+            dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
             description: form.description,
             availableAtAllBranches: form.availableAtAllBranches
@@ -168,6 +172,7 @@ export default function MenuItemsPage() {
             name: form.name,
             price: parseFloat(form.price),
             categoryId: form.categoryId,
+            dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
             description: form.description,
             availableAtAllBranches: form.availableAtAllBranches
@@ -478,7 +483,7 @@ export default function MenuItemsPage() {
       {pageLoading ? (
         <PageLoader message="Loading menu items..." />
       ) : (
-        <>
+        <div className="w-full min-w-0 overflow-x-hidden">
           {error && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
               {error}
@@ -507,9 +512,9 @@ export default function MenuItemsPage() {
             </button>
           </div>
 
-          {/* Grid View */}
+          {/* Grid View - 2 cards on mobile, no horizontal scroll */}
           {viewMode === "grid" && (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="w-full min-w-0 overflow-x-hidden grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filtered.map(item => {
                 const category = categories.find(c => c.id === item.categoryId);
                 const isDeleting = deletingId === item.id;
@@ -520,7 +525,7 @@ export default function MenuItemsPage() {
                 return (
                   <div
                     key={item.id}
-                    className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-5 hover:shadow-lg hover:border-primary/30 transition-all relative"
+                    className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-5 hover:shadow-lg hover:border-primary/30 transition-all relative min-w-0"
                   >
                     <div className="flex items-start justify-between mb-3">
                       {item.imageUrl ? (
@@ -864,7 +869,7 @@ export default function MenuItemsPage() {
               )}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Item Create/Edit Modal */}
@@ -917,6 +922,28 @@ export default function MenuItemsPage() {
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Dietary type</label>
+                <div className="flex gap-4">
+                  {[
+                    { value: "veg", label: "Veg" },
+                    { value: "non_veg", label: "Non-veg" },
+                    { value: "egg", label: "Egg" },
+                  ].map((opt) => (
+                    <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="dietaryType"
+                        value={opt.value}
+                        checked={form.dietaryType === opt.value}
+                        onChange={() => setForm(prev => ({ ...prev, dietaryType: opt.value }))}
+                        className="w-3.5 h-3.5 rounded-full border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span className="text-xs text-gray-700 dark:text-neutral-300">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Image (optional)</label>

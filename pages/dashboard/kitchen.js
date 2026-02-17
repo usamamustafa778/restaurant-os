@@ -3,6 +3,13 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import { getOrders } from "../../lib/apiClient";
 import { Clock, User, Package, CheckCircle, AlertCircle, ChefHat } from "lucide-react";
 
+// Reuse the same order ID format as Orders page (YYYYMMDD-XXXX without ORD- prefix)
+function getDisplayOrderId(order) {
+  const id = order.id || order.orderNumber || order._id || "";
+  if (typeof id === "string" && id.startsWith("ORD-")) return id.replace(/^ORD-/, "");
+  return id;
+}
+
 export default function KitchenPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,9 +34,9 @@ export default function KitchenPage() {
     }
   }
 
-  // Group orders by status
-  const newOrders = orders.filter(o => o.status === "PENDING");
-  const inKitchen = orders.filter(o => o.status === "CONFIRMED");
+  // Group orders by status (matches backend: UNPROCESSED → PENDING → READY)
+  const newOrders = orders.filter(o => o.status === "UNPROCESSED");
+  const inKitchen = orders.filter(o => o.status === "PENDING");
   const delayed = orders.filter(o => {
     const orderTime = new Date(o.createdAt);
     const now = new Date();
@@ -110,12 +117,17 @@ export default function KitchenPage() {
                       >
                         {/* Order Header */}
                         <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg font-bold text-gray-900 dark:text-white">
-                              #{order.tokenNumber || order.id.slice(0, 4)}
-                            </span>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                              {order.orderType === "DINE_IN" ? "Dine-in" : "Takeaway"}
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg font-bold text-gray-900 dark:text-white">
+                                #{order.tokenNumber || order.id.slice(0, 4)}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                {order.orderType === "DINE_IN" ? "Dine-in" : "Takeaway"}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                              Order ID: #{getDisplayOrderId(order)}
                             </span>
                           </div>
                           <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-neutral-400">

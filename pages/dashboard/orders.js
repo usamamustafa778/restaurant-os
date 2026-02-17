@@ -13,7 +13,7 @@ import {
   SubscriptionInactiveError
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
-import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil } from "lucide-react";
+import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown } from "lucide-react";
 
 const ORDER_STATUSES = [
   "All Orders",
@@ -40,7 +40,7 @@ function getDisplayOrderId(order) {
   return id;
 }
 
-function printBill(order) {
+function printBill(order, mode = "auto") {
   const win = window.open("", "_blank", "width=360,height=600");
   if (!win) return;
 
@@ -57,10 +57,23 @@ function printBill(order) {
 
   const discount = order.discountAmount || 0;
 
+  const hasPaymentDetails =
+    order.paymentAmountReceived != null && order.paymentAmountReceived > 0;
+
+  // Decide whether this printout is a bill (before payment) or a receipt (after payment)
+  const isReceipt =
+    mode === "receipt" || (mode === "auto" && hasPaymentDetails);
+
+  const titleLabel = isReceipt ? "Receipt" : "Bill";
+  const headerLabel = isReceipt ? "Order Receipt" : "Customer Bill";
+  const paymentLabel =
+    order.paymentMethod ||
+    (isReceipt ? "Cash" : "To be paid");
+
   win.document.write(`<!DOCTYPE html>
 <html>
 <head>
-  <title>Receipt – ${getDisplayOrderId(order)}</title>
+  <title>${titleLabel} – ${getDisplayOrderId(order)}</title>
   <style>
     body { font-family: 'Courier New', monospace; margin: 0; padding: 16px; font-size: 13px; color: #222; }
     .center { text-align: center; }
@@ -72,14 +85,24 @@ function printBill(order) {
 </head>
 <body>
   <div class="center bold" style="font-size:16px;margin-bottom:4px;">Eats Desk</div>
-  <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">Order Receipt</div>
+  <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">${headerLabel}</div>
   <hr/>
   <div><strong>Order:</strong> ${getDisplayOrderId(order)}</div>
   <div><strong>Date:</strong> ${new Date(order.createdAt).toLocaleString()}</div>
   <div><strong>Customer:</strong> ${order.customerName || "Walk‑in"}</div>
   <div><strong>Type:</strong> ${order.type || "dine-in"}</div>
-  <div><strong>Payment:</strong> ${order.paymentMethod || "Cash"}</div>
-  ${(order.paymentAmountReceived != null && order.paymentAmountReceived > 0) ? `<div><strong>Amount received:</strong> Rs ${order.paymentAmountReceived.toFixed(0)}</div><div><strong>Return:</strong> Rs ${(order.paymentAmountReturned != null ? order.paymentAmountReturned : 0).toFixed(0)}</div>` : ""}
+  <div><strong>Payment:</strong> ${paymentLabel}</div>
+  ${
+    isReceipt && hasPaymentDetails
+      ? `<div><strong>Amount received:</strong> Rs ${order.paymentAmountReceived.toFixed(
+          0,
+        )}</div><div><strong>Return:</strong> Rs ${
+          order.paymentAmountReturned != null
+            ? order.paymentAmountReturned
+            : 0
+        }.toFixed(0)</div>`
+      : ""
+  }
   <hr/>
   <table>
     <thead>
@@ -133,6 +156,7 @@ export default function OrdersPage() {
   const [amountReceived, setAmountReceived] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [expandedOrderItems, setExpandedOrderItems] = useState({});
 
   async function loadOrders() {
     try {
@@ -333,38 +357,71 @@ export default function OrdersPage() {
           const isUpdating = updatingId === order.id || updatingId === order._id;
 
           const NEXT_LABELS = {
-            PENDING: "Mark Pending",
-            READY: "Mark Ready",
-            COMPLETED: "Mark Completed"
+            PENDING: "Pending",
+            READY: "Ready",
+            COMPLETED: "Completed"
           };
 
           const orderDate = new Date(order.createdAt);
           const dateStr = orderDate.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
           const timeStr = orderDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
           const discountPercent = order.subtotal > 0 ? ((order.discountAmount / order.subtotal) * 100) : 0;
+          const orderKey = order._id || order.id;
+          const itemsExpanded = !!expandedOrderItems[orderKey];
 
           return (
             <div
               key={order.id}
               className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden hover:shadow-lg transition-shadow"
             >
-              {/* Header: ID + Status */}
+              {/* Header: ID, status under ID, edit button top-right */}
               <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-gray-900 dark:text-white">#{getDisplayOrderId(order)}</span>
-                    {order.source === "FOODPANDA" && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-500/10 dark:text-pink-400 font-semibold">
-                        Foodpanda
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">
+                        #{getDisplayOrderId(order)}
                       </span>
-                    )}
-                    {order.source === "WEBSITE" && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-semibold">
-                        Website
-                      </span>
-                    )}
+                      {order.source === "FOODPANDA" && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-500/10 dark:text-pink-400 font-semibold">
+                          Foodpanda
+                        </span>
+                      )}
+                      {order.source === "WEBSITE" && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 font-semibold">
+                          Website
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5">
+                      <StatusBadge status={order.status} />
+                    </div>
                   </div>
-                  <StatusBadge status={order.status} />
+                  <div className="flex items-center gap-2">
+                    {order.status !== "CANCELLED" && order.status !== "COMPLETED" && (
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() => handleUpdateStatus(order._id || order.id, "CANCELLED")}
+                        className="p-2 rounded-lg bg-white dark:bg-neutral-900 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                        title="Cancel order"
+                      >
+                        {isUpdating ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <XCircle className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
+                      className="p-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
+                      title="Edit order"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 {order.externalOrderId && (
                   <div className="flex items-center gap-1 mt-1 text-xs text-gray-500 dark:text-neutral-500">
@@ -398,21 +455,45 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Items */}
+              {/* Items (collapsible) */}
               {order.items && order.items.length > 0 && (
                 <div className="px-4 pb-3 border-b border-gray-100 dark:border-neutral-800">
-                  <p className="font-semibold text-xs text-gray-700 dark:text-neutral-300 mb-2">Order Items</p>
-                  <div className="space-y-1.5">
-                    {order.items.slice(0, 3).map((it, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs">
-                        <span className="text-gray-700 dark:text-neutral-300 truncate max-w-[150px]">{it.name}</span>
-                        <span className="text-gray-500 dark:text-neutral-500 font-medium">x{it.qty}</span>
-                      </div>
-                    ))}
-                    {order.items.length > 3 && (
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500">+{order.items.length - 3} more items</p>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedOrderItems((prev) => ({
+                        ...prev,
+                        [orderKey]: !prev[orderKey],
+                      }))
+                    }
+                    className="w-full flex items-center justify-between text-xs font-semibold text-gray-700 dark:text-neutral-300 mb-2"
+                  >
+                    <span>
+                      Order Items ·{" "}
+                      <span className="font-bold">
+                        {order.items.length} {order.items.length === 1 ? "item" : "items"}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-400 dark:text-neutral-500 transition-transform ${
+                        itemsExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {itemsExpanded && (
+                    <div className="space-y-1.5">
+                      {order.items.map((it, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-700 dark:text-neutral-300 truncate max-w-[160px]">
+                            {it.name}
+                          </span>
+                          <span className="text-gray-500 dark:text-neutral-500 font-medium">
+                            x{it.qty}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -452,19 +533,11 @@ export default function OrdersPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => printBill(order)}
+                      onClick={() => printBill(order, "receipt")}
                       className="p-2.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
                       title="Print receipt"
                     >
                       <Printer className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
-                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
-                      title="Edit order"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
@@ -486,10 +559,20 @@ export default function OrdersPage() {
                       <button
                         type="button"
                         onClick={() => openPaymentModal(order)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-white px-4 py-2.5 text-xs font-semibold hover:bg-emerald-700 transition-colors"
+                        className="p-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                        title="Take payment"
                       >
                         <Banknote className="w-3.5 h-3.5" />
-                        Take payment
+                      </button>
+                    )}
+                    {order.status !== "CANCELLED" && (
+                      <button
+                        type="button"
+                        onClick={() => printBill(order, "bill")}
+                        className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
+                        title="Print bill"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
                       </button>
                     )}
                     {primaryNext && (
@@ -506,24 +589,7 @@ export default function OrdersPage() {
                         )}
                       </button>
                     )}
-                    {order.status !== "CANCELLED" && (
-                      <button
-                        type="button"
-                        disabled={isUpdating}
-                        onClick={() => handleUpdateStatus(order._id || order.id, "CANCELLED")}
-                        className="px-4 py-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                      >
-                        {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cancel"}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
-                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
-                      title="Edit order"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Cancel button moved to header (top-right) */}
                     <button
                       type="button"
                       disabled={deletingId === (order._id || order.id)}

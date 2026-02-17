@@ -24,6 +24,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronLeft,
+  Menu,
   Plug,
   FolderOpen,
   ShoppingBag,
@@ -259,6 +260,8 @@ export default function AdminLayout({
   const [userName, setUserName] = useState("");
   const [userInitials, setUserInitials] = useState("");
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   // Always initialize with defaults to avoid hydration mismatch
   const [collapsed, setCollapsed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState([]);
@@ -282,6 +285,13 @@ export default function AdminLayout({
       }
     }
   }, []);
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    const handleRouteChange = () => setMobileSidebarOpen(false);
+    router.events.on("routeChangeComplete", handleRouteChange);
+    return () => router.events.off("routeChangeComplete", handleRouteChange);
+  }, [router.events]);
 
   // Persist collapsed state and notify listeners
   const toggleCollapsed = useCallback(() => {
@@ -383,27 +393,47 @@ export default function AdminLayout({
         noindex={true}
       />
     <div className="h-screen overflow-hidden bg-gray-50 dark:bg-black flex text-gray-900 dark:text-white text-sm">
+      {/* Backdrop for mobile sidebar */}
+      <div
+        aria-hidden
+        onClick={() => setMobileSidebarOpen(false)}
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-500 ease-in-out md:hidden ${
+          mobileSidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+      />
       <aside
-        className={`hidden md:flex ${sidebarWidthClass} flex-col border-r-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 relative z-40 transition-[width] duration-300 ease-in-out shadow-sm`}
+        className={`fixed md:relative inset-y-0 left-0 z-50 md:z-40 w-72 ${collapsed ? "md:w-16" : "md:w-56"} flex flex-col border-r-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm transform transition-transform duration-500 ease-in-out ${
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        } md:transition-[width] md:duration-300 md:ease-in-out`}
       >
         {/* Logo Section */}
-        <div className="px-4 py-3 border-b-2 border-gray-100 dark:border-neutral-800 flex items-center gap-3">
-          <div className="relative">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary via-primary to-secondary flex items-center justify-center text-white font-bold text-base shadow-lg shadow-primary/30">
-              ED
+        <div className="px-4 py-3 border-b-2 border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary via-primary to-secondary flex items-center justify-center text-white font-bold text-base shadow-lg shadow-primary/30">
+                ED
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white dark:border-neutral-950"></div>
             </div>
-            <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white dark:border-neutral-950"></div>
+            {(!collapsed || mobileSidebarOpen) && (
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-lg tracking-tight text-gray-900 dark:text-white truncate">
+                  Eats Desk
+                </div>
+                <div className="text-xs text-gray-500 dark:text-neutral-400 truncate font-medium">
+                  {role === "super_admin" ? "Platform Console" : "Restaurant OS"}
+                </div>
+              </div>
+            )}
           </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="font-bold text-lg tracking-tight text-gray-900 dark:text-white truncate">
-                Eats Desk
-              </div>
-              <div className="text-xs text-gray-500 dark:text-neutral-400 truncate font-medium">
-                {role === "super_admin" ? "Platform Console" : "Restaurant OS"}
-              </div>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(false)}
+            className="md:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800 dark:text-neutral-400 transition-colors"
+            aria-label="Close menu"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Collapse / expand chevron on right border */}
@@ -421,7 +451,7 @@ export default function AdminLayout({
           {navItems.map((item, idx) => {
             // Render section headers
             if (item.type === "section") {
-              if (collapsed) return null; // Hide section headers when collapsed
+              if (collapsed && !mobileSidebarOpen) return null; // Hide section headers when collapsed (or show when mobile sidebar open)
               return (
                 <div
                   key={`section-${idx}`}
@@ -461,16 +491,17 @@ export default function AdminLayout({
                 })
               : router.asPath.startsWith(href);
 
+            const effectivelyCollapsed = collapsed && !mobileSidebarOpen;
             if (suspended && role !== "super_admin") {
               return (
                 <NavItemWrapper
                   key={href}
-                  collapsed={collapsed}
+                  collapsed={effectivelyCollapsed}
                   label={item.label}
                 >
                   <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 dark:text-neutral-600 bg-bg-primary/60 dark:bg-neutral-900/60 cursor-not-allowed">
                     <Icon className="w-4 h-4" />
-                    {!collapsed && <span>{item.label}</span>}
+                    {(!collapsed || mobileSidebarOpen) && <span>{item.label}</span>}
                   </div>
                 </NavItemWrapper>
               );
@@ -481,7 +512,7 @@ export default function AdminLayout({
             }
             if (hasChildren) {
               // Build structured dropdown items for collapsed hover
-              const dropdownData = collapsed
+              const dropdownData = collapsed && !mobileSidebarOpen
                 ? item.children.map((child) => {
                     const childHref = getTenantRoute(
                       router.asPath || router.pathname,
@@ -512,14 +543,14 @@ export default function AdminLayout({
               return (
                 <NavItemWrapper
                   key={href}
-                  collapsed={collapsed}
+                  collapsed={effectivelyCollapsed}
                   label={item.label}
                   dropdownItems={dropdownData}
                 >
                   <button
                     type="button"
                     onClick={() => {
-                      if (!collapsed) {
+                      if (!collapsed || mobileSidebarOpen) {
                         setExpandedGroups((prev) => {
                           const next = prev.includes(basePath)
                             ? prev.filter((g) => g !== basePath)
@@ -541,7 +572,7 @@ export default function AdminLayout({
                     <Icon
                       className={`w-5 h-5 shrink-0 transition-transform ${isActive ? "" : "group-hover:scale-110"}`}
                     />
-                    {!collapsed && (
+                    {(!collapsed || mobileSidebarOpen) && (
                       <>
                         <span className="flex-1 text-left">{item.label}</span>
                         <ChevronDown
@@ -554,7 +585,7 @@ export default function AdminLayout({
                   </button>
 
                   {/* Inline dropdown when sidebar is expanded — animated */}
-                  {!collapsed && (
+                  {(!collapsed || mobileSidebarOpen) && (
                     <div
                       className="grid transition-[grid-template-rows] duration-200 ease-in-out"
                       style={{ gridTemplateRows: isExpanded ? "1fr" : "0fr" }}
@@ -613,7 +644,7 @@ export default function AdminLayout({
             return (
               <NavItemWrapper
                 key={href}
-                collapsed={collapsed}
+                collapsed={effectivelyCollapsed}
                 label={item.label}
               >
                 <Link
@@ -627,19 +658,61 @@ export default function AdminLayout({
                   <Icon
                     className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "" : "group-hover:scale-110"}`}
                   />
-                  {!collapsed && <span>{item.label}</span>}
+                  {(!collapsed || mobileSidebarOpen) && <span>{item.label}</span>}
                 </Link>
               </NavItemWrapper>
             );
           })}
         </nav>
+        {/* Mobile: Account section at bottom of sidebar */}
+        <div className="md:hidden flex-shrink-0 p-3 border-t-2 border-gray-100 dark:border-neutral-800 space-y-1">
+          <p className="px-3 py-1 text-[10px] font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+            Account
+          </p>
+          <Link
+            href="/dashboard/profile"
+            onClick={() => setMobileSidebarOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all"
+          >
+            <UserCircle2 className="w-4 h-4" />
+            <span>Profile</span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              toggleTheme();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all"
+          >
+            {theme === "light" ? (
+              <Moon className="w-4 h-4" />
+            ) : (
+              <Sun className="w-4 h-4" />
+            )}
+            <span>{theme === "light" ? "Dark mode" : "Light mode"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMobileSidebarOpen(false);
+              handleLogout();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="sticky top-0 z-30 flex-shrink-0 md:hidden flex items-center justify-between px-4 py-4 border-b-2 border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm">
           <div className="flex items-center gap-3">
             {backHref && (
-              <Link href={backHref} className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90">
+              <Link
+                href={backHref}
+                className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90"
+              >
                 <ChevronLeft className="w-5 h-5" />
                 {backLabel}
               </Link>
@@ -662,22 +735,12 @@ export default function AdminLayout({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={toggleTheme}
-              className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-gray-700 dark:text-neutral-300 border-2 border-gray-200 dark:border-neutral-700 transition-all"
-              aria-label="Toggle theme"
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              className="inline-flex items-center justify-center p-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-200 transition-all"
+              aria-label="Open menu"
             >
-              {theme === "light" ? (
-                <Moon className="w-4 h-4" />
-              ) : (
-                <Sun className="w-4 h-4" />
-              )}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 border-2 border-red-200 dark:border-red-500/30 transition-all"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
+              <Menu className="w-6 h-6" />
             </button>
           </div>
         </header>
@@ -704,14 +767,6 @@ export default function AdminLayout({
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs">
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 border-2 border-red-200 dark:border-red-500/30 hover:border-red-300 dark:hover:border-red-500/40 transition-all shadow-sm hover:shadow-md text-sm font-bold"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Logout</span>
-            </button>
             {role !== "super_admin" && !branchLoading && (
               <div className="relative flex-shrink-0">
                 <button
@@ -813,42 +868,88 @@ export default function AdminLayout({
                 )}
               </div>
             )}
-            <button
-              onClick={toggleTheme}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 border-2 border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 font-bold transition-all shadow-sm hover:shadow-md text-sm"
-              title={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
-            >
-              {theme === "light" ? (
-                <>
-                  <Moon className="w-4 h-4" />
-                  <span>Dark</span>
-                </>
-              ) : (
-                <>
-                  <Sun className="w-4 h-4" />
-                  <span>Light</span>
-                </>
-              )}
-            </button>
             {userName && (
-              <div className="inline-flex items-center gap-3 ">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-secondary text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-primary/20">
-                  {userInitials || userName[0]?.toUpperCase()}
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-sm font-bold text-gray-900 dark:text-white leading-tight truncate max-w-[130px]">
-                    {userName}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-neutral-400 leading-tight font-medium">
-                    {roleLabel}
-                  </span>
-                </div>
+              <div className="relative flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setUserMenuOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-900 dark:text-neutral-100 font-bold text-sm shadow-sm hover:shadow-md transition-all"
+                >
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-secondary text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-primary/20">
+                    {userInitials || userName[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-bold text-gray-900 dark:text-white leading-tight truncate max-w-[130px]">
+                      {userName}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-neutral-400 leading-tight font-medium">
+                      {roleLabel}
+                    </span>
+                  </div>
+                  <ChevronDown
+                    className={`w-4 h-4 text-gray-500 dark:text-neutral-400 transition-transform ${
+                      userMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {userMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      aria-hidden
+                      onClick={() => setUserMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-2 z-50 min-w-[180px] rounded-2xl bg-white dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 shadow-2xl overflow-hidden">
+                      <div className="p-3 border-b-2 border-gray-100 dark:border-neutral-800">
+                        <p className="text-xs font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+                          Account
+                        </p>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        <Link
+                          href="/dashboard/profile"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all"
+                        >
+                          <UserCircle2 className="w-4 h-4" />
+                          <span>Profile</span>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleTheme();
+                            setUserMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all"
+                        >
+                          {theme === "light" ? (
+                            <Moon className="w-4 h-4" />
+                          ) : (
+                            <Sun className="w-4 h-4" />
+                          )}
+                          <span>{theme === "light" ? "Dark mode" : "Light mode"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            handleLogout();
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Logout</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
         </header>
 
-        <main className="relative flex-1 px-6 pt-4 pb-6 overflow-y-auto bg-gray-100 dark:bg-black">
+        <main className="relative flex-1 px-4 md:px-6 pt-4 pb-6 overflow-y-auto bg-gray-100 dark:bg-black">
           {!suspended && children}
 
           {suspended && role !== "super_admin" && (

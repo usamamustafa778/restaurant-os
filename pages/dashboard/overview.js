@@ -771,7 +771,7 @@ export default function OverviewPage() {
             </div>
             <div>
               <h3 className="text-base font-bold text-gray-900 dark:text-white">Products Performance</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">Items sold today based on completed orders</p>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">Items sold this month based on completed orders</p>
             </div>
           </div>
         </div>
