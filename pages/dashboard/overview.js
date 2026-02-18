@@ -416,13 +416,13 @@ export default function OverviewPage() {
       </div>
 
       {/* KPIs row - Premium style with gradients */}
-      <div className="grid gap-5 lg:grid-cols-4 mb-6">
+      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 mb-6">
         {/* Total Orders (this month) */}
         <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-purple-300 dark:hover:border-purple-500/30 transition-all overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative">
             <div className="flex items-center justify-between mb-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
+              <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
                 <ShoppingBag className="w-7 h-7 text-white" />
               </div>
               <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
@@ -430,7 +430,7 @@ export default function OverviewPage() {
               </span>
             </div>
             <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Orders</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{periodReport.totalOrders}</p>
+            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{periodReport.totalOrders}</p>
           </div>
         </div>
 
@@ -439,7 +439,7 @@ export default function OverviewPage() {
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative">
             <div className="flex items-center justify-between mb-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
+              <div className=" h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
                 <DollarSign className="w-7 h-7 text-white" />
               </div>
               <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
@@ -447,7 +447,7 @@ export default function OverviewPage() {
               </span>
             </div>
             <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Sales</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalRevenue ?? 0).toLocaleString()}</p>
+            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalRevenue ?? 0).toLocaleString()}</p>
           </div>
         </div>
 
@@ -456,7 +456,7 @@ export default function OverviewPage() {
           <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative">
             <div className="flex items-center justify-between mb-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/30">
+              <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/30">
                 <TrendingUp className="w-7 h-7 text-white" />
               </div>
               <span className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-500/20 dark:text-red-400 rounded-xl">
@@ -464,7 +464,7 @@ export default function OverviewPage() {
               </span>
             </div>
             <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Average Value</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">
+            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">
               Rs {periodReport.totalOrders ? Math.round((periodReport.totalRevenue ?? 0) / periodReport.totalOrders).toLocaleString() : 0}
             </p>
           </div>
@@ -475,7 +475,7 @@ export default function OverviewPage() {
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative">
             <div className="flex items-center justify-between mb-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+              <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
                 <Package className="w-7 h-7 text-white" />
               </div>
               <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
@@ -483,7 +483,7 @@ export default function OverviewPage() {
               </span>
             </div>
             <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">In Progress</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.pendingOrders}</p>
+            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{stats.pendingOrders}</p>
           </div>
         </div>
       </div>

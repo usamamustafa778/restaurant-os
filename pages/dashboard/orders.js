@@ -40,6 +40,15 @@ function getDisplayOrderId(order) {
   return id;
 }
 
+// True when payment has been recorded or order is from external platform / cancelled (order should not be editable)
+function isOrderPaidOrNonEditable(order) {
+  if (order.status === "CANCELLED") return true;
+  if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0) return true;
+  if (order.source === "FOODPANDA") return true;
+  const pm = (order.paymentMethod || "").toUpperCase();
+  return pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA";
+}
+
 function printBill(order, mode = "auto") {
   const win = window.open("", "_blank", "width=360,height=600");
   if (!win) return;
@@ -413,14 +422,16 @@ export default function OrdersPage() {
                         )}
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
-                      className="p-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
-                      title="Edit order"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
+                    {!isOrderPaidOrNonEditable(order) && (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
+                        className="p-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
+                        title="Edit order"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 {order.externalOrderId && (
@@ -539,19 +550,21 @@ export default function OrdersPage() {
                     >
                       <Printer className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      disabled={deletingId === (order._id || order.id)}
-                      onClick={() => handleDeleteOrder(order)}
-                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
-                      title="Delete order"
-                    >
-                      {deletingId === (order._id || order.id) ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                    {!isOrderPaidOrNonEditable(order) && (
+                      <button
+                        type="button"
+                        disabled={deletingId === (order._id || order.id)}
+                        onClick={() => handleDeleteOrder(order)}
+                        className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
+                        title="Delete order"
+                      >
+                        {deletingId === (order._id || order.id) ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    )}
                   </>
                 ) : (
                   <>
@@ -590,19 +603,21 @@ export default function OrdersPage() {
                       </button>
                     )}
                     {/* Cancel button moved to header (top-right) */}
-                    <button
-                      type="button"
-                      disabled={deletingId === (order._id || order.id)}
-                      onClick={() => handleDeleteOrder(order)}
-                      className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
-                      title="Delete order"
-                    >
-                      {deletingId === (order._id || order.id) ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                    {!isOrderPaidOrNonEditable(order) && (
+                      <button
+                        type="button"
+                        disabled={deletingId === (order._id || order.id)}
+                        onClick={() => handleDeleteOrder(order)}
+                        className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
+                        title="Delete order"
+                      >
+                        {deletingId === (order._id || order.id) ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
