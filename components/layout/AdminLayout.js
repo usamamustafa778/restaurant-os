@@ -38,76 +38,42 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { getTenantRoute } from "../../lib/routes";
 
-// Base tenant dashboard routes with grouped sections (inspired by Dream POS)
+// Single tenant nav: each item has `roles` – only roles that can see it. No roles = all tenant roles.
+// Admin: all. Manager: all except Branches, Subscription. Product manager: Overview, Categories, Items, Inventory, Profile.
+// Cashier: Overview, POS, Orders, Reservations, Customers, Profile. Kitchen: KDS, Profile. Order taker: Overview, POS, Orders, Reservations, Customers, Tables, Profile.
 const tenantNav = [
-  { path: "/dashboard/overview", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/dashboard/pos", label: "POS", icon: Receipt },
-  { path: "/dashboard/orders", label: "Orders", icon: ClipboardList },
-  { path: "/dashboard/kitchen", label: "Kitchen (KDS)", icon: ChefHat },
-  { path: "/dashboard/reservations", label: "Reservations", icon: History },
+  { path: "/dashboard/overview", label: "Dashboard", icon: LayoutDashboard, roles: ["restaurant_admin", "admin", "manager", "product_manager", "cashier", "kitchen_staff", "order_taker"] },
+  { path: "/dashboard/pos", label: "POS", icon: Receipt, roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"] },
+  { path: "/dashboard/orders", label: "Orders", icon: ClipboardList, roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"] },
+  { path: "/dashboard/kitchen", label: "Kitchen (KDS)", icon: ChefHat, roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"] },
+  { path: "/dashboard/reservations", label: "Reservations", icon: History, roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"] },
 
-  // MENU MANAGEMENT Section
   { type: "section", label: "MENU MANAGEMENT" },
-  { path: "/dashboard/categories", label: "Categories", icon: FolderOpen },
-  { path: "/dashboard/menu-items", label: "Items", icon: ShoppingBag },
+  { path: "/dashboard/categories", label: "Categories", icon: FolderOpen, roles: ["restaurant_admin", "admin", "manager", "product_manager"] },
+  { path: "/dashboard/menu-items", label: "Items", icon: ShoppingBag, roles: ["restaurant_admin", "admin", "manager", "product_manager"] },
 
-  // OPERATIONS Section
   { type: "section", label: "OPERATIONS" },
-  { path: "/dashboard/customers", label: "Customers", icon: UserCheck },
-  { path: "/dashboard/inventory", label: "Inventory", icon: Factory },
+  { path: "/dashboard/customers", label: "Customers", icon: UserCheck, roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"] },
+  { path: "/dashboard/inventory", label: "Inventory", icon: Factory, roles: ["restaurant_admin", "admin", "manager", "product_manager"] },
 
-  // ADMINISTRATION Section
   { type: "section", label: "ADMINISTRATION" },
-  { path: "/dashboard/users", label: "Users", icon: Users },
-  { path: "/dashboard/branches", label: "Branches", icon: MapPin },
-  { path: "/dashboard/tables", label: "Tables", icon: UtensilsCrossed },
-  { path: "/dashboard/history", label: "Reports", icon: BarChart3 },
+  { path: "/dashboard/users", label: "Users", icon: Users, roles: ["restaurant_admin", "admin", "manager"] },
+  { path: "/dashboard/branches", label: "Branches", icon: MapPin, roles: ["restaurant_admin", "admin"] },
+  { path: "/dashboard/tables", label: "Tables", icon: UtensilsCrossed, roles: ["restaurant_admin", "admin", "manager", "order_taker"] },
+  { path: "/dashboard/history", label: "Reports", icon: BarChart3, roles: ["restaurant_admin", "admin", "manager"] },
 
-  // SETTINGS Section
   { type: "section", label: "SETTINGS" },
-  { path: "/dashboard/website", label: "Website Settings", icon: Globe },
-  {
-    path: "/dashboard/integrations",
-    label: "Integrations / API",
-    icon: Plug,
-    roles: ["restaurant_admin", "admin"],
-  },
-  {
-    path: "/dashboard/subscription",
-    label: "Subscription",
-    icon: CreditCard,
-    roles: ["restaurant_admin", "admin"],
-  },
-  { path: "/dashboard/profile", label: "Profile", icon: UserCircle2 },
+  { path: "/dashboard/website", label: "Website Settings", icon: Globe, roles: ["restaurant_admin", "admin", "manager"] },
+  { path: "/dashboard/integrations", label: "Integrations / API", icon: Plug, roles: ["restaurant_admin", "admin", "manager"] },
+  { path: "/dashboard/subscription", label: "Subscription", icon: CreditCard, roles: ["restaurant_admin", "admin"] },
+  { path: "/dashboard/profile", label: "Profile", icon: UserCircle2, roles: ["restaurant_admin", "admin", "manager", "product_manager", "cashier", "kitchen_staff", "order_taker"] },
 ];
 
 const superNav = [
-  {
-    href: "/dashboard/super/overview",
-    label: "Platform Overview",
-    icon: LayoutDashboard,
-  },
+  { href: "/dashboard/super/overview", label: "Platform Overview", icon: LayoutDashboard },
   { href: "/dashboard/super/restaurants", label: "Restaurants", icon: Factory },
-  {
-    href: "/dashboard/super/subscriptions",
-    label: "Subscriptions",
-    icon: CreditCard,
-  },
-  {
-    href: "/dashboard/super/settings",
-    label: "System Settings",
-    icon: Settings2,
-  },
-];
-
-// Manager-focused navigation, inspired by Nimbus-style layout
-const managerNav = [
-  { path: "/dashboard/overview", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/dashboard/orders", label: "Order Management", icon: ClipboardList },
-  { path: "/dashboard/day-report", label: "Day Report", icon: BarChart3 },
-  { path: "/dashboard/users", label: "User Management", icon: Users },
-  { path: "/dashboard/branches", label: "Branches", icon: MapPin },
-  { path: "/dashboard/profile", label: "Profile", icon: UserCircle2 },
+  { href: "/dashboard/super/subscriptions", label: "Subscriptions", icon: CreditCard },
+  { href: "/dashboard/super/settings", label: "System Settings", icon: Settings2 },
 ];
 
 /**
@@ -346,16 +312,18 @@ export default function AdminLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rawNavItems =
-    role === "super_admin"
-      ? superNav
-      : role === "manager"
-        ? managerNav
-        : tenantNav;
-  // Filter nav items by role if the item has a `roles` whitelist
-  const navItems = rawNavItems.filter(
-    (item) => !item.roles || item.roles.includes(role),
+  const rawNavItems = role === "super_admin" ? superNav : tenantNav;
+  // Filter nav items by role (sections have roles; hide section if no links below visible)
+  const withRole = rawNavItems.filter(
+    (item) => item.type === "section" || !item.roles || item.roles.includes(role),
   );
+  const navItems = withRole.filter((item, i) => {
+    if (item.type !== "section") return true;
+    const after = withRole.slice(i + 1);
+    const nextSectionIdx = after.findIndex((x) => x.type === "section");
+    const until = nextSectionIdx === -1 ? after : after.slice(0, nextSectionIdx);
+    return until.some((x) => x.path || x.href);
+  });
   const roleLabel =
     role === "super_admin"
       ? "Super Admin"
@@ -371,7 +339,9 @@ export default function AdminLayout({
                 ? "Manager"
                 : role === "kitchen_staff"
                   ? "Kitchen Staff"
-                  : "Staff";
+                  : role === "order_taker"
+                    ? "Order Taker"
+                    : "Staff";
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -778,7 +748,7 @@ export default function AdminLayout({
                     <MapPin className="w-3 h-3 text-white" />
                   </div>
                   <span className="truncate max-w-[160px]">
-                    {currentBranch ? currentBranch.name : "All branches"}
+                    {currentBranch ? currentBranch.name : (role === "restaurant_admin" || role === "admin" ? "All branches" : (branches?.[0]?.name ?? "Select branch"))}
                   </span>
                   <ChevronDown
                     className={`w-4 h-4 text-gray-500 dark:text-neutral-400 transition-transform ${branchDropdownOpen ? "rotate-180" : ""}`}
@@ -798,6 +768,7 @@ export default function AdminLayout({
                         </p>
                       </div>
                       <div className="p-2 max-h-[300px] overflow-y-auto">
+                        {(role === "restaurant_admin" || role === "admin") && (
                         <button
                           type="button"
                           onClick={() => {
@@ -820,6 +791,7 @@ export default function AdminLayout({
                           </div>
                           <span>All branches</span>
                         </button>
+                        )}
                         {(branches && branches.length > 0
                           ? branches
                           : [{ id: "none", name: "No branches yet" }]
@@ -854,6 +826,7 @@ export default function AdminLayout({
                           </button>
                         ))}
                       </div>
+                      {(role === "restaurant_admin" || role === "admin") && (
                       <div className="border-t-2 border-gray-100 dark:border-neutral-800 p-2">
                         <Link
                           href="/dashboard/branches"
@@ -863,6 +836,7 @@ export default function AdminLayout({
                           Manage branches
                         </Link>
                       </div>
+                      )}
                     </div>
                   </>
                 )}

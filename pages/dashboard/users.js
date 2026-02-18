@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
-import { getUsers, createUser, updateUser, deleteUser, getBranches, SubscriptionInactiveError } from "../../lib/apiClient";
-import { UserPlus, Trash2, Edit3, User, Mail, Briefcase, LayoutGrid, List, MapPin } from "lucide-react";
+import { getUsers, createUser, updateUser, deleteUser, getBranches, SubscriptionInactiveError, getStoredAuth } from "../../lib/apiClient";
+import { UserPlus, Trash2, Edit3, User, Mail, Briefcase, LayoutGrid, List, MapPin, Eye, EyeOff } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import DataTable from "../../components/ui/DataTable";
 import { useBranch } from "../../contexts/BranchContext";
@@ -13,7 +13,8 @@ const ROLE_OPTIONS = [
   { value: "product_manager", label: "Product manager" },
   { value: "cashier", label: "Cashier" },
   { value: "manager", label: "Manager" },
-  { value: "kitchen_staff", label: "Kitchen staff" }
+  { value: "kitchen_staff", label: "Kitchen staff" },
+  { value: "order_taker", label: "Order taker" },
 ];
 
 const ROLE_LABELS = {
@@ -23,7 +24,10 @@ const ROLE_LABELS = {
   cashier: "Cashier",
   manager: "Manager",
   kitchen_staff: "Kitchen Staff",
+  order_taker: "Order Taker",
 };
+
+const MANAGER_ALLOWED_ROLES = ["product_manager", "cashier", "kitchen_staff", "order_taker"];
 
 function getRoleLabel(role) {
   return ROLE_LABELS[role] || role;
@@ -37,7 +41,14 @@ function getInitials(name) {
 }
 
 export default function UsersPage() {
-  const { branches: branchList } = useBranch() || {};
+  const { branches: branchList, currentBranch } = useBranch() || {};
+  const auth = getStoredAuth();
+  const currentUserRole = auth?.user?.role;
+  const currentUserId = auth?.user?.id || auth?.user?._id;
+  const isManager = currentUserRole === "manager";
+  const roleOptions = isManager
+    ? ROLE_OPTIONS.filter((r) => MANAGER_ALLOWED_ROLES.includes(r.value))
+    : ROLE_OPTIONS;
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "", branchIds: [] });
   const [loading, setLoading] = useState(false);
@@ -47,6 +58,7 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [modalError, setModalError] = useState("");
   const [viewMode, setViewMode] = useState("card"); // "card" | "table"
+  const [showPassword, setShowPassword] = useState(false);
   const { confirm } = useConfirmDialog();
 
   const branches = branchList?.length ? branchList : [];
@@ -64,12 +76,16 @@ export default function UsersPage() {
   }, []);
 
   function resetForm() {
-    setForm({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "", branchIds: [] });
+    const defaultRole = isManager ? "cashier" : "manager";
+    const branchIds = isManager && currentBranch ? [currentBranch.id] : [];
+    setForm({ id: null, name: "", email: "", password: "", role: defaultRole, profileImageUrl: "", branchIds: branchIds });
+    setShowPassword(false);
   }
 
   function startEdit(user) {
-    const branchIds = (user.branches || []).map(b => b.branchId).filter(Boolean);
-    setForm({ id: user.id, name: user.name, email: user.email, password: "", role: user.role, profileImageUrl: user.profileImageUrl || "", branchIds });
+    const branchIds = isManager && currentBranch ? [currentBranch.id] : (user.branches || []).map(b => b.branchId).filter(Boolean);
+    const role = isManager && !MANAGER_ALLOWED_ROLES.includes(user.role) ? roleOptions[0]?.value ?? "cashier" : user.role;
+    setForm({ id: user.id, name: user.name, email: user.email, password: "", role, profileImageUrl: user.profileImageUrl || "", branchIds });
     setModalError("");
     setIsModalOpen(true);
   }
@@ -82,13 +98,14 @@ export default function UsersPage() {
     setModalError("");
     setLoading(true);
     try {
+      const branchIds = isManager && currentBranch ? [currentBranch.id] : (branches.length > 0 ? form.branchIds : undefined);
       const payload = {
         name: form.name,
         email: form.email,
         role: form.role,
         profileImageUrl: form.profileImageUrl || null,
         ...(form.password ? { password: form.password } : {}),
-        ...(branches.length > 0 ? { branchIds: form.branchIds } : {})
+        ...(branchIds?.length ? { branchIds } : {})
       };
       if (form.id) {
         const updated = await updateUser(form.id, payload);
@@ -119,8 +136,13 @@ export default function UsersPage() {
 
   const filtered = users.filter(user => {
     const term = search.trim().toLowerCase();
-    if (!term) return true;
-    return user.name.toLowerCase().includes(term) || user.email.toLowerCase().includes(term) || user.role.toLowerCase().includes(term);
+    if (term && !user.name.toLowerCase().includes(term) && !user.email.toLowerCase().includes(term) && !user.role.toLowerCase().includes(term)) return false;
+    // When a specific branch is selected, show only users assigned to that branch. "All branches" = show all. Owner always visible.
+    if (currentBranch && user.role !== "restaurant_admin") {
+      const userBranchIds = (user.branches || []).map(b => String(b.branchId || b.branch));
+      if (!userBranchIds.includes(String(currentBranch.id))) return false;
+    }
+    return true;
   });
 
   return (
@@ -241,6 +263,8 @@ export default function UsersPage() {
               align: "right",
               render: (_, row) => {
                 const isOwner = row.role === "restaurant_admin";
+                const isSelf = String(row.id) === String(currentUserId);
+                const canDelete = !isOwner && (!isManager || !isSelf);
                 return (
                   <div className="flex items-center justify-end gap-1">
                     <button
@@ -251,7 +275,7 @@ export default function UsersPage() {
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
-                    {!isOwner && (
+                    {canDelete && (
                       <button
                         type="button"
                         onClick={() => handleDelete(row.id)}
@@ -277,10 +301,10 @@ export default function UsersPage() {
             return (
               <div
                 key={user.id}
-                className="relative group w-full rounded-2xl overflow-hidden bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+                className="relative group w-full rounded-2xl overflow-hidden bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col"
               >
                 {/* Top section */}
-                <div className="relative bg-primary h-28 overflow-hidden">
+                <div className="relative bg-primary h-28 overflow-hidden flex-shrink-0">
                   <svg className="absolute -top-6 -right-6 w-24 h-24 text-secondary opacity-60" viewBox="0 0 100 100" fill="currentColor"><circle cx="50" cy="50" r="50" /></svg>
                   <svg className="absolute -bottom-8 -left-4 w-20 h-20 text-secondary opacity-40" viewBox="0 0 100 100" fill="currentColor"><circle cx="50" cy="50" r="50" /></svg>
                   <svg className="absolute top-4 left-1/2 w-10 h-10 text-white opacity-5" viewBox="0 0 100 100" fill="currentColor"><circle cx="50" cy="50" r="50" /></svg>
@@ -290,7 +314,9 @@ export default function UsersPage() {
                   </div>
                   <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button type="button" onClick={() => startEdit(user)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition-colors" title="Edit"><Edit3 className="w-3 h-3" /></button>
-                    {!isOwner && (<button type="button" onClick={() => handleDelete(user.id)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-red-500/80 transition-colors" title="Delete"><Trash2 className="w-3 h-3" /></button>)}
+                    {!isOwner && (!isManager || String(user.id) !== String(currentUserId)) && (
+                      <button type="button" onClick={() => handleDelete(user.id)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-red-500/80 transition-colors" title="Delete"><Trash2 className="w-3 h-3" /></button>
+                    )}
                   </div>
                 </div>
 
@@ -308,7 +334,7 @@ export default function UsersPage() {
                 </div>
 
                 {/* Body */}
-                <div className="px-4 pt-2 pb-5 text-center">
+                <div className="px-4 pt-2 pb-5 text-center flex-1 flex flex-col">
                   <h3 className="text-base font-bold text-gray-900 dark:text-white leading-tight truncate">{user.name}</h3>
                   <div className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 dark:bg-primary/20">
                     <Briefcase className="w-3 h-3 text-primary dark:text-secondary" />
@@ -342,8 +368,8 @@ export default function UsersPage() {
                   </div>
                 </div>
 
-                {/* Footer */}
-                <div className="bg-primary px-4 py-2 flex items-center justify-between">
+                {/* Footer - pinned to bottom of card */}
+                <div className="bg-primary px-4 py-2 flex items-center justify-between mt-auto flex-shrink-0">
                   <div className="flex items-center gap-1.5">
                     <Mail className="w-3 h-3 text-white/60" />
                     <span className="text-[10px] text-white/80 truncate max-w-[140px]">{user.email}</span>
@@ -416,11 +442,11 @@ export default function UsersPage() {
                 <div className="space-y-1.5">
                   <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Role</label>
                   <select
-                    value={form.role}
+                    value={MANAGER_ALLOWED_ROLES.includes(form.role) || !isManager ? form.role : roleOptions[0]?.value}
                     onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))}
                     className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                   >
-                    {ROLE_OPTIONS.map(r => (
+                    {roleOptions.map(r => (
                       <option key={r.value} value={r.value}>{r.label}</option>
                     ))}
                   </select>
@@ -443,17 +469,27 @@ export default function UsersPage() {
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                   Password {form.id && <span className="text-gray-400 font-normal">(leave blank to keep)</span>}
                 </label>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.password}
-                  onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder={form.id ? "Leave blank to keep existing" : "Min 6 characters"}
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={form.password}
+                    onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder={form.id ? "Leave blank to keep existing" : "Min 6 characters"}
+                    className="w-full px-3 py-2 pr-10 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(prev => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
-              {branches.length > 0 && (
+              {branches.length > 0 && !isManager && (
                 <div className="space-y-1.5">
                   <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium flex items-center gap-1.5">
                     <MapPin className="w-3 h-3" />
@@ -479,6 +515,11 @@ export default function UsersPage() {
                     ))}
                   </div>
                 </div>
+              )}
+              {isManager && currentBranch && (
+                <p className="text-xs text-gray-500 dark:text-neutral-400">
+                  New member will be assigned to <strong>{currentBranch.name}</strong>.
+                </p>
               )}
 
               <div className="flex justify-end gap-2 pt-2">

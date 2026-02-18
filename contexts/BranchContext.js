@@ -46,12 +46,17 @@ export function BranchProvider({ children }) {
         setBranches(list);
 
         const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
-        const defaultBranch = savedId === "all" || !savedId
-          ? null
-          : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
+        const isAdminOrOwner = role === "restaurant_admin" || role === "admin";
+        // Only admin/owner can use "All branches"; manager and others default to first assigned branch
+        const defaultBranch =
+          savedId === "all" || !savedId
+            ? (isAdminOrOwner ? null : list[0] ?? null)
+            : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
         setCurrentBranchState(defaultBranch);
-        if (defaultBranch && defaultBranch.id !== savedId) {
+        if (defaultBranch) {
           window.localStorage.setItem(BRANCH_STORAGE_KEY, defaultBranch.id);
+        } else if (isAdminOrOwner) {
+          window.localStorage.setItem(BRANCH_STORAGE_KEY, "all");
         }
       })
       .catch(() => {
@@ -78,10 +83,13 @@ export function BranchProvider({ children }) {
             .then((data) => {
               const list = data?.branches ?? (Array.isArray(data) ? data : []);
               setBranches(list);
+              const r = auth?.user?.role;
+              const isAdminOrOwner = r === "restaurant_admin" || r === "admin";
               const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
-              const defaultBranch = savedId === "all" || !savedId
-                ? null
-                : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
+              const defaultBranch =
+                savedId === "all" || !savedId
+                  ? (isAdminOrOwner ? null : list[0] ?? null)
+                  : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
               setCurrentBranchState(defaultBranch);
             })
             .catch(() => setBranches([]));

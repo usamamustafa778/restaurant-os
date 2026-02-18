@@ -10,7 +10,8 @@ import {
   updateOrderStatus,
   deleteOrder,
   recordOrderPayment,
-  SubscriptionInactiveError
+  SubscriptionInactiveError,
+  getStoredAuth,
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
 import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown } from "lucide-react";
@@ -166,6 +167,9 @@ export default function OrdersPage() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [expandedOrderItems, setExpandedOrderItems] = useState({});
+
+  const role = getStoredAuth()?.user?.role;
+  const isOrderTaker = role === "order_taker";
 
   async function loadOrders() {
     try {
@@ -406,6 +410,7 @@ export default function OrdersPage() {
                       <StatusBadge status={order.status} />
                     </div>
                   </div>
+                  {!isOrderTaker && (
                   <div className="flex items-center gap-2">
                     {order.status !== "CANCELLED" && order.status !== "COMPLETED" && (
                       <button
@@ -433,6 +438,7 @@ export default function OrdersPage() {
                       </button>
                     )}
                   </div>
+                  )}
                 </div>
                 {order.externalOrderId && (
                   <div className="flex items-center gap-1 mt-1 text-xs text-gray-500 dark:text-neutral-500">
@@ -528,7 +534,8 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* Actions (hidden for order_taker – view only) */}
+              {!isOrderTaker && (
               <div className="mt-auto px-4 pb-4 pt-3 border-t border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2">
                 {order.status === "COMPLETED" ? (
                   <>
@@ -602,7 +609,6 @@ export default function OrdersPage() {
                         )}
                       </button>
                     )}
-                    {/* Cancel button moved to header (top-right) */}
                     {!isOrderPaidOrNonEditable(order) && (
                       <button
                         type="button"
@@ -621,6 +627,7 @@ export default function OrdersPage() {
                   </>
                 )}
               </div>
+              )}
             </div>
             );
           })}

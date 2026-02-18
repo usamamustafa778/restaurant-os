@@ -51,9 +51,20 @@ import {
   Sparkles,
 } from "lucide-react";
 
+// Display order ID same as Orders page: YYYYMMDD-0001 (strip "ORD-" prefix when present)
+function getDisplayOrderId(order) {
+  if (!order) return "";
+  const id = order.orderNumber || order.id || order._id || "";
+  const str = typeof id === "string" ? id : String(id);
+  if (str.startsWith("ORD-")) return str.replace(/^ORD-/, "");
+  return str;
+}
+
 export default function POSPage() {
   const router = useRouter();
   const { currentBranch } = useBranch() || {};
+  const role = getStoredAuth()?.user?.role;
+  const isOrderTaker = role === "order_taker";
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
@@ -807,13 +818,12 @@ export default function POSPage() {
         {/* Left Column - Recent Orders + Menu */}
         <div className="flex flex-col gap-5 min-h-0 min-w-0 lg:min-h-0">
           {/* Recent Orders Section - Compact */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-2">
+          {/* <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-2">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                 Recent Orders
               </h3>
               <div className="flex items-center gap-1.5">
-                {/* Order Type Filters - Compact */}
                 <div className="flex gap-1">
                   {[
                     { value: "all", label: "All" },
@@ -834,7 +844,6 @@ export default function POSPage() {
                     </button>
                   ))}
         </div>
-                {/* Navigation Arrows - Compact */}
                 <button
                   onClick={() =>
                     setCurrentOrderIndex(Math.max(0, currentOrderIndex - 1))
@@ -858,7 +867,6 @@ export default function POSPage() {
               </div>
             </div>
 
-            {/* Recent Order Cards - Compact */}
             <div className="grid grid-cols-3 gap-2">
               {recentOrders
                 .slice(currentOrderIndex, currentOrderIndex + 3)
@@ -922,7 +930,6 @@ export default function POSPage() {
                       </div>
                     </div>
 
-                    {/* Progress Bar */}
                     <div className="relative h-1 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
                       <div
                         className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all duration-500"
@@ -932,7 +939,7 @@ export default function POSPage() {
                   </div>
                 ))}
             </div>
-          </div>
+          </div> */}
 
         {/* Menu Items Section */}
           <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1 min-h-0">
@@ -1219,12 +1226,12 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Cart Section - Compact Style */}
-        <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden min-h-[280px] lg:min-h-0 min-w-0">
+        {/* Cart Section - Compact Style; scrollable so bottom actions are always reachable */}
+        <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl min-h-[280px] lg:min-h-0 min-w-0 overflow-y-auto">
           {editingOrderId && (
             <div className="px-3 py-2 bg-amber-500/15 dark:bg-amber-500/20 border-b border-amber-500/30 flex items-center justify-between">
               <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                Editing order #{editingOrder?.id || editingOrderId}
+                Editing order #{getDisplayOrderId(editingOrder) || editingOrderId}
               </span>
               <button
                 type="button"
@@ -1250,10 +1257,15 @@ export default function POSPage() {
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                {editingOrderId ? `Order #${editingOrder?.id || editingOrderId}` : "Order #56998"}
+                {editingOrderId
+                  ? `Order #${getDisplayOrderId(editingOrder) || editingOrderId}`
+                  : "New order"}
               </h3>
               <span className="text-xs text-gray-500 dark:text-neutral-400">
-                {new Date().toLocaleDateString("en-US", {
+                {(editingOrder?.createdAt
+                  ? new Date(editingOrder.createdAt)
+                  : new Date()
+                ).toLocaleDateString("en-US", {
                   day: "2-digit",
                   month: "short",
                   hour: "2-digit",
@@ -1317,7 +1329,7 @@ export default function POSPage() {
                 onClick={openCustomerModal}
                 className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white flex items-center justify-between hover:border-gray-300 dark:hover:border-neutral-600"
               >
-                <span>{customerName ? `${customerName}${customerPhone ? ` • ${customerPhone}` : ""}` : "Select Customer"}</span>
+                <span>{customerName ? `${customerName}${customerPhone ? ` • ${customerPhone}` : ""}` : "N/A"}</span>
                 <Plus className="w-3.5 h-3.5 flex-shrink-0" />
               </button>
             </div>
@@ -1686,26 +1698,30 @@ export default function POSPage() {
               </button>
               )}
 
-              {/* Action Buttons Grid */}
+              {/* Action Buttons Grid (order_taker: no Print, Invoice, Void, Trans.) */}
               <div className="grid grid-cols-3 gap-2">
-                <button 
-                  onClick={() => setShowPrintModal(true)}
-                  className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <span className="text-lg">🖨️</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Print
+                {!isOrderTaker && (
+                  <>
+                    <button 
+                      onClick={() => setShowPrintModal(true)}
+                      className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <span className="text-lg">🖨️</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                        Print
                       </span>
                     </button>
-                <button 
-                  onClick={() => setShowInvoiceModal(true)}
-                  className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <span className="text-lg">📄</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Invoice
-                  </span>
-                </button>
+                    <button 
+                      onClick={() => setShowInvoiceModal(true)}
+                      className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <span className="text-lg">📄</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                        Invoice
+                      </span>
+                    </button>
+                  </>
+                )}
                 <button 
                   onClick={() => {
                     setTransactionTab("draft");
@@ -1727,24 +1743,28 @@ export default function POSPage() {
                     Cancel
                   </span>
                 </button>
-                <button className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5">
-                  <span className="text-lg">💵</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Void
-                  </span>
-                </button>
-                <button 
-                  onClick={() => {
-                    setTransactionTab("sale");
-                    setShowTransactionsModal(true);
-                  }}
-                  className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <span className="text-lg">📊</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Trans.
-                  </span>
-                </button>
+                {!isOrderTaker && (
+                  <>
+                    <button className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5">
+                      <span className="text-lg">💵</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                        Void
+                      </span>
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setTransactionTab("sale");
+                        setShowTransactionsModal(true);
+                      }}
+                      className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <span className="text-lg">📊</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                        Trans.
+                      </span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
