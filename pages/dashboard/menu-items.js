@@ -17,7 +17,7 @@ import {
   getSourceBranchMenu,
   copyMenuFromBranch
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -74,7 +74,9 @@ export default function MenuItemsPage() {
     dietaryType: "non_veg",
     imageUrl: "",
     description: "",
-    availableAtAllBranches: true
+    availableAtAllBranches: true,
+    isTrending: false,
+    isMustTry: false
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -240,7 +242,9 @@ export default function MenuItemsPage() {
       dietaryType: "non_veg",
       imageUrl: "",
       description: "",
-      availableAtAllBranches: true
+      availableAtAllBranches: true,
+      isTrending: false,
+      isMustTry: false
     });
   }
 
@@ -261,7 +265,9 @@ export default function MenuItemsPage() {
       dietaryType: item.dietaryType || "non_veg",
       imageUrl: item.imageUrl || "",
       description: item.description || "",
-      availableAtAllBranches: item.availableAtAllBranches ?? true
+      availableAtAllBranches: item.availableAtAllBranches ?? true,
+      isTrending: item.isTrending ?? false,
+      isMustTry: item.isMustTry ?? false
     });
     setImageTab(item.imageUrl ? "link" : "link");
     setUploadError("");
@@ -304,7 +310,9 @@ export default function MenuItemsPage() {
             dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
             description: form.description,
-            availableAtAllBranches: form.availableAtAllBranches
+            availableAtAllBranches: form.availableAtAllBranches,
+            isTrending: form.isTrending,
+            isMustTry: form.isMustTry
           });
           setData(prev => ({
             ...prev,
@@ -320,6 +328,8 @@ export default function MenuItemsPage() {
             imageUrl: form.imageUrl,
             description: form.description,
             availableAtAllBranches: form.availableAtAllBranches,
+            isTrending: form.isTrending,
+            isMustTry: form.isMustTry,
             ...(currentBranch?.id && { branchId: currentBranch.id }),
           });
           setData(prev => ({
@@ -993,6 +1003,28 @@ export default function MenuItemsPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.isTrending}
+                    onChange={e => setForm(prev => ({ ...prev, isTrending: e.target.checked }))}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <Flame className="w-3.5 h-3.5 text-red-500" />
+                  <span className="text-xs text-gray-700 dark:text-neutral-300">Trending</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.isMustTry}
+                    onChange={e => setForm(prev => ({ ...prev, isMustTry: e.target.checked }))}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <Star className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="text-xs text-gray-700 dark:text-neutral-300">Must Try</span>
+                </label>
               </div>
               <div className="space-y-2">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Image (optional)</label>

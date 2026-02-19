@@ -1059,9 +1059,8 @@ export default function POSPage() {
                   const category = menu.categories.find(
                     (c) => c.id === item.categoryId,
                   );
-                  // Mock badges - in production, fetch from item properties
-                  const isTrending = idx % 3 === 0;
-                  const isMustTry = idx % 5 === 0;
+                  const isTrending = item.isTrending === true;
+                  const isMustTry = item.isMustTry === true;
 
                 return (
                   <div
