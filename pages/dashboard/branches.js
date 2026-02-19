@@ -5,7 +5,7 @@ import Button from "../../components/ui/Button";
 import { getBranches, getDeletedBranches, createBranch, deleteBranch, restoreBranch } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { MapPin, Loader2, RefreshCw, Check, Trash2, X } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 export default function BranchesPage() {
   const { branches: contextBranches, currentBranch, setCurrentBranch, loading: contextLoading } = useBranch() || {};
@@ -67,8 +67,6 @@ export default function BranchesPage() {
 
   return (
     <AdminLayout title="Branches">
-      <Toaster position="top-right" />
-      
       {/* Page Loader */}
       {pageLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">

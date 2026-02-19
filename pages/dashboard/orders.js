@@ -14,7 +14,7 @@ import {
   getStoredAuth,
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
-import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown } from "lucide-react";
+import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag } from "lucide-react";
 
 const ORDER_STATUSES = [
   "All Orders",
@@ -158,7 +158,7 @@ export default function OrdersPage() {
   const [sourceFilter, setSourceFilter] = useState("All Sources");
   const [sortOrder, setSortOrder] = useState("Newest First");
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
+  const [pageLoading, setPageLoading] = useState(true);
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState(null);
@@ -175,12 +175,14 @@ export default function OrdersPage() {
     try {
       const data = await getOrders();
       setOrders(data);
+      setPageLoading(false);
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) {
         setSuspended(true);
       } else {
-        setError(err.message || "Failed to load orders");
+        toast.error(err.message || "Failed to load orders");
       }
+      setPageLoading(false);
     }
   }
 
@@ -190,13 +192,15 @@ export default function OrdersPage() {
 
   async function handleUpdateStatus(orderId, newStatus) {
     setUpdatingId(orderId);
+    const toastId = toast.loading(`Updating order to ${newStatus}...`);
     try {
       const updated = await updateOrderStatus(orderId, newStatus);
       setOrders(prev =>
         prev.map(o => (o.id === orderId || o._id === orderId ? { ...o, ...updated } : o))
       );
+      toast.success(`Order updated to ${newStatus}!`, { id: toastId });
     } catch (err) {
-      setError(err.message || "Failed to update status");
+      toast.error(err.message || "Failed to update status", { id: toastId });
     } finally {
       setUpdatingId(null);
     }
@@ -207,13 +211,13 @@ export default function OrdersPage() {
     const displayId = getDisplayOrderId(order);
     if (!window.confirm(`Delete order #${displayId}? This cannot be undone.`)) return;
     setDeletingId(orderId);
+    const toastId = toast.loading("Deleting order...");
     try {
       await deleteOrder(orderId);
       setOrders(prev => prev.filter(o => (o._id || o.id) !== orderId));
-      toast.success("Order deleted");
+      toast.success(`Order #${displayId} deleted successfully!`, { id: toastId });
     } catch (err) {
-      setError(err.message || "Failed to delete order");
-      toast.error(err.message || "Failed to delete order");
+      toast.error(err.message || "Failed to delete order", { id: toastId });
     } finally {
       setDeletingId(null);
     }
@@ -247,6 +251,7 @@ export default function OrdersPage() {
     }
     setPaymentLoading(true);
     setPaymentError("");
+    const toastId = toast.loading("Recording payment...");
     try {
       const payload = { paymentMethod };
       if (paymentMethod === "CASH") {
@@ -258,10 +263,11 @@ export default function OrdersPage() {
       setOrders(prev =>
         prev.map(o => (o._id === orderId || o.id === orderId ? { ...o, ...updated } : o))
       );
-      toast.success("Payment recorded");
+      toast.success("Payment recorded successfully!", { id: toastId });
       closePaymentModal();
     } catch (err) {
       setPaymentError(err.message || "Failed to record payment");
+      toast.error(err.message || "Failed to record payment", { id: toastId });
     } finally {
       setPaymentLoading(false);
     }
@@ -294,9 +300,16 @@ export default function OrdersPage() {
 
   return (
     <AdminLayout title="All Orders" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-2.5 text-xs text-red-700 dark:text-red-400">
-          {error}
+      {/* Page Loader */}
+      {pageLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-gray-200 dark:border-neutral-800 border-t-primary rounded-full animate-spin"></div>
+              <ShoppingBag className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">Loading orders...</p>
+          </div>
         </div>
       )}
       
@@ -330,7 +343,14 @@ export default function OrdersPage() {
           </select>
           <button
             type="button"
-            onClick={loadOrders}
+            onClick={() => {
+              const toastId = toast.loading("Refreshing orders...");
+              loadOrders().then(() => {
+                toast.success("Orders refreshed!", { id: toastId });
+              }).catch(() => {
+                toast.dismiss(toastId);
+              });
+            }}
             className="px-4 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
             Refresh

@@ -49,7 +49,7 @@ import {
   Tag,
   Sparkles,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 export default function POSPage() {
   const router = useRouter();
@@ -794,8 +794,6 @@ export default function POSPage() {
 
   return (
     <AdminLayout title="Point of Sale" suspended={suspended}>
-      <Toaster position="top-right" />
-      
       {/* Page Loader */}
       {pageLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
