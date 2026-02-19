@@ -437,7 +437,10 @@ function OrderSuccessModal({ orderData, onClose, primaryColor }) {
    Main Page Component
    ═════════════════════════════════════════════ */
 export default function TenantWebsitePage({ restaurant, menu, categories, branches = [], deals = [], suspended }) {
-  const grouped = groupByCategory(menu);
+  const [restaurantState, setRestaurantState] = useState(restaurant);
+  const [menuState, setMenuState] = useState(menu);
+  const [categoriesState, setCategoriesState] = useState(categories);
+  const grouped = groupByCategory(menuState);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedBranch, setSelectedBranch] = useState(() => (branches.length > 0 ? branches[0] : null));
@@ -450,15 +453,84 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
   const [showBlockedModal, setShowBlockedModal] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null);
   const hasMultipleBranches = branches.length > 1;
+  const [showBranchPicker, setShowBranchPicker] = useState(false);
+  const [branchLoading, setBranchLoading] = useState(false);
+
+  const featuredItems = menuState.filter(item => item.isFeatured).slice(0, 8);
+  const bestSellers = menuState.filter(item => item.isBestSeller).slice(0, 6);
+  const heroSlides = restaurantState?.heroSlides?.filter(slide => slide.isActive) || [];
+  const websiteSections = restaurantState?.websiteSections || [];
+  const allowOrders = restaurantState?.allowWebsiteOrders !== false;
   
-  const featuredItems = menu.filter(item => item.isFeatured).slice(0, 8);
-  const bestSellers = menu.filter(item => item.isBestSeller).slice(0, 6);
-  const heroSlides = restaurant?.heroSlides?.filter(slide => slide.isActive) || [];
-  const websiteSections = restaurant?.websiteSections || [];
-  const allowOrders = restaurant?.allowWebsiteOrders !== false;
-  
-  const primaryColor = restaurant?.themeColors?.primary || '#EF4444';
-  const secondaryColor = restaurant?.themeColors?.secondary || '#FFA500';
+  const primaryColor = restaurantState?.themeColors?.primary || '#EF4444';
+  const secondaryColor = restaurantState?.themeColors?.secondary || '#FFA500';
+
+  const branchStorageKey =
+    restaurantState?.subdomain ? `website_branch_${restaurantState.subdomain}` : null;
+
+  const handleSelectBranch = (branch) => {
+    setSelectedBranch(branch);
+    if (branchStorageKey && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(branchStorageKey, branch.id);
+      } catch {
+        // ignore storage errors
+      }
+    }
+    setShowBranchPicker(false);
+  };
+
+  // Load preferred branch from localStorage on first load (per restaurant)
+  useEffect(() => {
+    if (!hasMultipleBranches || !branchStorageKey) return;
+    if (typeof window === "undefined") return;
+
+    try {
+      const savedId = window.localStorage.getItem(branchStorageKey);
+      if (savedId) {
+        const found = branches.find((b) => b.id === savedId);
+        if (found) {
+          setSelectedBranch(found);
+          return;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    // No saved branch or not found → ask user to pick
+    if (branches.length > 1) {
+      setShowBranchPicker(true);
+    }
+  }, [hasMultipleBranches, branchStorageKey, branches]);
+
+  // Reload menu when branch changes so each branch shows its own items
+  useEffect(() => {
+    async function loadBranchMenu() {
+      if (!restaurantState?.subdomain) return;
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+      const params = new URLSearchParams({ subdomain: restaurantState.subdomain });
+      if (selectedBranch?.id) {
+        params.append("branchId", selectedBranch.id);
+      }
+      try {
+        setBranchLoading(true);
+        const res = await fetch(`${base}/api/menu?${params.toString()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setRestaurantState(data.restaurant || restaurantState);
+        setMenuState(data.menu || []);
+        setCategoriesState(data.categories || []);
+        // reset active category to All when branch changes
+        setActiveCategory("all");
+      } catch {
+        // ignore fetch errors, keep existing menu
+      } finally {
+        setBranchLoading(false);
+      }
+    }
+    loadBranchMenu();
+  }, [restaurantState?.subdomain, selectedBranch?.id]);
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % Math.max(heroSlides.length, 1));
@@ -541,10 +613,10 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
   return (
     <>
       <Head>
-        <title>{restaurant?.name || "Restaurant"} &bull; Eats Desk</title>
+        <title>{restaurantState?.name || "Restaurant"} &bull; Eats Desk</title>
         <meta
           name="description"
-          content={restaurant?.description || "Order delicious food online"}
+          content={restaurantState?.description || "Order delicious food online"}
         />
         <style>{`
           :root {
@@ -555,6 +627,48 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
       </Head>
 
       {/* Modals */}
+      {branchLoading && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {hasMultipleBranches && showBranchPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Choose your branch</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Please select the branch you want to view. We&apos;ll remember your choice for next time.
+            </p>
+            <div className="space-y-2 mb-4">
+              {branches.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => handleSelectBranch(b)}
+                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                    selectedBranch?.id === b.id
+                      ? "border-gray-900 bg-gray-900 text-white"
+                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-800"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    {b.name}
+                  </span>
+                  {selectedBranch?.id === b.id && (
+                    <span className="text-[11px] uppercase tracking-wide">Selected</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-500">
+              You can change the branch anytime from the top menu.
+            </p>
+          </div>
+        </div>
+      )}
+
       {selectedItem && (
         <ItemDetailModal
           item={selectedItem}
@@ -576,25 +690,25 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
       {showBlockedModal && (
         <CheckoutModal
           cart={[]}
-          restaurant={restaurant}
+          restaurant={restaurantState}
           allowOrders={false}
           onClose={() => setShowBlockedModal(false)}
           onOrderPlaced={() => {}}
           primaryColor={primaryColor}
-          subdomain={restaurant?.subdomain}
+          subdomain={restaurantState?.subdomain}
           branchId={selectedBranch?.id}
         />
       )}
       {showCheckout && (
         <CheckoutModal
           cart={cart}
-          restaurant={restaurant}
+          restaurant={restaurantState}
           allowOrders={true}
           onClose={() => setShowCheckout(false)}
           onOrderPlaced={handleOrderPlaced}
           onBlocked={() => { setShowCheckout(false); setShowBlockedModal(true); }}
           primaryColor={primaryColor}
-          subdomain={restaurant?.subdomain}
+          subdomain={restaurantState?.subdomain}
           branchId={selectedBranch?.id}
         />
       )}
@@ -611,37 +725,37 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
         <div className="bg-black text-white py-2">
           <div className="max-w-7xl mx-auto px-4 flex items-center justify-between text-xs">
             <div className="flex items-center gap-4">
-              {restaurant?.contactPhone && (
-                <a href={`tel:${restaurant.contactPhone}`} className="flex items-center gap-1 hover:text-gray-300">
+              {restaurantState?.contactPhone && (
+                <a href={`tel:${restaurantState.contactPhone}`} className="flex items-center gap-1 hover:text-gray-300">
                   <Phone className="w-3 h-3" />
                   {restaurant.contactPhone}
                 </a>
               )}
-              {restaurant?.contactEmail && (
-                <a href={`mailto:${restaurant.contactEmail}`} className="flex items-center gap-1 hover:text-gray-300">
+              {restaurantState?.contactEmail && (
+                <a href={`mailto:${restaurantState.contactEmail}`} className="flex items-center gap-1 hover:text-gray-300">
                   <Mail className="w-3 h-3" />
                   {restaurant.contactEmail}
                 </a>
               )}
             </div>
             <div className="flex items-center gap-3">
-              {restaurant?.socialMedia?.facebook && (
-                <a href={restaurant.socialMedia.facebook} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
+              {restaurantState?.socialMedia?.facebook && (
+                <a href={restaurantState.socialMedia.facebook} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
                   <Facebook className="w-4 h-4" />
                 </a>
               )}
-              {restaurant?.socialMedia?.instagram && (
-                <a href={restaurant.socialMedia.instagram} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
+              {restaurantState?.socialMedia?.instagram && (
+                <a href={restaurantState.socialMedia.instagram} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
                   <Instagram className="w-4 h-4" />
                 </a>
               )}
-              {restaurant?.socialMedia?.twitter && (
-                <a href={restaurant.socialMedia.twitter} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
+              {restaurantState?.socialMedia?.twitter && (
+                <a href={restaurantState.socialMedia.twitter} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
                   <Twitter className="w-4 h-4" />
                 </a>
               )}
-              {restaurant?.socialMedia?.youtube && (
-                <a href={restaurant.socialMedia.youtube} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
+              {restaurantState?.socialMedia?.youtube && (
+                <a href={restaurantState.socialMedia.youtube} target="_blank" rel="noopener noreferrer" className="hover:text-gray-300">
                   <Youtube className="w-4 h-4" />
                 </a>
               )}
@@ -654,13 +768,13 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
           <div className="max-w-7xl mx-auto px-4">
             <div className="flex items-center justify-between h-20">
               <div className="flex items-center gap-3">
-                {restaurant?.logoUrl ? (
+                {restaurantState?.logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={restaurant.logoUrl} alt={restaurant.name} className="h-14 w-14 rounded-xl object-cover flex-shrink-0" />
+                  <img src={restaurantState.logoUrl} alt={restaurantState.name} className="h-14 w-14 rounded-xl object-cover flex-shrink-0" />
                 ) : (
                   <div className="flex-shrink-0 px-2 py-1 rounded-xl flex items-center justify-center border-2" style={{ borderColor: primaryColor }}>
-                    <span className="text-sm md:text-lg font-bold text-gray-900 truncate max-w-[140px]" style={{ color: primaryColor }}>
-                      {restaurant?.name || "Restaurant"}
+                      <span className="text-sm md:text-lg font-bold text-gray-900 truncate max-w-[140px]" style={{ color: primaryColor }}>
+                      {restaurantState?.name || "Restaurant"}
                     </span>
                   </div>
                 )}
@@ -681,7 +795,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
                         <button
                           key={b.id}
                           type="button"
-                          onClick={() => setSelectedBranch(b)}
+                          onClick={() => handleSelectBranch(b)}
                           className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium transition-colors ${
                             selectedBranch?.id === b.id
                               ? "bg-gray-100 text-gray-900"
@@ -716,7 +830,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
                       value={selectedBranch?.id ?? ""}
                       onChange={(e) => {
                         const b = branches.find((x) => x.id === e.target.value);
-                        if (b) setSelectedBranch(b);
+                        if (b) handleSelectBranch(b);
                       }}
                       className="text-xs font-medium rounded-lg border border-gray-200 px-2.5 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-0"
                       style={{ maxWidth: "120px", ["--tw-ring-color"]: primaryColor }}
@@ -1029,7 +1143,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
               </h2>
             </div>
 
-            {categories.length > 0 && (
+            {categoriesState.length > 0 && (
               <div className="flex items-center gap-3 mb-10 overflow-x-auto pb-2 sl-hide-sb" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
                 <button
                   onClick={() => setActiveCategory("all")}
@@ -1042,8 +1156,8 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
                 >
                   All
                 </button>
-                {categories.map((cat) => {
-                  const catItems = menu.filter(item => item.category === cat.name);
+                {categoriesState.map((cat) => {
+                  const catItems = menuState.filter(item => item.category === cat.name);
                   if (catItems.length < 1) return null;
                   const catItem = catItems.find(item => item.imageUrl);
                   return (
@@ -1076,7 +1190,7 @@ export default function TenantWebsitePage({ restaurant, menu, categories, branch
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8">
-                {menu
+                {menuState
                   .filter(item => activeCategory === "all" || item.category === activeCategory)
                   .map((item) => (
                     <div key={item.id} className="flex items-center gap-4 group cursor-pointer" onClick={() => openItem(item)}>
