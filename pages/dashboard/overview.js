@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import { getOverview, getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
-import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3 } from "lucide-react";
+import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3, Loader2, LayoutDashboard } from "lucide-react";
+import toast from "react-hot-toast";
 
 // Simple SVG line chart for hourly trend
 function MiniLineChart({ data }) {
@@ -272,7 +273,7 @@ export default function OverviewPage() {
   });
 
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
+  const [pageLoading, setPageLoading] = useState(true);
   const [periodReport, setPeriodReport] = useState({
     totalRevenue: 0,
     totalProfit: 0,
@@ -288,13 +289,15 @@ export default function OverviewPage() {
       try {
         const data = await getOverview();
         setStats(data);
+        setPageLoading(false);
       } catch (err) {
         if (err instanceof SubscriptionInactiveError) {
           setSuspended(true);
         } else {
           console.error("Failed to load overview:", err);
-          setError(err.message || "Failed to load overview");
+          toast.error(err.message || "Failed to load overview");
         }
+        setPageLoading(false);
       }
     })();
   }, []);
@@ -375,14 +378,22 @@ export default function OverviewPage() {
       subtitle={periodSubtitle}
       suspended={suspended}
     >
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">
-          {error}
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <LayoutDashboard className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading overview...
+            </p>
+          </div>
         </div>
-      )}
-
-      {/* Period filter – applies to full page data from backend */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      ) : (
+        <>
+          {/* Period filter – applies to full page data from backend */}
+          <div className="mb-6 flex flex-wrap items-center gap-3">
         <span className="text-sm font-semibold text-gray-600 dark:text-neutral-400">Report period:</span>
         <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-1 shadow-sm">
           <button
@@ -819,7 +830,9 @@ export default function OverviewPage() {
             </tbody>
           </table>
         </div>
-      </div>
+          </div>
+        </>
+      )}
     </AdminLayout>
   );
 }

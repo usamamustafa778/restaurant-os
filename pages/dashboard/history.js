@@ -3,7 +3,8 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import { getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
-import { Filter, BarChart3, DollarSign, ShoppingBag, TrendingUp, Calendar, HelpCircle } from "lucide-react";
+import { Filter, BarChart3, DollarSign, ShoppingBag, TrendingUp, Calendar, HelpCircle, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function HistoryPage() {
   const [showDateHelpModal, setShowDateHelpModal] = useState(false);
@@ -18,7 +19,7 @@ export default function HistoryPage() {
   });
 
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
+  const [pageLoading, setPageLoading] = useState(true);
 
   async function loadReport(input = filters) {
     try {
@@ -28,13 +29,15 @@ export default function HistoryPage() {
         totalOrders: data.totalOrders || 0,
         topItems: data.topItems || []
       });
+      setPageLoading(false);
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) {
         setSuspended(true);
       } else {
         console.error("Failed to load sales report:", err);
-        setError(err.message || "Failed to load sales report");
+        toast.error(err.message || "Failed to load sales report");
       }
+      setPageLoading(false);
     }
   }
 
@@ -45,7 +48,13 @@ export default function HistoryPage() {
 
   async function handleApplyFilters(e) {
     e.preventDefault();
-    await loadReport(filters);
+    const toastId = toast.loading("Loading report...");
+    try {
+      await loadReport(filters);
+      toast.success("Report loaded successfully!", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to load report", { id: toastId });
+    }
   }
 
   function handleResetFilters() {
@@ -56,14 +65,22 @@ export default function HistoryPage() {
 
   return (
     <AdminLayout title="Sales & Reports" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">
-          {error}
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <BarChart3 className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading sales report...
+            </p>
+          </div>
         </div>
-      )}
-
-      {/* Filters */}
-      <div className="mb-6 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm">
+      ) : (
+        <>
+          {/* Filters */}
+          <div className="mb-6 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm">
         <div className="flex items-center justify-between gap-3 mb-5">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
@@ -241,8 +258,10 @@ export default function HistoryPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
-      </div>
+        </>
+      )}
 
       {/* Date filter help modal */}
       {showDateHelpModal && (

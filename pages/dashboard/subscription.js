@@ -44,7 +44,7 @@ const PLANS = [
       "Customer Database",
       "Free Restaurant Website",
       "Sales Reports",
-      "Email Support"
+      "Email Support",
     ],
   },
   {
@@ -65,7 +65,7 @@ const PLANS = [
       "Day-end Reports & Analytics",
       "Foodpanda Integration",
       "Custom Branded Website",
-      "Priority Support"
+      "Priority Support",
     ],
   },
   {
@@ -85,7 +85,7 @@ const PLANS = [
       "White-label Options",
       "Dedicated Account Manager",
       "Custom Feature Development",
-      "24/7 Priority Support"
+      "24/7 Priority Support",
     ],
     savings: "Save $138 vs monthly",
   },
@@ -127,7 +127,9 @@ function StatusBadge({ status }) {
   const s = map[status] || map.expired;
   const Icon = s.icon;
   return (
-    <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-base font-bold shadow-sm ${s.bg}`}>
+    <span
+      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-base font-bold shadow-sm ${s.bg}`}
+    >
       <Icon className="w-5 h-5" />
       {s.label}
     </span>
@@ -136,12 +138,17 @@ function StatusBadge({ status }) {
 
 function RequestStatusBadge({ status }) {
   const map = {
-    pending: "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-500/30",
-    approved: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30",
-    rejected: "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30",
+    pending:
+      "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-500/30",
+    approved:
+      "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30",
+    rejected:
+      "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30",
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-bold capitalize ${map[status] || map.pending}`}>
+    <span
+      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-bold capitalize ${map[status] || map.pending}`}
+    >
       {status}
     </span>
   );
@@ -150,7 +157,7 @@ function RequestStatusBadge({ status }) {
 export default function SubscriptionPage() {
   const [subStatus, setSubStatus] = useState(null);
   const [history, setHistory] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [screenshotFile, setScreenshotFile] = useState(null);
   const [screenshotPreview, setScreenshotPreview] = useState(null);
@@ -165,7 +172,7 @@ export default function SubscriptionPage() {
 
   const loadData = useCallback(async () => {
     try {
-      setLoading(true);
+      setPageLoading(true);
       setError(null);
       const [status, hist, methods] = await Promise.all([
         getSubscriptionStatus(),
@@ -182,7 +189,7 @@ export default function SubscriptionPage() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setPageLoading(false);
     }
   }, []);
 
@@ -247,11 +254,19 @@ export default function SubscriptionPage() {
     }
   };
 
-  if (loading) {
+  if (pageLoading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="animate-spin text-gray-400" size={32} />
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <CreditCard className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading subscription...
+            </p>
+          </div>
         </div>
       </AdminLayout>
     );
@@ -278,7 +293,7 @@ export default function SubscriptionPage() {
 
   return (
     <AdminLayout title="Subscription">
-      <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
+      <div className="space-y-6">
         {/* Current Status Card */}
         <div className="bg-gradient-to-br from-primary/5 via-white to-secondary/5 dark:from-primary/10 dark:via-neutral-950 dark:to-secondary/10 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 p-6 shadow-lg">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -294,8 +309,12 @@ export default function SubscriptionPage() {
                 <Crown className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="text-sm text-gray-500 dark:text-neutral-400">Current Plan</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{subStatus?.plan || "Essential"}</p>
+                <p className="text-sm text-gray-500 dark:text-neutral-400">
+                  Current Plan
+                </p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {subStatus?.plan || "Essential"}
+                </p>
               </div>
             </div>
           </div>
@@ -320,13 +339,14 @@ export default function SubscriptionPage() {
                   <span>End:</span>
                   <strong>{formatDate(subStatus?.freeTrialEndDate)}</strong>
                 </p>
-                {trialDays > 0 && subStatus?.currentStatus === "trial_active" && (
-                  <div className="mt-3 pt-3 border-t-2 border-blue-200 dark:border-blue-500/20">
-                    <p className="text-blue-700 dark:text-blue-400 font-bold text-lg">
-                      {trialDays} day{trialDays !== 1 ? "s" : ""} remaining
-                    </p>
-                  </div>
-                )}
+                {trialDays > 0 &&
+                  subStatus?.currentStatus === "trial_active" && (
+                    <div className="mt-3 pt-3 border-t-2 border-blue-200 dark:border-blue-500/20">
+                      <p className="text-blue-700 dark:text-blue-400 font-bold text-lg">
+                        {trialDays} day{trialDays !== 1 ? "s" : ""} remaining
+                      </p>
+                    </div>
+                  )}
               </div>
             </div>
 
@@ -343,7 +363,9 @@ export default function SubscriptionPage() {
               <div className="text-base text-gray-700 dark:text-neutral-300 space-y-2">
                 <p className="flex justify-between">
                   <span>Start:</span>
-                  <strong>{formatDate(subStatus?.subscriptionStartDate)}</strong>
+                  <strong>
+                    {formatDate(subStatus?.subscriptionStartDate)}
+                  </strong>
                 </p>
                 <p className="flex justify-between">
                   <span>End:</span>
@@ -367,8 +389,13 @@ export default function SubscriptionPage() {
                 <AlertTriangle className="w-5 h-5 text-white" />
               </div>
               <div className="text-sm text-red-700 dark:text-red-300">
-                <p className="font-bold text-base mb-1">Account in Read-Only Mode</p>
-                <p>You can view your data but cannot create, edit, or delete anything. Please subscribe to restore full access.</p>
+                <p className="font-bold text-base mb-1">
+                  Account in Read-Only Mode
+                </p>
+                <p>
+                  You can view your data but cannot create, edit, or delete
+                  anything. Please subscribe to restore full access.
+                </p>
               </div>
             </div>
           )}
@@ -376,7 +403,9 @@ export default function SubscriptionPage() {
 
         {/* Plan Cards */}
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Choose Your Plan</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+            Choose Your Plan
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {PLANS.map((plan) => {
               const isSelected = selectedPlan === plan.key;
@@ -391,9 +420,10 @@ export default function SubscriptionPage() {
                   disabled={hasPending}
                   className={`
                     relative text-left rounded-2xl border-2 p-6 transition-all group
-                    ${isSelected
-                      ? "border-primary shadow-2xl shadow-primary/20 bg-gradient-to-br from-primary/10 to-primary/5 scale-105"
-                      : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 hover:border-primary/50 hover:shadow-xl hover:scale-105"
+                    ${
+                      isSelected
+                        ? "border-primary shadow-2xl shadow-primary/20 bg-gradient-to-br from-primary/10 to-primary/5 scale-105"
+                        : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 hover:border-primary/50 hover:shadow-xl hover:scale-105"
                     }
                     ${hasPending ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
                   `}
@@ -404,9 +434,13 @@ export default function SubscriptionPage() {
                     </span>
                   )}
                   <div className="flex items-center justify-between mb-4">
-                    <div className={`h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
-                      isSelected ? "bg-gradient-to-br from-primary to-secondary" : "bg-gradient-to-br from-gray-400 to-gray-500 group-hover:from-primary group-hover:to-secondary"
-                    }`}>
+                    <div
+                      className={`h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
+                        isSelected
+                          ? "bg-gradient-to-br from-primary to-secondary"
+                          : "bg-gradient-to-br from-gray-400 to-gray-500 group-hover:from-primary group-hover:to-secondary"
+                      }`}
+                    >
                       <Icon className="w-7 h-7 text-white" />
                     </div>
                     {isSelected && (
@@ -415,22 +449,41 @@ export default function SubscriptionPage() {
                       </div>
                     )}
                   </div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{plan.label}</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                    {plan.label}
+                  </div>
                   <div className="flex items-baseline gap-1 mb-1">
-                    <div className="text-4xl font-bold text-primary">{plan.price}</div>
+                    <div className="text-4xl font-bold text-primary">
+                      {plan.price}
+                    </div>
                     {plan.days > 30 && (
-                      <div className="text-sm text-gray-500 dark:text-neutral-400">/{plan.days === 90 ? '3 months' : plan.days === 180 ? '6 months' : `${plan.days}d`}</div>
+                      <div className="text-sm text-gray-500 dark:text-neutral-400">
+                        /
+                        {plan.days === 90
+                          ? "3 months"
+                          : plan.days === 180
+                            ? "6 months"
+                            : `${plan.days}d`}
+                      </div>
                     )}
                   </div>
                   <div className="text-sm font-semibold text-gray-600 dark:text-neutral-400 mb-4">
-                    {plan.monthlyEquivalent}/month {plan.savings && <span className="text-emerald-600 dark:text-emerald-400">• {plan.savings}</span>}
+                    {plan.monthlyEquivalent}/month{" "}
+                    {plan.savings && (
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        • {plan.savings}
+                      </span>
+                    )}
                   </div>
-                  
+
                   {/* Features list */}
                   {plan.features && (
                     <ul className="space-y-2 mt-4 pt-4 border-t-2 border-gray-100 dark:border-neutral-800">
                       {plan.features.slice(0, 6).map((feature, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-sm text-gray-700 dark:text-neutral-300">
+                        <li
+                          key={idx}
+                          className="flex items-start gap-2 text-sm text-gray-700 dark:text-neutral-300"
+                        >
                           <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
                           <span>{feature}</span>
                         </li>
@@ -450,7 +503,8 @@ export default function SubscriptionPage() {
             <div className="mt-5 flex items-center gap-3 p-4 rounded-xl bg-yellow-50 dark:bg-yellow-500/10 border-2 border-yellow-200 dark:border-yellow-500/20">
               <Clock className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
               <p className="text-sm font-semibold text-yellow-700 dark:text-yellow-400">
-                You have a pending request. Please wait for approval before submitting a new one.
+                You have a pending request. Please wait for approval before
+                submitting a new one.
               </p>
             </div>
           )}
@@ -473,9 +527,10 @@ export default function SubscriptionPage() {
                       onClick={() => setSelectedPaymentMethod(pm.id)}
                       className={`
                         px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0
-                        ${selectedPaymentMethod === pm.id
-                          ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/30"
-                          : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
+                        ${
+                          selectedPaymentMethod === pm.id
+                            ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/30"
+                            : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
                         }
                       `}
                     >
@@ -486,7 +541,9 @@ export default function SubscriptionPage() {
 
                 {/* Selected Payment Method Details */}
                 {(() => {
-                  const activePm = paymentMethods.find((pm) => pm.id === selectedPaymentMethod);
+                  const activePm = paymentMethods.find(
+                    (pm) => pm.id === selectedPaymentMethod,
+                  );
                   if (!activePm) return null;
                   return (
                     <div className="mt-5 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-xl p-5 border-2 border-primary/20 shadow-inner">
@@ -498,17 +555,28 @@ export default function SubscriptionPage() {
                         {activePm.fields.map((f, i) => {
                           const fKey = `${activePm.id}-${i}`;
                           return (
-                            <div key={i} className="flex items-center justify-between gap-3 bg-white dark:bg-neutral-900 rounded-xl px-4 py-3.5 border-2 border-gray-200 dark:border-neutral-700 shadow-sm">
+                            <div
+                              key={i}
+                              className="flex items-center justify-between gap-3 bg-white dark:bg-neutral-900 rounded-xl px-4 py-3.5 border-2 border-gray-200 dark:border-neutral-700 shadow-sm"
+                            >
                               <div className="min-w-0">
-                                <span className="text-xs text-gray-500 dark:text-neutral-500 block font-semibold mb-1">{f.label}</span>
-                                <span className="text-base font-bold text-gray-900 dark:text-white break-all">{f.value}</span>
+                                <span className="text-xs text-gray-500 dark:text-neutral-500 block font-semibold mb-1">
+                                  {f.label}
+                                </span>
+                                <span className="text-base font-bold text-gray-900 dark:text-white break-all">
+                                  {f.value}
+                                </span>
                               </div>
                               <button
                                 onClick={() => handleCopy(f.value, fKey)}
                                 className="flex-shrink-0 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
                                 title="Copy"
                               >
-                                {copiedField === fKey ? <Check className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5" />}
+                                {copiedField === fKey ? (
+                                  <Check className="w-5 h-5 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-5 h-5" />
+                                )}
                               </button>
                             </div>
                           );
@@ -516,9 +584,16 @@ export default function SubscriptionPage() {
                       </div>
                       <div className="mt-4 p-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
                         <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">
-                          💰 Transfer <strong className="text-lg">{PLANS.find((p) => p.key === selectedPlan)?.price}</strong> to the account above
+                          💰 Transfer{" "}
+                          <strong className="text-lg">
+                            {PLANS.find((p) => p.key === selectedPlan)?.price}
+                          </strong>{" "}
+                          to the account above
                         </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">Then upload payment screenshot below to activate your subscription</p>
+                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                          Then upload payment screenshot below to activate your
+                          subscription
+                        </p>
                       </div>
                     </div>
                   );
@@ -541,17 +616,24 @@ export default function SubscriptionPage() {
 
             <div className="flex flex-col gap-4">
               <label className="w-full cursor-pointer">
-                <div className={`
+                <div
+                  className={`
                   border-2 border-dashed rounded-2xl p-8 text-center transition-all hover:shadow-lg
-                  ${screenshotPreview
-                    ? "border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10"
-                    : "border-gray-300 dark:border-neutral-600 hover:border-primary hover:bg-gray-50 dark:hover:bg-neutral-900"
+                  ${
+                    screenshotPreview
+                      ? "border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10"
+                      : "border-gray-300 dark:border-neutral-600 hover:border-primary hover:bg-gray-50 dark:hover:bg-neutral-900"
                   }
-                `}>
+                `}
+                >
                   {screenshotPreview ? (
                     <div className="space-y-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={screenshotPreview} alt="Screenshot preview" className="max-h-64 mx-auto rounded-xl shadow-xl border-2 border-emerald-200 dark:border-emerald-500/30" />
+                      <img
+                        src={screenshotPreview}
+                        alt="Screenshot preview"
+                        className="max-h-64 mx-auto rounded-xl shadow-xl border-2 border-emerald-200 dark:border-emerald-500/30"
+                      />
                       <div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
                         <CheckCircle2 className="w-4 h-4" />
                         Screenshot uploaded · Click to change
@@ -566,7 +648,9 @@ export default function SubscriptionPage() {
                         <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
                           Click to upload or drag & drop
                         </p>
-                        <p className="text-sm text-gray-500 dark:text-neutral-500 mt-1">PNG, JPG up to 5MB</p>
+                        <p className="text-sm text-gray-500 dark:text-neutral-500 mt-1">
+                          PNG, JPG up to 5MB
+                        </p>
                       </div>
                     </div>
                   )}
@@ -581,11 +665,13 @@ export default function SubscriptionPage() {
             </div>
 
             {submitMsg && (
-              <div className={`rounded-xl p-4 text-sm font-medium border-2 ${
-                submitMsg.type === "success"
-                  ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30"
-                  : "bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30"
-              }`}>
+              <div
+                className={`rounded-xl p-4 text-sm font-medium border-2 ${
+                  submitMsg.type === "success"
+                    ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30"
+                    : "bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30"
+                }`}
+              >
                 {submitMsg.text}
               </div>
             )}
@@ -595,15 +681,17 @@ export default function SubscriptionPage() {
               disabled={!screenshotFile || submitting}
               className={`
                 w-full px-6 py-4 rounded-2xl font-bold text-base text-white transition-all flex items-center justify-center gap-2 shadow-xl
-                ${!screenshotFile || submitting
-                  ? "bg-gray-300 dark:bg-neutral-700 cursor-not-allowed opacity-50"
-                  : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-2xl hover:shadow-emerald-500/40 hover:-translate-y-1 shadow-emerald-500/30"
+                ${
+                  !screenshotFile || submitting
+                    ? "bg-gray-300 dark:bg-neutral-700 cursor-not-allowed opacity-50"
+                    : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-2xl hover:shadow-emerald-500/40 hover:-translate-y-1 shadow-emerald-500/30"
                 }
               `}
             >
               {submitting ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" /> Submitting Payment...
+                  <Loader2 className="w-5 h-5 animate-spin" /> Submitting
+                  Payment...
                 </>
               ) : (
                 <>
@@ -622,7 +710,9 @@ export default function SubscriptionPage() {
           >
             <History className="w-5 h-5" />
             Subscription History
-            <ChevronRight className={`w-4 h-4 transition-transform ${showHistory ? "rotate-90" : ""}`} />
+            <ChevronRight
+              className={`w-4 h-4 transition-transform ${showHistory ? "rotate-90" : ""}`}
+            />
           </button>
 
           {showHistory && history?.requests && (
@@ -632,34 +722,61 @@ export default function SubscriptionPage() {
                   <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mx-auto mb-3">
                     <History className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
                   </div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No subscription requests yet</p>
+                  <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">
+                    No subscription requests yet
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
                       <tr>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Plan</th>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Method</th>
-                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">Status</th>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Requested</th>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">Approved</th>
-                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">Screenshot</th>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
+                          Plan
+                        </th>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
+                          Method
+                        </th>
+                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">
+                          Status
+                        </th>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
+                          Requested
+                        </th>
+                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
+                          Approved
+                        </th>
+                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">
+                          Screenshot
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
                       {history.requests.map((r) => (
-                        <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors">
+                        <tr
+                          key={r.id}
+                          className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors"
+                        >
                           <td className="px-5 py-4">
                             <div className="font-bold text-gray-900 dark:text-white capitalize">
                               {r.planType.replace("_", " ")}
                             </div>
-                            <span className="text-xs text-gray-500 dark:text-neutral-500">{r.durationInDays} days</span>
+                            <span className="text-xs text-gray-500 dark:text-neutral-500">
+                              {r.durationInDays} days
+                            </span>
                           </td>
-                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">{r.paymentMethodName || "—"}</td>
-                          <td className="px-5 py-4 text-center"><RequestStatusBadge status={r.status} /></td>
-                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">{formatDate(r.createdAt)}</td>
-                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">{formatDate(r.approvedAt)}</td>
+                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">
+                            {r.paymentMethodName || "—"}
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <RequestStatusBadge status={r.status} />
+                          </td>
+                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">
+                            {formatDate(r.createdAt)}
+                          </td>
+                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">
+                            {formatDate(r.approvedAt)}
+                          </td>
                           <td className="px-5 py-4 text-center">
                             <div className="flex items-center justify-center gap-2">
                               {r.paymentScreenshot ? (

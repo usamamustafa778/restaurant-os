@@ -9,9 +9,10 @@ import {
   deleteCustomer,
   SubscriptionInactiveError
 } from "../../lib/apiClient";
-import { UserPlus, Trash2, Edit3, User, Phone, Mail, MapPin, UserCheck } from "lucide-react";
+import { UserPlus, Trash2, Edit3, User, Phone, Mail, MapPin, UserCheck, Loader2, Users } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
+import toast from "react-hot-toast";
 
 export default function CustomersPage() {
   const { currentBranch } = useBranch() || {};
@@ -25,8 +26,8 @@ export default function CustomersPage() {
     notes: ""
   });
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [modalError, setModalError] = useState("");
@@ -41,9 +42,11 @@ export default function CustomersPage() {
       try {
         const data = await getCustomers(fetchAllBranches);
         setCustomers(Array.isArray(data) ? data : data?.customers || []);
+        setPageLoading(false);
       } catch (err) {
         if (err instanceof SubscriptionInactiveError) setSuspended(true);
-        else setError(err.message || "Failed to load customers");
+        else toast.error(err.message || "Failed to load customers");
+        setPageLoading(false);
       }
     })();
   }, [fetchAllBranches, currentBranch?.id]);
@@ -71,19 +74,23 @@ export default function CustomersPage() {
     if (!form.phone.trim()) { setModalError("Phone is required"); return; }
     setModalError("");
     setLoading(true);
+    const toastId = toast.loading(form.id ? "Updating customer..." : "Creating customer...");
     try {
       const payload = { name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, address: form.address.trim() || undefined, notes: form.notes.trim() || undefined };
       if (form.id) {
         const updated = await updateCustomer(form.id, payload);
         setCustomers(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+        toast.success("Customer updated successfully!", { id: toastId });
       } else {
         const created = await createCustomer(payload);
         setCustomers(prev => [created, ...prev]);
+        toast.success("Customer created successfully!", { id: toastId });
       }
       resetForm();
       setIsModalOpen(false);
     } catch (err) {
       setModalError(err.message || "Failed to save customer");
+      toast.error(err.message || "Failed to save customer", { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -92,9 +99,15 @@ export default function CustomersPage() {
   async function handleDelete(id) {
     const ok = await confirm({ title: "Delete customer", message: "Delete this customer? This cannot be undone." });
     if (!ok) return;
-    await deleteCustomer(id);
-    setCustomers(prev => prev.filter(c => c.id !== id));
-    if (form.id === id) resetForm();
+    const toastId = toast.loading("Deleting customer...");
+    try {
+      await deleteCustomer(id);
+      setCustomers(prev => prev.filter(c => c.id !== id));
+      if (form.id === id) resetForm();
+      toast.success("Customer deleted successfully!", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to delete customer", { id: toastId });
+    }
   }
 
   const filtered = customers.filter(c => {
@@ -109,8 +122,19 @@ export default function CustomersPage() {
 
   return (
     <AdminLayout title="Customers" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">{error}</div>
+      {/* Page Loader */}
+      {pageLoading && (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <Users className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading customers...
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Search and Add Button */}
@@ -347,11 +371,20 @@ export default function CustomersPage() {
                 </button>
                 <button 
                   type="submit" 
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                   disabled={loading}
                 >
-                  <UserPlus className="w-4 h-4" />
-                  {form.id ? "Save Changes" : "Add Customer"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {form.id ? "Saving..." : "Creating..."}
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="w-4 h-4" />
+                      {form.id ? "Save Changes" : "Add Customer"}
+                    </>
+                  )}
                 </button>
               </div>
             </form>

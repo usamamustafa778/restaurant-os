@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { getOrders } from "../../lib/apiClient";
-import { Clock, User, Package, CheckCircle, AlertCircle, ChefHat } from "lucide-react";
+import { Clock, User, Package, CheckCircle, AlertCircle, ChefHat, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 
 // Reuse the same order ID format as Orders page (YYYYMMDD-XXXX without ORD- prefix)
 function getDisplayOrderId(order) {
@@ -12,8 +13,7 @@ function getDisplayOrderId(order) {
 
 export default function KitchenPage() {
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [pageLoading, setPageLoading] = useState(true);
 
   useEffect(() => {
     fetchOrders();
@@ -26,11 +26,10 @@ export default function KitchenPage() {
     try {
       const data = await getOrders();
       setOrders(data.filter(o => o.status !== "COMPLETED" && o.status !== "CANCELLED"));
-      setError("");
     } catch (err) {
-      setError(err.message || "Failed to load orders");
+      toast.error(err.message || "Failed to load orders");
     } finally {
-      setLoading(false);
+      setPageLoading(false);
     }
   }
 
@@ -73,15 +72,17 @@ export default function KitchenPage() {
 
   return (
     <AdminLayout title="Kitchen Display System">
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-2.5 text-xs text-red-700 dark:text-red-400">
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <p className="text-gray-500 dark:text-neutral-400">Loading orders...</p>
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <ChefHat className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading kitchen orders...
+            </p>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-4 h-[calc(100vh-200px)]">

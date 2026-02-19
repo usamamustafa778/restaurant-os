@@ -3,10 +3,11 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import { getUsers, createUser, updateUser, deleteUser, getBranches, SubscriptionInactiveError, getStoredAuth } from "../../lib/apiClient";
-import { UserPlus, Trash2, Edit3, User, Mail, Briefcase, LayoutGrid, List, MapPin, Eye, EyeOff } from "lucide-react";
+import { UserPlus, Trash2, Edit3, User, Mail, Briefcase, LayoutGrid, List, MapPin, Eye, EyeOff, Loader2, Users } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import DataTable from "../../components/ui/DataTable";
 import { useBranch } from "../../contexts/BranchContext";
+import toast from "react-hot-toast";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -52,8 +53,8 @@ export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "", branchIds: [] });
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [modalError, setModalError] = useState("");
@@ -68,9 +69,11 @@ export default function UsersPage() {
       try {
         const data = await getUsers();
         setUsers(data);
+        setPageLoading(false);
       } catch (err) {
         if (err instanceof SubscriptionInactiveError) setSuspended(true);
-        else setError(err.message || "Failed to load users");
+        else toast.error(err.message || "Failed to load users");
+        setPageLoading(false);
       }
     })();
   }, []);
@@ -147,12 +150,22 @@ export default function UsersPage() {
 
   return (
     <AdminLayout title="User Management" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">{error}</div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-center justify-end mb-6">
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <Users className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading users...
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-center justify-end mb-6">
         <button
           type="button"
           onClick={() => { resetForm(); setModalError(""); setIsModalOpen(true); }}
@@ -537,7 +550,9 @@ export default function UsersPage() {
               </div>
             </form>
           </div>
-        </div>
+          </div>
+        )}
+        </>
       )}
     </AdminLayout>
   );

@@ -509,10 +509,10 @@ function WebsitePreview({ settings, menuItems, categories = [], viewMode = "desk
 
 export default function WebsiteContentPage() {
   const [settings, setSettings] = useState(null);
+  const [pageLoading, setPageLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("hero");
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
   const [menuItems, setMenuItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [previewMode, setPreviewMode] = useState("desktop"); // "desktop" or "mobile"
@@ -521,8 +521,16 @@ export default function WebsiteContentPage() {
   const heroSlideFileRefs = useRef({});
 
   useEffect(() => {
-    loadSettings();
-    loadMenuItems();
+    (async () => {
+      try {
+        await loadSettings();
+        await loadMenuItems();
+      } catch (err) {
+        toast.error(err.message || "Failed to load website content");
+      } finally {
+        setPageLoading(false);
+      }
+    })();
   }, []);
 
   async function loadMenuItems() {
@@ -631,13 +639,22 @@ export default function WebsiteContentPage() {
 
   return (
     <AdminLayout title="Website Content" suspended={suspended}>
-      <div className="sticky top-0 z-20 -mx-6 px-6 py-4 bg-gray-100 dark:bg-black border-b border-gray-200 dark:border-neutral-800 mb-6">
-      {error && (
-          <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
-          {error}
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <FileText className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading website content...
+            </p>
+          </div>
         </div>
-      )}
-        <div className="flex items-center justify-between flex-wrap gap-3">
+      ) : (
+        <>
+          <div className="sticky top-0 z-20 -mx-6 px-6 py-4 bg-gray-100 dark:bg-black border-b border-gray-200 dark:border-neutral-800 mb-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard/website"
@@ -1193,8 +1210,10 @@ export default function WebsiteContentPage() {
               />
             </div>
           </div>
-        </div>
-      </div>
+            </div>
+          </div>
+        </>
+      )}
     </AdminLayout>
   );
 }

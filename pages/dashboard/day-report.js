@@ -3,11 +3,12 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import DataTable from "../../components/ui/DataTable";
 import { getDayReport, SubscriptionInactiveError } from "../../lib/apiClient";
+import { Calendar, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function DayReportPage() {
   const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
@@ -16,8 +17,7 @@ export default function DayReportPage() {
 
   useEffect(() => {
     (async () => {
-      setLoading(true);
-      setError("");
+      setPageLoading(true);
       try {
         const data = await getDayReport(selectedDate);
         setReport(data);
@@ -26,10 +26,10 @@ export default function DayReportPage() {
           setSuspended(true);
         } else {
           console.error("Failed to load day report:", err);
-          setError(err.message || "Failed to load day report");
+          toast.error(err.message || "Failed to load day report");
         }
       } finally {
-        setLoading(false);
+        setPageLoading(false);
       }
     })();
   }, [selectedDate]);
@@ -51,14 +51,22 @@ export default function DayReportPage() {
 
   return (
     <AdminLayout title="Day Report" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs text-red-700">
-          {error}
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <Calendar className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading day report...
+            </p>
+          </div>
         </div>
-      )}
-
-      {/* Branch / Day header */}
-      <Card title="Day Report">
+      ) : (
+        <>
+          {/* Branch / Day header */}
+          <Card title="Day Report">
         <div className="grid gap-4 md:grid-cols-4 text-xs">
           <div>
             <div className="text-neutral-500">Branch</div>
@@ -88,12 +96,8 @@ export default function DayReportPage() {
             </span>
           </div>
         </div>
-      </Card>
+          </Card>
 
-      {loading ? (
-        <div className="mt-8 text-center text-xs text-neutral-500">Loading report...</div>
-      ) : (
-        <>
           {/* Sales details + Insights */}
           <div className="grid gap-4 md:grid-cols-2 mt-4">
             <Card title="Sales Details">

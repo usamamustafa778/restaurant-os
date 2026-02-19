@@ -590,7 +590,7 @@ export default function MenuItemsPage() {
   return (
     <AdminLayout title="Menu Items" suspended={suspended}>
       {pageLoading ? (
-        <PageLoader message="Loading menu items..." />
+        <PageLoader message="Loading menu items..." icon={ShoppingBag} />
       ) : (
         <div className="w-full min-w-0 overflow-x-hidden">
           {error && (

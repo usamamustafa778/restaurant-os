@@ -5,10 +5,12 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import { getWebsiteSettings, updateWebsiteSettings, getBranches, uploadImage } from "../../lib/apiClient";
 import { ExternalLink, Globe, Copy, CheckCircle2, Settings, Eye, EyeOff, Phone, Mail, Image, FileText, ShoppingCart, X, Upload, Link, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function TenantWebsiteSettingsPage() {
   const router = useRouter();
   const [settings, setSettings] = useState(null);
+  const [pageLoading, setPageLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showOrderModal, setShowOrderModal] = useState(false);
@@ -23,8 +25,17 @@ export default function TenantWebsiteSettingsPage() {
   const bannerInputRef = useRef(null);
 
   useEffect(() => {
-    getWebsiteSettings().then(setSettings);
-    loadBranches();
+    (async () => {
+      try {
+        const data = await getWebsiteSettings();
+        setSettings(data);
+        await loadBranches();
+      } catch (err) {
+        toast.error(err.message || "Failed to load website settings");
+      } finally {
+        setPageLoading(false);
+      }
+    })();
   }, []);
 
   async function loadBranches() {
@@ -165,8 +176,22 @@ export default function TenantWebsiteSettingsPage() {
 
   return (
     <AdminLayout title="Website Settings">
-      {/* Website URL Banner */}
-      {/* {websiteUrl && (
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <Globe className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading website settings...
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Website URL Banner */}
+          {/* {websiteUrl && (
         <div className="mb-6 rounded-2xl border-2 border-primary/30 dark:border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-6 shadow-lg">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
             <div className="flex items-start gap-4 flex-1">
@@ -682,7 +707,9 @@ export default function TenantWebsiteSettingsPage() {
               </button>
             </div>
           </div>
-        </div>
+          </div>
+        )}
+        </>
       )}
     </AdminLayout>
   );

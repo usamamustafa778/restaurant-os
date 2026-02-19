@@ -21,6 +21,7 @@ import {
   EyeOff,
   Loader2,
 } from "lucide-react";
+import toast from "react-hot-toast";
 
 const ROLE_LABELS = {
   super_admin: "Super Admin",
@@ -38,7 +39,7 @@ function getRoleLabel(role) {
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
 
   // Edit info
   const [name, setName] = useState("");
@@ -69,9 +70,9 @@ export default function ProfilePage() {
         setName(data.name || "");
         setEmail(data.email || "");
       } catch (err) {
-        setInfoMsg({ type: "error", text: err.message || "Failed to load profile" });
+        toast.error(err.message || "Failed to load profile");
       } finally {
-        setLoading(false);
+        setPageLoading(false);
       }
     })();
   }, []);
@@ -159,18 +160,22 @@ export default function ProfilePage() {
     }
   }
 
-  if (loading) {
-    return (
-      <AdminLayout title="Profile">
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-        </div>
-      </AdminLayout>
-    );
-  }
-
   return (
     <AdminLayout title="Profile">
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <User className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading profile...
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
 
         {/* ══════ Left Column: Avatar & Quick Info ══════ */}
@@ -445,7 +450,9 @@ export default function ProfilePage() {
             </form>
           </div>
         </div>
-      </div>
+          </div>
+        </>
+      )}
     </AdminLayout>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from "../../lib/apiClient";
 import { Plus, Trash2, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, RefreshCw, Link2, Package } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
+import toast from "react-hot-toast";
 
 const PLATFORMS = [
   {
@@ -21,9 +22,8 @@ const PLATFORMS = [
 
 export default function IntegrationsPage() {
   const [integrations, setIntegrations] = useState([]);
-  const [error, setError] = useState("");
   const [suspended, setSuspended] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({
@@ -40,7 +40,7 @@ export default function IntegrationsPage() {
   const { confirm } = useConfirmDialog();
 
   async function loadIntegrations() {
-    setLoading(true);
+    setPageLoading(true);
     try {
       const data = await getIntegrations();
       setIntegrations(data);
@@ -48,10 +48,10 @@ export default function IntegrationsPage() {
       if (err instanceof SubscriptionInactiveError) {
         setSuspended(true);
       } else {
-        setError(err.message || "Failed to load integrations");
+        toast.error(err.message || "Failed to load integrations");
       }
     } finally {
-      setLoading(false);
+      setPageLoading(false);
     }
   }
 
@@ -149,20 +149,21 @@ export default function IntegrationsPage() {
 
   return (
     <AdminLayout title="Integrations" suspended={suspended}>
-      {error && (
-        <div className="mb-5 rounded-xl border-2 border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm text-red-700 dark:text-red-400 flex items-center justify-between shadow-sm">
-          <span className="font-medium">{error}</span>
-          <button
-            type="button"
-            className="text-xs underline hover:no-underline"
-            onClick={() => setError("")}
-          >
-            dismiss
-          </button>
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <Link2 className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading integrations...
+            </p>
+          </div>
         </div>
-      )}
-
-      <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+      ) : (
+        <>
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
         <div className="flex items-center gap-3 mb-6">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
             <Link2 className="w-5 h-5 text-white" />
@@ -194,11 +195,7 @@ export default function IntegrationsPage() {
           )}
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          </div>
-        ) : integrations.length === 0 ? (
+        {integrations.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mx-auto mb-4">
               <Package className="w-10 h-10 text-primary" />
@@ -472,7 +469,9 @@ export default function IntegrationsPage() {
               </div>
             </form>
           </div>
-        </div>
+          </div>
+        )}
+        </>
       )}
     </AdminLayout>
   );

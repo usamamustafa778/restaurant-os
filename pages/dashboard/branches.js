@@ -69,13 +69,15 @@ export default function BranchesPage() {
     <AdminLayout title="Branches">
       {/* Page Loader */}
       {pageLoading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative">
-              <div className="w-16 h-16 border-4 border-gray-200 dark:border-neutral-800 border-t-primary rounded-full animate-spin"></div>
-              <MapPin className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-            </div>
-            <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">Loading branches...</p>
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <MapPin className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading branches...
+            </p>
           </div>
         </div>
       )}

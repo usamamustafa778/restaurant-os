@@ -237,7 +237,7 @@ export default function CategoriesPage() {
   return (
     <AdminLayout title="Categories" suspended={suspended}>
       {pageLoading ? (
-        <PageLoader message="Loading categories..." />
+        <PageLoader message="Loading categories..." icon={FolderOpen} />
       ) : (
         <>
           {error && (

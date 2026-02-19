@@ -381,7 +381,7 @@ export default function DealsPage() {
   return (
     <AdminLayout title="Deals & Promotions" suspended={suspended}>
       {pageLoading ? (
-        <PageLoader message="Loading deals..." />
+        <PageLoader message="Loading deals..." icon={Tag} />
       ) : (
         <>
           {error && (

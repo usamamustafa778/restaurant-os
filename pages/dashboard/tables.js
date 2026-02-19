@@ -7,17 +7,18 @@ import {
   deleteTable,
   SubscriptionInactiveError,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit3, UtensilsCrossed } from "lucide-react";
+import { Plus, Trash2, Edit3, UtensilsCrossed, Loader2 } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
+import toast from "react-hot-toast";
 
 export default function TablesPage() {
   const { currentBranch } = useBranch() || {};
   const [tables, setTables] = useState([]);
   const [form, setForm] = useState({ id: null, name: "", isAvailable: true });
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalError, setModalError] = useState("");
   const [search, setSearch] = useState("");
@@ -28,9 +29,11 @@ export default function TablesPage() {
       try {
         const data = await getTables();
         setTables(Array.isArray(data) ? data : []);
+        setPageLoading(false);
       } catch (err) {
         if (err instanceof SubscriptionInactiveError) setSuspended(true);
-        else setError(err.message || "Failed to load tables");
+        else toast.error(err.message || "Failed to load tables");
+        setPageLoading(false);
       }
     })();
   }, [currentBranch?.id]);
@@ -53,10 +56,12 @@ export default function TablesPage() {
     e.preventDefault();
     if (!form.name.trim()) {
       setModalError("Table name is required");
+      toast.error("Table name is required");
       return;
     }
     setModalError("");
     setLoading(true);
+    const toastId = toast.loading(form.id ? "Updating table..." : "Creating table...");
     try {
       if (form.id) {
         const updated = await updateTable(form.id, {
@@ -64,14 +69,17 @@ export default function TablesPage() {
           isAvailable: form.isAvailable,
         });
         setTables((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+        toast.success("Table updated successfully!", { id: toastId });
       } else {
         const created = await createTable({ name: form.name.trim() });
         setTables((prev) => [created, ...prev]);
+        toast.success("Table created successfully!", { id: toastId });
       }
       resetForm();
       setIsModalOpen(false);
     } catch (err) {
       setModalError(err.message || "Failed to save table");
+      toast.error(err.message || "Failed to save table", { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -83,9 +91,15 @@ export default function TablesPage() {
       message: "Delete this table? This cannot be undone.",
     });
     if (!ok) return;
-    await deleteTable(id);
-    setTables((prev) => prev.filter((t) => t.id !== id));
-    if (form.id === id) resetForm();
+    const toastId = toast.loading("Deleting table...");
+    try {
+      await deleteTable(id);
+      setTables((prev) => prev.filter((t) => t.id !== id));
+      if (form.id === id) resetForm();
+      toast.success("Table deleted successfully!", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to delete table", { id: toastId });
+    }
   }
 
   const filtered = tables.filter((t) => {
@@ -96,13 +110,21 @@ export default function TablesPage() {
 
   return (
     <AdminLayout title="Tables" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">
-          {error}
+      {pageLoading ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <UtensilsCrossed className="w-10 h-10 text-primary animate-pulse" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+              Loading tables...
+            </p>
+          </div>
         </div>
-      )}
-
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+      ) : (
+        <>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
         <div className="flex-1">
           <input
             type="text"
@@ -264,14 +286,17 @@ export default function TablesPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 px-4 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  className="flex-1 px-4 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                 >
-                  {loading ? "Saving…" : form.id ? "Update" : "Add Table"}
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {loading ? "Saving..." : form.id ? "Update" : "Add Table"}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+          </div>
+          )}
+        </>
       )}
     </AdminLayout>
   );
