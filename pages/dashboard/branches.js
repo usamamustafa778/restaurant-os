@@ -5,12 +5,13 @@ import Button from "../../components/ui/Button";
 import { getBranches, getDeletedBranches, createBranch, deleteBranch, restoreBranch } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { MapPin, Loader2, RefreshCw, Check, Trash2, X } from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
 
 export default function BranchesPage() {
   const { branches: contextBranches, currentBranch, setCurrentBranch, loading: contextLoading } = useBranch() || {};
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [pageLoading, setPageLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
@@ -25,7 +26,7 @@ export default function BranchesPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError("");
+    setPageLoading(true);
     getBranches()
       .then((data) => {
         if (cancelled) return;
@@ -34,12 +35,15 @@ export default function BranchesPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err.message || "Failed to load branches");
+          toast.error(err.message || "Failed to load branches");
           setBranches([]);
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setPageLoading(false);
+        }
       });
     // Load recently deleted branches (owner/admin only; ignore 403 errors)
     setDeletedLoading(true);
@@ -63,6 +67,21 @@ export default function BranchesPage() {
 
   return (
     <AdminLayout title="Branches">
+      <Toaster position="top-right" />
+      
+      {/* Page Loader */}
+      {pageLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-gray-200 dark:border-neutral-800 border-t-primary rounded-full animate-spin"></div>
+              <MapPin className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">Loading branches...</p>
+          </div>
+        </div>
+      )}
+
       {/* Create Form */}
       <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-6 mb-6">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Add New Branch</h3>
@@ -72,7 +91,7 @@ export default function BranchesPage() {
             e.preventDefault();
             if (!newName.trim()) return;
             setCreating(true);
-            setError("");
+            const toastId = toast.loading("Creating branch...");
             try {
               const payload = {
                 name: newName.trim(),
@@ -91,8 +110,9 @@ export default function BranchesPage() {
               if (createdBranch?.id) {
                 setCurrentBranch(createdBranch);
               }
+              toast.success(`Branch "${createdBranch?.name || newName}" created successfully!`, { id: toastId });
             } catch (err) {
-              setError(err.message || "Failed to create branch");
+              toast.error(err.message || "Failed to create branch", { id: toastId });
             } finally {
               setCreating(false);
             }
@@ -159,18 +179,17 @@ export default function BranchesPage() {
         </form>
       </div>
 
-      {error && (
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/80 dark:bg-amber-900/20 dark:border-amber-700 px-4 py-3 text-sm">
-          <p className="text-amber-800 dark:text-amber-200 font-semibold">{error}</p>
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-            Ensure your backend exposes <code className="bg-amber-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">GET /api/admin/branches</code>.
-            See <code className="bg-amber-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">BRANCH_DESIGN.md</code> for API requirements.
-          </p>
-        </div>
-      )}
-
       {/* Branches List */}
-      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+      <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+        {/* Loading Overlay for Refresh */}
+        {isLoading && displayList.length > 0 && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-neutral-950/60 backdrop-blur-sm">
+            <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 shadow-lg">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <span className="text-sm font-medium text-gray-700 dark:text-neutral-300">Refreshing...</span>
+            </div>
+          </div>
+        )}
 
         {isLoading && displayList.length === 0 ? (
           <div className="flex items-center justify-center gap-3 py-20">
@@ -235,6 +254,7 @@ export default function BranchesPage() {
                               type="button"
                               className="px-2 py-1 rounded-md bg-emerald-600 text-[10px] text-white font-semibold hover:bg-emerald-700"
                               onClick={async () => {
+                                const toastId = toast.loading(`Restoring "${branch.name}"...`);
                                 try {
                                   await restoreBranch(branch.id);
                                   const [activeData, deletedData] = await Promise.all([
@@ -246,8 +266,9 @@ export default function BranchesPage() {
                                   setBranches(act);
                                   setDeletedBranches(del);
                                   setDeletedDropdownOpen(false);
+                                  toast.success(`Branch "${branch.name}" restored successfully!`, { id: toastId });
                                 } catch (err) {
-                                  setError(err.message || "Failed to restore branch");
+                                  toast.error(err.message || "Failed to restore branch", { id: toastId });
                                 }
                               }}
                             >
@@ -387,16 +408,22 @@ export default function BranchesPage() {
                 }
                 onClick={async () => {
                   setDeleteLoading(true);
+                  const toastId = toast.loading(`Deleting "${deleteTarget.name}"...`);
                   try {
                     await deleteBranch(deleteTarget.id);
                     // Refresh list after soft delete
                     const data = await getBranches();
                     const list = data?.branches ?? (Array.isArray(data) ? data : []);
                     setBranches(list);
+                    // Refresh deleted branches list
+                    const deletedData = await getDeletedBranches();
+                    const delList = deletedData?.branches ?? (Array.isArray(deletedData) ? deletedData : []);
+                    setDeletedBranches(delList);
                     setDeleteTarget(null);
                     setDeleteConfirmName("");
+                    toast.success(`Branch "${deleteTarget.name}" deleted successfully!`, { id: toastId });
                   } catch (err) {
-                    setError(err.message || "Failed to delete branch");
+                    toast.error(err.message || "Failed to delete branch", { id: toastId });
                   } finally {
                     setDeleteLoading(false);
                   }
