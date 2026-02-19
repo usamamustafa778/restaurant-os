@@ -1664,7 +1664,7 @@ export default function POSPage() {
               )}
 
               {/* Save as Draft Button (only when not editing) */}
-              {!editingOrderId && (
+              {/* {!editingOrderId && (
                 <button
                 onClick={saveDraft}
                 disabled={loading || cart.length === 0}
@@ -1673,10 +1673,10 @@ export default function POSPage() {
                 <FileText className="w-4 h-4" />
                 Save as Draft
               </button>
-              )}
+              )} */}
 
               {/* Action Buttons Grid */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* <div className="grid grid-cols-3 gap-2">
                 <button 
                   onClick={() => setShowPrintModal(true)}
                   className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
@@ -1734,7 +1734,7 @@ export default function POSPage() {
                     Trans.
                   </span>
                 </button>
-              </div>
+              </div> */}
             </div>
           )}
         </div>
