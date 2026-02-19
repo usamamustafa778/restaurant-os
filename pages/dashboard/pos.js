@@ -24,7 +24,6 @@ import {
   createCustomer,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
-import toast from "react-hot-toast";
 import {
   ShoppingCart,
   Plus,
@@ -50,6 +49,7 @@ import {
   Tag,
   Sparkles,
 } from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
 
 export default function POSPage() {
   const router = useRouter();
@@ -70,8 +70,8 @@ export default function POSPage() {
   const [discountAmount, setDiscountAmount] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
-  const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== "undefined") {
       return sessionStorage.getItem("sidebar_collapsed") !== "true";
@@ -333,13 +333,15 @@ export default function POSPage() {
       }
 
       setMenu(data);
+      setPageLoading(false);
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) {
         setSuspended(true);
       } else {
         console.error("Failed to load menu:", err);
-        setError(err.message || "Failed to load menu");
+        toast.error(err.message || "Failed to load menu");
       }
+      setPageLoading(false);
     }
   }
 
@@ -528,12 +530,12 @@ export default function POSPage() {
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
-      setError("Cart is empty!");
+      toast.error("Cart is empty!");
       return;
     }
 
     setLoading(true);
-    setError("");
+    const toastId = toast.loading("Processing order...");
 
     try {
       const result = await createPosOrder({
@@ -564,6 +566,7 @@ export default function POSPage() {
 
       toast.success(
         `Order ${result.orderNumber || ""} placed successfully! Total: PKR ${result.total}`,
+        { id: toastId }
       );
       setCart([]);
       setCustomerName("");
@@ -576,7 +579,7 @@ export default function POSPage() {
       setShowCheckout(false);
       setTableName("");
     } catch (err) {
-      setError(err.message || "Failed to place order");
+      toast.error(err.message || "Failed to place order", { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -584,11 +587,11 @@ export default function POSPage() {
 
   const handleUpdateOrder = async () => {
     if (!editingOrderId || cart.length === 0) {
-      setError("Cart is empty");
+      toast.error("Cart is empty");
       return;
     }
     setLoading(true);
-    setError("");
+    const toastId = toast.loading("Updating order...");
     try {
       await updateOrder(editingOrderId, {
         items: cart.map((item) => ({
@@ -604,7 +607,7 @@ export default function POSPage() {
         orderType,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
       });
-      toast.success("Order updated");
+      toast.success("Order updated successfully!", { id: toastId });
       setEditingOrderId(null);
       setEditingOrder(null);
       setCart([]);
@@ -616,7 +619,7 @@ export default function POSPage() {
       setShowCheckout(false);
       router.replace("/dashboard/pos");
     } catch (err) {
-      setError(err.message || "Failed to update order");
+      toast.error(err.message || "Failed to update order", { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -651,12 +654,12 @@ export default function POSPage() {
 
   async function saveDraft() {
     if (cart.length === 0) {
-      setError("Cannot save empty cart as draft!");
+      toast.error("Cannot save empty cart as draft!");
       return;
     }
 
     setLoading(true);
-    setError("");
+    const toastId = toast.loading("Saving draft...");
 
     try {
       await createPosDraft({
@@ -681,19 +684,20 @@ export default function POSPage() {
         branchId: currentBranch?.id ?? undefined,
       });
 
-      toast.success("Order saved as draft successfully!");
+      toast.success("Order saved as draft successfully!", { id: toastId });
       await loadDrafts();
-      
+
       // Clear cart after saving draft
       clearCart();
     } catch (err) {
-      setError(err.message || "Failed to save draft");
+      toast.error(err.message || "Failed to save draft", { id: toastId });
     } finally {
       setLoading(false);
     }
   }
 
   async function loadDraft(draft) {
+    const toastId = toast.loading("Loading draft...");
     try {
       // Load draft items into cart
       const loadedItems = draft.items.map((item) => ({
@@ -712,39 +716,41 @@ export default function POSPage() {
       setTableNumber(draft.tableNumber || "");
       setTableName(draft.tableName || "");
       setSelectedWaiter(draft.selectedWaiter || "");
-      
+
       if (draft.itemNotes) {
         setItemNotes(draft.itemNotes);
       }
 
-      setShowDraftModal(false);
-      toast.success("Draft loaded successfully!");
+      setShowTransactionsModal(false);
+      toast.success("Draft loaded successfully!", { id: toastId });
     } catch (err) {
-      setError(err.message || "Failed to load draft");
+      toast.error(err.message || "Failed to load draft", { id: toastId });
     }
   }
 
   async function removeDraft(id) {
     if (!confirm("Are you sure you want to delete this draft?")) return;
 
+    const toastId = toast.loading("Deleting draft...");
     try {
       await deletePosDraft(id);
-      toast.success("Draft deleted successfully!");
+      toast.success("Draft deleted successfully!", { id: toastId });
       await loadDrafts();
     } catch (err) {
-      setError(err.message || "Failed to delete draft");
+      toast.error(err.message || "Failed to delete draft", { id: toastId });
     }
   }
 
   async function removeTransaction(id) {
     if (!confirm("Are you sure you want to delete this transaction?")) return;
 
+    const toastId = toast.loading("Deleting transaction...");
     try {
       await deletePosTransaction(id);
-      toast.success("Transaction deleted successfully!");
+      toast.success("Transaction deleted successfully!", { id: toastId });
       await loadTransactions();
     } catch (err) {
-      setError(err.message || "Failed to delete transaction");
+      toast.error(err.message || "Failed to delete transaction", { id: toastId });
     }
   }
 
@@ -788,9 +794,18 @@ export default function POSPage() {
 
   return (
     <AdminLayout title="Point of Sale" suspended={suspended}>
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-5 py-3 text-sm font-medium text-red-700 dark:text-red-400">
-          {error}
+      <Toaster position="top-right" />
+      
+      {/* Page Loader */}
+      {pageLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-gray-200 dark:border-neutral-800 border-t-primary rounded-full animate-spin"></div>
+              <ShoppingCart className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">Loading POS...</p>
+          </div>
         </div>
       )}
 
