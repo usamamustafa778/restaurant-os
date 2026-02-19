@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import { Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
-import { getInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, SubscriptionInactiveError } from "../../lib/apiClient";
+import { Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown, AlertTriangle, Copy, X, Loader2 } from "lucide-react";
+import { getInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, getStoredAuth, getSourceBranchInventory, copyInventoryFromBranch, SubscriptionInactiveError } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
+
+const isAdminRole = (role) => role === "restaurant_admin" || role === "admin";
 
 // Helper: return the cost price label based on unit
 function costPriceLabel(unit) {
@@ -40,9 +42,17 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [modalError, setModalError] = useState("");
   const { confirm } = useConfirmDialog();
-  const { currentBranch } = useBranch() || {};
+  const { currentBranch, branches } = useBranch() || {};
+  const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
+  const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
 
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copySourceBranchId, setCopySourceBranchId] = useState("");
+  const [copySourceData, setCopySourceData] = useState(null);
+  const [copySourceLoading, setCopySourceLoading] = useState(false);
+  const [copySelectedItemIds, setCopySelectedItemIds] = useState([]);
+  const [copySubmitting, setCopySubmitting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -59,6 +69,65 @@ export default function InventoryPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!copySourceBranchId || !copyModalOpen || copySourceBranchId === "all") {
+      setCopySourceData(null);
+      setCopySelectedItemIds([]);
+      return;
+    }
+    let cancelled = false;
+    setCopySourceLoading(true);
+    getSourceBranchInventory(copySourceBranchId)
+      .then((data) => {
+        if (cancelled) return;
+        const list = data?.items ?? [];
+        setCopySourceData({ items: list });
+        setCopySelectedItemIds(list.map((i) => i.id));
+      })
+      .catch(() => {
+        if (!cancelled) setCopySourceData({ items: [] });
+      })
+      .finally(() => {
+        if (!cancelled) setCopySourceLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [copySourceBranchId, copyModalOpen]);
+
+  function toggleCopyItem(id) {
+    setCopySelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  async function handleCopySubmit() {
+    if (!currentBranch?.id || !copySourceBranchId) {
+      toast.error("Please select a target branch and source branch.");
+      return;
+    }
+    setCopySubmitting(true);
+    try {
+      if (copySourceBranchId === "all") {
+        for (const branch of sourceBranches) {
+          const data = await getSourceBranchInventory(branch.id);
+          const itemIds = (data?.items ?? []).map((i) => i.id);
+          if (itemIds.length) await copyInventoryFromBranch(branch.id, { itemIds });
+        }
+        toast.success("Inventory copied from all branches to this branch (stock 0).");
+      } else {
+        await copyInventoryFromBranch(copySourceBranchId, { itemIds: copySelectedItemIds });
+        toast.success("Inventory copied to this branch with stock 0.");
+      }
+      setCopyModalOpen(false);
+      setCopySourceBranchId("");
+      const data = await getInventory();
+      setItems(data);
+    } catch (err) {
+      toast.error(err.message || "Failed to copy inventory");
+    } finally {
+      setCopySubmitting(false);
+    }
+  }
 
   function resetForm() {
     setForm({
@@ -104,6 +173,10 @@ export default function InventoryPage() {
       setModalError("Unit is required");
       return;
     }
+    if (!form.id && !currentBranch?.id) {
+      setModalError("Please select a specific branch from the header dropdown before adding inventory.");
+      return;
+    }
     setModalError("");
     try {
       if (form.id) {
@@ -123,12 +196,9 @@ export default function InventoryPage() {
           name: form.name,
           unit: form.unit,
           initialStock: form.initialStock ? Number(form.initialStock) : 0,
-          lowStockThreshold: form.lowStockThreshold
-            ? Number(form.lowStockThreshold)
-            : 0,
-          costPrice: form.costPrice
-            ? Number(form.costPrice)
-            : 0
+          lowStockThreshold: form.lowStockThreshold ? Number(form.lowStockThreshold) : 0,
+          costPrice: form.costPrice ? Number(form.costPrice) : 0,
+          ...(currentBranch?.id && { branchId: currentBranch.id }),
         });
         setItems(prev => [...prev, created]);
       }
@@ -210,6 +280,109 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* Copy inventory from branch modal */}
+      {copyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Copy inventory from branch
+              </h2>
+              <button
+                type="button"
+                onClick={() => { setCopyModalOpen(false); setCopySourceBranchId(""); }}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                  Source branch
+                </label>
+                <select
+                  value={copySourceBranchId}
+                  onChange={(e) => setCopySourceBranchId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="">Select branch</option>
+                  {isAdmin && (
+                    <option value="all">All branches</option>
+                  )}
+                  {sourceBranches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {copySourceLoading && (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              )}
+              {copySourceBranchId === "all" && (
+                <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
+                  All inventory items from every other branch will be copied to this branch (stock 0).
+                </p>
+              )}
+              {!copySourceLoading && copySourceData && copySourceBranchId !== "all" && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400 mb-2">
+                    Inventory items
+                  </p>
+                  <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-800">
+                    {(copySourceData.items || []).map((i) => (
+                      <label
+                        key={i.id}
+                        className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800/50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={copySelectedItemIds.includes(i.id)}
+                          onChange={() => toggleCopyItem(i.id)}
+                          className="rounded border-gray-300 text-primary"
+                        />
+                        <span className="text-sm text-gray-900 dark:text-white flex-1">
+                          {i.name}
+                        </span>
+                        <span className="text-[10px] text-gray-500 dark:text-neutral-400">
+                          {i.unit}
+                        </span>
+                      </label>
+                    ))}
+                    {(copySourceData.items || []).length === 0 && (
+                      <p className="px-3 py-2 text-xs text-gray-500">
+                        No inventory items in this branch
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => { setCopyModalOpen(false); setCopySourceBranchId(""); }}
+                className="px-4"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCopySubmit}
+                disabled={!copySourceBranchId || copySubmitting || (copySourceBranchId !== "all" && copySelectedItemIds.length === 0)}
+                className="px-4"
+              >
+                {copySubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                {copySubmitting ? "Copying…" : "Copy to this branch"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Low Stock Alert */}
       {lowStockItems.length > 0 && (
         <div className="mb-6 p-5 rounded-2xl border-2 border-orange-200 dark:border-orange-500/30 bg-gradient-to-r from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5">
@@ -238,6 +411,16 @@ export default function InventoryPage() {
             className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
           />
         </div>
+        {currentBranch?.id && (
+          <button
+            type="button"
+            onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
+            className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-primary text-primary font-semibold hover:bg-primary/10 transition-all whitespace-nowrap"
+          >
+            <Copy className="w-4 h-4" />
+            Copy Inventory
+          </button>
+        )}
         <button
           type="button"
           onClick={startCreateItem}

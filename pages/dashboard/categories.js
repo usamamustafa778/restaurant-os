@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
@@ -10,8 +10,12 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  getStoredAuth,
+  getSourceBranchMenu,
+  copyMenuFromBranch,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, FolderOpen, Loader2 } from "lucide-react";
+import { Plus, Trash2, Edit2, FolderOpen, Loader2, Copy, X } from "lucide-react";
+import { useBranch } from "../../contexts/BranchContext";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { usePageData } from "../../hooks/usePageData";
 import { useViewMode } from "../../hooks/useViewMode";
@@ -19,14 +23,19 @@ import { useDropdown } from "../../hooks/useDropdown";
 import { handleAsyncAction } from "../../utils/toastActions";
 import toast from "react-hot-toast";
 
+const isAdminRole = (role) => role === "restaurant_admin" || role === "admin";
+
 export default function CategoriesPage() {
+  const { branches, currentBranch } = useBranch() || {};
+  const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
+  const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
   const {
     data: menuData,
     loading: pageLoading,
     error,
     suspended,
     setData: setMenuData,
-  } = usePageData(getMenu);
+  } = usePageData(() => getMenu(currentBranch?.id), [currentBranch?.id]);
   const [form, setForm] = useState({ id: null, name: "", description: "" });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -40,6 +49,72 @@ export default function CategoriesPage() {
     isOpen: isDropdownOpen,
   } = useDropdown();
   const { confirm } = useConfirmDialog();
+
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copySourceBranchId, setCopySourceBranchId] = useState("");
+  const [copySourceData, setCopySourceData] = useState(null);
+  const [copySourceLoading, setCopySourceLoading] = useState(false);
+  const [copySelectedCategoryIds, setCopySelectedCategoryIds] = useState([]);
+  const [copySubmitting, setCopySubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!copySourceBranchId || !copyModalOpen || copySourceBranchId === "all") {
+      setCopySourceData(null);
+      setCopySelectedCategoryIds([]);
+      return;
+    }
+    let cancelled = false;
+    setCopySourceLoading(true);
+    getSourceBranchMenu(copySourceBranchId)
+      .then((data) => {
+        if (cancelled) return;
+        const cats = data?.categories ?? [];
+        setCopySourceData({ categories: cats });
+        setCopySelectedCategoryIds(cats.map((c) => c.id));
+      })
+      .catch(() => {
+        if (!cancelled) setCopySourceData({ categories: [] });
+      })
+      .finally(() => {
+        if (!cancelled) setCopySourceLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [copySourceBranchId, copyModalOpen]);
+
+  function toggleCopyCategory(id) {
+    setCopySelectedCategoryIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  async function handleCopySubmit() {
+    if (!currentBranch?.id || !copySourceBranchId) return;
+    setCopySubmitting(true);
+    try {
+      if (copySourceBranchId === "all") {
+        for (const branch of sourceBranches) {
+          const data = await getSourceBranchMenu(branch.id);
+          const categoryIds = (data?.categories ?? []).map((c) => c.id);
+          if (categoryIds.length) await copyMenuFromBranch(branch.id, { categoryIds, itemIds: [] });
+        }
+        toast.success("Categories copied from all branches to this branch.");
+      } else {
+        await copyMenuFromBranch(copySourceBranchId, {
+          categoryIds: copySelectedCategoryIds,
+          itemIds: [],
+        });
+        toast.success("Categories copied to this branch.");
+      }
+      setCopyModalOpen(false);
+      setCopySourceBranchId("");
+      const refreshed = await getMenu();
+      setMenuData(refreshed);
+    } catch (err) {
+      toast.error(err.message || "Copy failed");
+    } finally {
+      setCopySubmitting(false);
+    }
+  }
 
   const categories = menuData?.categories || [];
   const items = menuData?.items || [];
@@ -67,6 +142,10 @@ export default function CategoriesPage() {
       toast.error("Category name is required");
       return;
     }
+    if (!form.id && !currentBranch?.id) {
+      setModalError("Please select a specific branch from the header dropdown before creating a category.");
+      return;
+    }
 
     setModalError("");
     setIsLoading(true);
@@ -89,6 +168,7 @@ export default function CategoriesPage() {
           const created = await createCategory({
             name: form.name,
             description: form.description,
+            ...(currentBranch?.id && { branchId: currentBranch.id }),
           });
           setMenuData((prev) => ({
             ...prev,
@@ -180,6 +260,17 @@ export default function CategoriesPage() {
 
             {/* View Toggle */}
             <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+
+            {currentBranch?.id && (
+              <button
+                type="button"
+                onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-primary text-primary font-semibold hover:bg-primary/10 transition-all whitespace-nowrap"
+              >
+                <Copy className="w-4 h-4" />
+                Copy Category
+              </button>
+            )}
 
             <button
               type="button"
@@ -466,6 +557,107 @@ export default function CategoriesPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Copy categories from branch modal */}
+      {copyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Copy categories from branch
+              </h2>
+              <button
+                type="button"
+                onClick={() => { setCopyModalOpen(false); setCopySourceBranchId(""); }}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                  Source branch
+                </label>
+                <select
+                  value={copySourceBranchId}
+                  onChange={(e) => setCopySourceBranchId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="">Select branch</option>
+                  {isAdmin && (
+                    <option value="all">All branches</option>
+                  )}
+                  {sourceBranches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {copySourceLoading && (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              )}
+              {copySourceBranchId === "all" && (
+                <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
+                  All categories from every other branch will be copied to this branch.
+                </p>
+              )}
+              {!copySourceLoading && copySourceData && copySourceBranchId !== "all" && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400 mb-2">
+                    Categories
+                  </p>
+                  <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-800">
+                    {(copySourceData.categories || []).map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800/50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={copySelectedCategoryIds.includes(c.id)}
+                          onChange={() => toggleCopyCategory(c.id)}
+                          className="rounded border-gray-300 text-primary"
+                        />
+                        <span className="text-sm text-gray-900 dark:text-white">
+                          {c.name}
+                        </span>
+                      </label>
+                    ))}
+                    {(copySourceData.categories || []).length === 0 && (
+                      <p className="px-3 py-2 text-xs text-gray-500">
+                        No categories in this branch
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => { setCopyModalOpen(false); setCopySourceBranchId(""); }}
+                className="px-4"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCopySubmit}
+                disabled={!copySourceBranchId || copySubmitting || (copySourceBranchId !== "all" && copySelectedCategoryIds.length === 0)}
+                className="px-4"
+              >
+                {copySubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                {copySubmitting ? "Copying…" : "Copy to this branch"}
+              </Button>
+            </div>
           </div>
         </div>
       )}

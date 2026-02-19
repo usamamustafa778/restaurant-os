@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
@@ -13,11 +13,11 @@ import {
   updateItem,
   deleteItem,
   uploadImage,
-  updateBranchMenuItem,
-  deleteBranchMenuItem,
-  getStoredAuth
+  getStoredAuth,
+  getSourceBranchMenu,
+  copyMenuFromBranch
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, RotateCcw, ShoppingBag } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -26,8 +26,12 @@ import { useDropdown } from "../../hooks/useDropdown";
 import { handleAsyncAction } from "../../utils/toastActions";
 import toast from "react-hot-toast";
 
+const isAdminRole = (role) => role === "restaurant_admin" || role === "admin";
+
 export default function MenuItemsPage() {
-  const { currentBranch } = useBranch() || {};
+  const { currentBranch, branches } = useBranch() || {};
+  const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
+  const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
   
   // Fetch menu and inventory data
   const fetchData = async () => {
@@ -89,7 +93,143 @@ export default function MenuItemsPage() {
     itemName: "",
     consumptions: []
   });
-  const [branchPriceEditing, setBranchPriceEditing] = useState({});
+
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copySourceBranchId, setCopySourceBranchId] = useState("");
+  const [copySourceData, setCopySourceData] = useState(null);
+  const [copySourceLoading, setCopySourceLoading] = useState(false);
+  const [copySelectedItemIds, setCopySelectedItemIds] = useState([]);
+  const [copySubmitting, setCopySubmitting] = useState(false);
+
+  // Single branch: fetch that branch's menu
+  useEffect(() => {
+    if (!copySourceBranchId || !copyModalOpen) {
+      setCopySourceData(null);
+      setCopySelectedItemIds([]);
+      return;
+    }
+    if (copySourceBranchId === "all") {
+      // "All branches" is handled by the separate effect below
+      return;
+    }
+    let cancelled = false;
+    setCopySourceLoading(true);
+    getSourceBranchMenu(copySourceBranchId)
+      .then((data) => {
+        if (!cancelled) {
+          setCopySourceData(data);
+          setCopySelectedItemIds([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCopySourceData({ categories: [], items: [] });
+      })
+      .finally(() => {
+        if (!cancelled) setCopySourceLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [copySourceBranchId, copyModalOpen]);
+
+  // "All branches": fetch every source branch's menu and merge into one list (with branch label per item)
+  const [copyAllBranchesData, setCopyAllBranchesData] = useState(null);
+  const [copyAllBranchesError, setCopyAllBranchesError] = useState(null);
+  useEffect(() => {
+    if (!copySourceBranchId || copySourceBranchId !== "all" || !copyModalOpen) {
+      setCopyAllBranchesData(null);
+      setCopyAllBranchesError(null);
+      setCopySelectedItemIds([]);
+      return;
+    }
+    if (sourceBranches.length === 0) {
+      setCopyAllBranchesData({ items: [] });
+      setCopyAllBranchesError("No other branches to copy from. Select a single source branch above or add more branches.");
+      setCopySourceLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCopySourceLoading(true);
+    setCopyAllBranchesError(null);
+    Promise.allSettled(sourceBranches.map((b) => getSourceBranchMenu(b.id).then((data) => ({ branch: b, data }))))
+      .then((results) => {
+        if (cancelled) return;
+        const items = [];
+        const failed = [];
+        for (let i = 0; i < results.length; i++) {
+          const r = results[i];
+          const branch = sourceBranches[i];
+          if (r.status === "fulfilled" && r.value) {
+            const { branch: b, data } = r.value;
+            (data?.items || []).forEach((item) => {
+              items.push({
+                ...item,
+                sourceBranchId: b.id,
+                sourceBranchName: b.name
+              });
+            });
+          } else if (r.status === "rejected") {
+            failed.push(branch?.name || "branch");
+          }
+        }
+        setCopyAllBranchesData({ items });
+        setCopySelectedItemIds([]);
+        if (failed.length > 0 && items.length === 0) {
+          setCopyAllBranchesError(`Could not load items from ${failed.join(", ")}. You may not have permission to view those branches.`);
+        } else if (failed.length > 0) {
+          setCopyAllBranchesError(`Some branches could not be loaded: ${failed.join(", ")}. Showing items from the rest.`);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCopyAllBranchesData({ items: [] });
+          setCopyAllBranchesError("Failed to load items from branches. Try selecting a single source branch.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCopySourceLoading(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch when "All branches" selected; sourceBranches from closure
+  }, [copySourceBranchId, copyModalOpen]);
+  function toggleCopyItem(id) {
+    setCopySelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+  async function handleCopySubmit() {
+    if (!currentBranch?.id || !copySourceBranchId) return;
+    setCopySubmitting(true);
+    try {
+      if (copySourceBranchId === "all" && copyAllBranchesData?.items) {
+        const selectedSet = new Set(copySelectedItemIds);
+        const byBranch = {};
+        copyAllBranchesData.items.forEach((i) => {
+          if (selectedSet.has(i.id)) {
+            const bid = i.sourceBranchId;
+            if (!byBranch[bid]) byBranch[bid] = [];
+            byBranch[bid].push(i.id);
+          }
+        });
+        for (const [branchId, itemIds] of Object.entries(byBranch)) {
+          if (itemIds.length) await copyMenuFromBranch(branchId, { categoryIds: [], itemIds });
+        }
+        toast.success("Selected items copied to this branch.");
+      } else if (copySourceBranchId !== "all") {
+        await copyMenuFromBranch(copySourceBranchId, {
+          categoryIds: [],
+          itemIds: copySelectedItemIds
+        });
+        toast.success("Items copied to this branch.");
+      }
+      setCopyModalOpen(false);
+      setCopyAllBranchesData(null);
+      setCopySourceBranchId("");
+      fetchData().then((d) => setData(d));
+    } catch (err) {
+      toast.error(err.message || "Copy failed");
+    } finally {
+      setCopySubmitting(false);
+    }
+  }
 
   function resetForm() {
     setForm({
@@ -146,6 +286,10 @@ export default function MenuItemsPage() {
       toast.error("Please select a category");
       return; 
     }
+    if (!form.id && !currentBranch?.id) {
+      setModalError("Please select a specific branch from the header dropdown before adding a menu item.");
+      return;
+    }
     
     setModalError("");
     setIsLoading(true);
@@ -175,7 +319,8 @@ export default function MenuItemsPage() {
             dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
             description: form.description,
-            availableAtAllBranches: form.availableAtAllBranches
+            availableAtAllBranches: form.availableAtAllBranches,
+            ...(currentBranch?.id && { branchId: currentBranch.id }),
           });
           setData(prev => ({
             ...prev,
@@ -228,52 +373,6 @@ export default function MenuItemsPage() {
         loading: "Updating availability...",
         success: "Availability updated",
         error: "Failed to update availability"
-      }
-    );
-  }
-
-  async function handleBranchPriceOverride(itemId, priceOverride) {
-    await handleAsyncAction(
-      async () => {
-        if (priceOverride === "" || priceOverride == null) {
-          await deleteBranchMenuItem(itemId);
-          setData(prev => ({
-            ...prev,
-            items: prev.items.map(i => (i.id === itemId ? { ...i, branchPriceOverride: null, effectivePrice: i.price } : i))
-          }));
-        } else {
-          const num = parseFloat(priceOverride);
-          if (!isNaN(num) && num >= 0) {
-            await updateBranchMenuItem(itemId, { priceOverride: num });
-            setData(prev => ({
-              ...prev,
-              items: prev.items.map(i => (i.id === itemId ? { ...i, branchPriceOverride: num, effectivePrice: num } : i))
-            }));
-          }
-        }
-      },
-      {
-        loading: "Updating price...",
-        success: "Branch price updated",
-        error: "Failed to update branch price"
-      }
-    );
-  }
-
-  async function handleRevertBranchOverride(itemId) {
-    await handleAsyncAction(
-      async () => {
-        await deleteBranchMenuItem(itemId);
-        const item = items.find(i => i.id === itemId);
-        setData(prev => ({
-          ...prev,
-          items: prev.items.map(i => (i.id === itemId ? { ...i, branchAvailable: undefined, branchPriceOverride: null, effectivePrice: item?.price } : i))
-        }));
-      },
-      {
-        loading: "Reverting override...",
-        success: "Override reverted",
-        error: "Failed to revert override"
       }
     );
   }
@@ -502,6 +601,16 @@ export default function MenuItemsPage() {
               />
             </div>
             <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+            {currentBranch?.id && (
+              <button
+                type="button"
+                onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-primary text-primary dark:text-primary font-semibold hover:bg-primary/10 transition-all whitespace-nowrap"
+              >
+                <Copy className="w-4 h-4" />
+                Copy Item
+              </button>
+            )}
             <button
               type="button"
               onClick={startCreate}
@@ -520,7 +629,7 @@ export default function MenuItemsPage() {
                 const isDeleting = deletingId === item.id;
                 const displayPrice = item.finalPrice ?? item.price;
                 const isAvailable = item.finalAvailable ?? item.available;
-                const hasPriceOverride = item.hasBranchOverride && item.finalPrice !== item.price;
+                const hasPriceOverride = false;
                 
                 return (
                   <div
@@ -585,23 +694,11 @@ export default function MenuItemsPage() {
                       </span>
                       <div className="text-right">
                         <div className="font-bold text-gray-900 dark:text-white">Rs {displayPrice?.toFixed(0)}</div>
-                        {hasPriceOverride && (
-                          <span className="text-[10px] text-primary font-semibold">
-                            (Was Rs {item.price?.toFixed(0)})
-                          </span>
-                        )}
+                        {/* Branch-specific special price UI removed */}
                       </div>
                     </div>
                     
                     {/* Availability and Badges */}
-                    {!item.availableAtAllBranches && (
-                      <div className="mb-2">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
-                          ⭐ Location-Specific
-                        </span>
-                      </div>
-                    )}
-                    
                     <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-800">
                       <button
                         type="button"
@@ -686,52 +783,14 @@ export default function MenuItemsPage() {
               align: "right",
               render: (_, item) => {
                 const displayPrice = item.finalPrice ?? item.price;
-                const hasPriceOverride = item.hasBranchOverride && item.finalPrice !== item.price;
                 return (
                   <div>
                     <div className="font-bold text-gray-900 dark:text-white">Rs {displayPrice?.toFixed(0)}</div>
-                    {hasPriceOverride && (
-                      <span className="text-[10px] text-primary font-semibold">
-                        (Was Rs {item.price?.toFixed(0)})
-                      </span>
-                    )}
                   </div>
                 );
               }
             },
-            ...(currentBranch ? [{
-              key: "branchOverride",
-              header: "Branch Override",
-              align: "center",
-              render: (_, item) => (
-                <div className="flex items-center justify-center gap-1.5">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="Override"
-                    value={branchPriceEditing[item.id] !== undefined ? branchPriceEditing[item.id] : (item.branchPriceOverride ?? "")}
-                    onChange={e => setBranchPriceEditing(prev => ({ ...prev, [item.id]: e.target.value }))}
-                    onBlur={async () => {
-                      const v = branchPriceEditing[item.id] !== undefined ? branchPriceEditing[item.id] : (item.branchPriceOverride ?? "");
-                      setBranchPriceEditing(prev => { const next = { ...prev }; delete next[item.id]; return next; });
-                      await handleBranchPriceOverride(item.id, v === "" ? null : v);
-                    }}
-                    className="w-16 px-1.5 py-0.5 rounded border border-gray-200 dark:border-neutral-700 text-[10px] bg-white dark:bg-neutral-900"
-                  />
-                  {(item.branchAvailable != null || item.branchPriceOverride != null) && (
-                    <button
-                      type="button"
-                      onClick={() => handleRevertBranchOverride(item.id)}
-                      className="p-1 rounded text-gray-400 hover:text-red-500"
-                      title="Revert to base"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              )
-            }] : []),
+            // Branch override column has been removed to simplify branch-specific menus
             {
               key: "status",
               header: "Status",
@@ -764,17 +823,7 @@ export default function MenuItemsPage() {
               header: "Tags",
               align: "center",
               render: (_, item) => (
-                <div className="flex flex-wrap items-center justify-center gap-1.5">
-                  {!item.availableAtAllBranches && (
-                    <span className="px-2.5 py-1 rounded-lg bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-[10px] font-bold">
-                      📍 Location-Specific
-                    </span>
-                  )}
-                  {item.hasBranchOverride && item.finalPrice !== item.price && (
-                    <span className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-bold">
-                      💰 Special Price
-                    </span>
-                  )}
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
                   {item.inventorySufficient === false && (
                     <span className="px-2.5 py-1 rounded-lg bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-[10px] font-bold" title={item.insufficientIngredients?.join(", ")}>
                       ⚠️ Low Stock
@@ -1036,27 +1085,7 @@ export default function MenuItemsPage() {
               </div>
               
               {/* Available at All Branches Toggle */}
-              <div className="space-y-2 pt-2 pb-1">
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.availableAtAllBranches}
-                    onChange={e => setForm(prev => ({ ...prev, availableAtAllBranches: e.target.checked }))}
-                    className="mt-0.5 w-4 h-4 text-primary bg-white dark:bg-neutral-900 border-gray-300 dark:border-neutral-700 rounded focus:ring-2 focus:ring-primary/20"
-                  />
-                  <div>
-                    <div className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                      Available at all branches
-                    </div>
-                    <div className="text-[10px] text-gray-500 dark:text-neutral-500 mt-0.5">
-                      {form.availableAtAllBranches 
-                        ? "This item will appear at all branches automatically. You can disable it at specific locations if needed."
-                        : "This is a location-exclusive item. You must manually enable it at specific branches."}
-                    </div>
-                  </div>
-                </label>
-              </div>
-              
+              {/* Branch-wide vs location-specific toggle removed to keep each branch managing its own menu */}              
               <div className="flex justify-end gap-2 pt-2">
                 <Button 
                   type="button" 
@@ -1156,6 +1185,156 @@ export default function MenuItemsPage() {
               </Button>
               <Button type="button" className="px-3" onClick={handleSaveRecipe} disabled={branchFilteredInventoryItems.length === 0}>
                 Save recipe
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy from branch modal */}
+      {copyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Copy items from branch</h2>
+              <button type="button" onClick={() => setCopyModalOpen(false)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Source branch</label>
+                <select
+                  value={copySourceBranchId}
+                  onChange={(e) => setCopySourceBranchId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="">Select branch</option>
+                  {isAdmin && (
+                    <option value="all">All branches</option>
+                  )}
+                  {sourceBranches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+              {copySourceBranchId && copySourceBranchId !== "all" && currentBranch?.name && (
+                <p className="text-xs text-gray-600 dark:text-neutral-400">
+                  Copying from <strong>{sourceBranches.find((b) => b.id === copySourceBranchId)?.name ?? "source"}</strong> → to <strong>{currentBranch.name}</strong> (this branch). Select the items you want to copy below.
+                </p>
+              )}
+              {copySourceLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              )}
+              {!currentBranch?.id && (
+                <p className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-3 py-2">
+                  Select a branch in the header (e.g. H13) as the copy destination, then choose a source branch and items.
+                </p>
+              )}
+              {copySourceBranchId === "all" && currentBranch?.id && !copySourceLoading && copyAllBranchesData && (
+                <div>
+                  {copyAllBranchesError && (
+                    <p className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-3 py-2 mb-3">
+                      {copyAllBranchesError}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-600 dark:text-neutral-400 mb-2">
+                    Select items from any branch to copy to <strong>{currentBranch.name}</strong>. Each item shows its source branch.
+                  </p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400">Items from all branches</p>
+                    {copyAllBranchesData.items.length > 0 && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCopySelectedItemIds(copyAllBranchesData.items.map((i) => i.id))}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCopySelectedItemIds([])}
+                          className="text-xs text-gray-500 hover:underline"
+                        >
+                          Deselect all
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-800">
+                    {copyAllBranchesData.items.map((i) => (
+                      <label key={`${i.sourceBranchId}-${i.id}`} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800/50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={copySelectedItemIds.includes(i.id)}
+                          onChange={() => toggleCopyItem(i.id)}
+                          className="rounded border-gray-300 text-primary"
+                        />
+                        <span className="text-sm text-gray-900 dark:text-white flex-1">{i.name}</span>
+                        <span className="text-xs text-gray-500">Rs {Number(i.price).toFixed(0)} · {i.sourceBranchName}</span>
+                      </label>
+                    ))}
+                    {copyAllBranchesData.items.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-gray-500">No items in other branches</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {!copySourceLoading && copySourceData && copySourceBranchId !== "all" && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400">Items from source branch</p>
+                    {(copySourceData.items || []).length > 0 && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCopySelectedItemIds((copySourceData.items || []).map((i) => i.id))}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCopySelectedItemIds([])}
+                          className="text-xs text-gray-500 hover:underline"
+                        >
+                          Deselect all
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-800">
+                    {(copySourceData.items || []).map((i) => (
+                      <label key={i.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800/50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={copySelectedItemIds.includes(i.id)}
+                          onChange={() => toggleCopyItem(i.id)}
+                          className="rounded border-gray-300 text-primary"
+                        />
+                        <span className="text-sm text-gray-900 dark:text-white flex-1">{i.name}</span>
+                        <span className="text-xs text-gray-500">Rs {Number(i.price).toFixed(0)} · {i.categoryName || ""}</span>
+                      </label>
+                    ))}
+                    {(copySourceData.items || []).length === 0 && (
+                      <p className="px-3 py-2 text-xs text-gray-500">No items in this branch</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-200 dark:border-neutral-800">
+              <Button type="button" variant="ghost" onClick={() => setCopyModalOpen(false)}>Cancel</Button>
+              <Button
+                type="button"
+                onClick={handleCopySubmit}
+                disabled={!currentBranch?.id || !copySourceBranchId || copySubmitting || copySelectedItemIds.length === 0}
+              >
+                {copySubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                {copySubmitting ? "Copying…" : `Copy to ${currentBranch?.name || "this branch"}`}
               </Button>
             </div>
           </div>

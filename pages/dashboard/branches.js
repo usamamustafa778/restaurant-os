@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import { getBranches, createBranch } from "../../lib/apiClient";
+import { getBranches, getDeletedBranches, createBranch, deleteBranch, restoreBranch } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
-import { MapPin, Loader2, RefreshCw, Check } from "lucide-react";
+import { MapPin, Loader2, RefreshCw, Check, Trash2, X } from "lucide-react";
 
 export default function BranchesPage() {
   const { branches: contextBranches, currentBranch, setCurrentBranch, loading: contextLoading } = useBranch() || {};
@@ -15,6 +15,12 @@ export default function BranchesPage() {
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
   const [newAddress, setNewAddress] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deletedBranches, setDeletedBranches] = useState([]);
+  const [deletedLoading, setDeletedLoading] = useState(false);
+  const [deletedDropdownOpen, setDeletedDropdownOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +40,20 @@ export default function BranchesPage() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    // Load recently deleted branches (owner/admin only; ignore 403 errors)
+    setDeletedLoading(true);
+    getDeletedBranches()
+      .then((data) => {
+        if (cancelled) return;
+        const list = data?.branches ?? (Array.isArray(data) ? data : []);
+        setDeletedBranches(list);
+      })
+      .catch(() => {
+        if (!cancelled) setDeletedBranches([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDeletedLoading(false);
       });
     return () => { cancelled = true; };
   }, [contextBranches?.length]); // Refetch when context branches change (e.g. after backend adds one)
@@ -171,7 +191,81 @@ export default function BranchesPage() {
           </div>
         ) : (
           <div className="p-5">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">All Branches</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">All Branches</h3>
+              {deletedBranches.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setDeletedDropdownOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50/60 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
+                  >
+                    Recently deleted
+                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-amber-700 text-[10px] text-white">
+                      {deletedBranches.length}
+                    </span>
+                  </button>
+                  {deletedDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-72 rounded-xl bg-white dark:bg-neutral-950 border border-amber-200 dark:border-amber-700 shadow-lg z-10">
+                      <div className="px-3 py-2 border-b border-amber-100 dark:border-amber-800 flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                          Restore branches (48h)
+                        </span>
+                        {deletedLoading && (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                        )}
+                      </div>
+                      <div className="max-h-64 overflow-y-auto py-1">
+                        {deletedBranches.map((branch) => (
+                          <div
+                            key={branch.id}
+                            className="px-3 py-2 text-xs flex items-center justify-between gap-2 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-semibold text-amber-900 dark:text-amber-100 truncate">
+                                {branch.name}
+                              </p>
+                              {branch.code && (
+                                <p className="text-[10px] text-amber-700 dark:text-amber-300 font-mono truncate">
+                                  {branch.code}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              className="px-2 py-1 rounded-md bg-emerald-600 text-[10px] text-white font-semibold hover:bg-emerald-700"
+                              onClick={async () => {
+                                try {
+                                  await restoreBranch(branch.id);
+                                  const [activeData, deletedData] = await Promise.all([
+                                    getBranches(),
+                                    getDeletedBranches(),
+                                  ]);
+                                  const act = activeData?.branches ?? (Array.isArray(activeData) ? activeData : []);
+                                  const del = deletedData?.branches ?? (Array.isArray(deletedData) ? deletedData : []);
+                                  setBranches(act);
+                                  setDeletedBranches(del);
+                                  setDeletedDropdownOpen(false);
+                                } catch (err) {
+                                  setError(err.message || "Failed to restore branch");
+                                }
+                              }}
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        ))}
+                        {deletedBranches.length === 0 && (
+                          <p className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+                            No branches available to restore.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {displayList.map((branch) => (
                 <div
@@ -207,14 +301,25 @@ export default function BranchesPage() {
                   {branch.address && (
                     <p className="text-xs text-gray-600 dark:text-neutral-400 mb-4 line-clamp-2">{branch.address}</p>
                   )}
-                  {currentBranch?.id !== branch.id && (
+                  <div className="flex gap-2">
+                    {currentBranch?.id !== branch.id && (
+                      <button
+                        onClick={() => setCurrentBranch(branch)}
+                        className="flex-1 px-3 py-2 rounded-lg bg-primary/10 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors"
+                      >
+                        Switch to Branch
+                      </button>
+                    )}
+                    {/* Delete (soft delete) – require name confirmation in modal */}
                     <button
-                      onClick={() => setCurrentBranch(branch)}
-                      className="w-full px-3 py-2 rounded-lg bg-primary/10 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors"
+                      type="button"
+                      onClick={() => { setDeleteTarget(branch); setDeleteConfirmName(""); }}
+                      className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10 transition-colors"
                     >
-                      Switch to Branch
+                      <Trash2 className="w-4 h-4 inline-block mr-1 align-middle" />
+                      Delete
                     </button>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -227,6 +332,84 @@ export default function BranchesPage() {
           <p className="text-xs text-blue-700 dark:text-blue-400">
             💡 Selecting a branch scopes dashboard data (orders, inventory, POS) to that specific location when the backend supports <code className="bg-blue-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">x-branch-id</code> header.
           </p>
+        </div>
+      )}
+
+
+      {/* Delete branch confirmation modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Delete branch</h2>
+              <button
+                type="button"
+                onClick={() => { setDeleteTarget(null); setDeleteConfirmName(""); }}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-gray-600 dark:text-neutral-400">
+                This will <span className="font-semibold">soft delete</span> the branch{" "}
+                <span className="font-semibold">"{deleteTarget.name}"</span>. It can be recovered within{" "}
+                <span className="font-semibold">48 hours</span>. To confirm, type the branch name exactly.
+              </p>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                  Type <span className="font-mono">{deleteTarget.name}</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+                  placeholder={deleteTarget.name}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => { setDeleteTarget(null); setDeleteConfirmName(""); }}
+                className="px-4"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="px-4 bg-red-600 hover:bg-red-700 text-white"
+                disabled={
+                  deleteLoading ||
+                  deleteConfirmName.trim() !== (deleteTarget.name || "").trim()
+                }
+                onClick={async () => {
+                  setDeleteLoading(true);
+                  try {
+                    await deleteBranch(deleteTarget.id);
+                    // Refresh list after soft delete
+                    const data = await getBranches();
+                    const list = data?.branches ?? (Array.isArray(data) ? data : []);
+                    setBranches(list);
+                    setDeleteTarget(null);
+                    setDeleteConfirmName("");
+                  } catch (err) {
+                    setError(err.message || "Failed to delete branch");
+                  } finally {
+                    setDeleteLoading(false);
+                  }
+                }}
+              >
+                {deleteLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Delete branch"
+                )}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </AdminLayout>

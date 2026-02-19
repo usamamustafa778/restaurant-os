@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { login } from "../lib/apiClient";
+import { login, getStoredAuth, isAccessTokenValid, tryRefreshStoredAuth } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight } from "lucide-react";
 import SEO from "../components/SEO";
 
@@ -22,7 +22,36 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [checkingStoredAuth, setCheckingStoredAuth] = useState(true);
   const router = useRouter();
+
+  // If user already has valid access token or refresh token in localStorage, redirect to dashboard
+  useEffect(() => {
+    if (typeof window === "undefined" || !router.isReady) return;
+    const auth = getStoredAuth();
+    if (!auth) {
+      setCheckingStoredAuth(false);
+      return;
+    }
+    const fromQuery = router.query.from;
+    const target =
+      typeof fromQuery === "string" && fromQuery.startsWith("/dashboard")
+        ? fromQuery
+        : "/dashboard/overview";
+
+    if (auth.token && isAccessTokenValid(auth.token)) {
+      router.replace(target);
+      return;
+    }
+    if (auth.refreshToken) {
+      tryRefreshStoredAuth().then((ok) => {
+        setCheckingStoredAuth(false);
+        if (ok) router.replace(target);
+      });
+      return;
+    }
+    setCheckingStoredAuth(false);
+  }, [router.isReady, router.query.from]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -117,6 +146,13 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 px-10 py-12">
+          {checkingStoredAuth ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+              <Loader2 className="w-10 h-10 animate-spin text-primary" />
+              <p className="text-sm text-gray-600">Checking existing session…</p>
+            </div>
+          ) : (
+            <>
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">
               Welcome back
@@ -205,6 +241,8 @@ export default function LoginPage() {
               </Link>
             </p>
           </div>
+            </>
+          )}
         </div>
 
         {/* Trust indicators */}

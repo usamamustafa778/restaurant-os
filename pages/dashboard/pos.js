@@ -51,20 +51,9 @@ import {
   Sparkles,
 } from "lucide-react";
 
-// Display order ID same as Orders page: YYYYMMDD-0001 (strip "ORD-" prefix when present)
-function getDisplayOrderId(order) {
-  if (!order) return "";
-  const id = order.orderNumber || order.id || order._id || "";
-  const str = typeof id === "string" ? id : String(id);
-  if (str.startsWith("ORD-")) return str.replace(/^ORD-/, "");
-  return str;
-}
-
 export default function POSPage() {
   const router = useRouter();
   const { currentBranch } = useBranch() || {};
-  const role = getStoredAuth()?.user?.role;
-  const isOrderTaker = role === "order_taker";
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
@@ -136,7 +125,6 @@ export default function POSPage() {
   const [customerModalError, setCustomerModalError] = useState("");
   const [customerAddForm, setCustomerAddForm] = useState({ name: "", phone: "", address: "", notes: "" });
   const [quickCustomerName, setQuickCustomerName] = useState("");
-  const [quickAddPhone, setQuickAddPhone] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
 
   useEffect(() => {
@@ -254,20 +242,9 @@ export default function POSPage() {
     setCustomerModalError("");
     setCustomerAddForm({ name: "", phone: "", address: "", notes: "" });
     setQuickCustomerName("");
-    setQuickAddPhone("");
     setAddingQuickCustomer(false);
     loadCustomersForModal();
   }
-
-  // Keep quick-add phone in sync with search bar when user types there
-  useEffect(() => {
-    if (showCustomerModal) {
-      setQuickAddPhone((prev) => {
-        const term = customerSearch.trim();
-        return term !== "" ? term : prev;
-      });
-    }
-  }, [showCustomerModal, customerSearch]);
 
   function closeCustomerModal() {
     setShowCustomerModal(false);
@@ -307,7 +284,7 @@ export default function POSPage() {
   }
 
   async function handleQuickAddCustomer() {
-    const phone = quickAddPhone.trim();
+    const phone = customerSearch.trim();
     const name = quickCustomerName.trim();
     if (!phone || !name) {
       setCustomerModalError("Enter customer name and phone to add");
@@ -476,10 +453,13 @@ export default function POSPage() {
       .toLowerCase()
       .includes(menuSearchQuery.toLowerCase());
 
-    // Dietary filter by item.dietaryType (veg, non_veg, egg)
-    const itemDietary = item.dietaryType || "non_veg";
+    // Dietary filter (mock - in production, items should have a dietaryType field)
     const matchesDietary =
-      dietaryFilter === "all" || itemDietary === dietaryFilter;
+      dietaryFilter === "all" ||
+      (dietaryFilter === "veg" && item.name.toLowerCase().includes("veg")) ||
+      (dietaryFilter === "non-veg" &&
+        !item.name.toLowerCase().includes("veg")) ||
+      (dietaryFilter === "egg" && item.name.toLowerCase().includes("egg"));
 
     // Use finalAvailable if available (branch-aware), otherwise fall back to available
     const isAvailable = item.finalAvailable ?? item.available;
@@ -814,16 +794,17 @@ export default function POSPage() {
         </div>
       )}
 
-      <div className="w-full min-w-0 overflow-x-hidden grid gap-4 lg:grid-cols-[1fr_400px] min-h-0 lg:min-h-[calc(100vh-140px)] lg:h-[calc(100vh-140px)]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_400px] h-[calc(100vh-140px)]">
         {/* Left Column - Recent Orders + Menu */}
-        <div className="flex flex-col gap-5 min-h-0 min-w-0 lg:min-h-0">
+        <div className="flex flex-col gap-5">
           {/* Recent Orders Section - Compact */}
-          {/* <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-2">
+          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-2">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                 Recent Orders
               </h3>
               <div className="flex items-center gap-1.5">
+                {/* Order Type Filters - Compact */}
                 <div className="flex gap-1">
                   {[
                     { value: "all", label: "All" },
@@ -844,6 +825,7 @@ export default function POSPage() {
                     </button>
                   ))}
         </div>
+                {/* Navigation Arrows - Compact */}
                 <button
                   onClick={() =>
                     setCurrentOrderIndex(Math.max(0, currentOrderIndex - 1))
@@ -867,6 +849,7 @@ export default function POSPage() {
               </div>
             </div>
 
+            {/* Recent Order Cards - Compact */}
             <div className="grid grid-cols-3 gap-2">
               {recentOrders
                 .slice(currentOrderIndex, currentOrderIndex + 3)
@@ -930,6 +913,7 @@ export default function POSPage() {
                       </div>
                     </div>
 
+                    {/* Progress Bar */}
                     <div className="relative h-1 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
                       <div
                         className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all duration-500"
@@ -939,41 +923,39 @@ export default function POSPage() {
                   </div>
                 ))}
             </div>
-          </div> */}
+          </div>
 
         {/* Menu Items Section */}
-          <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1 min-h-0">
+          <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1">
             {/* Header with Filters - Compact */}
-            <div className="p-2 border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex-shrink-0">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
+            <div className="p-2 border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+              <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-bold text-gray-900 dark:text-white">
                   Menu
                 </h2>
 
-                {/* Dietary Filters - Radio (single selection: All, Veg, Non Veg, Egg) */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="flex items-center gap-1.5 cursor-pointer min-h-[44px] py-1 -my-1">
-                    <input
-                      type="radio"
-                      name="dietaryFilter"
-                      checked={dietaryFilter === "all"}
-                      onChange={() => setDietaryFilter("all")}
-                      className="w-4 h-4 rounded-full border-gray-300 text-primary focus:ring-primary flex-shrink-0"
-                    />
-                    <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">All</span>
-                  </label>
+                {/* Dietary Filters - Compact */}
+                <div className="flex items-center gap-2">
                   {[
-                    { value: "veg", label: "Veg" },
-                    { value: "non_veg", label: "Non Veg" },
-                    { value: "egg", label: "Egg" },
+                    { value: "veg", label: "Veg", icon: "☑️" },
+                    { value: "non-veg", label: "Non Veg", icon: "☑️" },
+                    { value: "egg", label: "Egg", icon: "☑️" },
                   ].map((filter) => (
-                    <label key={filter.value} className="flex items-center gap-1.5 cursor-pointer min-h-[44px] py-1 -my-1">
-                      <input
-                        type="radio"
-                        name="dietaryFilter"
+                    <label
+                      key={filter.value}
+                      className="flex items-center gap-1 cursor-pointer"
+                    >
+            <input
+                        type="checkbox"
                         checked={dietaryFilter === filter.value}
-                        onChange={() => setDietaryFilter(filter.value)}
-                        className="w-4 h-4 rounded-full border-gray-300 text-primary focus:ring-primary flex-shrink-0"
+                        onChange={() =>
+                          setDietaryFilter(
+                            dietaryFilter === filter.value
+                              ? "all"
+                              : filter.value,
+                          )
+                        }
+                        className="w-3 h-3 rounded border-gray-300 text-primary focus:ring-primary"
                       />
                       <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
                         {filter.label}
@@ -983,8 +965,8 @@ export default function POSPage() {
                 </div>
               </div>
 
-              {/* Category Cards - Compact; horizontal scroll on mobile (contained, no page scroll) */}
-              <div className="flex gap-2 mb-2 overflow-x-auto overflow-y-hidden pb-1 md:overflow-x-visible md:grid md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 [&>button]:flex-shrink-0 scrollbar-thin">
+              {/* Category Cards - Compact */}
+              <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2 mb-2">
               <button
                 onClick={() => setSelectedCategory("all")}
                   className={`relative p-2 rounded-lg border transition-all ${
@@ -1066,10 +1048,10 @@ export default function POSPage() {
             </div>
           </div>
 
-            {/* Menu Grid - Compact; exactly 2 cols on mobile, no horizontal scroll */}
-            <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-2 bg-gray-50 dark:bg-neutral-900/50">
+            {/* Menu Grid - Compact */}
+            <div className="flex-1 overflow-y-auto p-2 bg-gray-50 dark:bg-neutral-900/50">
               <div
-                className={`grid gap-2 grid-cols-2 sm:grid-cols-3 ${sidebarOpen ? "xl:grid-cols-4" : "xl:grid-cols-5"}`}
+                className={`grid gap-2 ${sidebarOpen ? "grid-cols-3 xl:grid-cols-4" : "grid-cols-4 xl:grid-cols-5"}`}
               >
                 {filteredItems.map((item, idx) => {
                   const inCart = cart.find((c) => c.id === item.id);
@@ -1084,7 +1066,7 @@ export default function POSPage() {
                 return (
                   <div
                     key={item.id}
-                      className={`group relative flex flex-col rounded-lg overflow-hidden transition-all min-w-0 ${
+                      className={`group relative flex flex-col rounded-lg overflow-hidden transition-all ${
                         outOfStock
                           ? "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 opacity-60"
                           : "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 hover:shadow-md cursor-pointer"
@@ -1226,12 +1208,12 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Cart Section - Compact Style; scrollable so bottom actions are always reachable */}
-        <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl min-h-[280px] lg:min-h-0 min-w-0 overflow-y-auto">
+        {/* Cart Section - Compact Style */}
+        <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
           {editingOrderId && (
             <div className="px-3 py-2 bg-amber-500/15 dark:bg-amber-500/20 border-b border-amber-500/30 flex items-center justify-between">
               <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                Editing order #{getDisplayOrderId(editingOrder) || editingOrderId}
+                Editing order #{editingOrder?.id || editingOrderId}
               </span>
               <button
                 type="button"
@@ -1257,15 +1239,10 @@ export default function POSPage() {
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                {editingOrderId
-                  ? `Order #${getDisplayOrderId(editingOrder) || editingOrderId}`
-                  : "New order"}
+                {editingOrderId ? `Order #${editingOrder?.id || editingOrderId}` : "Order #56998"}
               </h3>
               <span className="text-xs text-gray-500 dark:text-neutral-400">
-                {(editingOrder?.createdAt
-                  ? new Date(editingOrder.createdAt)
-                  : new Date()
-                ).toLocaleDateString("en-US", {
+                {new Date().toLocaleDateString("en-US", {
                   day: "2-digit",
                   month: "short",
                   hour: "2-digit",
@@ -1275,7 +1252,7 @@ export default function POSPage() {
           </div>
 
             {/* Order Type Buttons */}
-            <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="grid grid-cols-4 gap-2 mb-2">
               {[
                 { type: "DINE_IN", icon: "🍽️", label: "Dine In" },
                 { type: "TAKEAWAY", icon: "📦", label: "Take" },
@@ -1287,7 +1264,7 @@ export default function POSPage() {
                     setOrderType(option.type);
                     if (option.type !== "DINE_IN") setTableName("");
                   }}
-                  className={`min-h-[44px] px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                  className={`px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
                     orderType === option.type
                       ? "bg-primary text-white"
                       : "bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400"
@@ -1329,7 +1306,7 @@ export default function POSPage() {
                 onClick={openCustomerModal}
                 className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white flex items-center justify-between hover:border-gray-300 dark:hover:border-neutral-600"
               >
-                <span>{customerName ? `${customerName}${customerPhone ? ` • ${customerPhone}` : ""}` : "N/A"}</span>
+                <span>{customerName ? `${customerName}${customerPhone ? ` • ${customerPhone}` : ""}` : "Select Customer"}</span>
                 <Plus className="w-3.5 h-3.5 flex-shrink-0" />
               </button>
             </div>
@@ -1351,7 +1328,7 @@ export default function POSPage() {
           </div>
 
           {/* Cart Items */}
-          <div className="flex-1 min-h-[200px] overflow-y-auto p-3 space-y-2">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-12">
                 <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-2">
@@ -1670,7 +1647,7 @@ export default function POSPage() {
                 <button
                   onClick={handleCheckout}
                   disabled={loading}
-                  className="w-full min-h-[48px] flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <>
@@ -1698,30 +1675,26 @@ export default function POSPage() {
               </button>
               )}
 
-              {/* Action Buttons Grid (order_taker: no Print, Invoice, Void, Trans.) */}
+              {/* Action Buttons Grid */}
               <div className="grid grid-cols-3 gap-2">
-                {!isOrderTaker && (
-                  <>
-                    <button 
-                      onClick={() => setShowPrintModal(true)}
-                      className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <span className="text-lg">🖨️</span>
-                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                        Print
+                <button 
+                  onClick={() => setShowPrintModal(true)}
+                  className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <span className="text-lg">🖨️</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                    Print
                       </span>
                     </button>
-                    <button 
-                      onClick={() => setShowInvoiceModal(true)}
-                      className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <span className="text-lg">📄</span>
-                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                        Invoice
-                      </span>
-                    </button>
-                  </>
-                )}
+                <button 
+                  onClick={() => setShowInvoiceModal(true)}
+                  className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <span className="text-lg">📄</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                    Invoice
+                  </span>
+                </button>
                 <button 
                   onClick={() => {
                     setTransactionTab("draft");
@@ -1743,28 +1716,24 @@ export default function POSPage() {
                     Cancel
                   </span>
                 </button>
-                {!isOrderTaker && (
-                  <>
-                    <button className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5">
-                      <span className="text-lg">💵</span>
-                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                        Void
-                      </span>
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setTransactionTab("sale");
-                        setShowTransactionsModal(true);
-                      }}
-                      className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      <span className="text-lg">📊</span>
-                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                        Trans.
-                      </span>
-                    </button>
-                  </>
-                )}
+                <button className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5">
+                  <span className="text-lg">💵</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                    Void
+                  </span>
+                </button>
+                <button 
+                  onClick={() => {
+                    setTransactionTab("sale");
+                    setShowTransactionsModal(true);
+                  }}
+                  className="px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <span className="text-lg">📊</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                    Trans.
+                  </span>
+                </button>
               </div>
             </div>
           )}
@@ -2526,8 +2495,7 @@ export default function POSPage() {
                         );
                       }
 
-                      // No match for this phone – quick add (phone editable here and from search bar)
-                      const displayPhone = quickAddPhone !== "" ? quickAddPhone : term;
+                      // No match for this phone – quick add
                       return (
                         <div className="space-y-3">
                           <p className="text-sm text-gray-500 dark:text-neutral-400">
@@ -2537,13 +2505,9 @@ export default function POSPage() {
                             <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
                               Phone
                             </label>
-                            <input
-                              type="text"
-                              value={displayPhone}
-                              onChange={(e) => setQuickAddPhone(e.target.value)}
-                              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                              placeholder="Phone number"
-                            />
+                            <div className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm text-gray-900 dark:text-white">
+                              {term}
+                            </div>
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
