@@ -673,11 +673,11 @@ export default function POSPage() {
     setCart(
       cart
         .map((item) => {
-      if (item.id === itemId) {
-        const newQty = item.quantity + change;
-        return newQty > 0 ? { ...item, quantity: newQty } : item;
-      }
-      return item;
+          if (item.id === itemId) {
+            const newQty = item.quantity + change;
+            return { ...item, quantity: Math.max(0, newQty) };
+          }
+          return item;
         })
         .filter((item) => item.quantity > 0),
     );
