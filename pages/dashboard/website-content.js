@@ -5,7 +5,7 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import { getWebsiteSettings, updateWebsiteSettings, getMenu, SubscriptionInactiveError, uploadImage } from "../../lib/apiClient";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Save, Image as ImageIcon, Search, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripVertical, LayoutGrid, Smartphone, Monitor, Eye, RefreshCw, Phone, Mail, ShoppingCart, Link as LinkIcon, Upload, Loader2 } from "lucide-react";
+import { Plus, Trash2, Save, Image as ImageIcon, Search, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, GripVertical, LayoutGrid, Smartphone, Monitor, Eye, RefreshCw, Phone, Mail, ShoppingCart, Link as LinkIcon, Upload, Loader2, FileText } from "lucide-react";
 import WebsiteSectionsView from "../../components/website/WebsiteSectionsView";
 
 // Default sections for new restaurants

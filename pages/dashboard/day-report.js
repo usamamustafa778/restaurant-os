@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 
 export default function DayReportPage() {
   const [report, setReport] = useState(null);
-  const [pageLoading, setPageLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true) ;
   const [suspended, setSuspended] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();

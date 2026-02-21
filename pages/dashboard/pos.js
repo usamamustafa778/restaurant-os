@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getMenu,
   getBranchMenu,
+  getOrders,
   createPosOrder,
   getOrder,
   updateOrder,
@@ -42,6 +43,7 @@ import {
   Clock,
   Utensils,
   FileText,
+  Printer,
   Flame,
   Star,
   Users,
@@ -61,6 +63,17 @@ export default function POSPage() {
   const [loadingEditOrder, setLoadingEditOrder] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
+  const [searchStep, setSearchStep] = useState("quantity"); // 'quantity' | 'itemName'
+  const [searchQuantityInput, setSearchQuantityInput] = useState("");
+  const [pendingAddQuantity, setPendingAddQuantity] = useState(1);
+  const [focusedItemIndex, setFocusedItemIndex] = useState(0);
+  const focusedCardRef = useRef(null);
+  const orderStripRef = useRef(null);
+  const orderStripOffsetRef = useRef(0);
+  const orderStripRafRef = useRef(null);
+  const orderStripLastTimeRef = useRef(null);
+  const orderStripPausedRef = useRef(false);
+  const [gridCols, setGridCols] = useState(4);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -72,16 +85,13 @@ export default function POSPage() {
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window !== "undefined") {
-      return sessionStorage.getItem("sidebar_collapsed") !== "true";
-    }
-    return true;
-  });
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarHydrated, setSidebarHydrated] = useState(false);
 
   // New features from Dream POS
   const [dietaryFilter, setDietaryFilter] = useState("all"); // all, veg, non-veg, egg
   const [orderFilter, setOrderFilter] = useState("all"); // all, dine-in, takeaway, delivery
+  const [recentOrderSearch, setRecentOrderSearch] = useState(""); // search by order ID
   const [selectedWaiter, setSelectedWaiter] = useState("");
   const [tableNumber, setTableNumber] = useState("");
   const [tableName, setTableName] = useState("");
@@ -89,6 +99,8 @@ export default function POSPage() {
   const [itemNotes, setItemNotes] = useState({}); // { itemId: "note text" }
   const [recentOrders, setRecentOrders] = useState([]);
   const [currentOrderIndex, setCurrentOrderIndex] = useState(0);
+  const [focusedOrderIndex, setFocusedOrderIndex] = useState(0);
+  const [orderGridHovered, setOrderGridHovered] = useState(false);
 
   // Deals integration
   const [availableDeals, setAvailableDeals] = useState([]);
@@ -116,6 +128,12 @@ export default function POSPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("newest");
 
+  // Take payment modal (Cash/Card)
+  const [showTakePaymentModal, setShowTakePaymentModal] = useState(false);
+  const [amountReceived, setAmountReceived] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+
   // Customer modal (select or add)
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [customerModalMode, setCustomerModalMode] = useState("select"); // 'select' | 'add'
@@ -127,12 +145,21 @@ export default function POSPage() {
   const [quickCustomerName, setQuickCustomerName] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
 
+  // Check sidebar state from sessionStorage before showing grid (so reload with closed sidebar → 5 cols)
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const collapsed = sessionStorage.getItem("sidebar_collapsed") === "true";
+    setSidebarOpen(!collapsed);
+    setSidebarHydrated(true);
+  }, []);
+
   useEffect(() => {
     loadMenu();
     loadActiveDeals();
     loadDrafts();
     loadTransactions();
     loadTables();
+    loadRecentOrders();
 
     // Listen for sidebar toggle events from AdminLayout
     function handleSidebarToggle(e) {
@@ -142,6 +169,33 @@ export default function POSPage() {
     return () =>
       window.removeEventListener("sidebar-toggle", handleSidebarToggle);
   }, [currentBranch]);
+
+  useEffect(() => {
+    setCurrentOrderIndex(0);
+  }, [orderFilter]);
+
+  useEffect(() => {
+    setCurrentOrderIndex(0);
+  }, [recentOrderSearch]);
+
+  useEffect(() => {
+    focusedCardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focusedItemIndex]);
+
+  // Until we've read sessionStorage, assume sidebar closed (5 cols). Then use sidebarOpen.
+  const effectiveSidebarOpen = sidebarHydrated ? sidebarOpen : false;
+
+  // Match grid columns to Tailwind: sidebarOpen ? grid-cols-3 xl:grid-cols-4 : grid-cols-4 xl:grid-cols-5
+  useEffect(() => {
+    const updateCols = () => {
+      if (typeof window === "undefined") return;
+      const xl = window.innerWidth >= 1280;
+      setGridCols(effectiveSidebarOpen ? (xl ? 4 : 3) : (xl ? 5 : 4));
+    };
+    updateCols();
+    window.addEventListener("resize", updateCols);
+    return () => window.removeEventListener("resize", updateCols);
+  }, [effectiveSidebarOpen]);
 
   // Load order for edit when ?edit=id is in URL
   useEffect(() => {
@@ -308,6 +362,75 @@ export default function POSPage() {
     }
   }
 
+  function openTakePaymentModal(method) {
+    setPaymentMethod(method);
+    setAmountReceived("");
+    setPaymentError("");
+    setShowTakePaymentModal(true);
+  }
+
+  function closeTakePaymentModal() {
+    setShowTakePaymentModal(false);
+    setPaymentError("");
+  }
+
+  async function handleTakePaymentSubmit(e) {
+    e.preventDefault();
+    if (cart.length === 0) {
+      setPaymentError("Cart is empty");
+      return;
+    }
+    const billTotal = total;
+    if (paymentMethod === "CASH") {
+      const received = Number(amountReceived);
+      if (isNaN(received) || received < billTotal) {
+        setPaymentError(`Amount received must be at least Rs ${billTotal.toFixed(0)}`);
+        return;
+      }
+    }
+    setPaymentLoading(true);
+    setPaymentError("");
+    const toastId = toast.loading("Processing...");
+    try {
+      await createPosOrder({
+        items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
+        orderType,
+        paymentMethod,
+        discountAmount: totalDiscount,
+        appliedDeals:
+          selectedDeals.length > 0
+            ? selectedDeals.map((dealId) => {
+                const deal = applicableDeals.find((d) => d.id === dealId);
+                return { dealId, dealName: deal?.name || "", dealType: deal?.dealType || "" };
+              })
+            : undefined,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        deliveryAddress: customerAddress.trim(),
+        branchId: currentBranch?.id ?? undefined,
+        tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+        ...(paymentMethod === "CASH" && amountReceived !== "" ? { amountReceived: Number(amountReceived) } : {}),
+      });
+      toast.success("Order placed and payment recorded", { id: toastId });
+      closeTakePaymentModal();
+      setCart([]);
+      setCustomerName("");
+      setCustomerPhone("");
+      setCustomerAddress("");
+      setDiscountAmount("");
+      setSelectedDeals([]);
+      setDealDiscount(0);
+      setShowCustomerDetails(false);
+      setTableName("");
+      loadRecentOrders();
+    } catch (err) {
+      setPaymentError(err.message || "Failed to place order");
+      toast.error(err.message || "Failed to place order", { id: toastId });
+    } finally {
+      setPaymentLoading(false);
+    }
+  }
+
   // Check for applicable deals when cart changes
   useEffect(() => {
     if (cart.length > 0) {
@@ -451,9 +574,9 @@ export default function POSPage() {
   const filteredItems = menu.items.filter((item) => {
     const matchesCategory =
       selectedCategory === "all" || item.categoryId === selectedCategory;
-    const matchesSearch = item.name
-      .toLowerCase()
-      .includes(menuSearchQuery.toLowerCase());
+    const matchesSearch =
+      searchStep !== "itemName" ||
+      item.name.toLowerCase().includes(menuSearchQuery.toLowerCase());
 
     // Dietary filter (mock - in production, items should have a dietaryType field)
     const matchesDietary =
@@ -468,18 +591,81 @@ export default function POSPage() {
     return matchesCategory && matchesSearch && matchesDietary && isAvailable;
   });
 
-  const addToCart = (item) => {
+  const filteredRecentOrders = recentOrders
+    .filter((o) => orderFilter === "all" || o.type === orderFilter)
+    .filter(
+      (o) =>
+        !recentOrderSearch.trim() ||
+        (o.id && String(o.id).toLowerCase().includes(recentOrderSearch.trim().toLowerCase())),
+    );
+
+  // Focus first order when search or filter changes
+  useEffect(() => {
+    setFocusedOrderIndex(0);
+    setCurrentOrderIndex(0);
+  }, [recentOrderSearch, orderFilter]);
+
+  // Clamp focused order index when filtered list shrinks
+  useEffect(() => {
+    if (filteredRecentOrders.length > 0 && focusedOrderIndex >= filteredRecentOrders.length) {
+      setFocusedOrderIndex(Math.max(0, filteredRecentOrders.length - 1));
+    }
+  }, [filteredRecentOrders.length, focusedOrderIndex]);
+
+  // Keep pause state in ref so animation loop doesn't need to re-run when hover/search changes
+  orderStripPausedRef.current = orderGridHovered || recentOrderSearch.trim() !== "";
+
+  // Continuous order strip: single list, scroll 0% → 100% then reset to 0% (no duplicate orders)
+  const orderColsCount = effectiveSidebarOpen ? 4 : 5;
+  useEffect(() => {
+    if (filteredRecentOrders.length <= orderColsCount) return;
+    orderStripOffsetRef.current = 0;
+    orderStripLastTimeRef.current = null;
+
+    const durationMs = 25000; // 25 seconds for one full pass
+    const totalTravel = 100; // percent (full list)
+
+    const tick = (timestamp) => {
+      orderStripLastTimeRef.current ??= timestamp;
+      const delta = timestamp - orderStripLastTimeRef.current;
+      orderStripLastTimeRef.current = timestamp;
+
+      if (!orderStripPausedRef.current) {
+        orderStripOffsetRef.current += (delta / durationMs) * totalTravel;
+        if (orderStripOffsetRef.current >= totalTravel) {
+          orderStripOffsetRef.current = 0; // loop back to start
+        }
+      }
+      if (orderStripRef.current) {
+        orderStripRef.current.style.transform = `translateX(-${orderStripOffsetRef.current}%)`;
+      }
+      orderStripRafRef.current = requestAnimationFrame(tick);
+    };
+    orderStripRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (orderStripRafRef.current) cancelAnimationFrame(orderStripRafRef.current);
+    };
+  }, [filteredRecentOrders.length, orderColsCount]);
+
+  // Clamp focused item index when filtered list shrinks
+  useEffect(() => {
+    if (filteredItems.length > 0 && focusedItemIndex >= filteredItems.length) {
+      setFocusedItemIndex(Math.max(0, filteredItems.length - 1));
+    }
+  }, [filteredItems.length, focusedItemIndex]);
+
+  const addToCart = (item, qty = 1) => {
+    const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
     const existingItem = cart.find((i) => i.id === item.id);
     if (existingItem) {
       setCart(
         cart.map((i) =>
-          i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i,
+          i.id === item.id ? { ...i, quantity: i.quantity + quantity } : i,
         ),
       );
     } else {
-      // Use finalPrice for branch-aware pricing
       const itemPrice = item.finalPrice ?? item.price;
-      setCart([...cart, { ...item, price: itemPrice, quantity: 1 }]);
+      setCart([...cart, { ...item, price: itemPrice, quantity }]);
     }
   };
 
@@ -578,6 +764,7 @@ export default function POSPage() {
       setShowCustomerDetails(false);
       setShowCheckout(false);
       setTableName("");
+      loadRecentOrders();
     } catch (err) {
       toast.error(err.message || "Failed to place order", { id: toastId });
     } finally {
@@ -617,6 +804,7 @@ export default function POSPage() {
       setDiscountAmount("");
       setTableName("");
       setShowCheckout(false);
+      loadRecentOrders();
       router.replace("/dashboard/pos");
     } catch (err) {
       toast.error(err.message || "Failed to update order", { id: toastId });
@@ -649,6 +837,58 @@ export default function POSPage() {
       setTransactions([]);
     } finally {
       setLoadingTransactions(false);
+    }
+  }
+
+  // Recent orders in POS header: unpaid only (paid orders are hidden)
+  function formatTimeAgo(createdAt) {
+    const date = createdAt ? new Date(createdAt) : new Date();
+    const now = new Date();
+    const diffMs = now - date;
+    const diffM = Math.floor(diffMs / 60000);
+    const diffH = Math.floor(diffMs / 3600000);
+    const diffD = Math.floor(diffMs / 86400000);
+    if (diffM < 1) return "now";
+    if (diffM < 60) return `${diffM}m ago`;
+    if (diffH < 24) return `${diffH}h ago`;
+    if (diffD < 7) return `${diffD}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  function formatOrderTime(createdAt) {
+    const date = createdAt ? new Date(createdAt) : new Date();
+    return date.toLocaleString("en-PK", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+
+  const statusProgress = { UNPROCESSED: 25, PENDING: 50, READY: 75, COMPLETED: 100, CANCELLED: 0 };
+
+  async function loadRecentOrders() {
+    try {
+      const data = await getOrders();
+      const list = Array.isArray(data) ? data : [];
+      const unpaid = list
+        .filter((o) => o.isPaid !== true && o.status !== "CANCELLED")
+        .map((o) => ({
+          id: o.id,
+          type: o.type || "dine-in",
+          customer: o.customerName || "Walk-in",
+          time: formatOrderTime(o.createdAt),
+          timeAgo: formatTimeAgo(o.createdAt),
+          progress: statusProgress[o.status] ?? 25,
+        }));
+      setRecentOrders(unpaid);
+      if (currentOrderIndex >= Math.max(0, unpaid.length - 1)) {
+        setCurrentOrderIndex(0);
+      }
+    } catch (err) {
+      console.error("Failed to load recent orders:", err);
+      setRecentOrders([]);
     }
   }
 
@@ -809,11 +1049,11 @@ export default function POSPage() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_400px] h-[calc(100vh-140px)]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_400px] h-[calc(100vh-110px)]">
         {/* Left Column - Recent Orders + Menu */}
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
           {/* Recent Orders Section - Compact */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-2">
+          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-2 overflow-hidden min-w-0">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                 Recent Orders
@@ -853,10 +1093,16 @@ export default function POSPage() {
                 <button
                   onClick={() =>
                     setCurrentOrderIndex(
-                      Math.min(recentOrders.length - 1, currentOrderIndex + 1),
+                      Math.min(
+                        Math.max(0, filteredRecentOrders.length - (effectiveSidebarOpen ? 4 : 5)),
+                        currentOrderIndex + 1,
+                      ),
                     )
                   }
-                  disabled={currentOrderIndex >= recentOrders.length - 1}
+                  disabled={
+                    currentOrderIndex >=
+                    Math.max(0, filteredRecentOrders.length - (effectiveSidebarOpen ? 4 : 5))
+                  }
                   className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronRight className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
@@ -864,22 +1110,132 @@ export default function POSPage() {
               </div>
             </div>
 
-            {/* Recent Order Cards - Compact */}
-            <div className="grid grid-cols-3 gap-2">
-              {recentOrders
-                .slice(currentOrderIndex, currentOrderIndex + 3)
-                .map((order) => (
+            {/* Search by Order ID - same style as menu search */}
+            <div className="relative mb-2">
+              <input
+                type="text"
+                placeholder="Search by order ID..."
+                value={recentOrderSearch}
+                onChange={(e) => setRecentOrderSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  const hasSearch = recentOrderSearch.trim() !== "";
+                  if (!hasSearch || filteredRecentOrders.length === 0) return;
+                  if (e.key === "ArrowLeft") {
+                    e.preventDefault();
+                    const newFocus = Math.max(0, focusedOrderIndex - 1);
+                    setFocusedOrderIndex(newFocus);
+                    setCurrentOrderIndex((c) => (newFocus < c ? newFocus : c));
+                  } else if (e.key === "ArrowRight") {
+                    e.preventDefault();
+                    const newFocus = Math.min(
+                      filteredRecentOrders.length - 1,
+                      focusedOrderIndex + 1,
+                    );
+                    setFocusedOrderIndex(newFocus);
+                    setCurrentOrderIndex((c) =>
+                      newFocus > c + (effectiveSidebarOpen ? 3 : 4)
+                        ? newFocus - (effectiveSidebarOpen ? 3 : 4)
+                        : c,
+                    );
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    const order = filteredRecentOrders[focusedOrderIndex];
+                    if (order?.id) {
+                      router.push({ pathname: "/dashboard/pos", query: { edit: order.id } });
+                    }
+                  }
+                }}
+                className="w-full px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                🔍
+              </div>
+            </div>
+
+            {/* Recent Order Cards - Continuous sliding strip (right to left); single list, no duplicate orders */}
+            <div
+              className="overflow-hidden w-full min-w-0 p-1.5"
+              onMouseEnter={() => setOrderGridHovered(true)}
+              onMouseLeave={() => setOrderGridHovered(false)}
+            >
+              <div
+                ref={orderStripRef}
+                className="flex gap-2 shrink-0"
+                style={{
+                  width:
+                    filteredRecentOrders.length > 0
+                      ? `${(filteredRecentOrders.length / (effectiveSidebarOpen ? 4 : 5)) * 100}%`
+                      : "100%",
+                }}
+              >
+                {filteredRecentOrders.map((order, idx) => {
+                  const globalIdx = idx;
+                  const isFocused =
+                    recentOrderSearch.trim() !== "" && globalIdx === focusedOrderIndex;
+                  const orderCols = effectiveSidebarOpen ? 4 : 5;
+                  const totalCards = filteredRecentOrders.length;
+                  return (
                   <div
                     key={order.id}
-                    className="relative p-2 rounded border border-gray-200 dark:border-neutral-800 hover:border-primary/30 transition-all"
+                    role="button"
+                    tabIndex={-1}
+                    style={{
+                      flex: `0 0 ${totalCards ? 100 / totalCards : 100}%`,
+                      minWidth: 0,
+                    }}
+                    onClick={() => {
+                      setFocusedOrderIndex(globalIdx);
+                      setCurrentOrderIndex(
+                        Math.max(0, Math.min(globalIdx, filteredRecentOrders.length - orderCols)),
+                      );
+                    }}
+                    className={`relative p-2 rounded border transition-all cursor-pointer ${
+                      isFocused
+                        ? "ring-2 ring-primary ring-offset-2 shadow-lg border-gray-200 dark:border-neutral-800"
+                        : "border-gray-200 dark:border-neutral-800 hover:border-primary/30"
+                    }`}
                   >
                     <div className="flex items-start justify-between mb-1.5">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1 mb-0.5">
-                          <span className="text-[10px] font-bold text-gray-500 dark:text-neutral-500">
+                        <div className="flex items-center gap-1 mb-0.5 ">
+                          <span className="text-[8px] font-bold text-gray-500 dark:text-neutral-500">
                             {order.id}
                           </span>
-                          <span
+                          
+                        </div>
+                        <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                          {order.customer}
+                        </p>
+                        <p className="text-[10px] text-gray-500 dark:text-neutral-500">
+                          {order.time}
+                        </p>
+                      </div>
+                      <div>
+
+                      <div
+                        className={`px-1 py-0 rounded ${
+                          order.timeAgo.includes("2") ||
+                          order.timeAgo.includes("1")
+                            ? "bg-red-100 dark:bg-red-500/10"
+                            : order.timeAgo.includes("3")
+                              ? "bg-yellow-100 dark:bg-yellow-500/10"
+                              : "bg-emerald-100 dark:bg-emerald-500/10"
+                        }`}
+                      >
+                        <span
+                          className={`text-[8px] font-bold ${
+                            order.timeAgo.includes("2") ||
+                            order.timeAgo.includes("1")
+                              ? "text-red-600 dark:text-red-400"
+                              : order.timeAgo.includes("3")
+                                ? "text-yellow-600 dark:text-yellow-400"
+                                : "text-emerald-600 dark:text-emerald-400"
+                          }`}
+                        >
+                          {order.timeAgo}
+                        </span>
+                      </div>
+                      <span
                             className={`px-1 py-0.5 rounded text-[8px] font-bold ${
                               order.type === "delivery"
                                 ? "bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
@@ -895,36 +1251,6 @@ export default function POSPage() {
                                 ? "Take"
                                 : "Dine"}
                           </span>
-                        </div>
-                        <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                          {order.customer}
-                        </p>
-                        <p className="text-[10px] text-gray-500 dark:text-neutral-500">
-                          {order.time}
-                        </p>
-                      </div>
-                      <div
-                        className={`px-1.5 py-0.5 rounded ${
-                          order.timeAgo.includes("2") ||
-                          order.timeAgo.includes("1")
-                            ? "bg-red-100 dark:bg-red-500/10"
-                            : order.timeAgo.includes("3")
-                              ? "bg-yellow-100 dark:bg-yellow-500/10"
-                              : "bg-emerald-100 dark:bg-emerald-500/10"
-                        }`}
-                      >
-                        <span
-                          className={`text-[10px] font-bold ${
-                            order.timeAgo.includes("2") ||
-                            order.timeAgo.includes("1")
-                              ? "text-red-600 dark:text-red-400"
-                              : order.timeAgo.includes("3")
-                                ? "text-yellow-600 dark:text-yellow-400"
-                                : "text-emerald-600 dark:text-emerald-400"
-                          }`}
-                        >
-                          {order.timeAgo}
-                        </span>
                       </div>
                     </div>
 
@@ -936,7 +1262,9 @@ export default function POSPage() {
                       />
                     </div>
                   </div>
-                ))}
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -1048,17 +1376,99 @@ export default function POSPage() {
                 })}
               </div>
 
-              {/* Search Bar - Compact */}
+              {/* Search Bar - Two-step: quantity then item name, Enter adds first match to cart */}
               <div className="relative">
                 <input
-                  type="text"
-                  placeholder="Search menu..."
-                  value={menuSearchQuery}
-                  onChange={(e) => setMenuSearchQuery(e.target.value)}
+                  type={searchStep === "quantity" ? "number" : "text"}
+                  inputMode={searchStep === "quantity" ? "numeric" : "text"}
+                  placeholder={
+                    searchStep === "quantity"
+                      ? "Enter quantity (then press Enter)"
+                      : pendingAddQuantity < 0
+                        ? `Enter menu item name (then Enter) — removing ${Math.abs(pendingAddQuantity)}`
+                        : `Enter menu item name (then Enter) — adding ${pendingAddQuantity}`
+                  }
+                  value={searchStep === "quantity" ? searchQuantityInput : menuSearchQuery}
+                  onChange={(e) =>
+                    searchStep === "quantity"
+                      ? (() => {
+                          const raw = e.target.value.replace(/[^\d-]/g, "");
+                          const hasLeadingMinus = raw.startsWith("-");
+                          const digits = raw.replace(/-/g, "").slice(0, 4);
+                          setSearchQuantityInput(hasLeadingMinus ? "-" + digits : digits);
+                        })()
+                      : (setMenuSearchQuery(e.target.value), setFocusedItemIndex(0))
+                  }
+                  onKeyDown={(e) => {
+                    if (searchStep === "itemName" && filteredItems.length > 0) {
+                      if (e.key === "ArrowRight") {
+                        e.preventDefault();
+                        setFocusedItemIndex((i) => Math.min(filteredItems.length - 1, i + 1));
+                        return;
+                      }
+                      if (e.key === "ArrowLeft") {
+                        e.preventDefault();
+                        setFocusedItemIndex((i) => Math.max(0, i - 1));
+                        return;
+                      }
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setFocusedItemIndex((i) => Math.min(filteredItems.length - 1, i + gridCols));
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setFocusedItemIndex((i) => Math.max(0, i - gridCols));
+                        return;
+                      }
+                    }
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    if (searchStep === "quantity") {
+                      const raw = searchQuantityInput.trim();
+                      const num = parseInt(raw, 10);
+                      if (raw === "-" || Number.isNaN(num) || num === 0) return;
+                      setPendingAddQuantity(num);
+                      setSearchStep("itemName");
+                      setSearchQuantityInput("");
+                      setMenuSearchQuery("");
+                      setFocusedItemIndex(0);
+                    } else {
+                      // Add the focused item (orange border), not the first search result
+                      if (filteredItems.length === 0) {
+                        toast.error("No items to add");
+                        return;
+                      }
+                      const idx = Math.min(Math.max(0, focusedItemIndex), filteredItems.length - 1);
+                      const selectedItem = filteredItems[idx];
+                      if (selectedItem) {
+                        if (pendingAddQuantity < 0) {
+                          const inCart = cart.find((c) => c.id === selectedItem.id);
+                          if (inCart) {
+                            updateQuantity(selectedItem.id, pendingAddQuantity);
+                          }
+                        } else {
+                          if (selectedItem.inventorySufficient === false) {
+                            toast.error(`${selectedItem.name} is out of stock`);
+                            return;
+                          }
+                          addToCart(selectedItem, pendingAddQuantity);
+                          toast.success(`${pendingAddQuantity} × ${selectedItem.name} added to cart`);
+                        }
+                      } else {
+                        toast.error("No matching item found");
+                      }
+                      setSearchStep("quantity");
+                      setSearchQuantityInput("");
+                      setMenuSearchQuery("");
+                      setPendingAddQuantity(1);
+                      setFocusedItemIndex(0);
+                    }
+                  }}
                   className="w-full px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
                 />
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                  🔍
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                  {searchStep === "quantity" ? "#" : "🔍"}
                 </div>
             </div>
           </div>
@@ -1066,7 +1476,7 @@ export default function POSPage() {
             {/* Menu Grid - Compact */}
             <div className="flex-1 overflow-y-auto p-2 bg-gray-50 dark:bg-neutral-900/50">
               <div
-                className={`grid gap-2 ${sidebarOpen ? "grid-cols-3 xl:grid-cols-4" : "grid-cols-4 xl:grid-cols-5"}`}
+                className={`grid gap-2 ${effectiveSidebarOpen ? "grid-cols-3 xl:grid-cols-4" : "grid-cols-4 xl:grid-cols-5"}`}
               >
                 {filteredItems.map((item, idx) => {
                   const inCart = cart.find((c) => c.id === item.id);
@@ -1080,11 +1490,13 @@ export default function POSPage() {
                 return (
                   <div
                     key={item.id}
+                    ref={idx === focusedItemIndex ? focusedCardRef : null}
+                    onClick={() => setFocusedItemIndex(idx)}
                       className={`group relative flex flex-col rounded-lg overflow-hidden transition-all ${
                         outOfStock
                           ? "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 opacity-60"
                           : "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 hover:shadow-md cursor-pointer"
-                      }`}
+                      } ${searchStep === "itemName" && idx === focusedItemIndex ? "ring-2 ring-primary ring-offset-2 shadow-lg" : ""}`}
                     >
                       {/* Image - Compact */}
                       <div
@@ -1618,10 +2030,10 @@ export default function POSPage() {
                 )}
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600 dark:text-neutral-400">
-                    Tax (18%)
+                    Tax (0%)
                   </span>
                   <span className="font-semibold text-gray-900 dark:text-white">
-                    Rs {(subtotal * 0.18).toFixed(0)}
+                    Rs 0
                   </span>
                 </div>
               </div>
@@ -1676,6 +2088,42 @@ export default function POSPage() {
                   )}
                 </button>
               )}
+
+              {/* Print, Cash, Card buttons */}
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(true)}
+                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <Printer className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                    Print
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openTakePaymentModal("CASH")}
+                  disabled={cart.length === 0}
+                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Banknote className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                    Cash
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openTakePaymentModal("CARD")}
+                  disabled={cart.length === 0}
+                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <CreditCard className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                    Card
+                  </span>
+                </button>
+              </div>
 
               {/* Save as Draft Button (only when not editing) */}
               {/* {!editingOrderId && (
@@ -2196,18 +2644,10 @@ export default function POSPage() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600 dark:text-neutral-400">
-                        CGST (9%)
+                        Tax (0%)
                       </span>
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        ${(subtotal * 0.09).toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600 dark:text-neutral-400">
-                        SGST (9%)
-                      </span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        ${(subtotal * 0.09).toFixed(2)}
+                        $0
                       </span>
                     </div>
                     {totalDiscount > 0 && (
@@ -2227,7 +2667,7 @@ export default function POSPage() {
                           Total ($)
                         </span>
                         <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                          ${(subtotal * 1.18 - totalDiscount).toFixed(2)}
+                          ${(subtotal - totalDiscount).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -2380,10 +2820,10 @@ export default function POSPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600 dark:text-neutral-400">
-                    Tax (10%)
+                    Tax (0%)
                   </span>
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    ${(subtotal * 0.1).toFixed(0)}
+                    $0
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -2402,7 +2842,7 @@ export default function POSPage() {
                   Total
                 </span>
                 <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                  ${(subtotal * 1.1 + 15).toFixed(0)}
+                  ${(subtotal + 15).toFixed(0)}
                 </span>
               </div>
             </div>
@@ -2424,6 +2864,98 @@ export default function POSPage() {
                 Print
                     </button>
                   </div>
+          </div>
+        </div>
+      )}
+
+      {/* Take payment modal (Cash / Card) */}
+      {showTakePaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Take payment</h2>
+              <button
+                type="button"
+                onClick={closeTakePaymentModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+              >
+                <span className="text-2xl">×</span>
+              </button>
+            </div>
+            <form onSubmit={handleTakePaymentSubmit} className="p-4 space-y-4">
+              <p className="text-sm text-gray-600 dark:text-neutral-400">
+                Order total · Rs {total.toFixed(0)}
+              </p>
+              {paymentError && (
+                <p className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-2">Payment method</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("CASH")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === "CASH" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300"}`}
+                  >
+                    <Banknote className="w-4 h-4" /> Cash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("CARD")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === "CARD" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300"}`}
+                  >
+                    <CreditCard className="w-4 h-4" /> Card
+                  </button>
+                </div>
+              </div>
+              {paymentMethod === "CASH" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Bill total (Rs)</label>
+                    <div className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white">
+                      Rs {total.toFixed(0)}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Amount received (Rs) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      required={paymentMethod === "CASH"}
+                      value={amountReceived}
+                      onChange={(e) => setAmountReceived(e.target.value)}
+                      placeholder="e.g. 5000"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  {amountReceived !== "" && !isNaN(Number(amountReceived)) && Number(amountReceived) >= total && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Return to customer (Rs)</label>
+                      <div className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                        Rs {(Number(amountReceived) - total).toFixed(0)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeTakePaymentModal}
+                  className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={paymentLoading || (paymentMethod === "CASH" && (amountReceived === "" || Number(amountReceived) < total))}
+                  className="flex-1 px-3 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {paymentLoading ? "Processing…" : "Record payment"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
