@@ -23,6 +23,8 @@ import {
   getTables,
   getCustomers,
   createCustomer,
+  getBranch,
+  updateBranch,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import {
@@ -50,6 +52,8 @@ import {
   Percent,
   Tag,
   Sparkles,
+  Settings,
+  HelpCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -116,6 +120,18 @@ export default function POSPage() {
   
   // Print receipt modal
   const [showPrintModal, setShowPrintModal] = useState(false);
+
+  // POS optional fields visibility (per branch); not shown until loaded to avoid flash on reload
+  const [showTablePos, setShowTablePos] = useState(true);
+  const [showWaiterPos, setShowWaiterPos] = useState(true);
+  const [showCustomerPos, setShowCustomerPos] = useState(true);
+  const [posOptionsLoaded, setPosOptionsLoaded] = useState(false);
+  const [showPosTableSettingsModal, setShowPosTableSettingsModal] = useState(false);
+  const [posTableSettingsDraft, setPosTableSettingsDraft] = useState(true);
+  const [posWaiterSettingsDraft, setPosWaiterSettingsDraft] = useState(true);
+  const [posCustomerSettingsDraft, setPosCustomerSettingsDraft] = useState(true);
+  const [posTableSettingsSaving, setPosTableSettingsSaving] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   
   // Invoice modal
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -171,6 +187,37 @@ export default function POSPage() {
     return () =>
       window.removeEventListener("sidebar-toggle", handleSidebarToggle);
   }, [currentBranch]);
+
+  // Load POS options (table/waiter/customer visibility) for current branch; don't show until loaded to avoid flash
+  useEffect(() => {
+    if (!currentBranch?.id) {
+      setShowTablePos(true);
+      setShowWaiterPos(true);
+      setShowCustomerPos(true);
+      setPosOptionsLoaded(true);
+      return;
+    }
+    setPosOptionsLoaded(false);
+    let cancelled = false;
+    getBranch(currentBranch.id)
+      .then((b) => {
+        if (!cancelled) {
+          setShowTablePos(b?.showTablePos !== false);
+          setShowWaiterPos(b?.showWaiterPos !== false);
+          setShowCustomerPos(b?.showCustomerPos !== false);
+          setPosOptionsLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setShowTablePos(true);
+          setShowWaiterPos(true);
+          setShowCustomerPos(true);
+          setPosOptionsLoaded(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [currentBranch?.id]);
 
   useEffect(() => {
     setCurrentOrderIndex(0);
@@ -660,6 +707,19 @@ export default function POSPage() {
     };
   }, [filteredRecentOrders.length, orderColsCount]);
 
+  // When search is active, scroll the strip so the focused order card is fully in view (not half hidden)
+  useEffect(() => {
+    const hasSearch = recentOrderSearch.trim() !== "";
+    if (!hasSearch || filteredRecentOrders.length === 0) return;
+    const totalCards = filteredRecentOrders.length;
+    const idx = Math.max(0, Math.min(focusedOrderIndex, totalCards - 1));
+    const offset = totalCards > 0 ? (idx / totalCards) * 100 : 0;
+    orderStripOffsetRef.current = offset;
+    if (orderStripRef.current) {
+      orderStripRef.current.style.transform = `translateX(-${offset}%)`;
+    }
+  }, [recentOrderSearch, focusedOrderIndex, filteredRecentOrders.length]);
+
   // Clamp focused item index when filtered list shrinks
   useEffect(() => {
     if (filteredItems.length > 0 && focusedItemIndex >= filteredItems.length) {
@@ -957,6 +1017,7 @@ export default function POSPage() {
   }
 
   // Keyboard shortcuts: Ctrl/Cmd + Shift + M (menu search), O (order search), S (save), C (cash), D (card), B (menu bill), R (payment bill)
+  // Dependencies include cart so the handler always sees current cart (avoids "Cart is empty" when cart has items)
   useEffect(() => {
     const mod = (e) => e.ctrlKey || e.metaKey;
     const onKeyDown = (e) => {
@@ -993,6 +1054,23 @@ export default function POSPage() {
         printPaymentBill();
         return;
       }
+      if (e.shiftKey && (e.key === "E" || e.key === "e")) {
+        e.preventDefault();
+        setOrderType("DINE_IN");
+        return;
+      }
+      if (e.shiftKey && (e.key === "A" || e.key === "a")) {
+        e.preventDefault();
+        setOrderType("TAKEAWAY");
+        setTableName("");
+        return;
+      }
+      if (e.shiftKey && (e.key === "L" || e.key === "l")) {
+        e.preventDefault();
+        setOrderType("DELIVERY");
+        setTableName("");
+        return;
+      }
       if (e.key === "s" || e.key === "S") {
         e.preventDefault();
         if (editingOrderId) handleUpdateOrder();
@@ -1001,7 +1079,7 @@ export default function POSPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editingOrderId]);
+  }, [editingOrderId, cart]);
 
   async function loadDrafts() {
     setLoadingDrafts(true);
@@ -1868,8 +1946,8 @@ export default function POSPage() {
               </span>
           </div>
 
-            {/* Order Type Buttons */}
-            <div className="grid grid-cols-4 gap-2 mb-2">
+            {/* Order Type Buttons + Settings (beside Delivery) */}
+            <div className="flex gap-2 mb-2">
               {[
                 { type: "DINE_IN", icon: "🍽️", label: "Dine In" },
                 { type: "TAKEAWAY", icon: "📦", label: "Take" },
@@ -1881,7 +1959,7 @@ export default function POSPage() {
                     setOrderType(option.type);
                     if (option.type !== "DINE_IN") setTableName("");
                   }}
-                  className={`px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
                     orderType === option.type
                       ? "bg-primary text-white"
                       : "bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400"
@@ -1891,10 +1969,25 @@ export default function POSPage() {
                   {option.label}
                 </button>
               ))}
+              {currentBranch?.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPosTableSettingsDraft(showTablePos);
+                    setPosWaiterSettingsDraft(showWaiterPos);
+                    setPosCustomerSettingsDraft(showCustomerPos);
+                    setShowPosTableSettingsModal(true);
+                  }}
+                  className="p-2 rounded-lg bg-gray-100 dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:text-gray-700 hover:bg-gray-200 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 transition-colors flex-shrink-0"
+                  title="POS options (table, waiter, customer)"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            {/* Table selection (optional, only for DINE_IN) */}
-            {orderType === "DINE_IN" && (
+            {/* Table selection (optional, only for DINE_IN; hidden until options loaded to avoid flash) */}
+            {orderType === "DINE_IN" && posOptionsLoaded && showTablePos && (
               <div className="mb-2">
                 <label className="block text-xs font-semibold text-gray-600 dark:text-neutral-400 mb-1">Table (optional)</label>
                 <select
@@ -1913,20 +2006,26 @@ export default function POSPage() {
               </div>
             )}
 
-            {/* Waiter & Customer Selection */}
-            <div className="grid grid-cols-2 gap-2">
-              <select className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white">
-                <option>Waiter</option>
-              </select>
-              <button
-                type="button"
-                onClick={openCustomerModal}
-                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white flex items-center justify-between hover:border-gray-300 dark:hover:border-neutral-600"
-              >
-                <span>{customerName ? `${customerName}${customerPhone ? ` • ${customerPhone}` : ""}` : "Select Customer"}</span>
-                <Plus className="w-3.5 h-3.5 flex-shrink-0" />
-              </button>
-            </div>
+            {/* Waiter & Customer Selection (hidden until options loaded to avoid flash) */}
+            {posOptionsLoaded && (showWaiterPos || showCustomerPos) && (
+              <div className={`grid gap-2 ${showWaiterPos && showCustomerPos ? "grid-cols-2" : "grid-cols-1"} mb-2`}>
+                {showWaiterPos && (
+                  <select className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white">
+                    <option>Waiter</option>
+                  </select>
+                )}
+                {showCustomerPos && (
+                  <button
+                    type="button"
+                    onClick={openCustomerModal}
+                    className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white flex items-center justify-between hover:border-gray-300 dark:hover:border-neutral-600"
+                  >
+                    <span>{customerName ? `${customerName}${customerPhone ? ` • ${customerPhone}` : ""}` : "Select Customer"}</span>
+                    <Plus className="w-3.5 h-3.5 flex-shrink-0" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Ordered Items Header */}
@@ -3151,6 +3250,95 @@ export default function POSPage() {
         </div>
       )}
 
+      {/* POS options modal (table, waiter, customer visibility per branch) */}
+      {showPosTableSettingsModal && currentBranch?.id && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">POS options</h2>
+              <button
+                type="button"
+                onClick={() => setShowPosTableSettingsModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+              >
+                <span className="text-2xl">×</span>
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-gray-600 dark:text-neutral-400">
+                Show or hide these fields for this branch in POS.
+              </p>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={posTableSettingsDraft}
+                  onChange={(e) => setPosTableSettingsDraft(e.target.checked)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  Show table (optional) section
+                </span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={posWaiterSettingsDraft}
+                  onChange={(e) => setPosWaiterSettingsDraft(e.target.checked)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  Show Waiter field
+                </span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={posCustomerSettingsDraft}
+                  onChange={(e) => setPosCustomerSettingsDraft(e.target.checked)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  Show Select Customer field
+                </span>
+              </label>
+            </div>
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-neutral-800 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPosTableSettingsModal(false)}
+                className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={posTableSettingsSaving}
+                onClick={() => {
+                  setPosTableSettingsSaving(true);
+                  updateBranch(currentBranch.id, {
+                    showTablePos: posTableSettingsDraft,
+                    showWaiterPos: posWaiterSettingsDraft,
+                    showCustomerPos: posCustomerSettingsDraft,
+                  })
+                    .then(() => {
+                      setShowTablePos(posTableSettingsDraft);
+                      setShowWaiterPos(posWaiterSettingsDraft);
+                      setShowCustomerPos(posCustomerSettingsDraft);
+                      toast.success("POS options saved");
+                      setShowPosTableSettingsModal(false);
+                    })
+                    .catch((err) => toast.error(err?.message || "Failed to update"))
+                    .finally(() => setPosTableSettingsSaving(false));
+                }}
+                className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+              >
+                {posTableSettingsSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Select / Add Customer Modal (search by phone, quick add if not found) */}
       {showCustomerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -3274,6 +3462,90 @@ export default function POSPage() {
                   </>
                 )}
               </>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating help button - bottom right */}
+      <button
+        type="button"
+        onClick={() => setShowShortcutsModal(true)}
+        className="fixed bottom-3 right-3 z-40 p-0.5 rounded-full bg-primary text-white shadow-lg hover:bg-primary/90 hover:shadow-xl transition-all flex items-center justify-center"
+        title="Keyboard shortcuts"
+      >
+        <HelpCircle className="w-5 h-5" />
+      </button>
+
+      {/* Keyboard shortcuts info modal */}
+      {showShortcutsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Keyboard shortcuts</h2>
+              <button
+                type="button"
+                onClick={() => setShowShortcutsModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+              >
+                <span className="text-2xl">×</span>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 space-y-3 text-sm">
+              <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
+                Use Ctrl (Windows/Linux) or Cmd (Mac) + Shift + key.
+              </p>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Focus menu search</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+M</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Focus order search</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+O</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Save / Place order</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+S</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Payment by Cash</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+C</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Payment by Card</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+D</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Print menu bill</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+B</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Print payment bill</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+R</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Order type: Dine In</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+E</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Order type: Take</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+A</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Order type: Delivery</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+L</kbd>
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setShowShortcutsModal(false)}
+                className="w-full px-3 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
