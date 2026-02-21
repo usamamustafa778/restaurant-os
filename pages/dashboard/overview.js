@@ -280,9 +280,24 @@ export default function OverviewPage() {
     totalOrders: 0,
     topItems: [],
     dailySales: [],
+    hourlySales: null,
+    paymentDistribution: {},
   });
-  const [reportPeriod, setReportPeriod] = useState("monthly"); // "today" | "monthly" – applies to full page
+  const [reportPeriod, setReportPeriod] = useState("today"); // "yesterday" | "today" | "monthly" – default today
   const [periodLoading, setPeriodLoading] = useState(false);
+
+  // Currency note counter (denomination -> quantity)
+  const CURRENCY_NOTES = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
+  const [currencyQuantities, setCurrencyQuantities] = useState(() =>
+    Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""]))
+  );
+  const currencyTotal = CURRENCY_NOTES.reduce(
+    (sum, note) => sum + (Number(currencyQuantities[note]) || 0) * note,
+    0
+  );
+  function setCurrencyQty(note, value) {
+    setCurrencyQuantities((prev) => ({ ...prev, [note]: value }));
+  }
 
   useEffect(() => {
     (async () => {
@@ -302,7 +317,7 @@ export default function OverviewPage() {
     })();
   }, []);
 
-  // Fetch report from backend for the selected period (today or current month)
+  // Fetch report from backend for the selected period (yesterday, today, or current month)
   useEffect(() => {
     let cancelled = false;
     setPeriodLoading(true);
@@ -310,7 +325,15 @@ export default function OverviewPage() {
       const now = new Date();
       let fromStr;
       let toStr;
-      if (reportPeriod === "today") {
+      if (reportPeriod === "yesterday") {
+        const startYesterday = new Date(now);
+        startYesterday.setDate(startYesterday.getDate() - 1);
+        startYesterday.setHours(0, 0, 0, 0);
+        const endYesterday = new Date(startYesterday);
+        endYesterday.setHours(23, 59, 59, 999);
+        fromStr = startYesterday.toISOString();
+        toStr = endYesterday.toISOString();
+      } else if (reportPeriod === "today") {
         fromStr = now.toISOString().slice(0, 10);
         const tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -329,6 +352,8 @@ export default function OverviewPage() {
             totalOrders: report.totalOrders ?? 0,
             topItems: report.topItems ?? [],
             dailySales: report.dailySales ?? [],
+            hourlySales: report.hourlySales ?? null,
+            paymentDistribution: report.paymentDistribution ?? {},
           });
         }
       } catch (err) {
@@ -341,7 +366,9 @@ export default function OverviewPage() {
   }, [reportPeriod]);
 
   const salesTypeSegments = buildSegments(stats.salesTypeDistribution, typeLabels, typeColors);
-  const paymentSegments = buildSegments(stats.paymentDistribution, paymentLabels, paymentColors);
+  const periodPayment = periodReport.paymentDistribution && Object.keys(periodReport.paymentDistribution).length > 0 ? periodReport.paymentDistribution : null;
+  const paymentSegments = buildSegments(periodPayment || stats.paymentDistribution, paymentLabels, paymentColors);
+  const paymentAmounts = !!periodPayment; // period report sends amounts (Rs); overview stats send counts
   const sourceSegments = buildSegments(stats.sourceDistribution, sourceLabels, sourceColors);
   const topProductSegments = (stats.topProducts || []).slice(0, 5).map((p, i) => ({
     label: p.name,
@@ -355,9 +382,15 @@ export default function OverviewPage() {
   }));
 
   const periodSubtitle =
-    reportPeriod === "today"
-      ? new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
-      : new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    reportPeriod === "yesterday"
+      ? (() => {
+          const d = new Date();
+          d.setDate(d.getDate() - 1);
+          return "Yesterday, " + d.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+        })()
+      : reportPeriod === "today"
+        ? new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
+        : new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" });
 
   const now = new Date();
   const todayDayOfMonth = now.getDate();
@@ -398,6 +431,18 @@ export default function OverviewPage() {
         <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-1 shadow-sm">
           <button
             type="button"
+            onClick={() => setReportPeriod("yesterday")}
+            disabled={periodLoading}
+            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
+              reportPeriod === "yesterday"
+                ? "bg-primary text-white shadow-md"
+                : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-neutral-800"
+            }`}
+          >
+            Yesterday
+          </button>
+          <button
+            type="button"
             onClick={() => setReportPeriod("today")}
             disabled={periodLoading}
             className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
@@ -418,7 +463,7 @@ export default function OverviewPage() {
                 : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-neutral-800"
             }`}
           >
-            Monthly
+            Month
           </button>
         </div>
         {periodLoading && (
@@ -508,7 +553,9 @@ export default function OverviewPage() {
               <TrendingUp className="w-7 h-7 text-white" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "monthly" ? "This Month Profit" : "Today's Profit"}</p>
+              <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">
+                {reportPeriod === "yesterday" ? "Yesterday's Profit" : reportPeriod === "monthly" ? "This Month Profit" : "Today's Profit"}
+              </p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalProfit ?? 0).toLocaleString()}</p>
             </div>
           </div>
@@ -532,6 +579,14 @@ export default function OverviewPage() {
             ) : (
               <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data yet this month</p>
             )
+          ) : reportPeriod === "yesterday" ? (
+            periodReport.hourlySales ? (
+              <DailySalesLineChart period="today" dailySales={null} hourlySales={periodReport.hourlySales} remainingHoursStart={24} />
+            ) : (periodReport.dailySales || []).length > 0 ? (
+              <DailySalesLineChart period="monthly" dailySales={(periodReport.dailySales || []).map((d) => ({ day: d.day, sales: d.sales, isRemaining: false }))} hourlySales={null} remainingHoursStart={null} />
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data for yesterday</p>
+            )
           ) : (
             <DailySalesLineChart period="today" dailySales={null} hourlySales={fullDayHourlySales} remainingHoursStart={remainingHoursStart} />
           )}
@@ -544,7 +599,7 @@ export default function OverviewPage() {
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-base font-bold text-gray-900 dark:text-white">🔥 Top Selling Items</h3>
-            <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "monthly" ? "Monthly" : "Today"}</span>
+            <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "Monthly" : "Today"}</span>
           </div>
           {displayTopProductSegments.length > 0 ? (
             <div className="space-y-4">
@@ -558,7 +613,7 @@ export default function OverviewPage() {
                       {displayTopProductSegments[0]?.label || "No data"}
                     </p>
                     <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium">
-                      {displayTopProductSegments[0]?.value || 0} {reportPeriod === "monthly" ? "sold" : "orders"}
+                      {displayTopProductSegments[0]?.value || 0} {reportPeriod === "monthly" ? "sold" : reportPeriod === "yesterday" ? "sold" : "orders"}
                     </p>
                   </div>
                 </div>
@@ -649,18 +704,29 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Payment Distribution */}
+        {/* Payment Distribution (filtered by report period: Yesterday / Today / Month) */}
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <h3 className="text-base font-bold text-gray-900 dark:text-white mb-5">💳 Payment Methods</h3>
+          <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">💳 Payment Methods</h3>
+          <p className="text-xs text-gray-500 dark:text-neutral-400 mb-5">
+            {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "today" ? "Today" : "This month"}
+          </p>
           <div className="space-y-4">
             {paymentSegments.length > 0 ? paymentSegments.map(s => {
               const total = paymentSegments.reduce((sum, seg) => sum + seg.value, 0);
-              const percent = ((s.value / total) * 100).toFixed(0);
+              const percent = total > 0 ? ((s.value / total) * 100).toFixed(0) : "0";
+              const value = Math.round(Number(s.value) || 0);
               return (
                 <div key={s.label}>
                   <div className="flex items-center justify-between text-sm mb-2">
                     <span className="font-semibold text-gray-700 dark:text-neutral-300">{s.label}</span>
-                    <span className="font-bold text-gray-900 dark:text-white">{percent}%</span>
+                    <span className="flex items-center gap-2">
+                      {paymentAmounts ? (
+                        <span className="font-bold text-primary">Rs {value.toLocaleString()}</span>
+                      ) : (
+                        <span className="font-medium text-gray-600 dark:text-neutral-400">{value} orders</span>
+                      )}
+                      <span className="font-bold text-gray-900 dark:text-white">{percent}%</span>
+                    </span>
                   </div>
                   <div className="w-full h-3 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden shadow-inner">
                     <div 
@@ -693,7 +759,7 @@ export default function OverviewPage() {
                 <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
               </div>
               <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-                {reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
+                {reportPeriod === "yesterday" ? "Yesterday's performance" : reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -710,7 +776,7 @@ export default function OverviewPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium mb-0.5">
-                  {reportPeriod === "monthly" ? "This Month" : "Today"}
+                  {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "This Month" : "Today"}
                 </p>
                 <span className="text-3xl font-bold text-gray-900 dark:text-white">
                   Rs {(periodReport.totalRevenue ?? 0).toLocaleString()}
@@ -724,6 +790,13 @@ export default function OverviewPage() {
               <div className="flex-1 flex flex-col items-center gap-2">
                 <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
                 <span className="text-xs font-semibold mt-1 text-gray-600 dark:text-neutral-400">This month</span>
+              </div>
+            </div>
+          ) : reportPeriod === "yesterday" ? (
+            <div className="flex items-end gap-3 h-40 mt-4 px-2">
+              <div className="flex-1 flex flex-col items-center gap-2">
+                <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
+                <span className="text-xs font-semibold mt-1 text-gray-600 dark:text-neutral-400">Yesterday</span>
               </div>
             </div>
           ) : (
@@ -773,7 +846,7 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {/* Products performance table - Premium design */}
+      {/* Products performance table - Premium design (filtered by report period: Yesterday / Today / Month) */}
       <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
         <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
           <div className="flex items-center gap-3 mb-1">
@@ -782,7 +855,13 @@ export default function OverviewPage() {
             </div>
             <div>
               <h3 className="text-base font-bold text-gray-900 dark:text-white">Products Performance</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">Items sold this month based on completed orders</p>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">
+                {reportPeriod === "yesterday"
+                  ? "Items sold yesterday based on completed orders"
+                  : reportPeriod === "today"
+                    ? "Items sold today based on completed orders"
+                    : "Items sold this month based on completed orders"}
+              </p>
             </div>
           </div>
         </div>
@@ -797,21 +876,21 @@ export default function OverviewPage() {
               </tr>
             </thead>
             <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
-              {(stats.productsPerformance || []).length > 0 ? (
-                stats.productsPerformance.map((p, idx) => (
+              {(periodReport.topItems || []).length > 0 ? (
+                periodReport.topItems.map((p, idx) => (
                   <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
                     <td className="py-4 px-6 font-bold text-gray-900 dark:text-white">{p.name}</td>
                     <td className="py-4 px-6">
                       <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs font-semibold">
-                        {p.category}
+                        {p.category ?? "—"}
                       </span>
                     </td>
                     <td className="py-4 px-6 text-right">
                       <span className="inline-flex items-center justify-center min-w-[60px] px-3 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold">
-                        {p.qtySold}
+                        {p.quantity ?? 0}
                       </span>
                     </td>
-                    <td className="py-4 px-6 text-right font-bold text-primary text-base">Rs {p.priceSold.toLocaleString()}</td>
+                    <td className="py-4 px-6 text-right font-bold text-primary text-base">Rs {(p.revenue ?? 0).toLocaleString()}</td>
                   </tr>
                 ))
               ) : (
@@ -821,7 +900,9 @@ export default function OverviewPage() {
                       <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
                         <Package className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
                       </div>
-                      <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No sales data yet today</p>
+                      <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">
+                        No sales data yet {reportPeriod === "yesterday" ? "yesterday" : reportPeriod === "today" ? "today" : "this month"}
+                      </p>
                       <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Products will appear here once orders are completed</p>
                     </div>
                   </td>
@@ -831,6 +912,69 @@ export default function OverviewPage() {
           </table>
         </div>
           </div>
+
+      {/* Currency note counter - bottom section */}
+      <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all mt-6">
+        <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+              <DollarSign className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">Currency counter</h3>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">Enter quantity of each note to get total amount (Rs)</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm max-w-2xl">
+              <thead className="bg-gray-50 dark:bg-neutral-900/50">
+                <tr>
+                  <th className="py-3 px-4 text-left font-bold text-gray-700 dark:text-neutral-300">Note (Rs)</th>
+                  <th className="py-3 px-4 text-right font-bold text-gray-700 dark:text-neutral-300">Quantity</th>
+                  <th className="py-3 px-4 text-right font-bold text-gray-700 dark:text-neutral-300">Amount (Rs)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
+                {CURRENCY_NOTES.map((note) => {
+                  const qty = Number(currencyQuantities[note]) || 0;
+                  const amount = qty * note;
+                  return (
+                    <tr key={note} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30">
+                      <td className="py-3 px-4 font-semibold text-gray-900 dark:text-white">{note.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={currencyQuantities[note]}
+                          onChange={(e) => setCurrencyQty(note, e.target.value.replace(/\D/g, ""))}
+                          placeholder="0"
+                          className="w-24 text-right px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+                        />
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold text-primary">
+                        Rs {amount.toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot className="bg-gray-100 dark:bg-neutral-800/50 border-t-2 border-gray-200 dark:border-neutral-700">
+                <tr>
+                  <td className="py-4 px-4 font-bold text-gray-900 dark:text-white" colSpan={2}>
+                    Total
+                  </td>
+                  <td className="py-4 px-4 text-right text-lg font-bold text-primary">
+                    Rs {currencyTotal.toLocaleString()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
         </>
       )}
     </AdminLayout>
