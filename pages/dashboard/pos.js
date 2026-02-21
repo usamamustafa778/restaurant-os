@@ -73,6 +73,8 @@ export default function POSPage() {
   const orderStripRafRef = useRef(null);
   const orderStripLastTimeRef = useRef(null);
   const orderStripPausedRef = useRef(false);
+  const menuSearchInputRef = useRef(null);
+  const orderSearchInputRef = useRef(null);
   const [gridCols, setGridCols] = useState(4);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -392,7 +394,7 @@ export default function POSPage() {
     setPaymentError("");
     const toastId = toast.loading("Processing...");
     try {
-      await createPosOrder({
+      const result = await createPosOrder({
         items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
         orderType,
         paymentMethod,
@@ -412,6 +414,17 @@ export default function POSPage() {
         ...(paymentMethod === "CASH" && amountReceived !== "" ? { amountReceived: Number(amountReceived) } : {}),
       });
       toast.success("Order placed and payment recorded", { id: toastId });
+      const orderNum = result?.orderNumber ?? result?.id ?? "";
+      const received = paymentMethod === "CASH" ? Number(amountReceived) : total;
+      const returned = paymentMethod === "CASH" ? Math.max(0, received - total) : 0;
+      printPaymentBill({
+        orderNumber: orderNum,
+        id: orderNum,
+        paymentMethod,
+        paymentAmountReceived: received,
+        paymentAmountReturned: returned,
+        createdAt: new Date().toISOString(),
+      });
       closeTakePaymentModal();
       setCart([]);
       setCustomerName("");
@@ -813,7 +826,183 @@ export default function POSPage() {
     }
   };
 
-  // DRAFT AND TRANSACTION MANAGEMENT
+  // Build order-like object from current cart for printing (optionally with payment details)
+  function buildOrderLikeFromCart(overrides = {}) {
+    const typeLabel =
+      orderType === "DINE_IN"
+        ? tableName
+          ? `Dine In (${tableName})`
+          : "dine-in"
+        : orderType === "TAKEAWAY"
+          ? "takeaway"
+          : "delivery";
+    return {
+      id: overrides.orderNumber ?? overrides.id ?? `POS-${Date.now()}`,
+      orderNumber: overrides.orderNumber ?? `POS-${Date.now()}`,
+      createdAt: overrides.createdAt ?? new Date().toISOString(),
+      customerName: customerName.trim() || "Walk-in",
+      type: typeLabel,
+      paymentMethod: overrides.paymentMethod ?? "To be paid",
+      paymentAmountReceived: overrides.paymentAmountReceived ?? null,
+      paymentAmountReturned: overrides.paymentAmountReturned ?? null,
+      discountAmount: totalDiscount,
+      subtotal,
+      total,
+      items: cart.map((it) => ({
+        name: it.name,
+        qty: it.quantity,
+        unitPrice: it.price,
+      })),
+      ...overrides,
+    };
+  }
+
+  // Open print window for Customer Bill (menu bill) or Order Receipt (payment bill)
+  function posPrintBill(orderLike, mode) {
+    const win = window.open("", "_blank", "width=360,height=600");
+    if (!win) {
+      toast.error("Allow popups to print");
+      return;
+    }
+    const itemsHtml = (orderLike.items || [])
+      .map(
+        (it) =>
+          `<tr>
+          <td style="padding:4px 0;border-bottom:1px dashed #ddd">${(it.name || "").replace(/</g, "&lt;")}</td>
+          <td style="padding:4px 8px;text-align:center;border-bottom:1px dashed #ddd">${it.qty ?? 1}</td>
+          <td style="padding:4px 0;text-align:right;border-bottom:1px dashed #ddd">Rs ${((it.unitPrice || 0) * (it.qty || 1)).toFixed(0)}</td>
+        </tr>`
+      )
+      .join("");
+    const discount = orderLike.discountAmount || 0;
+    const hasPaymentDetails =
+      orderLike.paymentAmountReceived != null && orderLike.paymentAmountReceived > 0;
+    const isReceipt = mode === "receipt" || hasPaymentDetails;
+    const headerLabel = isReceipt ? "Order Receipt" : "Customer Bill";
+    const paymentLabel =
+      orderLike.paymentMethod ||
+      (isReceipt ? "Cash" : "To be paid");
+    const orderId = orderLike.orderNumber || orderLike.id || "";
+    const returnAmount =
+      orderLike.paymentAmountReturned != null
+        ? Number(orderLike.paymentAmountReturned)
+        : hasPaymentDetails && orderLike.paymentAmountReceived != null
+          ? Math.max(0, Number(orderLike.paymentAmountReceived) - (orderLike.total || 0))
+          : 0;
+    const paymentExtra =
+      isReceipt && hasPaymentDetails
+        ? `<div><strong>Amount received:</strong> Rs ${Number(orderLike.paymentAmountReceived).toFixed(0)}</div><div><strong>Return:</strong> Rs ${returnAmount.toFixed(0)}</div>`
+        : "";
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>${isReceipt ? "Receipt" : "Bill"} – ${orderId}</title>
+  <style>
+    body { font-family: 'Courier New', monospace; margin: 0; padding: 16px; font-size: 13px; color: #222; }
+    .center { text-align: center; }
+    hr { border: none; border-top: 1px dashed #999; margin: 10px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    .total-row td { font-weight: bold; padding-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="center" style="font-size:16px;font-weight:bold;margin-bottom:4px;">Eats Desk</div>
+  <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">${headerLabel}</div>
+  <hr/>
+  <div><strong>Order:</strong> ${String(orderId).replace(/^ORD-/, "")}</div>
+  <div><strong>Date:</strong> ${new Date(orderLike.createdAt).toLocaleString()}</div>
+  <div><strong>Customer:</strong> ${(orderLike.customerName || "Walk-in").replace(/</g, "&lt;")}</div>
+  <div><strong>Type:</strong> ${(orderLike.type || "dine-in").replace(/</g, "&lt;")}</div>
+  <div><strong>Payment:</strong> ${paymentLabel}</div>
+  ${paymentExtra}
+  <hr/>
+  <table>
+    <thead>
+      <tr style="font-weight:bold;border-bottom:1px solid #999">
+        <td style="padding:4px 0">Item</td>
+        <td style="padding:4px 8px;text-align:center">Qty</td>
+        <td style="padding:4px 0;text-align:right">Amount</td>
+      </tr>
+    </thead>
+    <tbody>${itemsHtml}</tbody>
+  </table>
+  <hr/>
+  <table>
+    <tr><td>Subtotal</td><td style="text-align:right">Rs ${(orderLike.subtotal || orderLike.total || 0).toFixed(0)}</td></tr>
+    ${discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">- Rs ${Number(discount).toFixed(0)}</td></tr>` : ""}
+    <tr class="total-row" style="font-size:15px"><td>Grand Total</td><td style="text-align:right">Rs ${(orderLike.total || 0).toFixed(0)}</td></tr>
+  </table>
+  <hr/>
+  <div class="center" style="font-size:11px;color:#888;margin-top:12px;">Thank you for your order!</div>
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`);
+    win.document.close();
+  }
+
+  function printMenuBill() {
+    if (cart.length === 0) {
+      toast.error("Cart is empty");
+      return;
+    }
+    posPrintBill(buildOrderLikeFromCart(), "bill");
+  }
+
+  function printPaymentBill(overrides = {}) {
+    if (cart.length === 0) {
+      toast.error("Cart is empty");
+      return;
+    }
+    posPrintBill(buildOrderLikeFromCart(overrides), "receipt");
+  }
+
+  // Keyboard shortcuts: Ctrl/Cmd + Shift + M (menu search), O (order search), S (save), C (cash), D (card), B (menu bill), R (payment bill)
+  useEffect(() => {
+    const mod = (e) => e.ctrlKey || e.metaKey;
+    const onKeyDown = (e) => {
+      if (!mod(e)) return;
+      if (e.shiftKey && (e.key === "M" || e.key === "m")) {
+        e.preventDefault();
+        menuSearchInputRef.current?.focus();
+        return;
+      }
+      if (e.shiftKey && (e.key === "O" || e.key === "o")) {
+        e.preventDefault();
+        orderSearchInputRef.current?.focus();
+        return;
+      }
+      if (e.shiftKey && (e.key === "C" || e.key === "c")) {
+        e.preventDefault();
+        if (cart.length > 0) openTakePaymentModal("CASH");
+        else toast.error("Cart is empty");
+        return;
+      }
+      if (e.shiftKey && (e.key === "D" || e.key === "d")) {
+        e.preventDefault();
+        if (cart.length > 0) openTakePaymentModal("CARD");
+        else toast.error("Cart is empty");
+        return;
+      }
+      if (e.shiftKey && (e.key === "B" || e.key === "b")) {
+        e.preventDefault();
+        printMenuBill();
+        return;
+      }
+      if (e.shiftKey && (e.key === "R" || e.key === "r")) {
+        e.preventDefault();
+        printPaymentBill();
+        return;
+      }
+      if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        if (editingOrderId) handleUpdateOrder();
+        else handleCheckout();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editingOrderId]);
+
   async function loadDrafts() {
     setLoadingDrafts(true);
     try {
@@ -1113,6 +1302,7 @@ export default function POSPage() {
             {/* Search by Order ID - same style as menu search */}
             <div className="relative mb-2">
               <input
+                ref={orderSearchInputRef}
                 type="text"
                 placeholder="Search by order ID..."
                 value={recentOrderSearch}
@@ -1379,6 +1569,7 @@ export default function POSPage() {
               {/* Search Bar - Two-step: quantity then item name, Enter adds first match to cart */}
               <div className="relative">
                 <input
+                  ref={menuSearchInputRef}
                   type={searchStep === "quantity" ? "number" : "text"}
                   inputMode={searchStep === "quantity" ? "numeric" : "text"}
                   placeholder={
