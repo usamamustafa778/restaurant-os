@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getSubscriptionStatus,
   submitSubscriptionRequest,
   updateSubscriptionScreenshot,
+  deleteSubscriptionRequest,
   getSubscriptionHistory,
   getPaymentMethods,
   uploadImage,
@@ -26,6 +28,8 @@ import {
   Copy,
   Check,
   Gift,
+  X,
+  Trash2,
 } from "lucide-react";
 
 const PLANS = [
@@ -190,6 +194,9 @@ export default function SubscriptionPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
   const [reuploadingId, setReuploadingId] = useState(null);
+  const [deletingScreenshotId, setDeletingScreenshotId] = useState(null);
+  const [portalReady, setPortalReady] = useState(false);
+  useEffect(() => setPortalReady(true), []);
 
   const loadData = useCallback(async () => {
     try {
@@ -272,6 +279,19 @@ export default function SubscriptionPage() {
       /* ignore */
     } finally {
       setReuploadingId(null);
+    }
+  };
+
+  const handleDeleteRequest = async (requestId) => {
+    if (!confirm("Remove this pending request? You can submit a new subscription request after that.")) return;
+    try {
+      setDeletingScreenshotId(requestId);
+      await deleteSubscriptionRequest(requestId);
+      loadData();
+    } catch {
+      /* ignore */
+    } finally {
+      setDeletingScreenshotId(null);
     }
   };
 
@@ -435,8 +455,13 @@ export default function SubscriptionPage() {
                 <button
                   key={plan.key}
                   onClick={() => {
+                    if (hasPending) return;
                     setSelectedPlan(isSelected ? null : plan.key);
                     setSubmitMsg(null);
+                    if (!isSelected) {
+                      setScreenshotFile(null);
+                      setScreenshotPreview(null);
+                    }
                   }}
                   disabled={hasPending}
                   className={`
@@ -538,26 +563,77 @@ export default function SubscriptionPage() {
           )}
         </div>
 
-        {/* Payment Method Tabs + Upload & Submit */}
-        {selectedPlan && !hasPending && (
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 p-6 space-y-6 shadow-lg">
+        {/* Payment Modal - portaled to body so overlay covers full viewport (no top gap) */}
+        {selectedPlan && !hasPending && (() => {
+          const modal = (
+            <>
+              <div
+                className="fixed inset-0 bg-black/50 dark:bg-black/60 z-40 backdrop-blur-sm"
+                aria-hidden
+                onClick={() => {
+                  setSelectedPlan(null);
+                  setScreenshotFile(null);
+                  setScreenshotPreview(null);
+                  setSubmitMsg(null);
+                }}
+              />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <div
+                className="bg-white dark:bg-neutral-950 rounded-xl border-2 border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-lg max-h-[95vh] flex flex-col pointer-events-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex-shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+                      {(() => {
+                        const plan = PLANS.find((p) => p.key === selectedPlan);
+                        const Icon = plan?.icon || CreditCard;
+                        return <Icon className="w-4 h-4 text-white" />;
+                      })()}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
+                        {PLANS.find((p) => p.key === selectedPlan)?.label} — Payment
+                      </h3>
+                      <p className="text-xs text-gray-600 dark:text-neutral-400">
+                        {PLANS.find((p) => p.key === selectedPlan)?.price}
+                        {PLANS.find((p) => p.key === selectedPlan)?.priceSubtitle
+                          ? ` · ${PLANS.find((p) => p.key === selectedPlan)?.priceSubtitle}`
+                          : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlan(null);
+                      setScreenshotFile(null);
+                      setScreenshotPreview(null);
+                      setSubmitMsg(null);
+                    }}
+                    className="p-1.5 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 dark:text-neutral-400 dark:hover:text-white transition-colors flex-shrink-0"
+                    aria-label="Close"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0">
             {/* Payment Method Tabs */}
             {paymentMethods.length > 0 && (
               <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                  <Wallet className="w-6 h-6" /> Select Payment Method
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-1.5">
+                  <Wallet className="w-4 h-4" /> Select Payment Method
                 </h3>
-                {/* Tabs */}
-                <div className="flex gap-3 overflow-x-auto pb-1">
+                <div className="flex gap-2 overflow-x-auto pb-0.5">
                   {paymentMethods.map((pm) => (
                     <button
                       key={pm.id}
                       onClick={() => setSelectedPaymentMethod(pm.id)}
                       className={`
-                        px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0
+                        px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0
                         ${
                           selectedPaymentMethod === pm.id
-                            ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/30"
+                            ? "bg-gradient-to-r from-primary to-secondary text-white shadow-md shadow-primary/20"
                             : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
                         }
                       `}
@@ -574,53 +650,52 @@ export default function SubscriptionPage() {
                   );
                   if (!activePm) return null;
                   return (
-                    <div className="mt-5 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-xl p-5 border-2 border-primary/20 shadow-inner">
-                      <p className="text-sm font-bold uppercase tracking-wider text-primary mb-4 flex items-center gap-2">
-                        <Wallet className="w-4 h-4" />
+                    <div className="mt-3 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-lg p-3 border border-primary/20">
+                      <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2 flex items-center gap-1.5">
+                        <Wallet className="w-3.5 h-3.5" />
                         {activePm.name} Account Details
                       </p>
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         {activePm.fields.map((f, i) => {
                           const fKey = `${activePm.id}-${i}`;
                           return (
                             <div
                               key={i}
-                              className="flex items-center justify-between gap-3 bg-white dark:bg-neutral-900 rounded-xl px-4 py-3.5 border-2 border-gray-200 dark:border-neutral-700 shadow-sm"
+                              className="flex items-center justify-between gap-2 bg-white dark:bg-neutral-900 rounded-lg px-3 py-2 border border-gray-200 dark:border-neutral-700"
                             >
                               <div className="min-w-0">
-                                <span className="text-xs text-gray-500 dark:text-neutral-500 block font-semibold mb-1">
+                                <span className="text-xs text-gray-500 dark:text-neutral-500 block font-semibold mb-0.5">
                                   {f.label}
                                 </span>
-                                <span className="text-base font-bold text-gray-900 dark:text-white break-all">
+                                <span className="text-sm font-bold text-gray-900 dark:text-white break-all">
                                   {f.value}
                                 </span>
                               </div>
                               <button
                                 onClick={() => handleCopy(f.value, fKey)}
-                                className="flex-shrink-0 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
+                                className="flex-shrink-0 p-1.5 rounded hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
                                 title="Copy"
                               >
                                 {copiedField === fKey ? (
-                                  <Check className="w-5 h-5 text-emerald-500" />
+                                  <Check className="w-4 h-4 text-emerald-500" />
                                 ) : (
-                                  <Copy className="w-5 h-5" />
+                                  <Copy className="w-4 h-4" />
                                 )}
                               </button>
                             </div>
                           );
                         })}
                       </div>
-                      <div className="mt-4 p-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-300">
+                      <div className="mt-2.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
+                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-300">
                           💰 Transfer{" "}
-                          <strong className="text-lg">
+                          <strong>
                             {PLANS.find((p) => p.key === selectedPlan)?.price}
                           </strong>{" "}
                           to the account above
                         </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                          Then upload payment screenshot below to activate your
-                          subscription
+                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">
+                          Then upload payment screenshot below to activate your subscription
                         </p>
                       </div>
                     </div>
@@ -631,22 +706,22 @@ export default function SubscriptionPage() {
 
             {/* Upload Section */}
             <div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                <Upload className="w-5 h-5" />
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
+                <Upload className="w-4 h-4" />
                 Upload Payment Screenshot
               </h3>
-              <p className="text-sm text-gray-600 dark:text-neutral-400">
+              <p className="text-xs text-gray-600 dark:text-neutral-400">
                 {paymentMethods.length > 0
                   ? "After transferring, upload a screenshot of the payment confirmation"
                   : `Transfer the amount for ${PLANS.find((p) => p.key === selectedPlan)?.label} and upload a screenshot`}
               </p>
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
               <label className="w-full cursor-pointer">
                 <div
                   className={`
-                  border-2 border-dashed rounded-2xl p-8 text-center transition-all hover:shadow-lg
+                  border-2 border-dashed rounded-xl p-4 text-center transition-all hover:shadow-md
                   ${
                     screenshotPreview
                       ? "border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10"
@@ -655,28 +730,28 @@ export default function SubscriptionPage() {
                 `}
                 >
                   {screenshotPreview ? (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={screenshotPreview}
                         alt="Screenshot preview"
-                        className="max-h-64 mx-auto rounded-xl shadow-xl border-2 border-emerald-200 dark:border-emerald-500/30"
+                        className="max-h-40 mx-auto rounded-lg shadow border border-emerald-200 dark:border-emerald-500/30"
                       />
-                      <div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
-                        <CheckCircle2 className="w-4 h-4" />
+                      <div className="flex items-center justify-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-sm font-semibold">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
                         Screenshot uploaded · Click to change
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      <div className="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
-                        <Upload className="w-8 h-8 text-primary" />
+                    <div className="space-y-2">
+                      <div className="h-12 w-12 mx-auto rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
+                        <Upload className="w-6 h-6 text-primary" />
                       </div>
                       <div>
-                        <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+                        <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
                           Click to upload or drag & drop
                         </p>
-                        <p className="text-sm text-gray-500 dark:text-neutral-500 mt-1">
+                        <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
                           PNG, JPG up to 5MB
                         </p>
                       </div>
@@ -694,7 +769,7 @@ export default function SubscriptionPage() {
 
             {submitMsg && (
               <div
-                className={`rounded-xl p-4 text-sm font-medium border-2 ${
+                className={`rounded-lg p-2.5 text-xs font-medium border ${
                   submitMsg.type === "success"
                     ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30"
                     : "bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30"
@@ -708,11 +783,11 @@ export default function SubscriptionPage() {
               onClick={handleSubmit}
               disabled={!screenshotFile || submitting}
               className={`
-                w-full px-6 py-4 rounded-2xl font-bold text-base text-white transition-all flex items-center justify-center gap-2 shadow-xl
+                w-full px-4 py-3 rounded-xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2 shadow-lg
                 ${
                   !screenshotFile || submitting
                     ? "bg-gray-300 dark:bg-neutral-700 cursor-not-allowed opacity-50"
-                    : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-2xl hover:shadow-emerald-500/40 hover:-translate-y-1 shadow-emerald-500/30"
+                    : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 shadow-emerald-500/20"
                 }
               `}
             >
@@ -727,8 +802,15 @@ export default function SubscriptionPage() {
                 </>
               )}
             </button>
-          </div>
-        )}
+                </div>
+              </div>
+            </div>
+            </>
+          );
+          return portalReady && typeof document !== "undefined" && document.body
+            ? createPortal(modal, document.body)
+            : modal;
+        })()}
 
         {/* History Toggle */}
         <div>
@@ -806,7 +888,7 @@ export default function SubscriptionPage() {
                             {formatDate(r.approvedAt)}
                           </td>
                           <td className="px-5 py-4 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-2 flex-wrap">
                               {r.paymentScreenshot ? (
                                 <a
                                   href={r.paymentScreenshot}
@@ -820,24 +902,39 @@ export default function SubscriptionPage() {
                                 <span className="text-gray-400">—</span>
                               )}
                               {r.status === "pending" && (
-                                <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 font-semibold flex items-center gap-1 transition-colors">
-                                  {reuploadingId === r.id ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <Upload className="w-3.5 h-3.5" />
-                                  )}
-                                  Change
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                      const file = e.target.files?.[0];
-                                      if (file) handleReupload(r.id, file);
-                                      e.target.value = "";
-                                    }}
-                                  />
-                                </label>
+                                <>
+                                  <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 font-semibold flex items-center gap-1 transition-colors">
+                                    {reuploadingId === r.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Upload className="w-3.5 h-3.5" />
+                                    )}
+                                    {r.paymentScreenshot ? "Change" : "Upload"}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleReupload(r.id, file);
+                                        e.target.value = "";
+                                      }}
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRequest(r.id)}
+                                    disabled={deletingScreenshotId === r.id}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 font-semibold transition-colors disabled:opacity-50"
+                                  >
+                                    {deletingScreenshotId === r.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    )}
+                                    Delete
+                                  </button>
+                                </>
                               )}
                             </div>
                           </td>
