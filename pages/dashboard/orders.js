@@ -300,21 +300,6 @@ export default function OrdersPage() {
 
   return (
     <AdminLayout title="All Orders" suspended={suspended}>
-      {/* Page Loader */}
-      {pageLoading && (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <ShoppingBag className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading orders...
-            </p>
-          </div>
-        </div>
-      )}
-      
       {/* Filters Bar */}
       <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
@@ -386,6 +371,20 @@ export default function OrdersPage() {
 
       {/* Order cards grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {pageLoading ? (
+          <div className="col-span-full flex flex-col items-center justify-center min-h-[280px] py-12">
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-3">
+              <ShoppingBag className="w-8 h-8 text-primary animate-pulse" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
+                Loading orders...
+              </p>
+            </div>
+          </div>
+        ) : (
+        <>
         {filtered.map(order => {
           const nextStatuses = getNextStatuses(order.status);
           const primaryNext = nextStatuses[0];
@@ -664,6 +663,8 @@ export default function OrdersPage() {
               Try adjusting your filters
             </p>
           </div>
+        )}
+        </>
         )}
       </div>
 

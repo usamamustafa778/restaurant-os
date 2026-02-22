@@ -170,6 +170,14 @@ const tenantNav = [
   },
 ];
 
+// Pages that can be viewed without selecting a branch (tenant dashboard only)
+const DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH = [
+  "/dashboard/overview",
+  "/dashboard/history",
+  "/dashboard/subscription",
+  "/dashboard/profile",
+];
+
 const superNav = [
   {
     href: "/dashboard/super/overview",
@@ -468,6 +476,15 @@ export default function AdminLayout({
   }
 
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";
+
+  const pathname = router.pathname || (router.asPath && router.asPath.split("?")[0]) || "";
+  const showBranchRequiredModal =
+    role !== "super_admin" &&
+    !branchLoading &&
+    branches?.length > 0 &&
+    !currentBranch &&
+    pathname.startsWith("/dashboard") &&
+    !DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH.includes(pathname);
 
   return (
     <>
@@ -1061,6 +1078,50 @@ export default function AdminLayout({
 
           <main className="relative flex-1 px-4 md:px-6 pt-4 pb-6 overflow-y-auto bg-gray-100 dark:bg-black">
             {!suspended && children}
+
+            {showBranchRequiredModal && (
+              <>
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+                  <div className="max-w-md w-full rounded-2xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden">
+                    <div className="p-4 border-b border-gray-200 dark:border-neutral-800">
+                      <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                        Select a branch
+                      </h2>
+                      <p className="text-sm text-gray-600 dark:text-neutral-400 mt-1">
+                        Please select a branch to view this page.
+                      </p>
+                    </div>
+                    <div className="p-3 max-h-[320px] overflow-y-auto space-y-1">
+                      {branches.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            setCurrentBranch(b);
+                            window.location.reload();
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all border-2 border-transparent hover:border-primary/20"
+                        >
+                          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+                            <MapPin className="w-4 h-4 text-white" />
+                          </div>
+                          <span className="truncate">{b.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="p-3 border-t border-gray-200 dark:border-neutral-800">
+                      <Link
+                        href="/dashboard/overview"
+                        className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-primary hover:bg-primary/10 transition-all"
+                      >
+                        Go to Dashboard
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
 
             {suspended && role !== "super_admin" && (
               <>

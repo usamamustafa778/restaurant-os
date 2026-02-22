@@ -79,6 +79,7 @@ export default function POSPage() {
   const orderStripPausedRef = useRef(false);
   const menuSearchInputRef = useRef(null);
   const orderSearchInputRef = useRef(null);
+  const amountReceivedInputRef = useRef(null);
   const [gridCols, setGridCols] = useState(4);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -422,6 +423,13 @@ export default function POSPage() {
     setShowTakePaymentModal(false);
     setPaymentError("");
   }
+
+  // Focus "Amount received" input when Take payment modal opens (e.g. via Ctrl+Shift+C)
+  useEffect(() => {
+    if (!showTakePaymentModal || paymentMethod !== "CASH") return;
+    const t = setTimeout(() => amountReceivedInputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [showTakePaymentModal, paymentMethod]);
 
   async function handleTakePaymentSubmit(e) {
     e.preventDefault();
@@ -1016,11 +1024,17 @@ export default function POSPage() {
     posPrintBill(buildOrderLikeFromCart(overrides), "receipt");
   }
 
-  // Keyboard shortcuts: Ctrl/Cmd + Shift + M (menu search), O (order search), S (save), C (cash), D (card), B (menu bill), R (payment bill)
-  // Dependencies include cart so the handler always sees current cart (avoids "Cart is empty" when cart has items)
+  // Keyboard shortcuts: Esc (close payment modal or clear cart), Ctrl/Cmd + Shift + ...
   useEffect(() => {
     const mod = (e) => e.ctrlKey || e.metaKey;
     const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (showShortcutsModal) setShowShortcutsModal(false);
+        else if (showTakePaymentModal) closeTakePaymentModal();
+        else clearCart();
+        return;
+      }
       if (!mod(e)) return;
       if (e.shiftKey && (e.key === "M" || e.key === "m")) {
         e.preventDefault();
@@ -1079,7 +1093,7 @@ export default function POSPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editingOrderId, cart]);
+  }, [editingOrderId, cart, showTakePaymentModal, showShortcutsModal]);
 
   async function loadDrafts() {
     setLoadingDrafts(true);
@@ -3210,6 +3224,7 @@ export default function POSPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Amount received (Rs) *</label>
                     <input
+                      ref={amountReceivedInputRef}
                       type="number"
                       min="0"
                       step="1"
@@ -3536,6 +3551,10 @@ export default function POSPage() {
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
                   <span className="text-gray-700 dark:text-neutral-300">Order type: Delivery</span>
                   <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+L</kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">Close modal or clear cart</span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Esc</kbd>
                 </div>
               </div>
             </div>
