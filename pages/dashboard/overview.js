@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
-import { getOverview, getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
+import { getOverview, getSalesReport, getDailyCurrency, saveDailyCurrency, SubscriptionInactiveError } from "../../lib/apiClient";
 import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3, Loader2, LayoutDashboard } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -170,6 +170,36 @@ function buildSegments(distribution, labels, colors) {
     }));
 }
 
+// Bar chart: columns with revenue (Rs) on top of each column. Used for Total Revenue card.
+function RevenueBarChart({ data, xLabel, columnMinWidth = 28 }) {
+  if (!data || data.length === 0) return null;
+  const maxVal = Math.max(...data.map((d) => d.value), 1);
+  const barHeight = 140;
+  return (
+    <div className="w-full overflow-x-auto">
+      <div className="flex items-end gap-0.5 min-w-max" style={{ height: barHeight + 56 }}>
+        {data.map((d, i) => {
+          const h = maxVal > 0 ? (d.value / maxVal) * barHeight : 0;
+          return (
+            <div key={i} className="flex flex-col items-center flex-1 min-w-0" style={{ minWidth: columnMinWidth }}>
+              <span className="text-[9px] font-semibold text-gray-700 dark:text-neutral-300 mb-0 truncate w-full text-center" title={`Rs ${d.value.toLocaleString()}`}>
+                {d.value > 0 ? `${d.value >= 1000 ? `${(d.value / 1000).toFixed(1)}k` : d.value}` : ""}
+              </span>
+              <div
+                className="w-full rounded-t transition-all bg-gradient-to-t from-blue-600 to-blue-500 dark:from-blue-500 dark:to-blue-400 min-h-[2px]"
+                style={{ height: Math.max(h, 2) }}
+              />
+              <span className={`text-[9px] font-medium mt-1 truncate w-full text-center ${d.isRemaining ? "text-gray-400 dark:text-neutral-500" : "text-gray-600 dark:text-neutral-400"}`}>
+               {xLabel(d)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Daily/hourly sales line chart (non-cumulative): X = day or hour, Y = sales (Rs). Shows remaining days/hours.
 function DailySalesLineChart({ period, dailySales, hourlySales, remainingHoursStart }) {
   const width = 1000;
@@ -286,17 +316,82 @@ export default function OverviewPage() {
   const [reportPeriod, setReportPeriod] = useState("today"); // "yesterday" | "today" | "monthly" – default today
   const [periodLoading, setPeriodLoading] = useState(false);
 
-  // Currency note counter (denomination -> quantity)
+  // Currency note counter (denomination -> quantity), saved per day in backend
   const CURRENCY_NOTES = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
+  const [currencyDate, setCurrencyDate] = useState("today"); // "today" | "yesterday"
   const [currencyQuantities, setCurrencyQuantities] = useState(() =>
     Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""]))
   );
+  const [currencyLoading, setCurrencyLoading] = useState(false);
+  const [currencySaving, setCurrencySaving] = useState(false);
+  const currencySaveTimeoutRef = useRef(null);
+  const currencyDirtyRef = useRef(false);
+  const currencyDateValue =
+    currencyDate === "today"
+      ? (() => {
+          const d = new Date();
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        })()
+      : (() => {
+          const d = new Date();
+          d.setDate(d.getDate() - 1);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        })();
+  const isCurrencyEditable = true; // only today/yesterday are selectable, both editable
   const currencyTotal = CURRENCY_NOTES.reduce(
     (sum, note) => sum + (Number(currencyQuantities[note]) || 0) * note,
     0
   );
   function setCurrencyQty(note, value) {
+    currencyDirtyRef.current = true;
     setCurrencyQuantities((prev) => ({ ...prev, [note]: value }));
+  }
+
+  // Load daily currency when date changes
+  useEffect(() => {
+    let cancelled = false;
+    currencyDirtyRef.current = false;
+    setCurrencyLoading(true);
+    getDailyCurrency(currencyDateValue)
+      .then((res) => {
+        if (cancelled) return;
+        const q = res?.quantities || {};
+        const next = Object.fromEntries(
+          CURRENCY_NOTES.map((n) => [n, q[n] != null ? String(q[n]) : q[String(n)] != null ? String(q[String(n)]) : ""])
+        );
+        setCurrencyQuantities(next);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrencyQuantities(Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""])));
+      })
+      .finally(() => {
+        if (!cancelled) setCurrencyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      if (currencySaveTimeoutRef.current) clearTimeout(currencySaveTimeoutRef.current);
+    };
+  }, [currencyDateValue]);
+
+  function handleSaveCurrency() {
+    if (!isCurrencyEditable) return;
+    const quantitiesToSave = {};
+    CURRENCY_NOTES.forEach((n) => {
+      const v = currencyQuantities[n];
+      const num = Number(v);
+      if (!Number.isNaN(num) && num >= 0) quantitiesToSave[String(n)] = num;
+    });
+    setCurrencySaving(true);
+    saveDailyCurrency(currencyDateValue, quantitiesToSave)
+      .then(() => {
+        setCurrencySaving(false);
+        currencyDirtyRef.current = false;
+        toast.success("Currency saved");
+      })
+      .catch((err) => {
+        setCurrencySaving(false);
+        toast.error(err.message || "Failed to save currency");
+      });
   }
 
   useEffect(() => {
@@ -594,7 +689,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Top Selling & Sales Performance row */}
-      <div className="grid gap-5 lg:grid-cols-3 mb-6">
+      <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
         {/* Top Selling Item */}
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-center justify-between mb-5">
@@ -653,7 +748,7 @@ export default function OverviewPage() {
         </div>
 
         {/* Sales Performance Gauge */}
-        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+        {/* <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-base font-bold text-gray-900 dark:text-white">Sales Performance</h3>
             <button className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
@@ -661,7 +756,6 @@ export default function OverviewPage() {
             </button>
           </div>
           <div className="flex items-center justify-center py-8">
-            {/* Enhanced gauge */}
             <div className="relative w-40 h-40">
               <svg className="w-full h-full -rotate-90">
                 <circle
@@ -702,7 +796,7 @@ export default function OverviewPage() {
               Weekly target achievement
             </p>
           </div>
-        </div>
+        </div> */}
 
         {/* Payment Distribution (filtered by report period: Yesterday / Today / Month) */}
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
@@ -749,25 +843,17 @@ export default function OverviewPage() {
       </div>
 
       {/* Main row with revenue chart and category stats */}
-      <div className="grid gap-5 lg:grid-cols-3 mb-6">
+      <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
         {/* Total Revenue Chart */}
         <div className="lg:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <BarChart3 className="w-5 h-5 text-blue-500" />
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-                {reportPeriod === "yesterday" ? "Yesterday's performance" : reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
-              </p>
+          <div className="mb-5">
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="w-5 h-5 text-blue-500" />
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
-                <input type="checkbox" id="revenue-toggle" className="rounded" defaultChecked />
-                <label htmlFor="revenue-toggle" className="text-xs font-semibold text-blue-700 dark:text-blue-400 cursor-pointer">Revenue</label>
-              </div>
-            </div>
+            <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
+              {reportPeriod === "yesterday" ? "Yesterday's performance" : reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
+            </p>
           </div>
           <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
             <div className="flex items-center gap-3">
@@ -784,39 +870,49 @@ export default function OverviewPage() {
               </div>
             </div>
           </div>
-          {/* Bar chart: period summary */}
+          {/* Bar chart: 24 columns (hours) for today/yesterday, or one column per day for monthly; revenue on top of each column */}
           {reportPeriod === "monthly" ? (
-            <div className="flex items-end gap-3 h-40 mt-4 px-2">
-              <div className="flex-1 flex flex-col items-center gap-2">
-                <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
-                <span className="text-xs font-semibold mt-1 text-gray-600 dark:text-neutral-400">This month</span>
-              </div>
+            <div className="mt-4">
+              <RevenueBarChart
+                data={fullMonthDailySales.map((d) => ({ value: d.sales, isRemaining: d.isRemaining, day: d.day }))}
+                xLabel={(d) => String(d.day ?? "")}
+                columnMinWidth={20}
+              />
+              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Day of month (1–{lastDayOfMonth})</p>
             </div>
           ) : reportPeriod === "yesterday" ? (
-            <div className="flex items-end gap-3 h-40 mt-4 px-2">
-              <div className="flex-1 flex flex-col items-center gap-2">
-                <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
-                <span className="text-xs font-semibold mt-1 text-gray-600 dark:text-neutral-400">Yesterday</span>
-              </div>
+            <div className="mt-4">
+              <RevenueBarChart
+                data={Array.from({ length: 24 }, (_, i) => ({ 
+                  value: (periodReport.hourlySales || [])[i] || 0,
+                  isRemaining: false,
+                  hour: i,
+                }))}
+                xLabel={(d) => `${d.hour ?? 0}:00`}
+                columnMinWidth={28}
+              />
+              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
             </div>
           ) : (
-            <div className="flex items-end gap-3 h-40 mt-4 px-2">
-              <div className="flex-1 flex flex-col items-center gap-2">
-                <div className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-500 shadow-lg shadow-blue-500/30 h-full min-h-[80px]" />
-                <span className="text-xs font-semibold mt-1 text-gray-600 dark:text-neutral-400">Today</span>
-              </div>
+            <div className="mt-4">
+              <RevenueBarChart
+                data={Array.from({ length: 24 }, (_, i) => ({
+                  value: (periodReport.hourlySales && periodReport.hourlySales[i]) ?? fullDayHourlySales[i] ?? 0,
+                  isRemaining: i >= remainingHoursStart,
+                  hour: i,
+                }))}
+                xLabel={(d) => `${d.hour ?? 0}:00`}
+                columnMinWidth={28}
+              />
+              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
             </div>
           )}
         </div>
 
         {/* Category Statistics */}
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-5">
+          <div className="mb-5">
             <h3 className="text-base font-bold text-gray-900 dark:text-white">📈 Order Types</h3>
-            <select className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-2 py-1 outline-none">
-              <option>Today</option>
-              <option>Monthly</option>
-            </select>
           </div>
           <div className="flex items-center justify-center mb-6 py-4">
             {salesTypeSegments.length > 0 ? (
@@ -913,16 +1009,47 @@ export default function OverviewPage() {
         </div>
           </div>
 
-      {/* Currency note counter - bottom section */}
+      {/* Currency note counter - bottom section (saved per day; editable only for Today / Yesterday) */}
       <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all mt-6">
         <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
-              <DollarSign className="w-5 h-5 text-white" />
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">Currency counter</h3>
+                <p className="text-xs text-gray-500 dark:text-neutral-400">Enter quantity of each note to get total amount (Rs). Saved per day.</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">Currency counter</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">Enter quantity of each note to get total amount (Rs)</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500 dark:text-neutral-400">Date:</span>
+              <div className="inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setCurrencyDate("today")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "today" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrencyDate("yesterday")}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "yesterday" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
+                >
+                  Yesterday
+                </button>
+              </div>
+              {currencyLoading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+              {currencySaving && <span className="text-xs text-gray-500 dark:text-neutral-400">Saving…</span>}
+              <button
+                type="button"
+                onClick={handleSaveCurrency}
+                disabled={!isCurrencyEditable || currencySaving}
+                className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {currencySaving ? "Saving…" : "Save"}
+              </button>
             </div>
           </div>
         </div>
@@ -951,7 +1078,9 @@ export default function OverviewPage() {
                           value={currencyQuantities[note]}
                           onChange={(e) => setCurrencyQty(note, e.target.value.replace(/\D/g, ""))}
                           placeholder="0"
-                          className="w-24 text-right px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+                          disabled={!isCurrencyEditable}
+                          readOnly={!isCurrencyEditable}
+                          className={`w-24 text-right px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary focus:border-primary ${isCurrencyEditable ? "bg-white dark:bg-neutral-900 text-gray-900 dark:text-white" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-500 cursor-not-allowed"}`}
                         />
                       </td>
                       <td className="py-3 px-4 text-right font-semibold text-primary">
