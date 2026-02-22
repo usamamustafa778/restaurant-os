@@ -88,11 +88,14 @@ export async function middleware(request) {
       return NextResponse.redirect(url);
     }
 
-    // Super admin accessing /dashboard but not /dashboard/super → redirect
+    // Super admin: allow tenant dashboard only when "acting as" a restaurant (cookie set)
     if (payload.role === "super_admin" && !pathname.startsWith("/dashboard/super")) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard/super/overview";
-      return NextResponse.redirect(url);
+      const actingAs = request.cookies.get("restaurantos_acting_as")?.value;
+      if (!actingAs) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/dashboard/super/overview";
+        return NextResponse.redirect(url);
+      }
     }
 
     // Restaurant users accessing /dashboard/super → redirect to their dashboard

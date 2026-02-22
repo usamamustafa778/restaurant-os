@@ -21,16 +21,18 @@ export function BranchProvider({ children }) {
     }
   }, []);
 
-  // Load branches when user is logged in (tenant dashboard, not super_admin)
+  // Load branches when user is logged in (tenant dashboard). Super_admin loads branches when "acting as" a restaurant.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const auth = getStoredAuth();
     const token = auth?.token;
     const role = auth?.user?.role;
+    const tenantSlug = auth?.user?.tenantSlug || auth?.tenantSlug;
 
-    // No branch context for super_admin or when not logged in
-    if (role === "super_admin" || !token) {
+    // No branch context when not logged in, or super_admin not acting as a tenant
+    const isSuperAdminWithoutTenant = role === "super_admin" && !tenantSlug;
+    if (isSuperAdminWithoutTenant || !token) {
       setBranches([]);
       setCurrentBranchState(null);
       return;
@@ -46,7 +48,7 @@ export function BranchProvider({ children }) {
         setBranches(list);
 
         const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
-        const isAdminOrOwner = role === "restaurant_admin" || role === "admin";
+        const isAdminOrOwner = role === "restaurant_admin" || role === "admin" || role === "super_admin";
         // Only admin/owner can use "All branches"; manager and others default to first assigned branch
         const defaultBranch =
           savedId === "all" || !savedId
@@ -72,19 +74,22 @@ export function BranchProvider({ children }) {
     return () => { cancelled = true; };
   }, []); // Re-run on mount; auth changes handled by storage listener or full reload after login
 
-  // Re-run branch load when auth storage might have changed (e.g. after login)
+  // Re-run branch load when auth storage might have changed (e.g. after login or super_admin acting-as)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onStorage = (e) => {
       if (e.key === "restaurantos_auth" && e.newValue) {
         const auth = JSON.parse(e.newValue);
-        if (auth?.user?.role !== "super_admin" && auth?.token) {
+        const role = auth?.user?.role;
+        const tenantSlug = auth?.user?.tenantSlug || auth?.tenantSlug;
+        const shouldLoad = auth?.token && (role !== "super_admin" || tenantSlug);
+        if (shouldLoad) {
           getBranches()
             .then((data) => {
               const list = data?.branches ?? (Array.isArray(data) ? data : []);
               setBranches(list);
               const r = auth?.user?.role;
-              const isAdminOrOwner = r === "restaurant_admin" || r === "admin";
+              const isAdminOrOwner = r === "restaurant_admin" || r === "admin" || r === "super_admin";
               const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
               const defaultBranch =
                 savedId === "all" || !savedId

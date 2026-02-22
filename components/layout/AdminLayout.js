@@ -33,7 +33,7 @@ import {
   CreditCard,
   Globe,
 } from "lucide-react";
-import { getToken, getStoredAuth } from "../../lib/apiClient";
+import { getToken, getStoredAuth, clearActingAsRestaurant } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { getTenantRoute } from "../../lib/routes";
@@ -185,6 +185,7 @@ const superNav = [
     icon: LayoutDashboard,
   },
   { href: "/dashboard/super/restaurants", label: "Restaurants", icon: Factory },
+  { href: "/dashboard/super/branches", label: "All Branches", icon: MapPin },
   {
     href: "/dashboard/super/subscriptions",
     label: "Subscriptions",
@@ -344,6 +345,7 @@ export default function AdminLayout({
     loading: branchLoading,
   } = useBranch() || {};
   const [role, setRole] = useState(null);
+  const [actingAsSlug, setActingAsSlug] = useState(null);
   const [userName, setUserName] = useState("");
   const [userInitials, setUserInitials] = useState("");
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
@@ -405,6 +407,12 @@ export default function AdminLayout({
       const initials = parts.map((p) => p[0]?.toUpperCase() || "").join("");
       setUserInitials(initials || name[0]?.toUpperCase() || "");
     }
+    // Super admin "acting as" tenant: show tenant nav and Exit to platform
+    if (r === "super_admin") {
+      setActingAsSlug(auth?.user?.tenantSlug || auth?.tenantSlug || null);
+    } else {
+      setActingAsSlug(null);
+    }
   }, []);
 
   // Auto-expand the relevant group on initial load if on a child page
@@ -433,11 +441,13 @@ export default function AdminLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rawNavItems = role === "super_admin" ? superNav : tenantNav;
+  const rawNavItems = role === "super_admin" && !actingAsSlug ? superNav : tenantNav;
+  // When super_admin is acting as a tenant, show full tenant nav (treat as restaurant_admin)
+  const navRole = role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
   // Filter nav items by role (sections have roles; hide section if no links below visible)
   const withRole = rawNavItems.filter(
     (item) =>
-      item.type === "section" || !item.roles || item.roles.includes(role),
+      item.type === "section" || !item.roles || item.roles.includes(navRole),
   );
   const navItems = withRole.filter((item, i) => {
     if (item.type !== "section") return true;
@@ -525,7 +535,7 @@ export default function AdminLayout({
                     Eats Desk
                   </div>
                   <div className="text-xs text-gray-500 dark:text-neutral-400 truncate font-medium">
-                    {role === "super_admin"
+                    {role === "super_admin" && !actingAsSlug
                       ? "Platform Console"
                       : "Restaurant OS"}
                   </div>
@@ -576,7 +586,7 @@ export default function AdminLayout({
 
               const basePath = item.path || "";
               const href =
-                role === "super_admin"
+                role === "super_admin" && !actingAsSlug
                   ? item.href
                   : getTenantRoute(router.asPath || router.pathname, basePath);
 
@@ -839,7 +849,9 @@ export default function AdminLayout({
                       Eats Desk
                     </div>
                     <div className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-                      {role === "super_admin" ? "Platform" : "Restaurant OS"}
+                      {role === "super_admin" && !actingAsSlug
+                        ? "Platform"
+                        : "Restaurant OS"}
                     </div>
                   </div>
                 </>
@@ -875,14 +887,27 @@ export default function AdminLayout({
                 <p className="text-sm text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
                   {subtitle != null
                     ? subtitle
-                    : role === "super_admin"
+                    : role === "super_admin" && !actingAsSlug
                       ? "Manage restaurants, subscriptions and platform configuration"
                       : "Manage your restaurant operations"}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
-              {role !== "super_admin" && !branchLoading && (
+              {actingAsSlug && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearActingAsRestaurant();
+                    window.location.href = "/dashboard/super/overview";
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-amber-200 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-200 font-bold text-sm shadow-sm hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Exit to platform
+                </button>
+              )}
+              {(role !== "super_admin" || actingAsSlug) && !branchLoading && (
                 <div className="relative flex-shrink-0">
                   <button
                     type="button"
@@ -918,7 +943,8 @@ export default function AdminLayout({
                         </div>
                         <div className="p-2 max-h-[300px] overflow-y-auto">
                           {(role === "restaurant_admin" ||
-                            role === "admin") && (
+                            role === "admin" ||
+                            (role === "super_admin" && actingAsSlug)) && (
                             <button
                               type="button"
                               onClick={() => {
@@ -976,7 +1002,9 @@ export default function AdminLayout({
                             </button>
                           ))}
                         </div>
-                        {(role === "restaurant_admin" || role === "admin") && (
+                        {(role === "restaurant_admin" ||
+                          role === "admin" ||
+                          (role === "super_admin" && actingAsSlug)) && (
                           <div className="border-t-2 border-gray-100 dark:border-neutral-800 p-2">
                             <Link
                               href="/dashboard/branches"
@@ -1031,6 +1059,20 @@ export default function AdminLayout({
                           </p>
                         </div>
                         <div className="p-2 space-y-1">
+                          {actingAsSlug && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUserMenuOpen(false);
+                                clearActingAsRestaurant();
+                                window.location.href = "/dashboard/super/overview";
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                              <span>Exit to platform</span>
+                            </button>
+                          )}
                           <Link
                             href="/dashboard/profile"
                             onClick={() => setUserMenuOpen(false)}

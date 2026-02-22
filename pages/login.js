@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { login, getStoredAuth, isAccessTokenValid, tryRefreshStoredAuth } from "../lib/apiClient";
+import { login, getStoredAuth, getLegacyAuthOnly, isAccessTokenValid, tryRefreshStoredAuth, setStoredAuth, setTokenCookie, clearStoredAuth } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight } from "lucide-react";
 import SEO from "../components/SEO";
 
@@ -25,10 +25,19 @@ export default function LoginPage() {
   const [checkingStoredAuth, setCheckingStoredAuth] = useState(true);
   const router = useRouter();
 
-  // If user already has valid access token or refresh token in localStorage, redirect to dashboard
+  // If user already has valid auth (restaurantos_auth or legacy keys), redirect to dashboard.
+  // Legacy migration runs only here so we don't re-migrate after 401 and cause a redirect loop.
   useEffect(() => {
     if (typeof window === "undefined" || !router.isReady) return;
-    const auth = getStoredAuth();
+    let auth = getStoredAuth();
+    if (!auth) {
+      const legacy = getLegacyAuthOnly();
+      if (legacy?.token) {
+        setStoredAuth(legacy);
+        if (legacy.token) setTokenCookie(legacy.token);
+        auth = legacy;
+      }
+    }
     if (!auth) {
       setCheckingStoredAuth(false);
       return;
@@ -46,10 +55,15 @@ export default function LoginPage() {
     if (auth.refreshToken) {
       tryRefreshStoredAuth().then((ok) => {
         setCheckingStoredAuth(false);
-        if (ok) router.replace(target);
+        if (ok) {
+          router.replace(target);
+        } else {
+          clearStoredAuth();
+        }
       });
       return;
     }
+    clearStoredAuth();
     setCheckingStoredAuth(false);
   }, [router.isReady, router.query.from]);
 

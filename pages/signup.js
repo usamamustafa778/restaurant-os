@@ -24,6 +24,9 @@ export default function SignupPage() {
     setError("");
     if (!ownerName.trim()) { setError("Name is required"); return; }
     if (!email.trim()) { setError("Email is required"); return; }
+    const phoneDigits = (phone || "").replace(/\D/g, "");
+    if (phoneDigits.length === 0) { setError("Phone number is required"); return; }
+    if (phoneDigits.length !== 11) { setError("Phone number must be exactly 11 digits"); return; }
     if (!password || password.length < 6) { setError("Password must be at least 6 characters"); return; }
     setStep(2);
   }
@@ -65,7 +68,7 @@ export default function SignupPage() {
         ownerName: ownerName.trim(),
         email: email.trim(),
         password,
-        phone: phone.trim() || undefined,
+        phone: (phone || "").replace(/\D/g, "").slice(0, 11) || undefined,
         branches: validBranches.map(b => ({
           name: b.name.trim(),
           address: b.address.trim() || undefined,
@@ -196,15 +199,18 @@ export default function SignupPage() {
 
                 <div className="space-y-2">
                   <label className="text-sm text-gray-700 font-semibold">
-                    Phone Number <span className="text-gray-400 font-normal">(optional)</span>
+                    Phone Number <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="tel"
+                    required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="03XX-XXXXXXX"
+                    placeholder="03XXXXXXXXX (11 digits)"
+                    maxLength={14}
                     className={inputClass}
                   />
+                  <p className="text-xs text-gray-500">Must be exactly 11 digits</p>
                 </div>
 
                 <div className="space-y-2">
