@@ -25,9 +25,30 @@ import {
   Wallet,
   Copy,
   Check,
+  Gift,
 } from "lucide-react";
 
 const PLANS = [
+  {
+    key: "free_trial_3months",
+    label: "Free Trial",
+    days: 90,
+    price: "Free",
+    monthlyEquivalent: null,
+    priceSubtitle: "3 months • All features included",
+    icon: Gift,
+    badge: "Try Free",
+    features: [
+      "All features included",
+      "Full access for 3 months",
+      "Everything in Enterprise",
+      "Unlimited Branches",
+      "Advanced Analytics & Reports",
+      "POS, KDS, Reservations",
+      "Deals, API & Integrations",
+      "No credit card required",
+    ],
+  },
   {
     key: "starter_monthly",
     label: "Starter",
@@ -406,7 +427,7 @@ export default function SubscriptionPage() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
             Choose Your Plan
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {PLANS.map((plan) => {
               const isSelected = selectedPlan === plan.key;
               const Icon = plan.icon;
@@ -456,7 +477,7 @@ export default function SubscriptionPage() {
                     <div className="text-4xl font-bold text-primary">
                       {plan.price}
                     </div>
-                    {plan.days > 30 && (
+                    {plan.days > 30 && plan.price !== "Free" && (
                       <div className="text-sm text-gray-500 dark:text-neutral-400">
                         /
                         {plan.days === 90
@@ -466,9 +487,16 @@ export default function SubscriptionPage() {
                             : `${plan.days}d`}
                       </div>
                     )}
+                    {plan.price === "Free" && plan.days === 90 && (
+                      <div className="text-sm text-gray-500 dark:text-neutral-400"> / 3 months</div>
+                    )}
                   </div>
                   <div className="text-sm font-semibold text-gray-600 dark:text-neutral-400 mb-4">
-                    {plan.monthlyEquivalent}/month{" "}
+                    {plan.priceSubtitle
+                      ? plan.priceSubtitle
+                      : plan.monthlyEquivalent != null
+                        ? `${plan.monthlyEquivalent}/month `
+                        : ""}
                     {plan.savings && (
                       <span className="text-emerald-600 dark:text-emerald-400">
                         • {plan.savings}
