@@ -1301,21 +1301,6 @@ export default function POSPage() {
 
   return (
     <AdminLayout title="Point of Sale" suspended={suspended}>
-      {/* Page Loader */}
-      {pageLoading && (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <ShoppingCart className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading POS...
-            </p>
-          </div>
-        </div>
-      )}
-
       <div className="grid gap-4 lg:grid-cols-[1fr_400px] h-[calc(100vh-110px)]">
         {/* Left Column - Recent Orders + Menu */}
         <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
@@ -1744,6 +1729,20 @@ export default function POSPage() {
 
             {/* Menu Grid - Compact */}
             <div className="flex-1 overflow-y-auto p-2 bg-gray-50 dark:bg-neutral-900/50">
+              {pageLoading ? (
+                <div className="flex flex-col items-center justify-center min-h-[280px] py-12">
+                  <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-3">
+                    <ShoppingCart className="w-8 h-8 text-primary animate-pulse" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
+                      Loading POS...
+                    </p>
+                  </div>
+                </div>
+              ) : (
+              <>
               <div
                 className={`grid gap-2 ${effectiveSidebarOpen ? "grid-cols-3 xl:grid-cols-4" : "grid-cols-4 xl:grid-cols-5"}`}
               >
@@ -1899,6 +1898,8 @@ export default function POSPage() {
                   </p>
               </div>
             )}
+              </>
+              )}
             </div>
           </div>
         </div>
