@@ -136,7 +136,7 @@ export default function LoginPage() {
         keywords="eats desk login, restaurant dashboard login, POS login, restaurant management system login"
         noindex={true}
       />
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-6">
       {/* Modern gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-white to-secondary/5" />
       <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
@@ -144,63 +144,51 @@ export default function LoginPage() {
       
       <div className="relative w-full max-w-md">
         {/* Logo */}
-        <div className="flex items-center justify-center gap-3 mb-10">
-          <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-primary/30">
+        <div className="flex items-center justify-center gap-2 mb-5">
+          <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-black text-lg shadow-lg shadow-primary/30">
             ED
           </div>
           <div>
-            <div className="text-lg font-bold text-gray-900">
-              Eats Desk
-            </div>
-            <div className="text-xs text-gray-600">
-              Restaurant Operations Platform
-            </div>
+            <div className="text-base font-bold text-gray-900">Eats Desk</div>
+            <div className="text-[11px] text-gray-600">Restaurant Operations Platform</div>
           </div>
         </div>
 
         {/* Card */}
-        <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 px-10 py-12">
+        <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 px-6 py-6">
           {checkingStoredAuth ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-4">
-              <Loader2 className="w-10 h-10 animate-spin text-primary" />
-              <p className="text-sm text-gray-600">Checking existing session…</p>
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <p className="text-xs text-gray-600">Checking existing session…</p>
             </div>
           ) : (
             <>
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-2">
-              Welcome back
-            </h1>
-            <p className="text-sm text-gray-600">
-              Sign in to your dashboard to continue
-            </p>
+          <div className="text-center mb-4">
+            <h1 className="text-xl font-bold tracking-tight text-gray-900 mb-1">Welcome back</h1>
+            <p className="text-xs text-gray-600">Sign in to your dashboard to continue</p>
           </div>
 
           {error && (
-            <div className="mb-6 text-sm text-red-600 bg-red-50/80 border border-red-200 rounded-xl px-4 py-3 backdrop-blur-sm">
+            <div className="mb-3 text-xs text-red-600 bg-red-50/80 border border-red-200 rounded-lg px-3 py-2 backdrop-blur-sm">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <label className="text-sm text-gray-700 font-semibold">
-                Email Address
-              </label>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs text-gray-700 font-semibold">Email Address</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@company.com"
-                className="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 focus:bg-white transition-all"
+                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all"
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm text-gray-700 font-semibold">
-                Password
-              </label>
+            <div className="space-y-1">
+              <label className="text-xs text-gray-700 font-semibold">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -208,18 +196,18 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full px-4 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 focus:bg-white transition-all pr-12"
+                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition-colors"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
+                    <EyeOff className="w-4 h-4" />
                   ) : (
-                    <Eye className="w-5 h-5" />
+                    <Eye className="w-4 h-4" />
                   )}
                 </button>
               </div>
@@ -228,29 +216,26 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-base font-bold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0 mt-8"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-bold hover:shadow-lg hover:shadow-primary/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed mt-4"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Signing in…
                 </>
               ) : (
                 <>
                   Sign in to Dashboard
-                  <ArrowRight className="w-5 h-5" />
+                  <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-100">
-            <p className="text-center text-sm text-gray-600">
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-center text-xs text-gray-600">
               Don&apos;t have an account?{" "}
-              <Link
-                href="/signup"
-                className="font-bold text-primary hover:text-secondary transition-colors"
-              >
+              <Link href="/signup" className="font-bold text-primary hover:text-secondary transition-colors">
                 Create free account →
               </Link>
             </p>
@@ -260,15 +245,15 @@ export default function LoginPage() {
         </div>
 
         {/* Trust indicators */}
-        <div className="mt-8 flex items-center justify-center gap-6 text-xs text-gray-500">
-          <span className="flex items-center gap-1.5">
-            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="mt-4 flex items-center justify-center gap-3 text-[11px] text-gray-500">
+          <span className="flex items-center gap-1">
+            <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             14-day free trial
           </span>
-          <span className="flex items-center gap-1.5">
-            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <span className="flex items-center gap-1">
+            <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
             Secure & encrypted
