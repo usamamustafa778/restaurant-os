@@ -25,6 +25,7 @@ import SEO, {
   generateOrganizationSchema,
   generateSoftwareAppSchema,
 } from "../components/SEO";
+import { submitContact } from "../lib/apiClient";
 
 /* ─── Scroll-reveal hook ──────────────────────────────────────────────── */
 function useReveal(threshold = 0.15) {
@@ -118,6 +119,13 @@ function Counter({ end, suffix = "", duration = 2000 }) {
    ═════════════════════════════════════════════════════════════════════════ */
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [contactError, setContactError] = useState("");
+  const [contactSuccess, setContactSuccess] = useState(false);
 
   const structuredData = {
     "@context": "https://schema.org",
@@ -1084,55 +1092,115 @@ export default function Home() {
                   </h3>
                   <form
                     className="space-y-4"
-                    onSubmit={(e) => e.preventDefault()}
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setContactError("");
+                      setContactSuccess(false);
+                      const name = contactName.trim();
+                      const phone = contactPhone.trim();
+                      const email = contactEmail.trim();
+                      const message = contactMessage.trim();
+                      if (!name) {
+                        setContactError("Name is required.");
+                        return;
+                      }
+                      if (!phone) {
+                        setContactError("Phone is required.");
+                        return;
+                      }
+                      if (!email) {
+                        setContactError("Email is required.");
+                        return;
+                      }
+                      if (!message) {
+                        setContactError("Message is required.");
+                        return;
+                      }
+                      setContactSubmitting(true);
+                      try {
+                        await submitContact({ name, phone, email, message });
+                        setContactSuccess(true);
+                        setContactName("");
+                        setContactPhone("");
+                        setContactEmail("");
+                        setContactMessage("");
+                      } catch (err) {
+                        setContactError(err.message || "Failed to send message. Please try again.");
+                      } finally {
+                        setContactSubmitting(false);
+                      }
+                    }}
                   >
+                    {contactError && (
+                      <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 px-3 py-2 rounded-lg">
+                        {contactError}
+                      </p>
+                    )}
+                    {contactSuccess && (
+                      <p className="text-sm text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 px-3 py-2 rounded-lg">
+                        Thank you! Your message has been sent.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Name
+                          Name <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
+                          required
                           placeholder="Your name"
+                          value={contactName}
+                          onChange={(e) => setContactName(e.target.value)}
                           className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Phone
+                          Phone <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="tel"
+                          required
                           placeholder="03XX-XXXXXXX"
+                          value={contactPhone}
+                          onChange={(e) => setContactPhone(e.target.value)}
                           className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                         />
                       </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email
+                        Email <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="email"
+                        required
                         placeholder="you@example.com"
+                        value={contactEmail}
+                        onChange={(e) => setContactEmail(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Message
+                        Message <span className="text-red-500">*</span>
                       </label>
                       <textarea
+                        required
                         rows={4}
                         placeholder="Tell us about your restaurant and how we can help..."
+                        value={contactMessage}
+                        onChange={(e) => setContactMessage(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
                       />
                     </div>
                     <button
                       type="submit"
-                      className="w-full px-4 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30"
+                      disabled={contactSubmitting}
+                      className="w-full px-4 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                      Send Message
+                      {contactSubmitting ? "Sending..." : "Send Message"}
                     </button>
                   </form>
                 </div>

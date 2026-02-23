@@ -32,6 +32,7 @@ import {
   ListOrdered,
   CreditCard,
   Globe,
+  Mail,
 } from "lucide-react";
 import { getToken, getStoredAuth, clearActingAsRestaurant } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -191,6 +192,7 @@ const superNav = [
     label: "Subscriptions",
     icon: CreditCard,
   },
+  { href: "/dashboard/super/leads", label: "Leads", icon: Mail },
   {
     href: "/dashboard/super/settings",
     label: "System Settings",
