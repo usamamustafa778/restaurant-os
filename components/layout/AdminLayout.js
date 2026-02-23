@@ -841,7 +841,21 @@ export default function AdminLayout({
                   {backLabel}
                 </Link>
               )}
-              {!backHref && (
+              {!backHref && role === "super_admin" && actingAsSlug && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearActingAsRestaurant();
+                    setActingAsSlug(null);
+                    window.location.href = "/dashboard/super/overview";
+                  }}
+                  className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  Super Admin
+                </button>
+              )}
+              {!backHref && !(role === "super_admin" && actingAsSlug) && (
                 <>
                   <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20">
                     ED
@@ -896,6 +910,20 @@ export default function AdminLayout({
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
+              {role === "super_admin" && actingAsSlug && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearActingAsRestaurant();
+                    setActingAsSlug(null);
+                    window.location.href = "/dashboard/super/overview";
+                  }}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary dark:text-primary font-semibold text-sm hover:bg-primary/10 dark:hover:bg-primary/20 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="hidden sm:inline">Go back to Super Admin Dashboard</span>
+                </button>
+              )}
               {(role !== "super_admin" || actingAsSlug) && !branchLoading && (
                 <div className="relative flex-shrink-0">
                   <button
