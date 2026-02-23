@@ -826,13 +826,30 @@ export default function Home() {
                 <p className="text-gray-600 leading-relaxed">
                   Flexible pricing plans for restaurants of all sizes. All
                   include POS, inventory, menu management and a free restaurant
-                  website. Start with a 14-day free trial.
+                  website. Start with a <span className="font-semibold">3&nbsp;month</span> free trial.
                 </p>
               </div>
             </Reveal>
 
-            <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
+            <div className="grid gap-3 md:grid-cols-4 max-w-5xl mx-auto">
               {[
+                {
+                  plan: "Free Trial",
+                  price: "Free",
+                  currency: "",
+                  period: "for 3 months",
+                  desc: "Try every feature of Eats Desk free for 3 full months.",
+                  features: [
+                    "All features included",
+                    "Full access for 3 months",
+                    "Everything in Enterprise",
+                    "Unlimited branches",
+                    "Advanced analytics & reports",
+                    "POS, KDS & reservations",
+                  ],
+                  cta: "Start Free Trial",
+                  popular: false,
+                },
                 {
                   plan: "Starter",
                   price: "39",
@@ -875,7 +892,7 @@ export default function Home() {
                 },
                 {
                   plan: "Enterprise",
-                  price: "133",
+                  price: "Contact for pricing",
                   currency: "$",
                   period: "per month (billed quarterly)",
                   desc: "Advanced features for multi-location operations.",
@@ -893,10 +910,10 @@ export default function Home() {
                   cta: "Contact Sales",
                   popular: false,
                 },
-              ].map((plan, i) => (
+              ].map((plan, index, i) => (
                 <Reveal key={plan.plan} delay={i * 150}>
                   <div
-                    className={`relative h-full rounded-2xl p-6 flex flex-col ${
+                    className={`relative h-full rounded-2xl p-4 flex flex-col ${
                       plan.popular
                         ? "bg-primary text-white border-2 border-primary shadow-xl shadow-primary/20 scale-[1.02]"
                         : "bg-white border border-gray-200 hover:border-gray-300 hover:shadow-lg transition-all duration-300"
@@ -913,7 +930,7 @@ export default function Home() {
                       {plan.plan}
                     </p>
                     <p className="text-3xl font-bold mb-1">
-                      {plan.currency}
+                     {index === 3 ? "" : plan.currency}
                       {plan.price}
                     </p>
                     <p
