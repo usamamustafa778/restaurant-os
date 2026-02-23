@@ -11,8 +11,61 @@ import {
   restoreRestaurantForSuperAdmin,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
-import { Search, ChevronDown, Trash2, X, Loader2 } from "lucide-react";
+import { Search, ChevronDown, Trash2, X, Loader2, FileDown } from "lucide-react";
 import toast from "react-hot-toast";
+
+function escapeCsvCell(value) {
+  if (value == null || value === "") return "";
+  const s = String(value);
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function downloadRestaurantsExcel(rows) {
+  const headers = [
+    "S.No",
+    "Restaurant",
+    "Subdomain",
+    "Owner Phone",
+    "Owner Email",
+    "Plan",
+    "Status",
+    "Trial Ends",
+    "Expires",
+    "Created",
+  ];
+  const csvRows = [
+    headers.join(","),
+    ...rows.map((r, i) => {
+      const sub = r.subscription || {};
+      const website = r.website || {};
+      return [
+        i + 1,
+        escapeCsvCell(website.name || "Untitled"),
+        escapeCsvCell(website.subdomain || ""),
+        escapeCsvCell(website.contactPhone || ""),
+        escapeCsvCell(website.contactEmail || ""),
+        escapeCsvCell(sub.plan || "ESSENTIAL"),
+        escapeCsvCell(sub.status || "TRIAL"),
+        sub.trialEndsAt ? new Date(sub.trialEndsAt).toLocaleDateString() : "",
+        sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString() : "",
+        r.createdAt
+          ? new Date(r.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+          : "",
+      ].join(",");
+    }),
+  ];
+  const csv = csvRows.join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `restaurants-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const STATUS_CONFIRM = {
   TRIAL: {
@@ -128,6 +181,22 @@ export default function SuperRestaurantsPage() {
                   {filtered.length} of {restaurants.length}
                 </span>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (filtered.length === 0) {
+                    toast.error("No data to export");
+                    return;
+                  }
+                  downloadRestaurantsExcel(filtered);
+                  toast.success(`Exported ${filtered.length} restaurant(s) to Excel`);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                title="Download table as Excel (CSV)"
+              >
+                <FileDown className="w-4 h-4" />
+                Download Excel
+              </button>
               {deletedRestaurants.length > 0 && (
                 <div className="relative">
                   <button
