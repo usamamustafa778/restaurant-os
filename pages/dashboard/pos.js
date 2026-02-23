@@ -1455,6 +1455,10 @@ export default function POSPage() {
                       setCurrentOrderIndex(
                         Math.max(0, Math.min(globalIdx, filteredRecentOrders.length - orderCols)),
                       );
+                      // Open this order in edit mode in the right sidebar
+                      if (order?.id) {
+                        router.push({ pathname: "/dashboard/pos", query: { edit: order.id } });
+                      }
                     }}
                     className={`relative p-2 rounded border transition-all cursor-pointer ${
                       isFocused
