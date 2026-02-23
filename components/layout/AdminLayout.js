@@ -407,7 +407,7 @@ export default function AdminLayout({
       const initials = parts.map((p) => p[0]?.toUpperCase() || "").join("");
       setUserInitials(initials || name[0]?.toUpperCase() || "");
     }
-    // Super admin "acting as" tenant: show tenant nav and Exit to platform
+    // Super admin "acting as" tenant: show tenant nav
     if (r === "super_admin") {
       setActingAsSlug(auth?.user?.tenantSlug || auth?.tenantSlug || null);
     } else {
@@ -894,19 +894,6 @@ export default function AdminLayout({
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
-              {actingAsSlug && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearActingAsRestaurant();
-                    window.location.href = "/dashboard/super/overview";
-                  }}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-amber-200 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-200 font-bold text-sm shadow-sm hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-all"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Exit to platform
-                </button>
-              )}
               {(role !== "super_admin" || actingAsSlug) && !branchLoading && (
                 <div className="relative flex-shrink-0">
                   <button
@@ -1059,20 +1046,6 @@ export default function AdminLayout({
                           </p>
                         </div>
                         <div className="p-2 space-y-1">
-                          {actingAsSlug && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setUserMenuOpen(false);
-                                clearActingAsRestaurant();
-                                window.location.href = "/dashboard/super/overview";
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                              <span>Exit to platform</span>
-                            </button>
-                          )}
                           <Link
                             href="/dashboard/profile"
                             onClick={() => setUserMenuOpen(false)}
