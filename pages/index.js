@@ -1045,7 +1045,7 @@ export default function Home() {
                           Email
                         </p>
                         <p className="text-sm text-gray-600">
-                          support@eatsdesk.com
+                          info.reddev@gmail.com
                         </p>
                       </div>
                     </div>
@@ -1057,7 +1057,7 @@ export default function Home() {
                         <p className="text-sm font-semibold text-gray-900">
                           Phone / WhatsApp
                         </p>
-                        <p className="text-sm text-gray-600">+92 316 622 269</p>
+                        <p className="text-sm text-gray-600">+92 323 155 7988</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
