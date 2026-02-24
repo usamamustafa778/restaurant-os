@@ -360,7 +360,7 @@ export default function PrivacyPolicy() {
 
             <div className="pt-8 border-t border-gray-800 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500">
               <p>&copy; {new Date().getFullYear()} Eats Desk. All rights reserved.</p>
-              <p>Made with ❤️ for restaurants in Pakistan.</p>
+              <p>powered by at <Link href="https://reddev.us" target="_blank" rel="noopener noreferrer">Reddev.us</Link></p>
             </div>
           </div>
         </footer>

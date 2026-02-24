@@ -1374,7 +1374,7 @@ export default function Home() {
                 &copy; {new Date().getFullYear()} Eats Desk. All rights
                 reserved.
               </p>
-              <p>Made with ❤️ for restaurants in Pakistan.</p>
+              <p>powered by at <Link href="https://reddev.us" target="_blank" rel="noopener noreferrer">Reddev.us</Link></p>
             </div>
           </div>
         </footer>
