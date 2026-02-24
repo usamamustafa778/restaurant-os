@@ -13,6 +13,7 @@ import {
   SubscriptionInactiveError,
   getStoredAuth,
 } from "../../lib/apiClient";
+import { useSocket } from "../../contexts/SocketContext";
 import toast from "react-hot-toast";
 import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag } from "lucide-react";
 
@@ -150,6 +151,7 @@ function printBill(order, mode = "auto") {
 
 export default function OrdersPage() {
   const router = useRouter();
+  const { socket } = useSocket() || {};
   const [orders, setOrders] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -189,6 +191,17 @@ export default function OrdersPage() {
   useEffect(() => {
     loadOrders();
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onOrderEvent = () => loadOrders();
+    socket.on("order:created", onOrderEvent);
+    socket.on("order:updated", onOrderEvent);
+    return () => {
+      socket.off("order:created", onOrderEvent);
+      socket.off("order:updated", onOrderEvent);
+    };
+  }, [socket]);
 
   async function handleUpdateStatus(orderId, newStatus) {
     setUpdatingId(orderId);

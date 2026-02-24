@@ -27,6 +27,7 @@ import {
   updateBranch,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
+import { useSocket } from "../../contexts/SocketContext";
 import {
   ShoppingCart,
   Plus,
@@ -60,6 +61,7 @@ import toast from "react-hot-toast";
 export default function POSPage() {
   const router = useRouter();
   const { currentBranch } = useBranch() || {};
+  const { socket } = useSocket() || {};
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
@@ -188,6 +190,17 @@ export default function POSPage() {
     return () =>
       window.removeEventListener("sidebar-toggle", handleSidebarToggle);
   }, [currentBranch]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onOrderEvent = () => loadRecentOrders();
+    socket.on("order:created", onOrderEvent);
+    socket.on("order:updated", onOrderEvent);
+    return () => {
+      socket.off("order:created", onOrderEvent);
+      socket.off("order:updated", onOrderEvent);
+    };
+  }, [socket]);
 
   // Load POS options (table/waiter/customer visibility) for current branch; don't show until loaded to avoid flash
   useEffect(() => {

@@ -2,6 +2,7 @@ import "../styles/globals.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { ConfirmDialogProvider } from "../contexts/ConfirmDialogContext";
 import { BranchProvider } from "../contexts/BranchContext";
+import { SocketProvider } from "../contexts/SocketContext";
 import { Toaster } from "react-hot-toast";
 
 export default function MyApp({ Component, pageProps }) {
@@ -9,8 +10,9 @@ export default function MyApp({ Component, pageProps }) {
     <ThemeProvider>
       <ConfirmDialogProvider>
         <BranchProvider>
-          <Component {...pageProps} />
-          <Toaster
+          <SocketProvider>
+            <Component {...pageProps} />
+            <Toaster
             position="top-center"
             toastOptions={{
               duration: 3000,
@@ -35,6 +37,7 @@ export default function MyApp({ Component, pageProps }) {
               },
             }}
           />
+          </SocketProvider>
         </BranchProvider>
       </ConfirmDialogProvider>
     </ThemeProvider>

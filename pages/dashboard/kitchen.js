@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { getOrders } from "../../lib/apiClient";
+import { useSocket } from "../../contexts/SocketContext";
 import { Clock, User, Package, CheckCircle, AlertCircle, ChefHat, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -12,15 +13,27 @@ function getDisplayOrderId(order) {
 }
 
 export default function KitchenPage() {
+  const { socket } = useSocket() || {};
   const [orders, setOrders] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
 
   useEffect(() => {
     fetchOrders();
-    // Auto-refresh every 30 seconds
+    // Fallback poll every 30 seconds if socket is disconnected
     const interval = setInterval(fetchOrders, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onOrderEvent = () => fetchOrders();
+    socket.on("order:created", onOrderEvent);
+    socket.on("order:updated", onOrderEvent);
+    return () => {
+      socket.off("order:created", onOrderEvent);
+      socket.off("order:updated", onOrderEvent);
+    };
+  }, [socket]);
 
   async function fetchOrders() {
     try {
