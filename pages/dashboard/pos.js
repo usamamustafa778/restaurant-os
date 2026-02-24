@@ -1328,7 +1328,7 @@ export default function POSPage() {
 
   return (
     <AdminLayout title="Point of Sale" suspended={suspended}>
-      <div className="grid gap-4 lg:grid-cols-[1fr_400px] h-[calc(100vh-110px)]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_400px] lg:h-[calc(100vh-110px)]">
         {/* Left Column - Recent Orders + Menu */}
         <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
           {/* Recent Orders Section - Compact */}
