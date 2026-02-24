@@ -110,6 +110,7 @@ export default function POSPage() {
   const [currentOrderIndex, setCurrentOrderIndex] = useState(0);
   const [focusedOrderIndex, setFocusedOrderIndex] = useState(0);
   const [orderGridHovered, setOrderGridHovered] = useState(false);
+  const [orderColsCount, setOrderColsCount] = useState(4);
 
   // Deals integration
   const [availableDeals, setAvailableDeals] = useState([]);
@@ -696,14 +697,29 @@ export default function POSPage() {
   // Keep pause state in ref so animation loop doesn't need to re-run when hover/search changes
   orderStripPausedRef.current = orderGridHovered || recentOrderSearch.trim() !== "";
 
+  // Recent Orders visible columns: mobile ≈ 1.5 cards, desktop 4–5 cards
+  useEffect(() => {
+    const updateOrderCols = () => {
+      if (typeof window === "undefined") return;
+      const width = window.innerWidth;
+      if (width < 768) {
+        setOrderColsCount(1.5);
+      } else {
+        setOrderColsCount(effectiveSidebarOpen ? 4 : 5);
+      }
+    };
+    updateOrderCols();
+    window.addEventListener("resize", updateOrderCols);
+    return () => window.removeEventListener("resize", updateOrderCols);
+  }, [effectiveSidebarOpen]);
+
   // Continuous order strip: single list, scroll 0% → 100% then reset to 0% (no duplicate orders)
-  const orderColsCount = effectiveSidebarOpen ? 4 : 5;
   useEffect(() => {
     if (filteredRecentOrders.length <= orderColsCount) return;
     orderStripOffsetRef.current = 0;
     orderStripLastTimeRef.current = null;
 
-    const durationMs = 25000; // 25 seconds for one full pass
+    const durationMs = 100000; // 45 seconds for one full pass (slower)
     const totalTravel = 100; // percent (full list)
 
     const tick = (timestamp) => {
@@ -1444,7 +1460,7 @@ export default function POSPage() {
                 style={{
                   width:
                     filteredRecentOrders.length > 0
-                      ? `${(filteredRecentOrders.length / (effectiveSidebarOpen ? 4 : 5)) * 100}%`
+                      ? `${(filteredRecentOrders.length / orderColsCount) * 100}%`
                       : "100%",
                 }}
               >
