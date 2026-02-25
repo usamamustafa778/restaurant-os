@@ -44,7 +44,7 @@ import { getTenantRoute } from "../../lib/routes";
 // Cashier: Overview, POS, Orders, Reservations, Customers, Profile. Kitchen: KDS, Profile. Order taker: Overview, POS, Orders, Reservations, Customers, Tables, Profile.
 const tenantNav = [
   {
-    path: "/dashboard/overview",
+    path: "/overview",
     label: "Dashboard",
     icon: LayoutDashboard,
     roles: [
@@ -58,25 +58,25 @@ const tenantNav = [
     ],
   },
   {
-    path: "/dashboard/pos",
+    path: "/pos",
     label: "POS",
     icon: Receipt,
     roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
   },
   {
-    path: "/dashboard/orders",
+    path: "/orders",
     label: "Orders",
     icon: ClipboardList,
     roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
   },
   {
-    path: "/dashboard/kitchen",
+    path: "/kitchen",
     label: "Kitchen (KDS)",
     icon: ChefHat,
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
   },
   {
-    path: "/dashboard/reservations",
+    path: "/reservations",
     label: "Reservations",
     icon: History,
     roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
@@ -84,13 +84,13 @@ const tenantNav = [
 
   { type: "section", label: "MENU MANAGEMENT" },
   {
-    path: "/dashboard/categories",
+    path: "/categories",
     label: "Categories",
     icon: FolderOpen,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
   {
-    path: "/dashboard/menu-items",
+    path: "/menu-items",
     label: "Items",
     icon: ShoppingBag,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
@@ -98,13 +98,13 @@ const tenantNav = [
 
   { type: "section", label: "OPERATIONS" },
   {
-    path: "/dashboard/customers",
+    path: "/customers",
     label: "Customers",
     icon: UserCheck,
     roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
   },
   {
-    path: "/dashboard/inventory",
+    path: "/inventory",
     label: "Inventory",
     icon: Factory,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
@@ -112,25 +112,25 @@ const tenantNav = [
 
   { type: "section", label: "ADMINISTRATION" },
   {
-    path: "/dashboard/users",
+    path: "/users",
     label: "Users",
     icon: Users,
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
-    path: "/dashboard/branches",
+    path: "/branches",
     label: "Branches",
     icon: MapPin,
     roles: ["restaurant_admin", "admin"],
   },
   {
-    path: "/dashboard/tables",
+    path: "/tables",
     label: "Tables",
     icon: UtensilsCrossed,
     roles: ["restaurant_admin", "admin", "manager", "order_taker"],
   },
   {
-    path: "/dashboard/history",
+    path: "/history",
     label: "Reports",
     icon: BarChart3,
     roles: ["restaurant_admin", "admin", "manager"],
@@ -138,25 +138,25 @@ const tenantNav = [
 
   { type: "section", label: "SETTINGS" },
   {
-    path: "/dashboard/website",
+    path: "/website",
     label: "Website Settings",
     icon: Globe,
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
-    path: "/dashboard/integrations",
+    path: "/integrations",
     label: "Integrations / API",
     icon: Plug,
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
-    path: "/dashboard/subscription",
+    path: "/subscription",
     label: "Subscription",
     icon: CreditCard,
     roles: ["restaurant_admin", "admin"],
   },
   {
-    path: "/dashboard/profile",
+    path: "/profile",
     label: "Profile",
     icon: UserCircle2,
     roles: [
@@ -173,28 +173,28 @@ const tenantNav = [
 
 // Pages that can be viewed without selecting a branch (tenant dashboard only)
 const DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH = [
-  "/dashboard/overview",
-  "/dashboard/history",
-  "/dashboard/subscription",
-  "/dashboard/profile",
+  "/overview",
+  "/history",
+  "/subscription",
+  "/profile",
 ];
 
 const superNav = [
   {
-    href: "/dashboard/super/overview",
+    href: "/super/overview",
     label: "Platform Overview",
     icon: LayoutDashboard,
   },
-  { href: "/dashboard/super/restaurants", label: "Restaurants", icon: Factory },
-  { href: "/dashboard/super/branches", label: "All Branches", icon: MapPin },
+  { href: "/super/restaurants", label: "Restaurants", icon: Factory },
+  { href: "/super/branches", label: "All Branches", icon: MapPin },
   {
-    href: "/dashboard/super/subscriptions",
+    href: "/super/subscriptions",
     label: "Subscriptions",
     icon: CreditCard,
   },
-  { href: "/dashboard/super/leads", label: "Leads", icon: Mail },
+  { href: "/super/leads", label: "Leads", icon: Mail },
   {
-    href: "/dashboard/super/settings",
+    href: "/super/settings",
     label: "System Settings",
     icon: Settings2,
   },
@@ -422,16 +422,16 @@ export default function AdminLayout({
     if (expandedGroups.length === 0) {
       const toExpand = [];
       if (
-        router.asPath.includes("/dashboard/menu") ||
-        router.asPath.includes("/dashboard/categories") ||
-        router.asPath.includes("/dashboard/menu-items")
+        router.asPath.includes("/menu") ||
+        router.asPath.includes("/categories") ||
+        router.asPath.includes("/menu-items")
       )
-        toExpand.push("/dashboard/menu");
+        toExpand.push("/menu");
       if (
-        router.asPath.includes("/dashboard/orders") ||
-        router.asPath.includes("/dashboard/pos")
+        router.asPath.includes("/orders") ||
+        router.asPath.includes("/pos")
       )
-        toExpand.push("/dashboard/orders");
+        toExpand.push("/orders");
       if (toExpand.length > 0) {
         setExpandedGroups(toExpand);
         sessionStorage.setItem(
@@ -489,14 +489,13 @@ export default function AdminLayout({
 
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";
 
-  const pathname = router.pathname || (router.asPath && router.asPath.split("?")[0]) || "";
+  const cleanPath = (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
   const showBranchRequiredModal =
     role !== "super_admin" &&
     !branchLoading &&
     branches?.length > 0 &&
     !currentBranch &&
-    pathname.startsWith("/dashboard") &&
-    !DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH.includes(pathname);
+    !DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH.includes(cleanPath);
 
   return (
     <>
@@ -794,7 +793,7 @@ export default function AdminLayout({
               Account
             </p>
             <Link
-              href="/dashboard/profile"
+              href="/profile"
               onClick={() => setMobileSidebarOpen(false)}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all"
             >
@@ -847,7 +846,7 @@ export default function AdminLayout({
                   onClick={() => {
                     clearActingAsRestaurant();
                     setActingAsSlug(null);
-                    window.location.href = "/dashboard/super/overview";
+                    window.location.href = "/super/overview";
                   }}
                   className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90"
                 >
@@ -916,7 +915,7 @@ export default function AdminLayout({
                   onClick={() => {
                     clearActingAsRestaurant();
                     setActingAsSlug(null);
-                    window.location.href = "/dashboard/super/overview";
+                    window.location.href = "/super/overview";
                   }}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary dark:text-primary font-semibold text-sm hover:bg-primary/10 dark:hover:bg-primary/20 transition-all"
                 >
@@ -1024,7 +1023,7 @@ export default function AdminLayout({
                           (role === "super_admin" && actingAsSlug)) && (
                           <div className="border-t-2 border-gray-100 dark:border-neutral-800 p-2">
                             <Link
-                              href="/dashboard/branches"
+                              href="/branches"
                               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-primary dark:text-primary hover:bg-primary/10 transition-all"
                             >
                               <PlusSquare className="w-4 h-4" />
@@ -1077,7 +1076,7 @@ export default function AdminLayout({
                         </div>
                         <div className="p-2 space-y-1">
                           <Link
-                            href="/dashboard/profile"
+                            href="/profile"
                             onClick={() => setUserMenuOpen(false)}
                             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all"
                           >
@@ -1157,7 +1156,7 @@ export default function AdminLayout({
                     </div>
                     <div className="p-3 border-t border-gray-200 dark:border-neutral-800">
                       <Link
-                        href="/dashboard/overview"
+                        href="/overview"
                         className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-primary hover:bg-primary/10 transition-all"
                       >
                         Go to Dashboard

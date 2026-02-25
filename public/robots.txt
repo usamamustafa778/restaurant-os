@@ -5,7 +5,28 @@ User-agent: *
 Allow: /
 Allow: /r/*
 
-# Disallow dashboard and admin pages
+# Disallow dashboard pages (served at root level, auth-protected)
+Disallow: /overview
+Disallow: /pos
+Disallow: /orders
+Disallow: /kitchen
+Disallow: /reservations
+Disallow: /categories
+Disallow: /menu-items
+Disallow: /customers
+Disallow: /inventory
+Disallow: /deals
+Disallow: /users
+Disallow: /branches
+Disallow: /tables
+Disallow: /history
+Disallow: /website
+Disallow: /website-content
+Disallow: /integrations
+Disallow: /subscription
+Disallow: /profile
+Disallow: /day-report
+Disallow: /super/
 Disallow: /dashboard/
 Disallow: /api/
 Disallow: /login

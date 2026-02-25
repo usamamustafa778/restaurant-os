@@ -342,7 +342,7 @@ export default function SuperRestaurantsPage() {
                                 const slug = website.subdomain || null;
                                 if (slug) {
                                   setActingAsRestaurant(slug);
-                                  window.open("/dashboard/overview", "_blank");
+                                  window.open("/overview", "_blank");
                                 }
                               }}
                               className="px-3 text-[11px] font-semibold"

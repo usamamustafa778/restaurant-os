@@ -14,6 +14,7 @@ const ALLOWED_ROLES = [
   "cashier",
   "manager",
   "kitchen_staff",
+  "order_taker",
 ];
 
 export default function LoginPage() {
@@ -44,23 +45,33 @@ export default function LoginPage() {
     }
     const fromQuery = router.query.from;
     const target =
-      typeof fromQuery === "string" && fromQuery.startsWith("/dashboard")
+      typeof fromQuery === "string" && fromQuery.startsWith("/")
         ? fromQuery
-        : "/dashboard/overview";
+        : "/overview";
 
     if (auth.token && isAccessTokenValid(auth.token)) {
-      router.replace(target);
+      router.replace(target).catch(() => {
+        clearStoredAuth();
+        setCheckingStoredAuth(false);
+      });
+      // Fallback: if navigation doesn't complete within 3s, show the form
+      setTimeout(() => setCheckingStoredAuth(false), 3000);
       return;
     }
     if (auth.refreshToken) {
-      tryRefreshStoredAuth().then((ok) => {
-        setCheckingStoredAuth(false);
-        if (ok) {
-          router.replace(target);
-        } else {
+      tryRefreshStoredAuth()
+        .then((ok) => {
+          setCheckingStoredAuth(false);
+          if (ok) {
+            router.replace(target);
+          } else {
+            clearStoredAuth();
+          }
+        })
+        .catch(() => {
           clearStoredAuth();
-        }
-      });
+          setCheckingStoredAuth(false);
+        });
       return;
     }
     clearStoredAuth();
@@ -93,15 +104,13 @@ export default function LoginPage() {
         }
       }
 
-      // Decide target dashboard route — always on main domain, no slug prefix
-      let target = "/dashboard/overview";
+      let target = "/overview";
       const fromQuery = router.query.from;
 
-      // Prefer redirect from middleware if present
-      if (typeof fromQuery === "string" && fromQuery.startsWith("/dashboard")) {
+      if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
         target = fromQuery;
       } else if (user.role === "super_admin") {
-        target = "/dashboard/super/overview";
+        target = "/super/overview";
       }
 
       // Persist auth info for client-side use (e.g. showing name/role)
@@ -117,8 +126,7 @@ export default function LoginPage() {
         );
       }
 
-      // Navigate to dashboard (keep loading true during navigation)
-      window.location.href = "/dashboard/overview";
+      window.location.href = "/overview";
     } catch (err) {
       setError(err.message || "Login failed");
       setLoading(false);

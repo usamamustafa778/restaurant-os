@@ -464,7 +464,7 @@ export default function OrdersPage() {
                     {!isOrderPaidOrNonEditable(order) && (
                       <button
                         type="button"
-                        onClick={() => router.push(`/dashboard/pos?edit=${order._id || order.id}`)}
+                        onClick={() => router.push(`/pos?edit=${order._id || order.id}`)}
                         className="p-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
                         title="Edit order"
                       >

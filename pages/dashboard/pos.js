@@ -320,7 +320,7 @@ export default function POSPage() {
       .catch((err) => {
         if (!cancelled) {
           toast.error(err.message || "Failed to load order");
-          router.replace("/dashboard/pos");
+          router.replace("/pos");
         }
       })
       .finally(() => {
@@ -915,7 +915,7 @@ export default function POSPage() {
       setTableName("");
       setShowCheckout(false);
       loadRecentOrders();
-      router.replace("/dashboard/pos");
+      router.replace("/pos");
     } catch (err) {
       toast.error(err.message || "Failed to update order", { id: toastId });
     } finally {
@@ -1437,7 +1437,7 @@ export default function POSPage() {
                     e.preventDefault();
                     const order = filteredRecentOrders[focusedOrderIndex];
                     if (order?.id) {
-                      router.push({ pathname: "/dashboard/pos", query: { edit: order.id } });
+                      router.push({ pathname: "/pos", query: { edit: order.id } });
                     }
                   }
                 }}
@@ -1486,7 +1486,7 @@ export default function POSPage() {
                       );
                       // Open this order in edit mode in the right sidebar
                       if (order?.id) {
-                        router.push({ pathname: "/dashboard/pos", query: { edit: order.id } });
+                        router.push({ pathname: "/pos", query: { edit: order.id } });
                       }
                     }}
                     className={`relative p-2 rounded border transition-all cursor-pointer ${
@@ -1964,7 +1964,7 @@ export default function POSPage() {
                   setEditingOrderId(null);
                   setEditingOrder(null);
                   setCart([]);
-                  router.replace("/dashboard/pos");
+                  router.replace("/pos");
                 }}
                 className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
               >

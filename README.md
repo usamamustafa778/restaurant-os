@@ -1,7 +1,7 @@
 # EatOut Restaurant Owner Admin Dashboard
 
 - **Stack**: Next.js (Pages Router), React, Tailwind CSS, lucide-react
-- **Auth**: JWT in HttpOnly cookie, middleware-protected `/dashboard/*`
+- **Auth**: JWT in HttpOnly cookie, middleware-protected dashboard routes
 - **Theme**: Black / white / red, responsive, admin-focused
 
 ## Getting Started

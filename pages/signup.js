@@ -102,7 +102,7 @@ export default function SignupPage() {
         );
       }
 
-      window.location.href = "/dashboard/overview";
+      window.location.href = "/overview";
     } catch (err) {
       setError(err.message || "Registration failed");
       setLoading(false);

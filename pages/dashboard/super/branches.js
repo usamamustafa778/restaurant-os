@@ -83,7 +83,7 @@ export default function SuperBranchesPage() {
                           className="px-3 text-[11px] font-semibold"
                           onClick={() => {
                             setActingAsRestaurant(b.subdomain);
-                            window.location.href = "/dashboard/overview";
+                            window.location.href = "/overview";
                           }}
                         >
                           Login

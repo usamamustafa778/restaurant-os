@@ -657,7 +657,7 @@ export default function WebsiteContentPage() {
             <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Link
-            href="/dashboard/website"
+            href="/website"
             className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90"
           >
             <ChevronLeft className="w-5 h-5" />

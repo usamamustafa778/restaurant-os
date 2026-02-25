@@ -573,7 +573,7 @@ export default function TenantWebsiteSettingsPage() {
           {/* Action Buttons */}
           <div className="mt-6 flex flex-col gap-3">
             <button
-              onClick={() => router.push("/dashboard/website-content")}
+              onClick={() => router.push("/website-content")}
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all text-sm font-semibold"
             >
               <FileText className="w-4 h-4" />
