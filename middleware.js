@@ -19,6 +19,7 @@ const DASHBOARD_PAGES = new Set([
   "users", "branches", "tables", "history",
   "website", "website-content", "integrations",
   "subscription", "profile", "day-report",
+  "order-taker",
 ]);
 
 // Routes that should only be visible to non-authenticated users
@@ -115,6 +116,12 @@ export async function middleware(request) {
   if (pathname === "/") {
     const payload = await checkAuth(request);
     if (payload) {
+      // Order taker → dedicated mobile POS
+      if (payload.role === "order_taker") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/order-taker";
+        return NextResponse.redirect(url);
+      }
       // Super admin without "acting as" → super overview
       if (payload.role === "super_admin") {
         const actingAs = request.cookies.get("restaurantos_acting_as")?.value;
@@ -160,6 +167,20 @@ export async function middleware(request) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("from", pathname);
+      return NextResponse.redirect(url);
+    }
+
+    // Order taker can only access /order-taker
+    if (payload.role === "order_taker" && pathname !== "/order-taker") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/order-taker";
+      return NextResponse.redirect(url);
+    }
+
+    // Non-order-taker roles should not access the order-taker page
+    if (payload.role !== "order_taker" && pathname === "/order-taker") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/overview";
       return NextResponse.redirect(url);
     }
 

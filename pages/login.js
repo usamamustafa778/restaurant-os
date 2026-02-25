@@ -107,7 +107,9 @@ export default function LoginPage() {
       let target = "/overview";
       const fromQuery = router.query.from;
 
-      if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
+      if (user.role === "order_taker") {
+        target = "/order-taker";
+      } else if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
         target = fromQuery;
       } else if (user.role === "super_admin") {
         target = "/super/overview";
@@ -126,7 +128,7 @@ export default function LoginPage() {
         );
       }
 
-      window.location.href = "/overview";
+      window.location.href = target;
     } catch (err) {
       setError(err.message || "Login failed");
       setLoading(false);
