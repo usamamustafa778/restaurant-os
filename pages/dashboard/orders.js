@@ -85,6 +85,8 @@ export default function OrdersPage() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [expandedOrderItems, setExpandedOrderItems] = useState({});
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelTargetOrder, setCancelTargetOrder] = useState(null);
 
   const role = getStoredAuth()?.user?.role;
   const isOrderTaker = role === "order_taker";
@@ -150,6 +152,16 @@ export default function OrdersPage() {
     } finally {
       setUpdatingId(null);
     }
+  }
+
+  function openCancelModal(order) {
+    setCancelTargetOrder(order);
+    setShowCancelModal(true);
+  }
+
+  function closeCancelModal() {
+    setShowCancelModal(false);
+    setCancelTargetOrder(null);
   }
 
   async function handleDeleteOrder(order) {
@@ -368,10 +380,14 @@ export default function OrdersPage() {
               <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 ">
                       <span className="text-lg font-bold text-gray-900 dark:text-white">
                         #{getDisplayOrderId(order)}
                       </span>
+                      
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2 w-full justify-between">
+                      <StatusBadge status={order.status} />
                       {order.source === "FOODPANDA" && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-500/10 dark:text-pink-400 font-semibold">
                           Foodpanda
@@ -383,9 +399,6 @@ export default function OrdersPage() {
                         </span>
                       )}
                     </div>
-                    <div className="mt-0.5">
-                      <StatusBadge status={order.status} />
-                    </div>
                   </div>
                   {!isOrderTaker && (
                   <div className="flex items-center gap-2">
@@ -393,7 +406,7 @@ export default function OrdersPage() {
                       <button
                         type="button"
                         disabled={isUpdating}
-                        onClick={() => handleUpdateStatus(order.id || order._id, "CANCELLED")}
+                        onClick={() => openCancelModal(order)}
                         className="p-2 rounded-lg bg-white dark:bg-neutral-900 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
                         title="Cancel order"
                       >
@@ -534,25 +547,10 @@ export default function OrdersPage() {
                     >
                       <Printer className="w-3.5 h-3.5" />
                     </button>
-                    {!isOrderPaidOrNonEditable(order) && (
-                      <button
-                        type="button"
-                        disabled={deletingId === (order.id || order._id)}
-                        onClick={() => handleDeleteOrder(order)}
-                        className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
-                        title="Delete order"
-                      >
-                        {deletingId === (order.id || order._id) ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    )}
                   </>
                 ) : (
                   <>
-                    {order.status !== "CANCELLED" && (
+                    {order.status !== "CANCELLED" && !isOrderPaidOrNonEditable(order) && (
                       <button
                         type="button"
                         onClick={() => openPaymentModal(order)}
@@ -586,21 +584,7 @@ export default function OrdersPage() {
                         )}
                       </button>
                     )}
-                    {!isOrderPaidOrNonEditable(order) && (
-                      <button
-                        type="button"
-                        disabled={deletingId === (order.id || order._id)}
-                        onClick={() => handleDeleteOrder(order)}
-                        className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
-                        title="Delete order"
-                      >
-                        {deletingId === (order.id || order._id) ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    )}
+                    {/* Delete temporarily hidden */}
                   </>
                 )}
               </div>
@@ -712,6 +696,60 @@ export default function OrdersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel order confirmation modal */}
+      {showCancelModal && cancelTargetOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Cancel order</h2>
+              <button
+                type="button"
+                onClick={closeCancelModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+              >
+                <span className="text-2xl">×</span>
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-gray-700 dark:text-neutral-300">
+                Are you sure you want to cancel order{" "}
+                <span className="font-semibold">
+                  #{getDisplayOrderId(cancelTargetOrder)}
+                </span>
+                ? This cannot be undone.
+              </p>
+              <p className="text-xs text-gray-500 dark:text-neutral-500">
+                Status will be updated to <span className="font-semibold">Cancelled</span> and the order
+                will no longer appear in active lists.
+              </p>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeCancelModal}
+                  className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
+                >
+                  Keep order
+                </button>
+                <button
+                  type="button"
+                  disabled={updatingId === (cancelTargetOrder.id || cancelTargetOrder._id)}
+                  onClick={() => {
+                    const id = cancelTargetOrder.id || cancelTargetOrder._id;
+                    handleUpdateStatus(id, "CANCELLED");
+                    closeCancelModal();
+                  }}
+                  className="flex-1 px-3 py-2.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+                >
+                  {updatingId === (cancelTargetOrder.id || cancelTargetOrder._id)
+                    ? "Cancelling..."
+                    : "Yes, cancel order"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
