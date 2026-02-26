@@ -27,6 +27,7 @@ import {
   updateBranch,
   getRestaurantSettings,
 } from "../../lib/apiClient";
+import { printBillReceipt } from "../../lib/printBillReceipt";
 import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
 import {
@@ -976,91 +977,15 @@ export default function POSPage() {
     };
   }
 
-  // Open print window for Customer Bill (menu bill) or Order Receipt (payment bill)
-  function posPrintBill(orderLike, mode) {
-    const win = window.open("", "_blank", "width=360,height=600");
-    if (!win) {
-      toast.error("Allow popups to print");
-      return;
-    }
-    const itemsHtml = (orderLike.items || [])
-      .map(
-        (it) =>
-          `<tr>
-          <td style="padding:4px 0;border-bottom:1px dashed #ddd">${(it.name || "").replace(/</g, "&lt;")}</td>
-          <td style="padding:4px 8px;text-align:center;border-bottom:1px dashed #ddd">${it.qty ?? 1}</td>
-          <td style="padding:4px 0;text-align:right;border-bottom:1px dashed #ddd">Rs ${((it.unitPrice || 0) * (it.qty || 1)).toFixed(2)}</td>
-        </tr>`
-      )
-      .join("");
-    const discount = orderLike.discountAmount || 0;
-    const hasPaymentDetails =
-      orderLike.paymentAmountReceived != null && orderLike.paymentAmountReceived > 0;
-    const isReceipt = mode === "receipt" || hasPaymentDetails;
-    const headerLabel = isReceipt ? "Order Receipt" : "Customer Bill";
-    const paymentLabel =
-      orderLike.paymentMethod ||
-      (isReceipt ? "Cash" : "To be paid");
-    const orderId = orderLike.orderNumber || orderLike.id || "";
-    const returnAmount =
-      orderLike.paymentAmountReturned != null
-        ? Number(orderLike.paymentAmountReturned)
-        : hasPaymentDetails && orderLike.paymentAmountReceived != null
-          ? Math.max(0, Number(orderLike.paymentAmountReceived) - (orderLike.total || 0))
-          : 0;
-    const paymentExtra =
-      isReceipt && hasPaymentDetails
-        ? `<div><strong>Amount received:</strong> Rs ${Number(orderLike.paymentAmountReceived).toFixed(2)}</div><div><strong>Return:</strong> Rs ${returnAmount.toFixed(2)}</div>`
-        : "";
-
-    const logoHtml = restaurantLogoUrl
-      ? `<div class="center" style="margin-bottom:4px;"><img src="${restaurantLogoUrl}" alt="Restaurant logo" style="max-height:48px;object-fit:contain;" /></div>`
-      : `<div class="center" style="font-size:16px;font-weight:bold;margin-bottom:4px;">Eats Desk</div>`;
-    win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <title>${isReceipt ? "Receipt" : "Bill"} – ${orderId}</title>
-  <style>
-    body { font-family: 'Courier New', monospace; margin: 0; padding: 16px; font-size: 13px; color: #222; }
-    .center { text-align: center; }
-    hr { border: none; border-top: 1px dashed #999; margin: 10px 0; }
-    table { width: 100%; border-collapse: collapse; }
-    .total-row td { font-weight: bold; padding-top: 6px; }
-  </style>
-</head>
-<body>
-  ${logoHtml}
-  <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">${headerLabel}</div>
-  <hr/>
-  <div><strong>Order:</strong> ${String(orderId).replace(/^ORD-/, "")}</div>
-  <div><strong>Date:</strong> ${new Date(orderLike.createdAt).toLocaleString()}</div>
-  <div><strong>Customer:</strong> ${(orderLike.customerName || "Walk-in").replace(/</g, "&lt;")}</div>
-  <div><strong>Type:</strong> ${(orderLike.type || "dine-in").replace(/</g, "&lt;")}</div>
-  <div><strong>Payment:</strong> ${paymentLabel}</div>
-  ${paymentExtra}
-  <hr/>
-  <table>
-    <thead>
-      <tr style="font-weight:bold;border-bottom:1px solid #999">
-        <td style="padding:4px 0">Item</td>
-        <td style="padding:4px 8px;text-align:center">Qty</td>
-        <td style="padding:4px 0;text-align:right">Amount</td>
-      </tr>
-    </thead>
-    <tbody>${itemsHtml}</tbody>
-  </table>
-  <hr/>
-  <table>
-    <tr><td>Subtotal</td><td style="text-align:right">Rs ${(orderLike.subtotal || orderLike.total || 0).toFixed(2)}</td></tr>
-    ${discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">- Rs ${Number(discount).toFixed(2)}</td></tr>` : ""}
-    <tr class="total-row" style="font-size:15px"><td>Grand Total</td><td style="text-align:right">Rs ${(orderLike.total || 0).toFixed(2)}</td></tr>
-  </table>
-  <hr/>
-  <div class="center" style="font-size:11px;color:#888;margin-top:12px;">Thank you for your order!</div>
-  <script>window.onload = function() { window.print(); };<\/script>
-</body>
-</html>`);
-    win.document.close();
+  function openPrintBill(orderLike, mode) {
+    const auth = getStoredAuth();
+    const win = printBillReceipt(orderLike, {
+      mode,
+      logoUrl: restaurantLogoUrl,
+      branchAddress: currentBranch?.address || "",
+      orderTakerName: auth?.user?.name || "",
+    });
+    if (!win) toast.error("Allow popups to print");
   }
 
   async function printMenuBill() {
@@ -1097,7 +1022,7 @@ export default function POSPage() {
       const orderNum = result?.orderNumber ?? result?.id ?? "";
 
       // Print Customer Bill using backend-generated order info
-      posPrintBill(
+      openPrintBill(
         buildOrderLikeFromCart({
           orderNumber: orderNum,
           id: orderNum,
@@ -1134,7 +1059,7 @@ export default function POSPage() {
       toast.error("Cart is empty");
       return;
     }
-    posPrintBill(buildOrderLikeFromCart(overrides), "receipt");
+    openPrintBill(buildOrderLikeFromCart(overrides), "receipt");
   }
 
   // Keyboard shortcuts: Esc (close payment modal or clear cart), Ctrl/Cmd + Shift + ...

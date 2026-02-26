@@ -14,7 +14,9 @@ import {
   getStoredAuth,
   getRestaurantSettings,
 } from "../../lib/apiClient";
+import { printBillReceipt } from "../../lib/printBillReceipt";
 import { useSocket } from "../../contexts/SocketContext";
+import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
 import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag } from "lucide-react";
 
@@ -52,107 +54,10 @@ function isOrderPaidOrNonEditable(order) {
   return pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA";
 }
 
-function printBill(order, mode = "auto", logoUrl) {
-  const win = window.open("", "_blank", "width=360,height=600");
-  if (!win) return;
-
-  const itemsHtml = (order.items || [])
-    .map(
-      (it) =>
-        `<tr>
-          <td style="padding:4px 0;border-bottom:1px dashed #ddd">${it.name}</td>
-          <td style="padding:4px 8px;text-align:center;border-bottom:1px dashed #ddd">${it.qty}</td>
-          <td style="padding:4px 0;text-align:right;border-bottom:1px dashed #ddd">Rs ${(it.unitPrice * it.qty).toFixed(2)}</td>
-        </tr>`
-    )
-    .join("");
-
-  const discount = order.discountAmount || 0;
-
-  const hasPaymentDetails =
-    order.paymentAmountReceived != null && order.paymentAmountReceived > 0;
-
-  // Decide whether this printout is a bill (before payment) or a receipt (after payment)
-  const isReceipt =
-    mode === "receipt" || (mode === "auto" && hasPaymentDetails);
-
-  const titleLabel = isReceipt ? "Receipt" : "Bill";
-  const headerLabel = isReceipt ? "Order Receipt" : "Customer Bill";
-  const paymentLabel =
-    order.paymentMethod ||
-    (isReceipt ? "Cash" : "To be paid");
-
-  const logoHtml = logoUrl
-    ? `<div class="center" style="margin-bottom:4px;"><img src="${logoUrl}" alt="Restaurant logo" style="max-height:48px;object-fit:contain;" /></div>`
-    : `<div class="center bold" style="font-size:16px;margin-bottom:4px;">Eats Desk</div>`;
-
-  win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <title>${titleLabel} – ${getDisplayOrderId(order)}</title>
-  <style>
-    body { font-family: 'Courier New', monospace; margin: 0; padding: 16px; font-size: 13px; color: #222; }
-    .center { text-align: center; }
-    .bold { font-weight: bold; }
-    hr { border: none; border-top: 1px dashed #999; margin: 10px 0; }
-    table { width: 100%; border-collapse: collapse; }
-    .total-row td { font-weight: bold; padding-top: 6px; }
-  </style>
-</head>
-<body>
-  ${logoHtml}
-  <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">${headerLabel}</div>
-  <hr/>
-  <div><strong>Order:</strong> ${getDisplayOrderId(order)}</div>
-  <div><strong>Date:</strong> ${new Date(order.createdAt).toLocaleString()}</div>
-  <div><strong>Customer:</strong> ${order.customerName || "Walk‑in"}</div>
-  <div><strong>Type:</strong> ${order.type || "dine-in"}</div>
-  <div><strong>Payment:</strong> ${paymentLabel}</div>
-  ${
-    isReceipt && hasPaymentDetails
-      ? `<div><strong>Amount received:</strong> Rs ${Number(order.paymentAmountReceived || 0).toFixed(2)}</div><div><strong>Return:</strong> Rs ${Number(
-          order.paymentAmountReturned != null ? order.paymentAmountReturned : 0,
-        ).toFixed(2)}</div>`
-      : ""
-  }
-  <hr/>
-  <table>
-    <thead>
-      <tr style="font-weight:bold;border-bottom:1px solid #999">
-        <td style="padding:4px 0">Item</td>
-        <td style="padding:4px 8px;text-align:center">Qty</td>
-        <td style="padding:4px 0;text-align:right">Amount</td>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemsHtml}
-    </tbody>
-  </table>
-  <hr/>
-  <table>
-    <tr>
-      <td>Subtotal</td>
-      <td style="text-align:right">Rs ${(order.subtotal || order.total).toFixed(2)}</td>
-    </tr>
-    ${discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">- Rs ${discount.toFixed(2)}</td></tr>` : ""}
-    <tr class="total-row" style="font-size:15px">
-      <td>Grand Total</td>
-      <td style="text-align:right">Rs ${order.total.toFixed(2)}</td>
-    </tr>
-  </table>
-  <hr/>
-  <div class="center" style="font-size:11px;color:#888;margin-top:12px;">Thank you for your order!</div>
-  <script>
-    window.onload = function() { window.print(); };
-  <\/script>
-</body>
-</html>`);
-  win.document.close();
-}
-
 export default function OrdersPage() {
   const router = useRouter();
   const { socket } = useSocket() || {};
+  const { currentBranch } = useBranch() || {};
   const [orders, setOrders] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -268,6 +173,15 @@ export default function OrdersPage() {
     setPaymentError("");
   }
 
+  function openPrintBill(order, mode) {
+    const win = printBillReceipt(order, {
+      mode,
+      logoUrl: restaurantLogoUrl,
+      branchAddress: currentBranch?.address || "",
+    });
+    if (!win) toast.error("Allow popups to print");
+  }
+
   async function handleRecordPayment(e) {
     e.preventDefault();
     if (!paymentOrder) return;
@@ -312,6 +226,7 @@ export default function OrdersPage() {
         return (
           (o.id || "").toLowerCase().includes(term) ||
           (o.customerName || "").toLowerCase().includes(term) ||
+          (o.orderTakerName || "").toLowerCase().includes(term) ||
           (o.externalOrderId || "").toLowerCase().includes(term) ||
           (o.customerPhone || "").toLowerCase().includes(term)
         );
@@ -504,7 +419,7 @@ export default function OrdersPage() {
               <div className="px-4 py-3 space-y-2">
                 <div className="flex items-center gap-2 text-sm">
                   <User className="w-4 h-4 text-gray-400 dark:text-neutral-500" />
-                  <span className="font-medium text-gray-900 dark:text-white">{order.customerName || "Walk-in"}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{(order.customerName || "").trim() || (order.source === "FOODPANDA" ? "Foodpanda Customer" : "N/A")}</span>
                 </div>
                 {order.customerPhone && (
                   <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-neutral-400">
@@ -603,7 +518,7 @@ export default function OrdersPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => printBill(order, "receipt", restaurantLogoUrl)}
+                      onClick={() => openPrintBill(order, "receipt")}
                       className="p-2.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
                       title="Print receipt"
                     >
@@ -640,7 +555,7 @@ export default function OrdersPage() {
                     {order.status !== "CANCELLED" && (
                       <button
                         type="button"
-                        onClick={() => printBill(order, "bill", restaurantLogoUrl)}
+                        onClick={() => openPrintBill(order, "bill")}
                         className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
                         title="Print bill"
                       >
