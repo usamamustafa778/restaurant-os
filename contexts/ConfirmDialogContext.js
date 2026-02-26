@@ -9,29 +9,44 @@ export function ConfirmDialogProvider({ children }) {
     message: "",
     confirmLabel: "Confirm",
     cancelLabel: "Cancel",
+    options: null,
+    selectedValue: null,
     resolve: null
   });
 
-  const confirm = useCallback(({ title, message, confirmLabel = "Confirm", cancelLabel = "Cancel" }) => {
-    return new Promise(resolve => {
-      setState({
-        open: true,
-        title,
-        message,
-        confirmLabel,
-        cancelLabel,
-        resolve
+  const confirm = useCallback(
+    ({ title, message, confirmLabel = "Confirm", cancelLabel = "Cancel", options = null, defaultValue = null }) => {
+      return new Promise((resolve) => {
+        setState({
+          open: true,
+          title,
+          message,
+          confirmLabel,
+          cancelLabel,
+          options,
+          selectedValue: defaultValue ?? (options && options.length > 0 ? options[0].value : null),
+          resolve,
+        });
       });
-    });
-  }, []);
+    },
+    [],
+  );
 
   const handleClose = result => {
     if (state.resolve) {
-      state.resolve(result);
+      if (state.options && result) {
+        state.resolve(state.selectedValue);
+      } else if (state.options && !result) {
+        state.resolve(null);
+      } else {
+        state.resolve(result);
+      }
     }
     setState(prev => ({
       ...prev,
       open: false,
+      options: null,
+      selectedValue: null,
       resolve: null
     }));
   };
@@ -45,9 +60,33 @@ export function ConfirmDialogProvider({ children }) {
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
               {state.title || "Are you sure?"}
             </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-5">
+            <p className="text-xs text-gray-500 dark:text-neutral-400">
               {state.message || "This action cannot be undone."}
             </p>
+            {state.options && (
+              <div className="mt-3 mb-4 space-y-2 text-xs">
+                {state.options.map((opt) => (
+                  <label
+                    key={String(opt.value)}
+                    className="flex items-center gap-2 cursor-pointer text-gray-700 dark:text-neutral-200"
+                  >
+                    <input
+                      type="radio"
+                      name="confirm-dialog-option"
+                      className="text-primary"
+                      checked={state.selectedValue === opt.value}
+                      onChange={() =>
+                        setState((prev) => ({
+                          ...prev,
+                          selectedValue: opt.value,
+                        }))
+                      }
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="flex justify-end gap-2 text-xs">
               <button
                 type="button"

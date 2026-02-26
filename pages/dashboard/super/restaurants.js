@@ -70,12 +70,12 @@ function downloadRestaurantsExcel(rows) {
 const STATUS_CONFIRM = {
   TRIAL: {
     title: "Reset to Trial",
-    message: "This will reset the restaurant's subscription status to Trial. Are you sure?",
+    message: "This will reset the restaurant's subscription status to a 3‑month trial. Are you sure?",
     confirmLabel: "Set Trial",
   },
   ACTIVE: {
     title: "Activate Subscription",
-    message: "This will activate the restaurant's subscription, granting full access. Continue?",
+    message: "This will activate the restaurant's subscription. Choose how long it should stay active.",
     confirmLabel: "Activate",
   },
   SUSPENDED: {
@@ -139,16 +139,56 @@ export default function SuperRestaurantsPage() {
 
   async function handleStatusChange(id, status) {
     const cfg = STATUS_CONFIRM[status] || {};
-    const ok = await confirm({
-      title: cfg.title || "Change Status",
-      message: cfg.message || `Change subscription status to ${status}?`,
-      confirmLabel: cfg.confirmLabel || "Confirm",
-    });
-    if (!ok) return;
+    // Trial: simple confirm, backend enforces 3-month trial window
+    if (status === "TRIAL") {
+      const ok = await confirm({
+        title: cfg.title || "Change Status",
+        message: cfg.message || `Change subscription status to ${status}?`,
+        confirmLabel: cfg.confirmLabel || "Confirm",
+      });
+      if (!ok) return;
+      setStatusDropdownId(null);
+      setUpdatingId(id);
+      try {
+        const updated = await updateRestaurantSubscription(id, { status });
+        setRestaurants(prev =>
+          prev.map(r => (r.id === updated.id ? { ...r, subscription: updated.subscription } : r))
+        );
+      } finally {
+        setUpdatingId(null);
+      }
+      return;
+    }
+
+    // Active: ask for duration (in months)
+    let durationMonths = null;
+    if (status === "ACTIVE") {
+      durationMonths = await confirm({
+        title: cfg.title || "Activate Subscription",
+        message: cfg.message || "Choose how long the subscription should stay active.",
+        confirmLabel: cfg.confirmLabel || "Activate",
+        options: [
+          { label: "1 month", value: 1 },
+          { label: "3 months", value: 3 },
+          { label: "6 months", value: 6 },
+          { label: "12 months", value: 12 },
+        ],
+        defaultValue: 1,
+      });
+      if (!durationMonths) return;
+    } else {
+      const ok = await confirm({
+        title: cfg.title || "Change Status",
+        message: cfg.message || `Change subscription status to ${status}?`,
+        confirmLabel: cfg.confirmLabel || "Confirm",
+      });
+      if (!ok) return;
+    }
     setStatusDropdownId(null);
     setUpdatingId(id);
     try {
-      const updated = await updateRestaurantSubscription(id, { status });
+      const payload = durationMonths ? { status, durationMonths } : { status };
+      const updated = await updateRestaurantSubscription(id, payload);
       setRestaurants(prev =>
         prev.map(r => (r.id === updated.id ? { ...r, subscription: updated.subscription } : r))
       );
