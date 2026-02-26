@@ -61,7 +61,7 @@ function printBill(order, mode = "auto") {
         `<tr>
           <td style="padding:4px 0;border-bottom:1px dashed #ddd">${it.name}</td>
           <td style="padding:4px 8px;text-align:center;border-bottom:1px dashed #ddd">${it.qty}</td>
-          <td style="padding:4px 0;text-align:right;border-bottom:1px dashed #ddd">Rs ${(it.unitPrice * it.qty).toFixed(0)}</td>
+          <td style="padding:4px 0;text-align:right;border-bottom:1px dashed #ddd">Rs ${(it.unitPrice * it.qty).toFixed(2)}</td>
         </tr>`
     )
     .join("");
@@ -105,13 +105,9 @@ function printBill(order, mode = "auto") {
   <div><strong>Payment:</strong> ${paymentLabel}</div>
   ${
     isReceipt && hasPaymentDetails
-      ? `<div><strong>Amount received:</strong> Rs ${order.paymentAmountReceived.toFixed(
-          0,
-        )}</div><div><strong>Return:</strong> Rs ${
-          order.paymentAmountReturned != null
-            ? order.paymentAmountReturned
-            : 0
-        }.toFixed(0)</div>`
+      ? `<div><strong>Amount received:</strong> Rs ${Number(order.paymentAmountReceived || 0).toFixed(2)}</div><div><strong>Return:</strong> Rs ${Number(
+          order.paymentAmountReturned != null ? order.paymentAmountReturned : 0,
+        ).toFixed(2)}</div>`
       : ""
   }
   <hr/>
@@ -131,12 +127,12 @@ function printBill(order, mode = "auto") {
   <table>
     <tr>
       <td>Subtotal</td>
-      <td style="text-align:right">Rs ${(order.subtotal || order.total).toFixed(0)}</td>
+      <td style="text-align:right">Rs ${(order.subtotal || order.total).toFixed(2)}</td>
     </tr>
-    ${discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">- Rs ${discount.toFixed(0)}</td></tr>` : ""}
+    ${discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">- Rs ${discount.toFixed(2)}</td></tr>` : ""}
     <tr class="total-row" style="font-size:15px">
       <td>Grand Total</td>
-      <td style="text-align:right">Rs ${order.total.toFixed(0)}</td>
+      <td style="text-align:right">Rs ${order.total.toFixed(2)}</td>
     </tr>
   </table>
   <hr/>
@@ -564,7 +560,7 @@ export default function OrdersPage() {
                 )}
                 <div className="pt-2 border-t border-gray-100 dark:border-neutral-800 flex items-center justify-between">
                   <span className="text-sm font-bold text-gray-900 dark:text-white">Total</span>
-                  <span className="text-xl font-bold text-primary">Rs {order.total.toFixed(0)}</span>
+                  <span className="text-xl font-bold text-primary">Rs {order.total.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -697,7 +693,7 @@ export default function OrdersPage() {
             </div>
             <form onSubmit={handleRecordPayment} className="p-4 space-y-4">
               <p className="text-sm text-gray-600 dark:text-neutral-400">
-                Order #{getDisplayOrderId(paymentOrder)} · Rs {Number(paymentOrder.total).toFixed(0)}
+                Order #{getDisplayOrderId(paymentOrder)} · Rs {Number(paymentOrder.total).toFixed(2)}
               </p>
               {paymentError && (
                 <p className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>
@@ -726,7 +722,7 @@ export default function OrdersPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Bill total (Rs)</label>
                     <div className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white">
-                      Rs {Number(paymentOrder.total).toFixed(0)}
+                      Rs {Number(paymentOrder.total).toFixed(2)}
                     </div>
                   </div>
                   <div>
@@ -746,7 +742,7 @@ export default function OrdersPage() {
                     <div>
                       <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Return to customer (Rs)</label>
                       <div className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                        Rs {(Number(amountReceived) - Number(paymentOrder.total)).toFixed(0)}
+                        Rs {(Number(amountReceived) - Number(paymentOrder.total)).toFixed(2)}
                       </div>
                     </div>
                   )}

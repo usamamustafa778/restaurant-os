@@ -57,6 +57,11 @@ body {
   @apply antialiased;
 }
 
+/* Bill-style font for payment/billing sections */
+.bill-font {
+  font-family: 'Courier New', monospace;
+}
+
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
   width: 8px;

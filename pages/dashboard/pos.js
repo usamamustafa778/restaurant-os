@@ -66,6 +66,7 @@ export default function POSPage() {
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [printingMenu, setPrintingMenu] = useState(false);
   const [loadingEditOrder, setLoadingEditOrder] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
@@ -455,7 +456,7 @@ export default function POSPage() {
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
       if (isNaN(received) || received < billTotal) {
-        setPaymentError(`Amount received must be at least Rs ${billTotal.toFixed(0)}`);
+        setPaymentError(`Amount received must be at least Rs ${billTotal.toFixed(2)}`);
         return;
       }
     }
@@ -967,7 +968,7 @@ export default function POSPage() {
           `<tr>
           <td style="padding:4px 0;border-bottom:1px dashed #ddd">${(it.name || "").replace(/</g, "&lt;")}</td>
           <td style="padding:4px 8px;text-align:center;border-bottom:1px dashed #ddd">${it.qty ?? 1}</td>
-          <td style="padding:4px 0;text-align:right;border-bottom:1px dashed #ddd">Rs ${((it.unitPrice || 0) * (it.qty || 1)).toFixed(0)}</td>
+          <td style="padding:4px 0;text-align:right;border-bottom:1px dashed #ddd">Rs ${((it.unitPrice || 0) * (it.qty || 1)).toFixed(2)}</td>
         </tr>`
       )
       .join("");
@@ -988,7 +989,7 @@ export default function POSPage() {
           : 0;
     const paymentExtra =
       isReceipt && hasPaymentDetails
-        ? `<div><strong>Amount received:</strong> Rs ${Number(orderLike.paymentAmountReceived).toFixed(0)}</div><div><strong>Return:</strong> Rs ${returnAmount.toFixed(0)}</div>`
+        ? `<div><strong>Amount received:</strong> Rs ${Number(orderLike.paymentAmountReceived).toFixed(2)}</div><div><strong>Return:</strong> Rs ${returnAmount.toFixed(2)}</div>`
         : "";
     win.document.write(`<!DOCTYPE html>
 <html>
@@ -1025,9 +1026,9 @@ export default function POSPage() {
   </table>
   <hr/>
   <table>
-    <tr><td>Subtotal</td><td style="text-align:right">Rs ${(orderLike.subtotal || orderLike.total || 0).toFixed(0)}</td></tr>
-    ${discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">- Rs ${Number(discount).toFixed(0)}</td></tr>` : ""}
-    <tr class="total-row" style="font-size:15px"><td>Grand Total</td><td style="text-align:right">Rs ${(orderLike.total || 0).toFixed(0)}</td></tr>
+    <tr><td>Subtotal</td><td style="text-align:right">Rs ${(orderLike.subtotal || orderLike.total || 0).toFixed(2)}</td></tr>
+    ${discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">- Rs ${Number(discount).toFixed(2)}</td></tr>` : ""}
+    <tr class="total-row" style="font-size:15px"><td>Grand Total</td><td style="text-align:right">Rs ${(orderLike.total || 0).toFixed(2)}</td></tr>
   </table>
   <hr/>
   <div class="center" style="font-size:11px;color:#888;margin-top:12px;">Thank you for your order!</div>
@@ -1037,12 +1038,70 @@ export default function POSPage() {
     win.document.close();
   }
 
-  function printMenuBill() {
+  async function printMenuBill() {
     if (cart.length === 0) {
       toast.error("Cart is empty");
       return;
     }
-    posPrintBill(buildOrderLikeFromCart(), "bill");
+
+    try {
+      setPrintingMenu(true);
+      const result = await createPosOrder({
+        items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
+        orderType,
+        paymentMethod: "PENDING",
+        discountAmount: totalDiscount,
+        appliedDeals:
+          selectedDeals.length > 0
+            ? selectedDeals.map((dealId) => {
+                const deal = applicableDeals.find((d) => d.id === dealId);
+                return {
+                  dealId,
+                  dealName: deal?.name || "",
+                  dealType: deal?.dealType || "",
+                };
+              })
+            : undefined,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        deliveryAddress: customerAddress.trim(),
+        branchId: currentBranch?.id ?? undefined,
+        tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+      });
+
+      const orderNum = result?.orderNumber ?? result?.id ?? "";
+
+      // Print Customer Bill using backend-generated order info
+      posPrintBill(
+        buildOrderLikeFromCart({
+          orderNumber: orderNum,
+          id: orderNum,
+          createdAt: result?.createdAt ?? new Date().toISOString(),
+        }),
+        "bill",
+      );
+
+      // Open the created order in edit mode
+      if (orderNum) {
+        router.push({ pathname: "/pos", query: { edit: orderNum } });
+      }
+
+      // Clear local cart and reset POS state
+      setCart([]);
+      setCustomerName("");
+      setCustomerPhone("");
+      setCustomerAddress("");
+      setDiscountAmount("");
+      setSelectedDeals([]);
+      setDealDiscount(0);
+      setShowCustomerDetails(false);
+      setTableName("");
+      loadRecentOrders();
+    } catch (err) {
+      toast.error(err.message || "Failed to place order for printing");
+    } finally {
+      setPrintingMenu(false);
+    }
   }
 
   function printPaymentBill(overrides = {}) {
@@ -2224,7 +2283,7 @@ export default function POSPage() {
                               Amount
                             </div>
                             <div className="font-semibold text-gray-900 dark:text-white">
-                              Rs {(item.price * item.quantity).toFixed(0)}
+                              Rs {(item.price * item.quantity).toFixed(2)}
                             </div>
                           </div>
                           <div className="text-right">
@@ -2232,7 +2291,7 @@ export default function POSPage() {
                               Total
                             </div>
                             <div className="font-bold text-primary text-base">
-                              Rs {(item.price * item.quantity).toFixed(0)}
+                              Rs {(item.price * item.quantity).toFixed(2)}
                             </div>
                           </div>
                         </div>
@@ -2334,7 +2393,7 @@ export default function POSPage() {
               )}
 
               {/* Payment Summary */}
-              <div className="space-y-2">
+              <div className="space-y-2 bill-font">
                 <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-2">
                   Payment Summary
                 </h4>
@@ -2343,7 +2402,7 @@ export default function POSPage() {
                     Sub Total
                   </span>
                   <span className="font-semibold text-gray-900 dark:text-white">
-                    Rs {subtotal.toFixed(0)}
+                    Rs {subtotal.toFixed(2)}
                   </span>
                 </div>
                 {dealDiscount > 0 && (
@@ -2352,7 +2411,7 @@ export default function POSPage() {
                       Deal Discount
                     </span>
                     <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                      -Rs {dealDiscount.toFixed(0)}
+                      -Rs {dealDiscount.toFixed(2)}
                     </span>
                   </div>
                 )}
@@ -2362,7 +2421,7 @@ export default function POSPage() {
                       Discount
                     </span>
                     <span className="font-semibold text-gray-600 dark:text-neutral-400">
-                      -Rs {manualDiscount.toFixed(0)}
+                      -Rs {manualDiscount.toFixed(2)}
                     </span>
                   </div>
                 )}
@@ -2377,13 +2436,13 @@ export default function POSPage() {
               </div>
 
               {/* Amount to be Paid */}
-              <div className="pt-3 border-t border-gray-200 dark:border-neutral-800">
+              <div className="pt-3 border-t border-gray-200 dark:border-neutral-800 bill-font">
                 <div className="flex justify-between items-center">
                   <span className="text-base font-bold text-gray-900 dark:text-white">
                     Amount to be Paid
                   </span>
                   <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                    Rs {total.toFixed(0)}
+                    Rs {total.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -2431,12 +2490,13 @@ export default function POSPage() {
               <div className="grid grid-cols-3 gap-2 mt-2">
                 <button
                   type="button"
-                  onClick={() => setShowPrintModal(true)}
-                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+                  onClick={printMenuBill}
+                  disabled={printingMenu || cart.length === 0}
+                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Printer className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
                   <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Print
+                    {printingMenu ? "Printing..." : "Print"}
                   </span>
                 </button>
                 <button
@@ -3139,7 +3199,7 @@ export default function POSPage() {
                         </span>
                       </div>
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        ${(item.price * item.quantity).toFixed(0)}
+                        ${(item.price * item.quantity).toFixed(2)}
                       </span>
                     </div>
                   ))}
@@ -3153,7 +3213,7 @@ export default function POSPage() {
                     Sub Total
                   </span>
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    ${subtotal.toFixed(0)}
+                    ${subtotal.toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -3180,7 +3240,7 @@ export default function POSPage() {
                   Total
                 </span>
                 <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                  ${(subtotal + 15).toFixed(0)}
+                  ${(subtotal + 15).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -3222,7 +3282,7 @@ export default function POSPage() {
             </div>
             <form onSubmit={handleTakePaymentSubmit} className="p-4 space-y-4">
               <p className="text-sm text-gray-600 dark:text-neutral-400">
-                Order total · Rs {total.toFixed(0)}
+                Order total · Rs {total.toFixed(2)}
               </p>
               {paymentError && (
                 <p className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>
@@ -3251,7 +3311,7 @@ export default function POSPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Bill total (Rs)</label>
                     <div className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white">
-                      Rs {total.toFixed(0)}
+                      Rs {total.toFixed(2)}
                     </div>
                   </div>
                   <div>
@@ -3272,7 +3332,7 @@ export default function POSPage() {
                     <div>
                       <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Return to customer (Rs)</label>
                       <div className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                        Rs {(Number(amountReceived) - total).toFixed(0)}
+                        Rs {(Number(amountReceived) - total).toFixed(2)}
                       </div>
                     </div>
                   )}
