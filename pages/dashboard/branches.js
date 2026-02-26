@@ -42,6 +42,8 @@ export default function BranchesPage() {
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoSaving, setLogoSaving] = useState(false);
   const [logoTab, setLogoTab] = useState("link");
+  const [savedLogoUrl, setSavedLogoUrl] = useState("");
+  const [logoDirty, setLogoDirty] = useState(false);
   const logoInputRef = useRef(null);
 
   useEffect(() => {
@@ -88,10 +90,17 @@ export default function BranchesPage() {
     getRestaurantSettings()
       .then((data) => {
         if (cancelled) return;
-        setRestaurantSettings(data || {});
+        const settings = data || {};
+        setRestaurantSettings(settings);
+        setSavedLogoUrl(settings.restaurantLogoUrl || "");
+        setLogoDirty(false);
       })
       .catch(() => {
-        if (!cancelled) setRestaurantSettings({});
+        if (!cancelled) {
+          setRestaurantSettings({});
+          setSavedLogoUrl("");
+          setLogoDirty(false);
+        }
       })
       .finally(() => {
         if (!cancelled) setLogoLoading(false);
@@ -188,7 +197,7 @@ export default function BranchesPage() {
   const restaurantLogoUrl = restaurantSettings?.restaurantLogoUrl || "";
 
   async function handleLogoUrlSave(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!restaurantSettings) return;
     setLogoSaving(true);
     const toastId = toast.loading("Saving restaurant logo...");
@@ -198,6 +207,8 @@ export default function BranchesPage() {
         restaurantLogoUrl,
       });
       setRestaurantSettings(updated);
+      setSavedLogoUrl(updated?.restaurantLogoUrl || "");
+      setLogoDirty(false);
       toast.success("Restaurant logo saved", { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to save restaurant logo", { id: toastId });
@@ -213,6 +224,7 @@ export default function BranchesPage() {
     try {
       const { url } = await uploadImage(file);
       setRestaurantSettings((prev) => ({ ...(prev || {}), restaurantLogoUrl: url }));
+      setLogoDirty(true);
     } catch (err) {
       toast.error(err.message || "Logo upload failed");
     } finally {
@@ -273,38 +285,23 @@ export default function BranchesPage() {
           </div>
 
           {logoTab === "link" && (
-            <form onSubmit={handleLogoUrlSave} className="space-y-2">
+            <div className="space-y-2">
               <input
                 type="text"
                 value={restaurantLogoUrl}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const value = e.target.value;
                   setRestaurantSettings((prev) => ({
                     ...(prev || {}),
-                    restaurantLogoUrl: e.target.value,
-                  }))
-                }
+                    restaurantLogoUrl: value,
+                  }));
+                  setLogoDirty(true);
+                }}
                 placeholder="https://..."
                 className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                 disabled={logoLoading}
               />
-              <div className="flex justify-end pt-1">
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={logoSaving || logoLoading}
-                >
-                  {logoSaving ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>Save logo</>
-                  )}
-                </Button>
-              </div>
-            </form>
+            </div>
           )}
 
           {logoTab === "upload" && (
@@ -335,6 +332,25 @@ export default function BranchesPage() {
               />
             </label>
           )}
+
+          <div className="flex justify-end pt-2">
+            <Button
+              type="button"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleLogoUrlSave}
+              disabled={logoSaving || logoLoading || !logoDirty}
+            >
+              {logoSaving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>Save logo</>
+              )}
+            </Button>
+          </div>
 
           <div className="flex items-center gap-3 mt-1">
             {restaurantLogoUrl ? (
