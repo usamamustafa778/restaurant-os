@@ -53,7 +53,6 @@ const tenantNav = [
       "manager",
       "product_manager",
       "cashier",
-      "kitchen_staff",
       "order_taker",
     ],
   },
@@ -377,6 +376,16 @@ export default function AdminLayout({
     }
   }, []);
 
+  // Restrict kitchen_staff to Kitchen (KDS) only – redirect away from overview/dashboard
+  useEffect(() => {
+    if (role !== "kitchen_staff") return;
+    const path =
+      (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
+    if (path === "/overview") {
+      router.replace("/kitchen");
+    }
+  }, [role, router]);
+
   // Close mobile sidebar on route change
   useEffect(() => {
     const handleRouteChange = () => setMobileSidebarOpen(false);
@@ -487,9 +496,10 @@ export default function AdminLayout({
     window.location.href = "/login";
   }
 
-  const sidebarWidthClass = collapsed ? "w-16" : "w-56";
-
   const cleanPath = (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
+  const hideSidebarForKitchenStaff =
+    role === "kitchen_staff" && cleanPath === "/kitchen";
+  const sidebarWidthClass = collapsed ? "w-16" : "w-56";
   const showBranchRequiredModal =
     role !== "super_admin" &&
     !branchLoading &&
@@ -506,21 +516,23 @@ export default function AdminLayout({
         noindex={true}
       />
       <div className="h-screen overflow-hidden bg-gray-50 dark:bg-black flex text-gray-900 dark:text-white text-sm">
-        {/* Backdrop for mobile sidebar */}
-        <div
-          aria-hidden
-          onClick={() => setMobileSidebarOpen(false)}
-          className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-500 ease-in-out md:hidden ${
-            mobileSidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-          }`}
-        />
-        <aside
-          className={`fixed md:relative inset-y-0 left-0 z-50 md:z-40 w-72 ${collapsed ? "md:w-16" : "md:w-56"} flex flex-col border-r-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm transform transition-transform duration-500 ease-in-out ${
-            mobileSidebarOpen
-              ? "translate-x-0"
-              : "-translate-x-full md:translate-x-0"
-          } md:transition-[width] md:duration-300 md:ease-in-out`}
-        >
+        {!hideSidebarForKitchenStaff && (
+          <>
+            {/* Backdrop for mobile sidebar */}
+            <div
+              aria-hidden
+              onClick={() => setMobileSidebarOpen(false)}
+              className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-500 ease-in-out md:hidden ${
+                mobileSidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+            />
+            <aside
+              className={`fixed md:relative inset-y-0 left-0 z-50 md:z-40 w-72 ${collapsed ? "md:w-16" : "md:w-56"} flex flex-col border-r-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm transform transition-transform duration-500 ease-in-out ${
+                mobileSidebarOpen
+                  ? "translate-x-0"
+                  : "-translate-x-full md:translate-x-0"
+              } md:transition-[width] md:duration-300 md:ease-in-out`}
+            >
           {/* Logo Section */}
           <div className="px-4 py-3 border-b-2 border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -827,6 +839,8 @@ export default function AdminLayout({
             </button>
           </div>
         </aside>
+          </>
+        )}
 
         <div className="flex-1 flex flex-col min-w-0">
           <header className="sticky top-0 z-30 flex-shrink-0 md:hidden flex items-center justify-between px-4 py-4 border-b-2 border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm">

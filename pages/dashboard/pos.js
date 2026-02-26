@@ -337,7 +337,7 @@ export default function POSPage() {
         );
         setTableName(order.tableName || "");
         setDiscountAmount(order.discountAmount ? String(order.discountAmount) : "");
-        setEditingOrderId(order._id || order.id);
+        setEditingOrderId(order.id || order._id);
         setEditingOrder(order);
       })
       .catch((err) => {

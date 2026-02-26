@@ -153,7 +153,7 @@ export default function OrdersPage() {
   }
 
   async function handleDeleteOrder(order) {
-    const orderId = order._id || order.id;
+    const orderId = order.id || order._id;
     const displayId = getDisplayOrderId(order);
     if (!window.confirm(`Delete order #${displayId}? This cannot be undone.`)) return;
     setDeletingId(orderId);
@@ -195,7 +195,7 @@ export default function OrdersPage() {
   async function handleRecordPayment(e) {
     e.preventDefault();
     if (!paymentOrder) return;
-    const orderId = paymentOrder._id || paymentOrder.id;
+    const orderId = paymentOrder.id || paymentOrder._id;
     const billTotal = Number(paymentOrder.total) || 0;
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
@@ -356,7 +356,7 @@ export default function OrdersPage() {
           const dateStr = orderDate.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
           const timeStr = orderDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
           const discountPercent = order.subtotal > 0 ? ((order.discountAmount / order.subtotal) * 100) : 0;
-          const orderKey = order._id || order.id;
+          const orderKey = order.id || order._id;
           const itemsExpanded = !!expandedOrderItems[orderKey];
 
           return (
@@ -393,7 +393,7 @@ export default function OrdersPage() {
                       <button
                         type="button"
                         disabled={isUpdating}
-                        onClick={() => handleUpdateStatus(order._id || order.id, "CANCELLED")}
+                        onClick={() => handleUpdateStatus(order.id || order._id, "CANCELLED")}
                         className="p-2 rounded-lg bg-white dark:bg-neutral-900 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
                         title="Cancel order"
                       >
@@ -407,7 +407,7 @@ export default function OrdersPage() {
                     {!isOrderPaidOrNonEditable(order) && (
                       <button
                         type="button"
-                        onClick={() => router.push(`/pos?edit=${order._id || order.id}`)}
+                        onClick={() => router.push(`/pos?edit=${order.id || order._id}`)}
                         className="p-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
                         title="Edit order"
                       >
@@ -537,12 +537,12 @@ export default function OrdersPage() {
                     {!isOrderPaidOrNonEditable(order) && (
                       <button
                         type="button"
-                        disabled={deletingId === (order._id || order.id)}
+                        disabled={deletingId === (order.id || order._id)}
                         onClick={() => handleDeleteOrder(order)}
                         className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
                         title="Delete order"
                       >
-                        {deletingId === (order._id || order.id) ? (
+                        {deletingId === (order.id || order._id) ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
                           <Trash2 className="w-3.5 h-3.5" />
@@ -576,7 +576,7 @@ export default function OrdersPage() {
                       <button
                         type="button"
                         disabled={isUpdating}
-                        onClick={() => handleUpdateStatus(order._id || order.id, primaryNext)}
+                        onClick={() => handleUpdateStatus(order.id || order._id, primaryNext)}
                         className="flex-1 rounded-lg bg-primary text-white px-4 py-2.5 text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isUpdating ? (
@@ -589,12 +589,12 @@ export default function OrdersPage() {
                     {!isOrderPaidOrNonEditable(order) && (
                       <button
                         type="button"
-                        disabled={deletingId === (order._id || order.id)}
+                        disabled={deletingId === (order.id || order._id)}
                         onClick={() => handleDeleteOrder(order)}
                         className="p-2.5 rounded-lg border border-gray-200 dark:border-neutral-600 text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 transition-colors disabled:opacity-50"
                         title="Delete order"
                       >
-                        {deletingId === (order._id || order.id) ? (
+                        {deletingId === (order.id || order._id) ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
                           <Trash2 className="w-3.5 h-3.5" />
