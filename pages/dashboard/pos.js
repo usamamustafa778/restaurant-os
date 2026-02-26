@@ -1185,7 +1185,7 @@ export default function POSPage() {
     });
   }
 
-  const statusProgress = { UNPROCESSED: 25, PENDING: 50, READY: 75, COMPLETED: 100, CANCELLED: 0 };
+  const statusProgress = { NEW_ORDER: 25, PROCESSING: 50, READY: 75, DELIVERED: 100, CANCELLED: 0 };
 
   async function loadRecentOrders() {
     try {

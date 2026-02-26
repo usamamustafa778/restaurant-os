@@ -103,7 +103,7 @@ export default function OrderTakerPage() {
     try {
       const data = await getOrders();
       const active = data.filter(
-        (o) => o.status !== "COMPLETED" && o.status !== "CANCELLED"
+        (o) => o.status !== "DELIVERED" && o.status !== "CANCELLED"
       );
       setActiveOrders(active);
     } catch (err) {
@@ -220,7 +220,7 @@ export default function OrderTakerPage() {
   // Active orders derived data
   const readyOrders = activeOrders.filter((o) => o.status === "READY");
   const preparingOrders = activeOrders.filter(
-    (o) => o.status === "PENDING" || o.status === "UNPROCESSED"
+    (o) => o.status === "PROCESSING" || o.status === "NEW_ORDER"
   );
   const filteredActiveOrders =
     activeFilter === "ready"
@@ -250,9 +250,9 @@ export default function OrderTakerPage() {
           icon: PackageCheck,
           pulse: true,
         };
-      case "PENDING":
+      case "PROCESSING":
         return {
-          label: "Preparing",
+          label: "Processing",
           bg: "bg-amber-500",
           bgLight: "bg-amber-50 dark:bg-amber-500/10",
           text: "text-amber-600 dark:text-amber-400",
@@ -260,9 +260,9 @@ export default function OrderTakerPage() {
           icon: ChefHat,
           pulse: false,
         };
-      case "UNPROCESSED":
+      case "NEW_ORDER":
         return {
-          label: "New",
+          label: "New order",
           bg: "bg-blue-500",
           bgLight: "bg-blue-50 dark:bg-blue-500/10",
           text: "text-blue-600 dark:text-blue-400",

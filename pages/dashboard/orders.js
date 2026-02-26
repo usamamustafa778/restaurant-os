@@ -22,21 +22,30 @@ import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, 
 
 const ORDER_STATUSES = [
   "All Orders",
-  "UNPROCESSED",
-  "PENDING",
+  "NEW_ORDER",
+  "PROCESSING",
   "READY",
-  "COMPLETED",
+  "DELIVERED",
   "CANCELLED"
 ];
 
 const STATUS_TAB_LABELS = {
   "All Orders": "All Orders",
-  UNPROCESSED: "Unprocessed",
-  PENDING: "Pending",
+  NEW_ORDER: "New order",
+  PROCESSING: "Processing",
   READY: "Ready",
-  COMPLETED: "Completed",
+  DELIVERED: "Delivered",
   CANCELLED: "Cancelled"
 };
+
+// Map order status to tab (supports legacy UNPROCESSED/PENDING/COMPLETED)
+function orderStatusForTab(status) {
+  if (!status) return "NEW_ORDER";
+  if (status === "UNPROCESSED") return "NEW_ORDER";
+  if (status === "PENDING") return "PROCESSING";
+  if (status === "COMPLETED") return "DELIVERED";
+  return status;
+}
 
 // Display order ID as YYYYMMDD-XXXX (strip "ORD-" prefix when present)
 function getDisplayOrderId(order) {
@@ -48,6 +57,7 @@ function getDisplayOrderId(order) {
 // True when payment has been recorded or order is from external platform / cancelled (order should not be editable)
 function isOrderPaidOrNonEditable(order) {
   if (order.status === "CANCELLED") return true;
+  if (order.status === "DELIVERED" || order.status === "COMPLETED") return true;
   if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0) return true;
   if (order.source === "FOODPANDA") return true;
   const pm = (order.paymentMethod || "").toUpperCase();
@@ -232,7 +242,7 @@ export default function OrdersPage() {
         );
       })
       .filter(o =>
-        statusFilter === "All Orders" ? true : o.status === statusFilter
+        statusFilter === "All Orders" ? true : orderStatusForTab(o.status) === statusFilter
       )
       .filter(o =>
         sourceFilter === "All Sources" ? true : o.source === sourceFilter
@@ -298,7 +308,7 @@ export default function OrdersPage() {
           const count =
             s === "All Orders"
               ? orders.length
-              : orders.filter(o => o.status === s).length;
+              : orders.filter(o => orderStatusForTab(o.status) === s).length;
           return (
             <button
               key={s}
@@ -337,9 +347,9 @@ export default function OrdersPage() {
           const isUpdating = updatingId === order.id || updatingId === order._id;
 
           const NEXT_LABELS = {
-            PENDING: "Pending",
+            PROCESSING: "Processing",
             READY: "Ready",
-            COMPLETED: "Completed"
+            DELIVERED: "Delivered"
           };
 
           const orderDate = new Date(order.createdAt);
@@ -379,7 +389,7 @@ export default function OrdersPage() {
                   </div>
                   {!isOrderTaker && (
                   <div className="flex items-center gap-2">
-                    {order.status !== "CANCELLED" && order.status !== "COMPLETED" && (
+                    {order.status !== "CANCELLED" && order.status !== "DELIVERED" && order.status !== "COMPLETED" && (
                       <button
                         type="button"
                         disabled={isUpdating}
@@ -504,7 +514,7 @@ export default function OrdersPage() {
               {/* Actions (hidden for order_taker – view only) */}
               {!isOrderTaker && (
               <div className="mt-auto px-4 pb-4 pt-3 border-t border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2">
-                {order.status === "COMPLETED" ? (
+                {(order.status === "DELIVERED" || order.status === "COMPLETED") ? (
                   <>
                     {(order.paymentMethod === "To be paid" || order.paymentMethod === "PENDING") && (
                       <button

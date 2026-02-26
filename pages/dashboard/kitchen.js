@@ -38,7 +38,7 @@ export default function KitchenPage() {
   async function fetchOrders() {
     try {
       const data = await getOrders();
-      setOrders(data.filter(o => o.status !== "COMPLETED" && o.status !== "CANCELLED"));
+      setOrders(data.filter(o => o.status !== "DELIVERED" && o.status !== "CANCELLED"));
     } catch (err) {
       toast.error(err.message || "Failed to load orders");
     } finally {
@@ -46,14 +46,14 @@ export default function KitchenPage() {
     }
   }
 
-  // Group orders by status (matches backend: UNPROCESSED → PENDING → READY)
-  const newOrders = orders.filter(o => o.status === "UNPROCESSED");
-  const inKitchen = orders.filter(o => o.status === "PENDING");
+  // Group orders by status (matches backend: NEW_ORDER → PROCESSING → READY)
+  const newOrders = orders.filter(o => o.status === "NEW_ORDER");
+  const inKitchen = orders.filter(o => o.status === "PROCESSING");
   const delayed = orders.filter(o => {
     const orderTime = new Date(o.createdAt);
     const now = new Date();
     const minutesElapsed = (now - orderTime) / 60000;
-    return minutesElapsed > 15 && o.status !== "COMPLETED";
+    return minutesElapsed > 15 && o.status !== "DELIVERED";
   });
   const ready = orders.filter(o => o.status === "READY");
 
