@@ -25,6 +25,7 @@ import {
   createCustomer,
   getBranch,
   updateBranch,
+  getRestaurantSettings,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
@@ -168,12 +169,32 @@ export default function POSPage() {
   const [quickCustomerName, setQuickCustomerName] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
 
+  // Restaurant logo (shared across branches, used in printed bills)
+  const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
+
   // Check sidebar state from sessionStorage before showing grid (so reload with closed sidebar → 5 cols)
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const collapsed = sessionStorage.getItem("sidebar_collapsed") === "true";
     setSidebarOpen(!collapsed);
     setSidebarHydrated(true);
+  }, []);
+
+  // Load shared restaurant logo (for printed bills)
+  useEffect(() => {
+    let cancelled = false;
+    getRestaurantSettings()
+      .then((data) => {
+        if (cancelled) return;
+        const url = data?.restaurantLogoUrl || "";
+        setRestaurantLogoUrl(url);
+      })
+      .catch(() => {
+        // Ignore logo load errors; printing will just fall back to text
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -991,6 +1012,10 @@ export default function POSPage() {
       isReceipt && hasPaymentDetails
         ? `<div><strong>Amount received:</strong> Rs ${Number(orderLike.paymentAmountReceived).toFixed(2)}</div><div><strong>Return:</strong> Rs ${returnAmount.toFixed(2)}</div>`
         : "";
+
+    const logoHtml = restaurantLogoUrl
+      ? `<div class="center" style="margin-bottom:4px;"><img src="${restaurantLogoUrl}" alt="Restaurant logo" style="max-height:48px;object-fit:contain;" /></div>`
+      : `<div class="center" style="font-size:16px;font-weight:bold;margin-bottom:4px;">Eats Desk</div>`;
     win.document.write(`<!DOCTYPE html>
 <html>
 <head>
@@ -1004,7 +1029,7 @@ export default function POSPage() {
   </style>
 </head>
 <body>
-  <div class="center" style="font-size:16px;font-weight:bold;margin-bottom:4px;">Eats Desk</div>
+  ${logoHtml}
   <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">${headerLabel}</div>
   <hr/>
   <div><strong>Order:</strong> ${String(orderId).replace(/^ORD-/, "")}</div>

@@ -12,6 +12,7 @@ import {
   recordOrderPayment,
   SubscriptionInactiveError,
   getStoredAuth,
+  getRestaurantSettings,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import toast from "react-hot-toast";
@@ -51,7 +52,7 @@ function isOrderPaidOrNonEditable(order) {
   return pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA";
 }
 
-function printBill(order, mode = "auto") {
+function printBill(order, mode = "auto", logoUrl) {
   const win = window.open("", "_blank", "width=360,height=600");
   if (!win) return;
 
@@ -81,6 +82,10 @@ function printBill(order, mode = "auto") {
     order.paymentMethod ||
     (isReceipt ? "Cash" : "To be paid");
 
+  const logoHtml = logoUrl
+    ? `<div class="center" style="margin-bottom:4px;"><img src="${logoUrl}" alt="Restaurant logo" style="max-height:48px;object-fit:contain;" /></div>`
+    : `<div class="center bold" style="font-size:16px;margin-bottom:4px;">Eats Desk</div>`;
+
   win.document.write(`<!DOCTYPE html>
 <html>
 <head>
@@ -95,7 +100,7 @@ function printBill(order, mode = "auto") {
   </style>
 </head>
 <body>
-  <div class="center bold" style="font-size:16px;margin-bottom:4px;">Eats Desk</div>
+  ${logoHtml}
   <div class="center" style="font-size:11px;color:#666;margin-bottom:8px;">${headerLabel}</div>
   <hr/>
   <div><strong>Order:</strong> ${getDisplayOrderId(order)}</div>
@@ -169,6 +174,8 @@ export default function OrdersPage() {
   const role = getStoredAuth()?.user?.role;
   const isOrderTaker = role === "order_taker";
 
+  const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
+
   async function loadOrders() {
     try {
       const data = await getOrders();
@@ -186,6 +193,21 @@ export default function OrdersPage() {
 
   useEffect(() => {
     loadOrders();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getRestaurantSettings()
+      .then((data) => {
+        if (cancelled) return;
+        setRestaurantLogoUrl(data?.restaurantLogoUrl || "");
+      })
+      .catch(() => {
+        if (!cancelled) setRestaurantLogoUrl("");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -581,7 +603,7 @@ export default function OrdersPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => printBill(order, "receipt")}
+                      onClick={() => printBill(order, "receipt", restaurantLogoUrl)}
                       className="p-2.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
                       title="Print receipt"
                     >
@@ -618,7 +640,7 @@ export default function OrdersPage() {
                     {order.status !== "CANCELLED" && (
                       <button
                         type="button"
-                        onClick={() => printBill(order, "bill")}
+                        onClick={() => printBill(order, "bill", restaurantLogoUrl)}
                         className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
                         title="Print bill"
                       >
