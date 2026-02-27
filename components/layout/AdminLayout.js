@@ -41,7 +41,8 @@ import { getTenantRoute } from "../../lib/routes";
 
 // Single tenant nav: each item has `roles` – only roles that can see it. No roles = all tenant roles.
 // Admin: all. Manager: all except Branches, Subscription. Product manager: Overview, Categories, Items, Inventory, Profile.
-// Cashier: Overview, POS, Orders, Reservations, Customers, Profile. Kitchen: KDS, Profile. Order taker: Overview, POS, Orders, Reservations, Customers, Tables, Profile.
+// Cashier: Overview, POS, Orders, Reservations, Customers, Profile. Kitchen: KDS, Profile.
+// Order taker uses dedicated /order-taker mobile UI and does not see the dashboard sidebar.
 const tenantNav = [
   {
     path: "/overview",
@@ -53,20 +54,19 @@ const tenantNav = [
       "manager",
       "product_manager",
       "cashier",
-      "order_taker",
     ],
   },
   {
     path: "/pos",
     label: "POS",
     icon: Receipt,
-    roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
   },
   {
     path: "/orders",
     label: "Orders",
     icon: ClipboardList,
-    roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
   },
   {
     path: "/kitchen",
@@ -78,7 +78,7 @@ const tenantNav = [
     path: "/reservations",
     label: "Reservations",
     icon: History,
-    roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
   },
 
   { type: "section", label: "MENU MANAGEMENT" },
@@ -100,7 +100,7 @@ const tenantNav = [
     path: "/customers",
     label: "Customers",
     icon: UserCheck,
-    roles: ["restaurant_admin", "admin", "manager", "cashier", "order_taker"],
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
   },
   {
     path: "/inventory",
@@ -126,7 +126,7 @@ const tenantNav = [
     path: "/tables",
     label: "Tables",
     icon: UtensilsCrossed,
-    roles: ["restaurant_admin", "admin", "manager", "order_taker"],
+    roles: ["restaurant_admin", "admin", "manager"],
   },
   {
     path: "/history",
@@ -165,7 +165,6 @@ const tenantNav = [
       "product_manager",
       "cashier",
       "kitchen_staff",
-      "order_taker",
     ],
   },
 ];

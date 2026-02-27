@@ -62,6 +62,17 @@ export default function ProfilePage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState({ type: "", text: "" });
 
+  // Redirect order takers to dedicated mobile UI
+  useEffect(() => {
+    const auth = getStoredAuth();
+    const role = auth?.user?.role;
+    if (role === "order_taker") {
+      if (typeof window !== "undefined") {
+        window.location.href = "/order-taker";
+      }
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
