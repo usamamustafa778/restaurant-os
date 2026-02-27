@@ -1053,14 +1053,14 @@ export default function OverviewPage() {
             </div>
           </div>
         </div>
-        <div className="p-6">
+        <div className="px-4 pb-4 pt-2">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm max-w-2xl">
+            <table className="w-full text-xs max-w-xl">
               <thead className="bg-gray-50 dark:bg-neutral-900/50">
                 <tr>
-                  <th className="py-3 px-4 text-left font-bold text-gray-700 dark:text-neutral-300">Note (Rs)</th>
-                  <th className="py-3 px-4 text-right font-bold text-gray-700 dark:text-neutral-300">Quantity</th>
-                  <th className="py-3 px-4 text-right font-bold text-gray-700 dark:text-neutral-300">Amount (Rs)</th>
+                  <th className="py-2 px-3 text-left font-bold text-gray-700 dark:text-neutral-300">Note (Rs)</th>
+                  <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Qty</th>
+                  <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Amount (Rs)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
@@ -1069,8 +1069,8 @@ export default function OverviewPage() {
                   const amount = qty * note;
                   return (
                     <tr key={note} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30">
-                      <td className="py-3 px-4 font-semibold text-gray-900 dark:text-white">{note.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-1.5 px-3 font-semibold text-gray-900 dark:text-white">{note.toLocaleString()}</td>
+                      <td className="py-1.5 px-3 text-right">
                         <input
                           type="number"
                           min="0"
@@ -1080,22 +1080,22 @@ export default function OverviewPage() {
                           placeholder="0"
                           disabled={!isCurrencyEditable}
                           readOnly={!isCurrencyEditable}
-                          className={`w-24 text-right px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary focus:border-primary ${isCurrencyEditable ? "bg-white dark:bg-neutral-900 text-gray-900 dark:text-white" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-500 cursor-not-allowed"}`}
+                          className={`w-20 text-right px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary focus:border-primary ${isCurrencyEditable ? "bg-white dark:bg-neutral-900 text-gray-900 dark:text-white" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-500 cursor-not-allowed"}`}
                         />
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold text-primary">
+                      <td className="py-1.5 px-3 text-right font-semibold text-primary">
                         Rs {amount.toLocaleString()}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
-              <tfoot className="bg-gray-100 dark:bg-neutral-800/50 border-t-2 border-gray-200 dark:border-neutral-700">
+              <tfoot className="bg-gray-100 dark:bg-neutral-800/50 border-t border-gray-200 dark:border-neutral-700">
                 <tr>
-                  <td className="py-4 px-4 font-bold text-gray-900 dark:text-white" colSpan={2}>
+                  <td className="py-2 px-3 font-bold text-gray-900 dark:text-white" colSpan={2}>
                     Total
                   </td>
-                  <td className="py-4 px-4 text-right text-lg font-bold text-primary">
+                  <td className="py-2 px-3 text-right text-base font-bold text-primary">
                     Rs {currencyTotal.toLocaleString()}
                   </td>
                 </tr>

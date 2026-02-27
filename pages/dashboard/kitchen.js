@@ -174,9 +174,9 @@ export default function KitchenPage() {
                             key={orderId}
                             className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 hover:shadow-md transition-shadow"
                           >
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex flex-col gap-0.5">
-                                <div className="flex items-center gap-2">
+                            <div className="flex flex-col justify-between mb-3">
+                              <div className="flex flex-row items-center justify-between gap-0.5">
+                                <div className="flex items-center gap-2 ">
                                   <span className="text-lg font-bold text-gray-900 dark:text-white">
                                     #{order.tokenNumber || String(orderId).slice(-4)}
                                   </span>
@@ -184,31 +184,33 @@ export default function KitchenPage() {
                                     {typeLabel}
                                   </span>
                                 </div>
-                                <span className="text-[10px] font-medium text-gray-500 dark:text-neutral-400">
-                                  Order ID: #{getDisplayOrderId(order)}
-                                </span>
+                                <div className="flex items-center gap-2 ">
+                                  <span className="text-xs text-gray-500 dark:text-neutral-400 flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {getTimeElapsed(order.createdAt)}
+                                  </span>
+                                  {nextStatus && (
+                                    <button
+                                      type="button"
+                                      disabled={isUpdating}
+                                      onClick={() => handleStatusAdvance(order)}
+                                      className="p-1 rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                      title={`Mark as ${STATUS_LABELS[nextStatus] || nextStatus}`}
+                                    >
+                                      {isUpdating ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <ChevronRight className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-500 dark:text-neutral-400 flex items-center gap-1">
-                                  <Clock className="w-3 h-3" />
-                                  {getTimeElapsed(order.createdAt)}
-                                </span>
-                                {nextStatus && (
-                                  <button
-                                    type="button"
-                                    disabled={isUpdating}
-                                    onClick={() => handleStatusAdvance(order)}
-                                    className="p-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                    title={`Mark as ${STATUS_LABELS[nextStatus] || nextStatus}`}
-                                  >
-                                    {isUpdating ? (
-                                      <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                      <ChevronRight className="w-4 h-4" />
-                                    )}
-                                  </button>
-                                )}
-                              </div>
+
+                              <span className="text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                                Order ID: #{getDisplayOrderId(order)}
+                              </span>
                             </div>
 
                             <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-neutral-400 mb-3">
