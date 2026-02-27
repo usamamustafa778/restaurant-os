@@ -9,6 +9,7 @@ import {
   setActingAsRestaurant,
   deleteRestaurantForSuperAdmin,
   restoreRestaurantForSuperAdmin,
+  permanentlyDeleteRestaurantForSuperAdmin,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 import { Search, ChevronDown, Trash2, X, Loader2, FileDown } from "lucide-react";
@@ -262,33 +263,84 @@ export default function SuperRestaurantsPage() {
                             key={r.id}
                             className="px-3 py-2 text-xs flex items-center justify-between gap-2 hover:bg-amber-50 dark:hover:bg-amber-900/30"
                           >
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <p className="font-semibold text-amber-900 dark:text-amber-100 truncate">
                                 {r.website?.name || "Untitled"}
                               </p>
                               <p className="text-[10px] text-amber-700 dark:text-amber-300 font-mono truncate">
                                 {r.website?.subdomain || "—"}
                               </p>
+                              {r.deletedAt && (
+                                <p className="text-[10px] text-amber-600 dark:text-amber-300/80 mt-0.5">
+                                  {(() => {
+                                    const deletedAt = new Date(r.deletedAt);
+                                    const totalMs = 48 * 60 * 60 * 1000;
+                                    const elapsed = Date.now() - deletedAt.getTime();
+                                    const remaining = Math.max(0, totalMs - elapsed);
+                                    const hrs = Math.floor(remaining / (60 * 60 * 1000));
+                                    const mins = Math.floor(
+                                      (remaining % (60 * 60 * 1000)) / (60 * 1000),
+                                    );
+                                    if (remaining <= 0) return "Restore window expired";
+                                    if (hrs === 0) return `${mins} min remaining`;
+                                    return `${hrs}h ${mins}m remaining`;
+                                  })()}
+                                </p>
+                              )}
                             </div>
-                            <button
-                              type="button"
-                              className="px-2 py-1 rounded-md bg-emerald-600 text-[10px] text-white font-semibold hover:bg-emerald-700 flex-shrink-0"
-                              onClick={async () => {
-                                const name = r.website?.name || "Restaurant";
-                                const toastId = toast.loading(`Restoring "${name}"...`);
-                                try {
-                                  await restoreRestaurantForSuperAdmin(r.id);
-                                  loadRestaurants();
-                                  loadDeleted();
-                                  setDeletedDropdownOpen(false);
-                                  toast.success(`"${name}" restored.`, { id: toastId });
-                                } catch (err) {
-                                  toast.error(err.message || "Failed to restore", { id: toastId });
-                                }
-                              }}
-                            >
-                              Restore
-                            </button>
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                className="px-2 py-1 rounded-md bg-emerald-600 text-[10px] text-white font-semibold hover:bg-emerald-700"
+                                onClick={async () => {
+                                  const name = r.website?.name || "Restaurant";
+                                  const toastId = toast.loading(`Restoring "${name}"...`);
+                                  try {
+                                    await restoreRestaurantForSuperAdmin(r.id);
+                                    loadRestaurants();
+                                    loadDeleted();
+                                    setDeletedDropdownOpen(false);
+                                    toast.success(`"${name}" restored.`, { id: toastId });
+                                  } catch (err) {
+                                    toast.error(err.message || "Failed to restore", { id: toastId });
+                                  }
+                                }}
+                              >
+                                Restore
+                              </button>
+                              <button
+                                type="button"
+                                className="px-2 py-1 rounded-md border border-red-300 bg-red-50 text-[10px] text-red-700 font-semibold hover:bg-red-100 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200"
+                                onClick={async () => {
+                                  const name = r.website?.name || "Restaurant";
+                                  const ok = await confirm({
+                                    title: "Permanently delete restaurant",
+                                    message:
+                                      `This will permanently delete "${name}" and cannot be undone. ` +
+                                      "This action will remove the restaurant from the platform.",
+                                    confirmLabel: "Delete permanently",
+                                  });
+                                  if (!ok) return;
+                                  const toastId = toast.loading(
+                                    `Deleting "${name}" permanently...`,
+                                  );
+                                  try {
+                                    await permanentlyDeleteRestaurantForSuperAdmin(r.id);
+                                    loadRestaurants();
+                                    loadDeleted();
+                                    toast.success(`"${name}" deleted permanently.`, {
+                                      id: toastId,
+                                    });
+                                  } catch (err) {
+                                    toast.error(err.message || "Failed to delete permanently", {
+                                      id: toastId,
+                                    });
+                                  }
+                                }}
+                              >
+                                Delete forever
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
