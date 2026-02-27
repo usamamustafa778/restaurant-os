@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { registerRestaurant } from "../lib/apiClient";
+import { registerRestaurant, verifyEmail } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, X, MapPin } from "lucide-react";
 import SEO from "../components/SEO";
 
@@ -16,6 +16,11 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [verifyEmailAddress, setVerifyEmailAddress] = useState("");
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
   const router = useRouter();
 
   // --- Step navigation ---
@@ -78,18 +83,38 @@ export default function SignupPage() {
       const data = await registerRestaurant(payload);
       const user = data.user;
 
-      // Resolve the restaurant slug from API response or JWT
+      // Show inline verification modal (OTP already sent by backend)
+      setVerifyEmailAddress(user.email);
+      setVerifyCode("");
+      setVerifyError("");
+      setShowVerifyModal(true);
+    } catch (err) {
+      setError(err.message || "Registration failed");
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifySubmit(e) {
+    e.preventDefault();
+    setVerifyLoading(true);
+    setVerifyError("");
+    try {
+      const data = await verifyEmail({
+        email: verifyEmailAddress.trim(),
+        otp: verifyCode.trim(),
+      });
+
+      // Store auth data with tenantSlug (same pattern as login)
+      const user = data.user || {};
       let restaurantSlug = user.restaurantSlug || null;
       if (!restaurantSlug && data.token) {
         try {
           const payload = JSON.parse(atob(data.token.split(".")[1]));
           restaurantSlug = payload.tenantSlug || null;
-        } catch (_) {
-          /* ignore decode errors */
+        } catch {
+          /* ignore */
         }
       }
-
-      // Store auth data with tenantSlug
       if (typeof window !== "undefined") {
         window.localStorage.setItem(
           "restaurantos_auth",
@@ -98,14 +123,13 @@ export default function SignupPage() {
             token: data.token || null,
             refreshToken: data.refreshToken || null,
             tenantSlug: restaurantSlug,
-          })
+          }),
         );
       }
-
-      window.location.href = "/overview";
+      router.push("/overview");
     } catch (err) {
-      setError(err.message || "Registration failed");
-      setLoading(false);
+      setVerifyError(err.message || "Verification failed");
+      setVerifyLoading(false);
     }
   }
 
@@ -119,7 +143,7 @@ export default function SignupPage() {
         description="Start your 14-day free trial of Eats Desk. Get a complete restaurant management system with POS, inventory, and free website. No credit card required!"
         keywords="restaurant management free trial, POS system trial, restaurant software demo, free restaurant website, start restaurant business"
       />
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-6">
+      <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-6">
       {/* Modern gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-white to-secondary/5" />
       <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
@@ -394,6 +418,66 @@ export default function SignupPage() {
           </span>
         </div>
       </div>
+
+      {showVerifyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-6 shadow-2xl">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+              Verify your email
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
+              We&apos;ve sent a 6‑digit code to{" "}
+              <span className="font-semibold">{verifyEmailAddress}</span>. Enter
+              it below to activate your account.
+            </p>
+            <form onSubmit={handleVerifySubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                  Verification code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  required
+                  maxLength={6}
+                  value={verifyCode}
+                  onChange={(e) =>
+                    setVerifyCode(e.target.value.replace(/[^0-9]/g, ""))
+                  }
+                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 tracking-[0.4em] text-center"
+                  placeholder="••••••"
+                />
+              </div>
+              {verifyError && (
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  {verifyError}
+                </p>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowVerifyModal(false);
+                    setVerifyCode("");
+                    setVerifyError("");
+                  }}
+                  className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={verifyLoading}
+                  className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {verifyLoading ? "Verifying..." : "Verify & continue"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );

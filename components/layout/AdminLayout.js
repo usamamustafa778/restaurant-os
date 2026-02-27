@@ -191,6 +191,11 @@ const superNav = [
     label: "Subscriptions",
     icon: CreditCard,
   },
+  {
+    href: "/super/users",
+    label: "Users",
+    icon: Users,
+  },
   { href: "/super/leads", label: "Leads", icon: Mail },
   {
     href: "/super/settings",
