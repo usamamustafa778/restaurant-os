@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
-import { getUsersForSuperAdmin, createUserForSuperAdmin } from "../../../lib/apiClient";
+import { getUsersForSuperAdmin, createUserForSuperAdmin, deleteUserForSuperAdmin } from "../../../lib/apiClient";
 import { Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
+import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 
 const ROLE_LABELS = {
   super_admin: "Super admin",
@@ -32,6 +33,7 @@ export default function SuperUsersPage() {
     role: "super_admin",
   });
   const [error, setError] = useState("");
+  const { confirm } = useConfirmDialog();
 
   useEffect(() => {
     loadUsers();
@@ -124,6 +126,7 @@ export default function SuperUsersPage() {
                     <th className="py-2 text-left px-3">Email</th>
                     <th className="py-2 text-left px-3">Role</th>
                     <th className="py-2 text-left px-3">Created</th>
+                    <th className="py-2 text-right px-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
@@ -151,6 +154,34 @@ export default function SuperUsersPage() {
                               day: "numeric",
                             })
                           : "—"}
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[11px] font-semibold hover:bg-red-100 dark:hover:bg-red-900/40"
+                          onClick={async () => {
+                            const name = u.name || u.email || "this user";
+                            const ok = await confirm({
+                              title: "Delete user",
+                              message:
+                                `This will permanently delete ${name}. They will lose access to all dashboards.`,
+                              confirmLabel: "Delete user",
+                            });
+                            if (!ok) return;
+                            const toastId = toast.loading(`Deleting ${name}...`);
+                            try {
+                              await deleteUserForSuperAdmin(u.id);
+                              setUsers((prev) => prev.filter((x) => x.id !== u.id));
+                              toast.success("User deleted.", { id: toastId });
+                            } catch (err) {
+                              toast.error(err.message || "Failed to delete user", {
+                                id: toastId,
+                              });
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
