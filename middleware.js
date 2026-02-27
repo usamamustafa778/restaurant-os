@@ -61,11 +61,13 @@ export async function middleware(request) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || "";
 
-  // Skip static/internal paths early
+  // Skip static/internal paths early (including public folder assets)
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/st-images/") ||
+    /\.(png|jpg|jpeg|gif|svg|webp|ico|css|js|woff|woff2|ttf|eot)$/i.test(pathname)
   ) {
     return NextResponse.next();
   }
@@ -215,6 +217,7 @@ export async function middleware(request) {
   const RESERVED_SEGMENTS = new Set([
     "dashboard", "api", "_next", "login", "signup", "r",
     "favicon.ico", "images", "static", "super",
+    "st-images", "fonts", "icons", "assets",
     "privacy-policy", "terms-and-conditions",
     ...DASHBOARD_PAGES,
   ]);
@@ -255,6 +258,6 @@ export async function middleware(request) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)"
+    "/((?!_next/static|_next/image|favicon.ico|st-images/).*)"
   ]
 };

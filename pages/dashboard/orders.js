@@ -4,6 +4,7 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
 import Button from "../../components/ui/Button";
+import Image from "next/image";
 import {
   getOrders,
   getNextStatuses,
@@ -18,7 +19,7 @@ import { printBillReceipt } from "../../lib/printBillReceipt";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
-import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag } from "lucide-react";
+import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag, UtensilsCrossed } from "lucide-react";
 
 const ORDER_STATUSES = [
   "All Orders",
@@ -454,6 +455,25 @@ export default function OrdersPage() {
                   <div className="flex items-start gap-2 text-xs text-gray-600 dark:text-neutral-400">
                     <MapPin className="w-3.5 h-3.5 mt-0.5" />
                     <span className="line-clamp-2">{order.deliveryAddress}</span>
+                  </div>
+                )}
+                {order.tableName && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-neutral-400">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/st-images/table.png"
+                      alt="Table"
+                      width={16}
+                      height={16}
+                      className="w-4 h-4 object-contain opacity-60"
+                    />
+                    <span>{order.tableName}</span>
+                  </div>
+                )}
+                {order.orderTakerName && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-neutral-400">
+                    <img src="/st-images/order-taker.png" alt="Order taker" width={16} height={16} className="w-4 h-4 object-contain opacity-60" />
+                    <span>{order.orderTakerName}</span>
                   </div>
                 )}
                 <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-500">
