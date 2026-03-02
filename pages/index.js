@@ -315,14 +315,15 @@ export default function Home() {
                       href="/signup"
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5"
                     >
-                      Start Free 14-Day Trial
+                      Start Free 3-Months Trial
                       <ArrowRight className="w-4 h-4" />
                     </Link>
                     <a
-                      href="#how-it-works"
+                      href="/read-more"
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border-2 border-gray-200 text-base font-semibold text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition-all"
                     >
-                      See how it works
+                      read more
+                      <ArrowRight className="w-4 h-4" />
                     </a>
                   </div>
                 </Reveal>

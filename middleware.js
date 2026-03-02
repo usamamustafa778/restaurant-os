@@ -218,7 +218,7 @@ export async function middleware(request) {
     "dashboard", "api", "_next", "login", "signup", "r",
     "favicon.ico", "images", "static", "super",
     "st-images", "fonts", "icons", "assets",
-    "privacy-policy", "terms-and-conditions",
+    "privacy-policy", "terms-and-conditions", "read-more",
     ...DASHBOARD_PAGES,
   ]);
   const pathMatch = pathname.match(/^\/([^/]+)(\/.*)?$/);
