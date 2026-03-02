@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { getOrders, getNextStatuses, updateOrderStatus } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
-import { Clock, User, Package, CheckCircle, ChefHat, Loader2, ChevronRight, PackageCheck } from "lucide-react";
+import { Clock, User, Package, CheckCircle, ChefHat, Loader2, ChevronRight, PackageCheck, Headset, UtensilsCrossed } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Reuse the same order ID format as Orders page (YYYYMMDD-XXXX without ORD- prefix)
@@ -215,21 +215,20 @@ export default function KitchenPage() {
 
                             <div className="flex flex-col gap-1 text-xs text-gray-600 dark:text-neutral-400 mb-3">
                               {order.customerName && (
-                              <div className="flex items-center gap-1">
-                                <User className="w-4 h-4 shrink-0 text-gray-400 dark:text-neutral-500" />
-                                <span>{order.customerName}</span>
-                              </div>
-                            )}
-                            {order.orderTakerName && (
-                              <div className="flex items-center gap-1">
-                                <img src="/st-images/order-taker.png" alt="Order taker" width={16} height={16} className="w-4 h-4 object-contain opacity-60" />
-                                <span>{order.orderTakerName}</span>
-                              </div>
-                            )}
+                                <div className="flex items-center gap-1">
+                                  <User className="w-4 h-4 shrink-0 text-gray-400 dark:text-neutral-500" />
+                                  <span>{order.customerName}</span>
+                                </div>
+                              )}
+                              {order.orderTakerName && (
+                                <div className="flex items-center gap-1">
+                                  <Headset className="w-4 h-4 text-gray-400 dark:text-neutral-500" />
+                                  <span>{order.orderTakerName}</span>
+                                </div>
+                              )}
                               {order.tableName && (
                                 <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-neutral-400">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src="/st-images/table.png" alt="Table" width={16} height={16} className="w-4 h-4 object-contain opacity-60" />
+                                  <UtensilsCrossed className="w-4 h-4 text-gray-400 dark:text-neutral-500" />
                                   <span>{order.tableName}</span>
                                 </div>
                               )}
