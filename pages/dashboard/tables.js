@@ -110,28 +110,14 @@ export default function TablesPage() {
 
   return (
     <AdminLayout title="Tables" suspended={suspended}>
-      {pageLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <UtensilsCrossed className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading tables...
-            </p>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
         <div className="flex-1">
           <input
             type="text"
             placeholder="Search tables..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+            className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
           />
         </div>
         <button
@@ -143,7 +129,7 @@ export default function TablesPage() {
           }}
           disabled={!currentBranch}
           title={!currentBranch ? "Select a branch to add tables" : ""}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-primary text-white font-semibold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none whitespace-nowrap"
         >
           <Plus className="w-5 h-5" />
           Add Table
@@ -151,83 +137,97 @@ export default function TablesPage() {
       </div>
 
       <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-neutral-900/50">
-              <tr>
-                <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Table</th>
-                <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Status</th>
-                <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-neutral-800">
-              {filtered.length === 0 ? (
+        {pageLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+              <UtensilsCrossed className="w-10 h-10 text-primary animate-pulse" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+                Loading tables...
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-neutral-900/50">
                 <tr>
-                  <td colSpan={3} className="py-16 text-center">
-                    <div className="flex flex-col items-center gap-2">
-                      <UtensilsCrossed className="w-12 h-12 text-gray-300 dark:text-neutral-600" />
-                      <p className="text-gray-500 dark:text-neutral-400">
-                        {tables.length === 0 ? "No tables yet" : "No results found"}
-                      </p>
-                      {tables.length === 0 && currentBranch && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetForm();
-                            setIsModalOpen(true);
-                          }}
-                          className="text-primary font-semibold hover:underline"
-                        >
-                          Add Your First Table
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                  <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Table</th>
+                  <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Status</th>
+                  <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Actions</th>
                 </tr>
-              ) : (
-                filtered.map((table) => (
-                  <tr
-                    key={table.id}
-                    className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors"
-                  >
-                    <td className="py-4 px-6 font-semibold text-gray-900 dark:text-white">{table.name}</td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`inline-flex px-3 py-1 rounded-lg text-xs font-semibold ${
-                          table.isAvailable
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"
-                            : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
-                        }`}
-                      >
-                        {table.isAvailable ? "Available" : "Occupied"}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(table)}
-                          className="p-2 rounded-lg text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary transition-colors"
-                          title="Edit"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(table.id)}
-                          className="p-2 rounded-lg text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-neutral-800">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="py-16 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <UtensilsCrossed className="w-12 h-12 text-gray-300 dark:text-neutral-600" />
+                        <p className="text-gray-500 dark:text-neutral-400">
+                          {tables.length === 0 ? "No tables yet" : "No results found"}
+                        </p>
+                        {tables.length === 0 && currentBranch && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetForm();
+                              setIsModalOpen(true);
+                            }}
+                            className="text-primary font-semibold hover:underline"
+                          >
+                            Add Your First Table
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filtered.map((table) => (
+                    <tr
+                      key={table.id}
+                      className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors"
+                    >
+                      <td className="py-4 px-6 font-semibold text-gray-900 dark:text-white">{table.name}</td>
+                      <td className="py-4 px-6">
+                        <span
+                          className={`inline-flex px-3 py-1 rounded-lg text-xs font-semibold ${
+                            table.isAvailable
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
+                          }`}
+                        >
+                          {table.isAvailable ? "Available" : "Occupied"}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEdit(table)}
+                            className="p-2 rounded-lg text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary transition-colors"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(table.id)}
+                            className="p-2 rounded-lg text-gray-600 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Modal */}
@@ -296,8 +296,6 @@ export default function TablesPage() {
           </div>
           </div>
           )}
-        </>
-      )}
     </AdminLayout>
   );
 }

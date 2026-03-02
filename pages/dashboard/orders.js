@@ -268,49 +268,51 @@ export default function OrdersPage() {
 
   return (
     <AdminLayout title="All Orders" suspended={suspended}>
-      {/* Filters Bar */}
-      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 mb-6">
-        <div className="flex flex-wrap items-center gap-3">
+      {/* Filters Bar - search left, controls right (no extra card border) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+        <div className="flex-1">
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by order ID, customer, phone..."
-            className="flex-1 min-w-[200px] px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
           />
-          <select
-            value={sourceFilter}
-            onChange={e => setSourceFilter(e.target.value)}
-            className="px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-          >
-            <option value="All Sources">All Sources</option>
-            <option value="POS">POS</option>
-            <option value="FOODPANDA">Foodpanda</option>
-            <option value="WEBSITE">Website</option>
-          </select>
-          <select
-            value={sortOrder}
-            onChange={e => setSortOrder(e.target.value)}
-            className="px-4 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-          >
-            <option>Newest First</option>
-            <option>Oldest First</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => {
-              const toastId = toast.loading("Refreshing orders...");
-              loadOrders().then(() => {
+        </div>
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          className="px-4 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap"
+        >
+          <option value="All Sources">All Sources</option>
+          <option value="POS">POS</option>
+          <option value="FOODPANDA">Foodpanda</option>
+          <option value="WEBSITE">Website</option>
+        </select>
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          className="px-4 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap"
+        >
+          <option>Newest First</option>
+          <option>Oldest First</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => {
+            const toastId = toast.loading("Refreshing orders...");
+            loadOrders()
+              .then(() => {
                 toast.success("Orders refreshed!", { id: toastId });
-              }).catch(() => {
+              })
+              .catch(() => {
                 toast.dismiss(toastId);
               });
-            }}
-            className="px-4 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
-          >
-            Refresh
-          </button>
-        </div>
+          }}
+          className="px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+        >
+          Refresh
+        </button>
       </div>
 
       {/* Status tabs */}

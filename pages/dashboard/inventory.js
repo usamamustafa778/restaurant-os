@@ -298,20 +298,6 @@ export default function InventoryPage() {
 
   return (
     <AdminLayout title="Inventory Management" suspended={suspended}>
-      {pageLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <Package className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading inventory...
-            </p>
-          </div>
-        </div>
-      ) : (
-        <>
           {/* Copy inventory from branch modal */}
           {copyModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -416,7 +402,7 @@ export default function InventoryPage() {
             </div>
           )}
           {/* Low Stock Alert */}
-          {lowStockItems.length > 0 && (
+          {!pageLoading && lowStockItems.length > 0 && (
             <div className="mb-6 p-5 rounded-2xl border-2 border-orange-200 dark:border-orange-500/30 bg-gradient-to-r from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5">
               <div className="flex items-center gap-3">
                 <div className="h-12 w-12 rounded-xl bg-orange-500 flex items-center justify-center shadow-lg">
@@ -465,26 +451,48 @@ export default function InventoryPage() {
 
           {/* Inventory Table */}
           <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
-            {filtered.length === 0 ? (
+            {pageLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+                  <Package className="w-10 h-10 text-primary animate-pulse" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+                    Loading inventory...
+                  </p>
+                </div>
+              </div>
+            ) : branchFilteredItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
                   <Package className="w-10 h-10 text-primary" />
                 </div>
                 <p className="text-base font-bold text-gray-700 dark:text-neutral-300">
-                  {branchFilteredItems.length === 0 ? "No inventory items yet" : "No results found"}
+                  No inventory items yet
                 </p>
                 <p className="text-sm text-gray-500 dark:text-neutral-400 mt-2 max-w-md">
-                  {branchFilteredItems.length === 0 ? "Start by adding ingredients or raw materials to track" : "Try a different search term"}
+                  Start by adding ingredients or raw materials to track
                 </p>
-                {branchFilteredItems.length === 0 && (
-                  <button
-                    onClick={startCreateItem}
-                    className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Your First Item
-                  </button>
-                )}
+                <button
+                  onClick={startCreateItem}
+                  className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Your First Item
+                </button>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+                  <Package className="w-10 h-10 text-primary" />
+                </div>
+                <p className="text-base font-bold text-gray-700 dark:text-neutral-300">
+                  No results found
+                </p>
+                <p className="text-sm text-gray-500 dark:text-neutral-400 mt-2 max-w-md">
+                  Try a different search term
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -826,8 +834,6 @@ export default function InventoryPage() {
               </div>
             </div>
           )}
-        </>
-      )}
     </AdminLayout>
   );
 }

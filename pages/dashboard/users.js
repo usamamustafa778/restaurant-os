@@ -150,79 +150,73 @@ export default function UsersPage() {
 
   return (
     <AdminLayout title="User Management" suspended={suspended}>
-      {pageLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <Users className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading users...
-            </p>
-          </div>
+      {/* Search, view toggle & add button – consistent header layout */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, email or role..."
+          className="flex-1 w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+        />
+        <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setViewMode("card")}
+            className={`px-4 py-2.5 transition-all ${viewMode === "card" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
+            title="Card view"
+          >
+            <LayoutGrid className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("table")}
+            className={`px-4 py-2.5 transition-all ${viewMode === "table" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
+            title="Table view"
+          >
+            <List className="w-5 h-5" />
+          </button>
         </div>
-      ) : (
-        <>
-          {/* Header */}
-          <div className="flex items-center justify-end mb-6">
         <button
           type="button"
-          onClick={() => { resetForm(); setModalError(""); setIsModalOpen(true); }}
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+          onClick={() => {
+            resetForm();
+            setModalError("");
+            setIsModalOpen(true);
+          }}
+          className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
         >
           <UserPlus className="w-4 h-4" />
           Add Team Member
         </button>
       </div>
 
-      {/* Search & View Toggle */}
-      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 mb-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, email or role..."
-            className="flex-1 w-full px-4 py-3 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 focus:bg-white transition-all"
-          />
-          <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setViewMode("card")}
-              className={`px-4 py-2.5 transition-all ${viewMode === "card" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
-              title="Card view"
-            >
-              <LayoutGrid className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("table")}
-              className={`px-4 py-2.5 transition-all ${viewMode === "table" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
-              title="Table view"
-            >
-              <List className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
-
-        {/* Empty state */}
-        {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-full bg-bg-secondary dark:bg-neutral-800 flex items-center justify-center mb-4">
-            <User className="w-7 h-7 text-gray-400 dark:text-neutral-600" />
+        {pageLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+              <Users className="w-10 h-10 text-primary animate-pulse" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+                Loading users...
+              </p>
+            </div>
           </div>
-          <p className="text-sm font-medium text-gray-500 dark:text-neutral-500">
-            {users.length === 0 ? "No team members yet" : "No results found"}
-          </p>
-          <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
-            {users.length === 0 ? "Add your first team member to get started." : "Try a different search term."}
-          </p>
-        </div>
-      ) : viewMode === "table" ? (
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 rounded-full bg-bg-secondary dark:bg-neutral-800 flex items-center justify-center mb-4">
+              <User className="w-7 h-7 text-gray-400 dark:text-neutral-600" />
+            </div>
+            <p className="text-sm font-medium text-gray-500 dark:text-neutral-500">
+              {users.length === 0 ? "No team members yet" : "No results found"}
+            </p>
+            <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
+              {users.length === 0 ? "Add your first team member to get started." : "Try a different search term."}
+            </p>
+          </div>
+        ) : viewMode === "table" ? (
         /* ════════════ TABLE VIEW ════════════ */
         <DataTable
           columns={[
@@ -552,8 +546,6 @@ export default function UsersPage() {
           </div>
           </div>
         )}
-        </>
-      )}
     </AdminLayout>
   );
 }

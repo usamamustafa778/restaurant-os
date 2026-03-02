@@ -236,52 +236,61 @@ export default function CategoriesPage() {
 
   return (
     <AdminLayout title="Categories" suspended={suspended}>
+      {error && !pageLoading && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      {/* Search, View Toggle and Add Button – always visible */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+        <div className="flex-1">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search categories by name or description..."
+            className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+          />
+        </div>
+        <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+        {currentBranch?.id && (
+          <button
+            type="button"
+            onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
+            className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-primary text-primary font-semibold hover:bg-primary/10 transition-all whitespace-nowrap"
+          >
+            <Copy className="w-4 h-4" />
+            Copy Category
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={startCreate}
+          className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+        >
+          <Plus className="w-4 h-4" />
+          Add Category
+        </button>
+      </div>
+
+      {/* Loading state – inside content area */}
       {pageLoading ? (
-        <PageLoader message="Loading categories..." icon={FolderOpen} />
+        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+              <FolderOpen className="w-10 h-10 text-primary animate-pulse" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+                Loading categories...
+              </p>
+            </div>
+          </div>
+        </div>
       ) : (
         <>
-          {error && (
-            <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
-              {error}
-            </div>
-          )}
-
-          {/* Search, View Toggle and Add Button */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
-            <div className="flex-1">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search categories by name or description..."
-                className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-              />
-            </div>
-
-            {/* View Toggle */}
-            <ViewToggle viewMode={viewMode} onChange={setViewMode} />
-
-            {currentBranch?.id && (
-              <button
-                type="button"
-                onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-primary text-primary font-semibold hover:bg-primary/10 transition-all whitespace-nowrap"
-              >
-                <Copy className="w-4 h-4" />
-                Copy Category
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={startCreate}
-              className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" />
-              Add Category
-            </button>
-          </div>
-
           {/* Categories Grid View */}
           {viewMode === "grid" && (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

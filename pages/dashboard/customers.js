@@ -122,21 +122,6 @@ export default function CustomersPage() {
 
   return (
     <AdminLayout title="Customers" suspended={suspended}>
-      {/* Page Loader */}
-      {pageLoading && (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <Users className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading customers...
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Search and Add Button */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
         <div className="flex-1">
@@ -173,7 +158,19 @@ export default function CustomersPage() {
 
       {/* Customers Table */}
       <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
-        {filtered.length === 0 ? (
+        {pageLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+              <Users className="w-10 h-10 text-primary animate-pulse" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
+                Loading customers...
+              </p>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
               <UserCheck className="w-10 h-10 text-primary" />
