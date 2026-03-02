@@ -159,6 +159,20 @@ const paymentLabels = { CASH: "Cash", CARD: "Card", ONLINE: "Online", OTHER: "Fo
 const sourceColors = { POS: "#3b82f6", WEBSITE: "#6366f1", FOODPANDA: "#f97316" };
 const sourceLabels = { POS: "POS", WEBSITE: "Website", FOODPANDA: "Foodpanda" };
 const productColors = ["#3b82f6", "#22c55e", "#6366f1", "#f97316", "#eab308"];
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 function buildSegments(distribution, labels, colors) {
   return Object.entries(distribution)
@@ -315,6 +329,8 @@ export default function OverviewPage() {
   });
   const [reportPeriod, setReportPeriod] = useState("today"); // "yesterday" | "today" | "monthly" – default today
   const [periodLoading, setPeriodLoading] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth()); // 0-11
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
 
   // Currency note counter (denomination -> quantity), saved per day in backend
   const CURRENCY_NOTES = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
@@ -412,7 +428,7 @@ export default function OverviewPage() {
     })();
   }, []);
 
-  // Fetch report from backend for the selected period (yesterday, today, or current month)
+  // Fetch report from backend for the selected period (yesterday, today, or selected month)
   useEffect(() => {
     let cancelled = false;
     setPeriodLoading(true);
@@ -434,8 +450,9 @@ export default function OverviewPage() {
         tomorrow.setDate(tomorrow.getDate() + 1);
         toStr = tomorrow.toISOString().slice(0, 10);
       } else {
-        fromStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-        const firstNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        const firstDaySelected = new Date(selectedYear, selectedMonth, 1);
+        fromStr = firstDaySelected.toISOString().slice(0, 10);
+        const firstNextMonth = new Date(selectedYear, selectedMonth + 1, 1);
         toStr = firstNextMonth.toISOString().slice(0, 10);
       }
       try {
@@ -457,13 +474,26 @@ export default function OverviewPage() {
         if (!cancelled) setPeriodLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [reportPeriod]);
+    return () => {
+      cancelled = true;
+    };
+  }, [reportPeriod, selectedMonth, selectedYear]);
 
-  const salesTypeSegments = buildSegments(stats.salesTypeDistribution, typeLabels, typeColors);
-  const periodPayment = periodReport.paymentDistribution && Object.keys(periodReport.paymentDistribution).length > 0 ? periodReport.paymentDistribution : null;
-  const paymentSegments = buildSegments(periodPayment || stats.paymentDistribution, paymentLabels, paymentColors);
-  const paymentAmounts = !!periodPayment; // period report sends amounts (Rs); overview stats send counts
+  const hasOrdersForPeriod = (periodReport.totalOrders ?? 0) > 0;
+  const salesTypeSegments = hasOrdersForPeriod
+    ? buildSegments(stats.salesTypeDistribution, typeLabels, typeColors)
+    : [];
+  const periodPayment =
+    hasOrdersForPeriod &&
+    periodReport.paymentDistribution &&
+    Object.keys(periodReport.paymentDistribution).length > 0
+      ? periodReport.paymentDistribution
+      : null;
+  const paymentSegments =
+    hasOrdersForPeriod && periodPayment
+      ? buildSegments(periodPayment, paymentLabels, paymentColors)
+      : [];
+  const paymentAmounts = !!periodPayment; // period report sends amounts (Rs)
   const sourceSegments = buildSegments(stats.sourceDistribution, sourceLabels, sourceColors);
   const topProductSegments = (stats.topProducts || []).slice(0, 5).map((p, i) => ({
     label: p.name,
@@ -485,25 +515,77 @@ export default function OverviewPage() {
         })()
       : reportPeriod === "today"
         ? new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
-        : new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        : new Date(selectedYear, selectedMonth, 1).toLocaleDateString("en-US", {
+            month: "short",
+            year: "numeric",
+          });
 
   const now = new Date();
-  const todayDayOfMonth = now.getDate();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const todayDayOfMonthReal = now.getDate();
   const currentHour = now.getHours();
-  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const viewingYear = reportPeriod === "monthly" ? selectedYear : currentYear;
+  const viewingMonthIndex = reportPeriod === "monthly" ? selectedMonth : currentMonth;
+  const lastDayOfMonth = new Date(viewingYear, viewingMonthIndex + 1, 0).getDate();
+  const effectiveTodayInView =
+    reportPeriod === "monthly" && (selectedYear !== currentYear || selectedMonth !== currentMonth)
+      ? lastDayOfMonth
+      : todayDayOfMonthReal;
   const salesByDay = {};
   (periodReport.dailySales || []).forEach((d) => { salesByDay[d.day] = d.sales; });
   const fullMonthDailySales = Array.from({ length: lastDayOfMonth }, (_, i) => {
     const day = i + 1;
-    return { day, sales: salesByDay[day] ?? 0, isRemaining: day > todayDayOfMonth };
+    return {
+      day,
+      sales: salesByDay[day] ?? 0,
+      isRemaining: reportPeriod === "monthly" ? day > effectiveTodayInView : false,
+    };
   });
   const fullDayHourlySales = Array.from({ length: 24 }, (_, i) => (i <= currentHour ? (stats.hourlySales[i] || 0) : 0));
   const remainingHoursStart = currentHour + 1;
 
+  const yearOptions = [];
+  for (let y = currentYear - 2; y <= currentYear + 1; y += 1) {
+    yearOptions.push(y);
+  }
+
+  const subtitleNode = (
+    <span className="inline-flex items-center gap-3">
+      <span>{periodSubtitle}</span>
+      {reportPeriod === "monthly" && (
+        <span className="inline-flex items-center gap-2 ml-2">
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            className="border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 py-1 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+          >
+            {MONTH_NAMES.map((name, idx) => (
+              <option key={name} value={idx}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 py-1 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+          >
+            {yearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </span>
+      )}
+    </span>
+  );
+
   return (
     <AdminLayout
       title="Overview"
-      subtitle={periodSubtitle}
+      subtitle={subtitleNode}
       suspended={suspended}
     >
       {pageLoading ? (
