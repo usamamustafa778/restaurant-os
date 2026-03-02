@@ -73,6 +73,7 @@ export default function POSPage() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [searchStep, setSearchStep] = useState("quantity"); // 'quantity' | 'itemName'
+  const searchStepRef = useRef("quantity"); // mirror for event-handler stale-closure access
   const [searchQuantityInput, setSearchQuantityInput] = useState("");
   const [pendingAddQuantity, setPendingAddQuantity] = useState(1);
   const [focusedItemIndex, setFocusedItemIndex] = useState(0);
@@ -1073,6 +1074,28 @@ export default function POSPage() {
         else clearCart();
         return;
       }
+
+      // Pressing any digit key (0-9) while NOT already typing in an input focuses
+      // the menu search bar and types that digit into the correct step field.
+      if (
+        /^[0-9]$/.test(e.key) &&
+        !e.ctrlKey && !e.metaKey && !e.altKey &&
+        !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)
+      ) {
+        const input = menuSearchInputRef.current;
+        if (input) {
+          e.preventDefault();
+          input.focus();
+          // Write to the correct state based on the current search step
+          if (searchStepRef.current === "quantity") {
+            setSearchQuantityInput((prev) => prev + e.key);
+          } else {
+            setMenuSearchQuery((prev) => prev + e.key);
+          }
+        }
+        return;
+      }
+
       if (!mod(e)) return;
       if (e.shiftKey && (e.key === "M" || e.key === "m")) {
         e.preventDefault();
@@ -1740,6 +1763,7 @@ export default function POSPage() {
                       if (raw === "-" || Number.isNaN(num) || num === 0) return;
                       setPendingAddQuantity(num);
                       setSearchStep("itemName");
+                      searchStepRef.current = "itemName";
                       setSearchQuantityInput("");
                       setMenuSearchQuery("");
                       setFocusedItemIndex(0);
@@ -1769,6 +1793,7 @@ export default function POSPage() {
                         toast.error("No matching item found");
                       }
                       setSearchStep("quantity");
+                      searchStepRef.current = "quantity";
                       setSearchQuantityInput("");
                       setMenuSearchQuery("");
                       setPendingAddQuantity(1);
@@ -3556,8 +3581,12 @@ export default function POSPage() {
               </p>
               <div className="space-y-2">
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Focus menu search</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+M</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">Focus menu search &amp; type</span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">0–9</kbd>
+                    <span className="text-gray-400 text-xs">or</span>
+                    <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+M</kbd>
+                  </span>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
                   <span className="text-gray-700 dark:text-neutral-300">Focus order search</span>
