@@ -165,7 +165,7 @@ export default function TermsAndConditions() {
                 <div className="ml-14">
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">4.1 Free Trial</h3>
                   <p className="text-gray-700 mb-4">
-                    New users are eligible for a 14-day free trial with full access to all features. No credit card is required to start the trial. After the trial period, you must subscribe to a paid plan to continue using the Service.
+                    New users are eligible for a 3-months free trial with full access to all features. No credit card is required to start the trial. After the trial period, you must subscribe to a paid plan to continue using the Service.
                   </p>
 
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">4.2 Subscription Plans</h3>

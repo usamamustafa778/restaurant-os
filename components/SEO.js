@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 
 export default function SEO({
   title = 'Eats Desk - Restaurant Management System | POS, Inventory & Website',
-  description = 'All-in-one restaurant management platform for Pakistan. Fast POS system, smart inventory tracking, and free branded website. Start your 14-day free trial today!',
+  description = 'All-in-one restaurant management platform for Pakistan. Fast POS system, smart inventory tracking, and free branded website. Start your 3-months free trial today!',
   keywords = 'restaurant POS, restaurant management software, inventory management, online ordering, restaurant website, Pakistan restaurant software, food business software, cafe management system',
   ogImage = '/og-image.jpg',
   ogType = 'website',

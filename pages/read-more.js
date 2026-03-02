@@ -445,7 +445,7 @@ export default function ReadMore() {
             <Reveal delay={320}>
               <p className="mt-5 text-xs text-gray-400 flex items-center justify-center gap-4">
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 14-day free trial
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 3-months free trial
                 </span>
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> No credit card required
@@ -797,7 +797,7 @@ export default function ReadMore() {
                 },
                 {
                   icon: CheckCircle2,
-                  title: "14-Day Free Trial",
+                    title: "3-Months Free Trial",
                   desc: "Try Eats Desk with full features, no credit card needed. Cancel if it&apos;s not for you.",
                 },
               ].map((item, i) => (

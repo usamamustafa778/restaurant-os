@@ -150,7 +150,7 @@ export default function Home() {
     <>
       <SEO
         title="Eats Desk - Complete Restaurant Management System for Pakistan | POS, Inventory & Free Website"
-        description="Transform your restaurant with Eats Desk. Lightning-fast POS, smart inventory tracking, and free branded website. Trusted by 500+ restaurants in Pakistan. Start your 14-day free trial today!"
+        description="Transform your restaurant with Eats Desk. Lightning-fast POS, smart inventory tracking, and free branded website. Trusted by 500+ restaurants in Pakistan. Start your 3-months free trial today!"
         keywords="restaurant POS system Pakistan, restaurant management software, POS system for restaurants, inventory management restaurant, online ordering system, restaurant website builder, cafe management software, food business software Islamabad Lahore Karachi, restaurant billing software, kitchen management system"
         structuredData={structuredData}
       />
@@ -1019,7 +1019,7 @@ export default function Home() {
                 />
                 <FAQItem
                   question="Can I try it before paying?"
-                  answer="Yes — every new restaurant gets a full 14-day free trial with all features unlocked. No credit card required to start. You can upgrade to a paid plan anytime during or after the trial."
+                  answer="Yes — every new restaurant gets a full 3-months free trial with all features unlocked. No credit card required to start. You can upgrade to a paid plan anytime during or after the trial."
                 />
               </div>
             </Reveal>
