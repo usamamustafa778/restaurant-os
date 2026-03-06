@@ -15,7 +15,8 @@ import {
   uploadImage,
   getStoredAuth,
   getSourceBranchMenu,
-  copyMenuFromBranch
+  copyMenuFromBranch,
+  updateBranchMenuItem
 } from "../../lib/apiClient";
 import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
@@ -38,13 +39,9 @@ export default function MenuItemsPage() {
     const auth = getStoredAuth();
     const restaurantId = auth?.user?.restaurantId;
     
-    // Use branch-aware menu if branch is selected, otherwise use base menu
-    let menuData;
-    if (currentBranch?.id && restaurantId) {
-      menuData = await getBranchMenu(currentBranch.id, restaurantId);
-    } else {
-      menuData = await getMenu();
-    }
+    // Always use the admin endpoint so unavailable items are included and can be re-enabled.
+    // getBranchMenu uses the public /by-category endpoint which strips unavailable items.
+    const menuData = await getMenu(currentBranch?.id);
     
     const inv = await getInventory();
     
@@ -372,10 +369,14 @@ export default function MenuItemsPage() {
             } : i))
           }));
         } else {
-          const updated = await updateItem(item.id, { available: !item.available });
+          const newAvailable = !(item.finalAvailable ?? item.available ?? true);
+          await updateItem(item.id, { available: newAvailable });
           setData(prev => ({
             ...prev,
-            items: prev.items.map(i => (i.id === item.id ? updated : i))
+            items: prev.items.map(i => i.id === item.id
+              ? { ...i, available: newAvailable, finalAvailable: newAvailable }
+              : i
+            )
           }));
         }
       },
@@ -657,7 +658,11 @@ export default function MenuItemsPage() {
                 return (
                   <div
                     key={item.id}
-                    className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-5 hover:shadow-lg hover:border-primary/30 transition-all relative min-w-0"
+                    className={`bg-white dark:bg-neutral-950 border rounded-xl p-5 hover:shadow-lg transition-all relative min-w-0 ${
+                      isAvailable
+                        ? "border-gray-200 dark:border-neutral-800 hover:border-primary/30"
+                        : "border-gray-200 dark:border-neutral-800 opacity-60"
+                    }`}
                   >
                     <div className="flex items-start justify-between mb-3">
                       {item.imageUrl ? (
