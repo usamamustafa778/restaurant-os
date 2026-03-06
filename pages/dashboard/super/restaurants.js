@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
+import SuperAdminTable from "../../../components/ui/SuperAdminTable";
 import {
   getRestaurantsForSuperAdmin,
   getDeletedRestaurantsForSuperAdmin,
@@ -349,168 +350,178 @@ export default function SuperRestaurantsPage() {
                 </div>
               )}
             </div>
-            <div className="min-h-[60vh] overflow-auto text-xs border border-gray-200 dark:border-neutral-700 rounded-lg">
-              <table className="w-full text-xs">
-                <thead className="text-[11px] uppercase text-gray-800 dark:text-gray-200 border-b border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/50 sticky top-0 z-[1]">
-                  <tr>
-                    <th className="py-2 text-left px-3 w-12">S.No</th>
-                    <th className="py-2 text-left px-3">Restaurant</th>
-                    <th className="py-2 text-left px-3">Subdomain</th>
-                    <th className="py-2 text-left px-3">Owner phone</th>
-                    <th className="py-2 text-left px-3">Owner email</th>
-                    <th className="py-2 text-left px-3">Plan</th>
-                    <th className="py-2 text-left px-3">Status</th>
-                    <th className="py-2 text-left px-3">Trial ends</th>
-                    <th className="py-2 text-left px-3">Expires</th>
-                    <th className="py-2 text-left px-3">Created</th>
-                    <th className="py-2 text-right px-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
-                  {filtered.map((r, index) => {
+            <SuperAdminTable
+              showSno
+              data={filtered}
+              emptyMessage={
+                restaurants.length === 0
+                  ? "No restaurants yet. Onboard tenants via the API."
+                  : "No restaurants match your search."
+              }
+              columns={[
+                {
+                  key: "restaurant",
+                  header: "Restaurant",
+                  render: (_, r) => (
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {r.website?.name || "Untitled restaurant"}
+                    </div>
+                  ),
+                },
+                {
+                  key: "subdomain",
+                  header: "Subdomain",
+                  render: (_, r) => r.website?.subdomain || "—",
+                  cellClassName: "text-gray-700 dark:text-neutral-300",
+                },
+                {
+                  key: "phone",
+                  header: "Owner phone",
+                  render: (_, r) => r.website?.contactPhone || "—",
+                  cellClassName: "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
+                },
+                {
+                  key: "email",
+                  header: "Owner email",
+                  render: (_, r) => r.website?.contactEmail || "—",
+                  cellClassName: "text-gray-700 dark:text-neutral-300 truncate max-w-[180px]",
+                },
+                {
+                  key: "plan",
+                  header: "Plan",
+                  render: (_, r) => r.subscription?.plan || "ESSENTIAL",
+                  cellClassName: "text-gray-700 dark:text-neutral-300",
+                },
+                {
+                  key: "status",
+                  header: "Status",
+                  render: (_, r) => {
                     const sub = r.subscription || {};
+                    return (
+                      <span
+                        className={`badge text-[10px] ${
+                          sub.status === "ACTIVE"
+                            ? "badge-success"
+                            : sub.status === "TRIAL"
+                              ? "badge-warning"
+                              : "badge-danger"
+                        }`}
+                      >
+                        {sub.status || "TRIAL"}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: "trialEnds",
+                  header: "Trial ends",
+                  render: (_, r) =>
+                    r.subscription?.trialEndsAt
+                      ? new Date(r.subscription.trialEndsAt).toLocaleDateString()
+                      : "—",
+                  cellClassName: "text-neutral-400",
+                },
+                {
+                  key: "expires",
+                  header: "Expires",
+                  render: (_, r) =>
+                    r.subscription?.expiresAt
+                      ? new Date(r.subscription.expiresAt).toLocaleDateString()
+                      : "—",
+                  cellClassName: "text-neutral-400",
+                },
+                {
+                  key: "created",
+                  header: "Created",
+                  render: (_, r) =>
+                    r.createdAt
+                      ? new Date(r.createdAt).toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "—",
+                  cellClassName: "text-neutral-400 whitespace-nowrap",
+                },
+                {
+                  key: "actions",
+                  header: "Actions",
+                  align: "right",
+                  render: (_, r) => {
                     const website = r.website || {};
                     const isDropdownOpen = statusDropdownId === r.id;
                     return (
-                      <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-neutral-800/50">
-                        <td className="py-3 px-3 text-neutral-500 dark:text-neutral-400 font-medium">
-                          {index + 1}
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="font-medium text-gray-900 dark:text-white">
-                            {website.name || "Untitled restaurant"}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-gray-700 dark:text-neutral-300">
-                          {website.subdomain || "—"}
-                        </td>
-                        <td className="py-3 px-3 text-gray-700 dark:text-neutral-300 whitespace-nowrap">
-                          {website.contactPhone || "—"}
-                        </td>
-                        <td className="py-3 px-3 text-gray-700 dark:text-neutral-300 truncate max-w-[180px]" title={website.contactEmail || ""}>
-                          {website.contactEmail || "—"}
-                        </td>
-                        <td className="py-3 px-3 text-gray-700 dark:text-neutral-300">
-                          {sub.plan || "ESSENTIAL"}
-                        </td>
-                        <td className="py-3 px-3">
-                          <span
-                            className={`badge text-[10px] ${
-                              sub.status === "ACTIVE"
-                                ? "badge-success"
-                                : sub.status === "TRIAL"
-                                  ? "badge-warning"
-                                  : "badge-danger"
-                            }`}
+                      <div className="inline-flex items-center gap-1.5 justify-end">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          onClick={() => {
+                            const slug = website.subdomain || null;
+                            if (slug) {
+                              setActingAsRestaurant(slug);
+                              window.open("/overview", "_blank");
+                            }
+                          }}
+                          className="px-3 text-[11px] font-semibold"
+                          title="Open this restaurant's dashboard in a new tab"
+                        >
+                          Login
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(r)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[11px] font-semibold hover:bg-red-100 dark:hover:bg-red-900/40"
+                          title="Soft-delete (recoverable 48h)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                        <div className="relative" ref={isDropdownOpen ? dropdownRef : null}>
+                          <button
+                            type="button"
+                            disabled={updatingId === r.id}
+                            onClick={() =>
+                              setStatusDropdownId(isDropdownOpen ? null : r.id)
+                            }
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-700 dark:text-neutral-200 text-[11px] font-medium hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {sub.status || "TRIAL"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-neutral-400">
-                          {sub.trialEndsAt
-                            ? new Date(sub.trialEndsAt).toLocaleDateString()
-                            : "—"}
-                        </td>
-                        <td className="py-3 px-3 text-neutral-400">
-                          {sub.expiresAt
-                            ? new Date(sub.expiresAt).toLocaleDateString()
-                            : "—"}
-                        </td>
-                        <td className="py-3 px-3 text-neutral-400 whitespace-nowrap">
-                          {r.createdAt
-                            ? new Date(r.createdAt).toLocaleDateString(undefined, {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric",
-                              })
-                            : "—"}
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          <div className="inline-flex items-center gap-1.5 justify-end">
-                            <Button
-                              type="button"
-                              variant="primary"
-                              onClick={() => {
-                                const slug = website.subdomain || null;
-                                if (slug) {
-                                  setActingAsRestaurant(slug);
-                                  window.open("/overview", "_blank");
-                                }
-                              }}
-                              className="px-3 text-[11px] font-semibold"
-                              title="Open this restaurant's dashboard in a new tab"
-                            >
-                              Login
-                            </Button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTarget(r)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[11px] font-semibold hover:bg-red-100 dark:hover:bg-red-900/40"
-                              title="Soft-delete (recoverable 48h)"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              Delete
-                            </button>
-                            <div className="relative" ref={isDropdownOpen ? dropdownRef : null}>
+                            Status
+                            <ChevronDown
+                              className={`w-3.5 h-3.5 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+                            />
+                          </button>
+                          {isDropdownOpen && (
+                            <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 z-20">
                               <button
                                 type="button"
-                                disabled={updatingId === r.id}
-                                onClick={() =>
-                                  setStatusDropdownId(isDropdownOpen ? null : r.id)
-                                }
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-700 dark:text-neutral-200 text-[11px] font-medium hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => handleStatusChange(r.id, "TRIAL")}
+                                className="w-full text-left px-4 py-2 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10"
                               >
-                                Status
-                                <ChevronDown
-                                  className={`w-3.5 h-3.5 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
-                                />
+                                Trial
                               </button>
-                              {isDropdownOpen && (
-                                <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 z-20">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStatusChange(r.id, "TRIAL")}
-                                    className="w-full text-left px-4 py-2 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-                                  >
-                                    Trial
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStatusChange(r.id, "ACTIVE")}
-                                    className="w-full text-left px-4 py-2 text-[11px] text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-                                  >
-                                    Active
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStatusChange(r.id, "SUSPENDED")}
-                                    className="w-full text-left px-4 py-2 text-[11px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
-                                  >
-                                    Suspend
-                                  </button>
-                                </div>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleStatusChange(r.id, "ACTIVE")}
+                                className="w-full text-left px-4 py-2 text-[11px] text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                              >
+                                Active
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleStatusChange(r.id, "SUSPENDED")}
+                                className="w-full text-left px-4 py-2 text-[11px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
+                              >
+                                Suspend
+                              </button>
                             </div>
-                          </div>
-                        </td>
-                      </tr>
+                          )}
+                        </div>
+                      </div>
                     );
-                  })}
-                  {filtered.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={11}
-                        className="py-8 text-center text-xs text-neutral-500"
-                      >
-                        {restaurants.length === 0
-                          ? "No restaurants yet. Onboard tenants via the API."
-                          : "No restaurants match your search."}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  },
+                },
+              ]}
+            />
 
             {/* Delete restaurant confirmation modal */}
             {deleteTarget && (

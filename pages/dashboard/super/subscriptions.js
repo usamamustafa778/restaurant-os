@@ -11,12 +11,12 @@ import {
   deletePaymentMethod,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
+import SuperAdminTable from "../../../components/ui/SuperAdminTable";
 import {
   CheckCircle2,
   XCircle,
   Clock,
   Loader2,
-  Image as ImageIcon,
   CreditCard,
   Eye,
   AlertTriangle,
@@ -26,7 +26,10 @@ import {
   Trash2,
   X,
   Wallet,
+  Search,
+  FileDown,
 } from "lucide-react";
+import toast from "react-hot-toast";
 
 function formatDate(d) {
   if (!d) return "—";
@@ -91,6 +94,36 @@ export default function SuperSubscriptionsPage() {
   const [editingPm, setEditingPm] = useState(null);
   const [pmForm, setPmForm] = useState({ name: "", fields: [{ label: "", value: "" }] });
   const [pmSaving, setPmSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  function escapeCsvCell(value) {
+    if (value == null || value === "") return "";
+    const s = String(value);
+    if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  }
+
+  const filteredRequests = searchQuery.trim()
+    ? requests.filter((r) => {
+        const q = searchQuery.trim().toLowerCase();
+        const name = (r.restaurant?.name || "").toLowerCase();
+        const sub = (r.restaurant?.subdomain || "").toLowerCase();
+        const plan = (r.planType || "").toLowerCase();
+        const status = (r.status || "").toLowerCase();
+        const pm = (r.paymentMethodName || "").toLowerCase();
+        return name.includes(q) || sub.includes(q) || plan.includes(q) || status.includes(q) || pm.includes(q);
+      })
+    : requests;
+
+  const filteredHistory = searchQuery.trim()
+    ? history.filter((r) => {
+        const q = searchQuery.trim().toLowerCase();
+        const name = (r.name || "").toLowerCase();
+        const sub = (r.subdomain || "").toLowerCase();
+        const status = (r.status || "").toLowerCase();
+        return name.includes(q) || sub.includes(q) || status.includes(q);
+      })
+    : history;
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -275,9 +308,22 @@ export default function SuperSubscriptionsPage() {
 
         {/* Requests Tab */}
         {tab === "requests" && (
-          <div className="bg-bg-secondary dark:bg-neutral-900 rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
-            {/* Filter */}
-            <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-3">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+            {/* Filter + Search + Download */}
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="Search by restaurant, plan, status..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              {searchQuery && (
+                <span className="text-xs text-neutral-500">{filteredRequests.length} of {requests.length}</span>
+              )}
               <span className="text-xs text-gray-500 dark:text-neutral-400">Filter:</span>
               <div className="relative">
                 <select
@@ -292,62 +338,115 @@ export default function SuperSubscriptionsPage() {
                 </select>
                 <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (filteredRequests.length === 0) { toast.error("No data to export"); return; }
+                  const headers = ["Restaurant", "Subdomain", "Plan", "Days", "Via", "Status", "Requested"];
+                  const csvRows = [
+                    headers.join(","),
+                    ...filteredRequests.map((r) =>
+                      [
+                        escapeCsvCell(r.restaurant?.name),
+                        escapeCsvCell(r.restaurant?.subdomain),
+                        escapeCsvCell(r.planType?.replace("_", " ")),
+                        r.durationInDays ?? "",
+                        escapeCsvCell(r.paymentMethodName),
+                        escapeCsvCell(r.status),
+                        r.createdAt ? formatDate(r.createdAt) : "",
+                      ].join(",")
+                    ),
+                  ];
+                  const csv = csvRows.join("\r\n");
+                  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob);
+                  a.download = `subscription-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(a.href);
+                  toast.success(`Exported ${filteredRequests.length} request(s) to Excel`);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                title="Download table as Excel (CSV)"
+              >
+                <FileDown className="w-4 h-4" />
+                Download Excel
+              </button>
             </div>
 
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="animate-spin text-gray-400" size={24} />
-              </div>
-            ) : requests.length === 0 ? (
-              <p className="py-12 text-center text-sm text-gray-500 dark:text-neutral-400">
-                No {statusFilter === "all" ? "" : statusFilter} requests found.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-bg-primary dark:bg-neutral-800 text-left text-xs uppercase tracking-wider text-gray-500 dark:text-neutral-500">
-                      <th className="px-4 py-3">Restaurant</th>
-                      <th className="px-4 py-3">Plan</th>
-                      <th className="px-4 py-3">Via</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Requested</th>
-                      <th className="px-4 py-3">Screenshot</th>
-                      {statusFilter === "pending" && <th className="px-4 py-3 text-right">Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
-                    {requests.map((r) => (
-                      <tr key={r.id} className="hover:bg-bg-primary dark:hover:bg-neutral-800/50">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900 dark:text-white">
-                            {r.restaurant?.name || "Unknown"}
-                          </div>
-                          <div className="text-xs text-gray-400">{r.restaurant?.subdomain}</div>
-                        </td>
-                        <td className="px-4 py-3 capitalize text-gray-700 dark:text-neutral-300">
+            <div className="p-4">
+            <SuperAdminTable
+              data={filteredRequests}
+              loading={loading}
+              emptyMessage={`No ${statusFilter === "all" ? "" : statusFilter} requests found.`}
+              columns={[
+                  {
+                    key: "restaurant",
+                    header: "Restaurant",
+                    render: (_, r) => (
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-white">
+                          {r.restaurant?.name || "Unknown"}
+                        </div>
+                        <div className="text-[10px] text-gray-400">{r.restaurant?.subdomain}</div>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "plan",
+                    header: "Plan",
+                    render: (_, r) => (
+                      <div>
+                        <span className="capitalize text-gray-700 dark:text-neutral-300">
                           {r.planType?.replace("_", " ")}
-                          <span className="block text-xs text-gray-400">{r.durationInDays} days</span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-neutral-400">{r.paymentMethodName || "—"}</td>
-                        <td className="px-4 py-3"><RequestStatusBadge status={r.status} /></td>
-                        <td className="px-4 py-3 text-gray-500 dark:text-neutral-400">{formatDate(r.createdAt)}</td>
-                        <td className="px-4 py-3">
-                          {r.paymentScreenshot ? (
-                            <button
-                              onClick={() => setPreviewImg(r.paymentScreenshot)}
-                              className="text-primary hover:text-red-500 flex items-center gap-1 text-xs"
-                            >
-                              <Eye size={14} /> View
-                            </button>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        {statusFilter === "pending" && (
-                          <td className="px-4 py-3 text-right">
+                        </span>
+                        <span className="block text-[10px] text-gray-400">{r.durationInDays} days</span>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "via",
+                    header: "Via",
+                    render: (_, r) => r.paymentMethodName || "—",
+                    cellClassName: "text-gray-500 dark:text-neutral-400",
+                  },
+                  {
+                    key: "status",
+                    header: "Status",
+                    render: (_, r) => <RequestStatusBadge status={r.status} />,
+                  },
+                  {
+                    key: "requested",
+                    header: "Requested",
+                    render: (_, r) => formatDate(r.createdAt),
+                    cellClassName: "text-gray-500 dark:text-neutral-400",
+                  },
+                  {
+                    key: "screenshot",
+                    header: "Screenshot",
+                    render: (_, r) =>
+                      r.paymentScreenshot ? (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImg(r.paymentScreenshot)}
+                          className="text-primary hover:text-primary/80 flex items-center gap-1"
+                        >
+                          <Eye size={14} /> View
+                        </button>
+                      ) : (
+                        "—"
+                      ),
+                  },
+                  ...(statusFilter === "pending"
+                    ? [
+                        {
+                          key: "actions",
+                          header: "Actions",
+                          align: "right",
+                          render: (_, r) => (
                             <div className="flex items-center justify-end gap-2">
                               <button
+                                type="button"
                                 onClick={() => handleApprove(r.id)}
                                 disabled={actionLoading === r.id}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
@@ -360,6 +459,7 @@ export default function SuperSubscriptionsPage() {
                                 Approve
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleReject(r.id)}
                                 disabled={actionLoading === r.id}
                                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
@@ -367,75 +467,125 @@ export default function SuperSubscriptionsPage() {
                                 <XCircle size={12} /> Reject
                               </button>
                             </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                          ),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </div>
           </div>
         )}
 
         {/* History Tab – All Restaurants */}
         {tab === "history" && (
-          <div className="bg-bg-secondary dark:bg-neutral-900 rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="animate-spin text-gray-400" size={24} />
+          <div className="bg-white dark:bg-neutral-950 rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="Search by restaurant or subdomain..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
               </div>
-            ) : history.length === 0 ? (
-              <p className="py-12 text-center text-sm text-gray-500 dark:text-neutral-400">
-                No restaurants found.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-bg-primary dark:bg-neutral-800 text-left text-xs uppercase tracking-wider text-gray-500 dark:text-neutral-500">
-                      <th className="px-4 py-3">Restaurant</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Trial Period</th>
-                      <th className="px-4 py-3">Subscription Period</th>
-                      <th className="px-4 py-3">Registered</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
-                    {history.map((r) => (
-                      <tr key={r.id} className="hover:bg-bg-primary dark:hover:bg-neutral-800/50">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900 dark:text-white">{r.name || "Unknown"}</div>
-                          <div className="text-xs text-gray-400">{r.subdomain}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <SubStatusBadge status={r.status} readonly={r.readonly} />
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-neutral-400">
-                          {r.freeTrialStartDate ? (
-                            <>
-                              {formatDate(r.freeTrialStartDate)} → {formatDate(r.freeTrialEndDate)}
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-neutral-400">
-                          {r.subscriptionStartDate ? (
-                            <>
-                              {formatDate(r.subscriptionStartDate)} → {formatDate(r.subscriptionEndDate)}
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-400">{formatDate(r.createdAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+              {searchQuery && (
+                <span className="text-xs text-neutral-500">{filteredHistory.length} of {history.length}</span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (filteredHistory.length === 0) { toast.error("No data to export"); return; }
+                  const headers = ["Restaurant", "Subdomain", "Status", "Trial Start", "Trial End", "Sub Start", "Sub End", "Registered"];
+                  const csvRows = [
+                    headers.join(","),
+                    ...filteredHistory.map((r) =>
+                      [
+                        escapeCsvCell(r.name),
+                        escapeCsvCell(r.subdomain),
+                        escapeCsvCell(r.status),
+                        r.freeTrialStartDate ? formatDate(r.freeTrialStartDate) : "",
+                        r.freeTrialEndDate ? formatDate(r.freeTrialEndDate) : "",
+                        r.subscriptionStartDate ? formatDate(r.subscriptionStartDate) : "",
+                        r.subscriptionEndDate ? formatDate(r.subscriptionEndDate) : "",
+                        r.createdAt ? formatDate(r.createdAt) : "",
+                      ].join(",")
+                    ),
+                  ];
+                  const csv = csvRows.join("\r\n");
+                  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob);
+                  a.download = `subscription-history-${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(a.href);
+                  toast.success(`Exported ${filteredHistory.length} restaurant(s) to Excel`);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                title="Download table as Excel (CSV)"
+              >
+                <FileDown className="w-4 h-4" />
+                Download Excel
+              </button>
+            </div>
+            <div className="p-4">
+            <SuperAdminTable
+              data={filteredHistory}
+              loading={loading}
+              emptyMessage="No restaurants found."
+                columns={[
+                  {
+                    key: "restaurant",
+                    header: "Restaurant",
+                    render: (_, r) => (
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-white">{r.name || "Unknown"}</div>
+                        <div className="text-[10px] text-gray-400">{r.subdomain}</div>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "status",
+                    header: "Status",
+                    render: (_, r) => <SubStatusBadge status={r.status} readonly={r.readonly} />,
+                  },
+                  {
+                    key: "trial",
+                    header: "Trial Period",
+                    render: (_, r) =>
+                      r.freeTrialStartDate ? (
+                        <>
+                          {formatDate(r.freeTrialStartDate)} → {formatDate(r.freeTrialEndDate)}
+                        </>
+                      ) : (
+                        "—"
+                      ),
+                    cellClassName: "text-gray-500 dark:text-neutral-400",
+                  },
+                  {
+                    key: "subscription",
+                    header: "Subscription Period",
+                    render: (_, r) =>
+                      r.subscriptionStartDate ? (
+                        <>
+                          {formatDate(r.subscriptionStartDate)} → {formatDate(r.subscriptionEndDate)}
+                        </>
+                      ) : (
+                        "—"
+                      ),
+                    cellClassName: "text-gray-500 dark:text-neutral-400",
+                  },
+                  {
+                    key: "registered",
+                    header: "Registered",
+                    render: (_, r) => formatDate(r.createdAt),
+                    cellClassName: "text-gray-400",
+                  },
+                ]}
+              />
+            </div>
           </div>
         )}
 
