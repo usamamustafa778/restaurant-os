@@ -19,6 +19,15 @@ import {
   Play,
   Phone,
   Calendar,
+  AlertTriangle,
+  XCircle,
+  Gift,
+  Timer,
+  Target,
+  ArrowDown,
+  DollarSign,
+  HeartHandshake,
+  BadgeCheck,
 } from "lucide-react";
 import SEO from "../components/SEO";
 
@@ -170,7 +179,7 @@ function TestimonialCard({ name, role, quote, initials, delay = 0 }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   READ MORE PAGE
+   SALES FUNNEL PAGE
    ═══════════════════════════════════════════════════════════════════════ */
 export default function ReadMore() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -332,10 +341,10 @@ export default function ReadMore() {
               </Link>
 
               <nav className="hidden md:flex items-center gap-8 text-sm text-gray-600">
-                <a href="#why-us" className="hover:text-primary transition-colors">Why Us</a>
+                <a href="#problem" className="hover:text-primary transition-colors">The Problem</a>
+                <a href="#solution" className="hover:text-primary transition-colors">Solution</a>
                 <a href="#results" className="hover:text-primary transition-colors">Results</a>
-                <a href="#how-it-works" className="hover:text-primary transition-colors">How It Works</a>
-                <a href="#testimonials" className="hover:text-primary transition-colors">Testimonials</a>
+                <a href="#offer" className="hover:text-primary transition-colors">What You Get</a>
                 <a href="#faq" className="hover:text-primary transition-colors">FAQ</a>
               </nav>
 
@@ -372,7 +381,7 @@ export default function ReadMore() {
 
             {mobileMenuOpen && (
               <div className="md:hidden pb-4 border-t border-gray-100 mt-2 pt-4 space-y-3">
-                {["why-us", "results", "how-it-works", "testimonials", "faq"].map((id) => (
+                {["problem", "solution", "results", "offer", "faq"].map((id) => (
                   <a
                     key={id}
                     href={`#${id}`}
@@ -391,7 +400,7 @@ export default function ReadMore() {
         </header>
 
         {/* ══════════════════════════════════════════════════════════
-            1. HERO — Headline + Sub-headline + CTAs
+            1. HERO — Pain-Focused Headline + Bold Promise
         ══════════════════════════════════════════════════════════ */}
         <section className="relative overflow-hidden">
           <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
@@ -401,25 +410,28 @@ export default function ReadMore() {
             <Reveal>
               <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary bg-primary/5 border border-primary/15 px-3 py-1.5 rounded-full mb-6">
                 <Zap className="w-3.5 h-3.5" />
-                500+ Restaurants Already Running on Eats Desk
+                Trusted by 500+ restaurants across Pakistan
               </span>
             </Reveal>
 
             <Reveal delay={80}>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 max-w-4xl mx-auto">
-                Fill More Tables. Run Faster.{" "}
-                <span className="text-primary">Keep More Profit.</span>
+                Your restaurant is{" "}
+                <span className="text-red-500 line-through decoration-red-300/60 decoration-[3px]">
+                  bleeding money
+                </span>{" "}
+                every day you run it{" "}
+                <span className="text-primary">manually.</span>
               </h1>
             </Reveal>
 
             <Reveal delay={160}>
               <p className="text-lg md:text-xl text-gray-500 max-w-2xl mx-auto mb-3 leading-relaxed">
-                The complete restaurant management system that replaces your manual chaos with
-                a single, smart operations platform.
+                Wrong orders. Wasted food. Cash that doesn&apos;t add up. Staff you can&apos;t track.
+                And at the end of the month — you still don&apos;t know if you made a profit.
               </p>
-              <p className="text-base text-gray-400 max-w-xl mx-auto mb-10">
-                Without hiring extra staff, managing multiple spreadsheets, or losing sales
-                to slow manual processes.
+              <p className="text-base font-medium text-gray-800 max-w-xl mx-auto mb-10">
+                It doesn&apos;t have to be this way. And 500+ restaurant owners already proved it.
               </p>
             </Reveal>
 
@@ -433,17 +445,17 @@ export default function ReadMore() {
                   Book Your Free Demo Call
                 </Link>
                 <a
-                  href="#results"
+                  href="#problem"
                   className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:border-primary/40 hover:text-primary transition-all text-sm"
                 >
-                  See Real Results
-                  <ArrowRight className="w-4 h-4" />
+                  See What You&apos;re Losing
+                  <ArrowDown className="w-4 h-4" />
                 </a>
               </div>
             </Reveal>
 
             <Reveal delay={320}>
-              <p className="mt-5 text-xs text-gray-400 flex items-center justify-center gap-4">
+              <p className="mt-5 text-xs text-gray-400 flex items-center justify-center gap-4 flex-wrap">
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 3-months free trial
                 </span>
@@ -459,7 +471,7 @@ export default function ReadMore() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════
-            2. SOCIAL PROOF BAR — Stats
+            2. SOCIAL PROOF BAR
         ══════════════════════════════════════════════════════════ */}
         <section className="border-y border-gray-100 bg-gray-50/60 py-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -482,195 +494,230 @@ export default function ReadMore() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════
-            3. TRUSTED BY — Logos / Restaurant Types
+            3. PROBLEM AGITATION — "Is this your restaurant?"
         ══════════════════════════════════════════════════════════ */}
-        <section className="py-14 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <Reveal>
-            <p className="text-center text-xs font-semibold uppercase tracking-widest text-gray-400 mb-8">
-              Trusted by restaurants, cafés &amp; cloud kitchens across Pakistan
-            </p>
-          </Reveal>
-          <div className="flex flex-wrap justify-center gap-3">
-            {[
-              { icon: Utensils, label: "Dine-in Restaurants" },
-              { icon: ChefHat, label: "Cloud Kitchens" },
-              { icon: Package, label: "Fast Food Chains" },
-              { icon: Globe2, label: "Café Groups" },
-              { icon: Users, label: "Multi-Branch Outlets" },
-              { icon: MonitorSmartphone, label: "Takeaway Counters" },
-            ].map((item, i) => (
-              <Reveal key={i} delay={i * 60}>
-                <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm text-gray-600 shadow-sm">
-                  <item.icon className="w-4 h-4 text-primary" />
-                  {item.label}
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </section>
-
-        {/* ══════════════════════════════════════════════════════════
-            4. VSL SECTION
-        ══════════════════════════════════════════════════════════ */}
-        <section className="py-16 bg-gray-950 text-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
-              {/* VSL Video Placeholder */}
-              <Reveal>
-                <div className="relative rounded-2xl overflow-hidden bg-gray-900 border border-gray-800 aspect-video flex items-center justify-center group cursor-pointer"
-                  onClick={() => setVslPlaying(true)}
-                >
-                  {!vslPlaying ? (
-                    <>
-                      <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/10" />
-                      <div className="relative z-10 flex flex-col items-center gap-4">
-                        <div className="h-16 w-16 rounded-full bg-white/10 backdrop-blur border border-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-                          <Play className="w-6 h-6 text-white fill-white ml-1" />
-                        </div>
-                        <p className="text-sm text-white/70">Watch: How Eats Desk Works (3 min)</p>
-                      </div>
-                      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                        <span className="text-xs text-white/40 bg-black/40 rounded px-2 py-1">3:12</span>
-                        <div className="flex gap-1">
-                          {[1, 2, 3, 4, 5].map((s) => (
-                            <div key={s} className={`h-1 rounded-full ${s <= 2 ? "bg-primary w-6" : "bg-white/20 w-4"}`} />
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <p className="text-white/50 text-sm">Video would play here</p>
-                    </div>
-                  )}
-                </div>
-              </Reveal>
-
-              {/* VSL Copy */}
-              <Reveal delay={100}>
-                <div>
-                  <span className="inline-block text-xs font-semibold text-primary bg-primary/10 border border-primary/20 px-3 py-1 rounded-full mb-5">
-                    THE #1 RESTAURANT OPERATIONS PLATFORM IN PAKISTAN
-                  </span>
-                  <h2 className="text-3xl md:text-4xl font-bold leading-tight mb-5">
-                    See the full picture of your restaurant — in real time
-                  </h2>
-                  <p className="text-gray-400 text-sm leading-relaxed mb-6">
-                    Eats Desk is trusted by 500+ restaurants, cafés, and food businesses across
-                    Pakistan. From a single outlet to a multi-branch chain, our platform gives you
-                    complete visibility and control over every order, every rupee, and every
-                    customer — all from one screen.
-                  </p>
-                  <ul className="space-y-3 mb-8">
-                    {[
-                      "Live POS + Kitchen Display System",
-                      "Real-time inventory & wastage tracking",
-                      "Free branded website with online ordering",
-                      "Multi-branch management from one dashboard",
-                    ].map((point, i) => (
-                      <li key={i} className="flex items-center gap-3 text-sm text-gray-300">
-                        <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
-                        {point}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href="/signup"
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/30"
-                  >
-                    Book a Free Demo
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
-                </div>
-              </Reveal>
-            </div>
-          </div>
-        </section>
-
-        {/* ══════════════════════════════════════════════════════════
-            5. WHY US — USP Section
-        ══════════════════════════════════════════════════════════ */}
-        <section id="why-us" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <Reveal>
-            <div className="text-center mb-14">
-              <span className="text-xs font-semibold uppercase tracking-widest text-primary">
-                Why Choose Eats Desk
-              </span>
-              <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-4">
-                Not just a POS. A complete{" "}
-                <span className="text-primary">operations upgrade.</span>
-              </h2>
-              <p className="text-gray-500 text-sm max-w-xl mx-auto">
-                Most restaurant software gives you a billing screen and nothing else.
-                Eats Desk gives your whole business a central nervous system.
-              </p>
-            </div>
-          </Reveal>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              {
-                icon: Zap,
-                title: "Orders processed in under 30 seconds",
-                desc: "Our touch-optimised POS is built for speed. Your staff takes orders, splits bills, and prints receipts faster than any traditional system — eliminating queue frustration and turning tables quicker.",
-              },
-              {
-                icon: BarChart3,
-                title: "Know your numbers before you close",
-                desc: "Daily P&L, top-selling items, staff performance, and cash reconciliation — all available by the end of the night. No more guessing if you made a profit today.",
-              },
-              {
-                icon: TrendingUp,
-                title: "Stop losing money to food waste",
-                desc: "Smart inventory tracking ties every menu item to its ingredients. You get real-time alerts when stock is low, consumption reports, and wastage tracking that pays for the subscription every month.",
-              },
-              {
-                icon: Globe2,
-                title: "Free website with zero commission online orders",
-                desc: "Every Eats Desk account comes with a branded website and online ordering page. Keep 100% of your revenue — no third-party platform fees eating into your margins.",
-              },
-            ].map((usp, i) => (
-              <Reveal key={i} delay={i * 80}>
-                <div className="bg-white border border-gray-200 rounded-2xl p-6 hover:border-primary/30 hover:shadow-md transition-all">
-                  <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                    <usp.icon className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="font-bold text-gray-900 text-sm mb-2">{usp.title}</h3>
-                  <p className="text-xs text-gray-500 leading-relaxed">{usp.desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </section>
-
-        {/* ══════════════════════════════════════════════════════════
-            6. CASE STUDIES — Portfolio / Results
-        ══════════════════════════════════════════════════════════ */}
-        <section id="results" className="py-20 bg-gray-50">
+        <section id="problem" className="py-20 bg-gray-950 text-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <Reveal>
               <div className="text-center mb-14">
-                <span className="text-xs font-semibold uppercase tracking-widest text-primary">
-                  Real Results
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-1.5 rounded-full mb-5">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  The Hidden Cost of &ldquo;Running It Manually&rdquo;
                 </span>
-                <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-4">
-                  Restaurants that made the switch
+                <h2 className="text-3xl md:text-4xl font-bold leading-tight mb-4">
+                  Does any of this sound familiar?
                 </h2>
-                <p className="text-gray-500 text-sm max-w-xl mx-auto">
-                  Numbers don&apos;t lie. Here&apos;s what happened when these restaurants
-                  replaced manual systems with Eats Desk.
+                <p className="text-gray-400 text-sm max-w-xl mx-auto">
+                  If you recognize even 3 of these, your restaurant is leaving lakhs on the table every month.
                 </p>
               </div>
             </Reveal>
 
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto mb-14">
+              {[
+                {
+                  pain: "End-of-day cash never matches your sales",
+                  cost: "Average restaurant loses ₨15,000–40,000/month to untracked cash leakage.",
+                },
+                {
+                  pain: "You find out about a missing ingredient mid-service",
+                  cost: "Stockouts cause 12% of customer complaints and lost repeat business.",
+                },
+                {
+                  pain: "Wrong orders go to the kitchen — then get remade on your cost",
+                  cost: "Manual order errors waste 5–8% of food cost every single week.",
+                },
+                {
+                  pain: "You have no idea which menu items actually make you money",
+                  cost: "Without item-level P&L, most restaurants unknowingly push low-margin dishes.",
+                },
+                {
+                  pain: "You're tracking everything in spreadsheets — or not at all",
+                  cost: "Owners spend 10+ hours/week on admin that software handles in seconds.",
+                },
+                {
+                  pain: "Customers order from food apps and you pay 30% commission",
+                  cost: "A restaurant doing ₨5L/month in delivery loses ₨1.5L to platform fees alone.",
+                },
+              ].map((item, i) => (
+                <Reveal key={i} delay={i * 60}>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-red-500/30 transition-colors">
+                    <div className="flex gap-3 mb-2">
+                      <XCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-white">{item.pain}</p>
+                    </div>
+                    <p className="text-xs text-gray-400 ml-8">{item.cost}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+
+            <Reveal delay={200}>
+              <div className="text-center">
+                <div className="inline-block bg-red-500/10 border border-red-500/20 rounded-2xl px-8 py-6 max-w-2xl">
+                  <p className="text-2xl md:text-3xl font-bold text-white mb-2">
+                    Conservative estimate: You&apos;re losing ₨50,000–₨2,00,000 every month.
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    Not because your food is bad. Because your <span className="text-red-400 font-semibold">systems</span> are broken.
+                  </p>
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════
+            4. VSL — "Watch how it works"
+        ══════════════════════════════════════════════════════════ */}
+        <section className="py-20 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="text-center mb-12">
+                <span className="text-xs font-semibold uppercase tracking-widest text-primary">
+                  See It In Action
+                </span>
+                <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-4">
+                  Watch how restaurants fixed this in{" "}
+                  <span className="text-primary">48 hours</span>
+                </h2>
+              </div>
+            </Reveal>
+
+            <Reveal delay={80}>
+              <div
+                className="relative rounded-2xl overflow-hidden bg-gray-950 border border-gray-800 aspect-video max-w-4xl mx-auto flex items-center justify-center group cursor-pointer"
+                onClick={() => setVslPlaying(true)}
+              >
+                {!vslPlaying ? (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/10" />
+                    <div className="relative z-10 flex flex-col items-center gap-4">
+                      <div className="h-20 w-20 rounded-full bg-white/10 backdrop-blur border border-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <Play className="w-8 h-8 text-white fill-white ml-1" />
+                      </div>
+                      <p className="text-sm text-white/70 font-medium">
+                        Watch: How Eats Desk Stops the Bleeding (3 min)
+                      </p>
+                    </div>
+                    <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+                      <span className="text-xs text-white/40 bg-black/40 rounded px-2 py-1">3:12</span>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <div key={s} className={`h-1 rounded-full ${s <= 2 ? "bg-primary w-6" : "bg-white/20 w-4"}`} />
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <p className="text-white/50 text-sm">Video would play here</p>
+                  </div>
+                )}
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════
+            5. SOLUTION BRIDGE — "What if..." + Introduce Eats Desk
+        ══════════════════════════════════════════════════════════ */}
+        <section id="solution" className="py-20 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="text-center mb-14">
+                <span className="text-xs font-semibold uppercase tracking-widest text-primary">
+                  The Solution
+                </span>
+                <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-5 max-w-3xl mx-auto">
+                  What if you could see every rupee, every order, and every kitchen ticket —{" "}
+                  <span className="text-primary">from one screen?</span>
+                </h2>
+                <p className="text-gray-500 text-base max-w-2xl mx-auto leading-relaxed">
+                  Eats Desk replaces your notebooks, spreadsheets, and guesswork with a
+                  single operations platform built specifically for restaurants in Pakistan.
+                </p>
+              </div>
+            </Reveal>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-14">
+              {[
+                {
+                  icon: Zap,
+                  title: "30-Second Order Processing",
+                  desc: "Touch-optimised POS that your staff learns in hours, not days. Bills, splits, discounts, and prints — faster than any manual system.",
+                },
+                {
+                  icon: BarChart3,
+                  title: "Real-Time P&L Dashboard",
+                  desc: "Know your profit before you close for the night. Top sellers, slow movers, staff performance, and cash reconciliation — all live.",
+                },
+                {
+                  icon: TrendingUp,
+                  title: "Smart Inventory Tracking",
+                  desc: "Every menu item tied to its ingredients. Automatic stock deduction, low-stock alerts, and wastage reports that pay for the subscription.",
+                },
+                {
+                  icon: Globe2,
+                  title: "Free Website + Online Orders",
+                  desc: "Your own branded website with an online ordering page. Zero commission. Keep 100% of your delivery revenue.",
+                },
+              ].map((usp, i) => (
+                <Reveal key={i} delay={i * 80}>
+                  <div className="bg-white border border-gray-200 rounded-2xl p-6 hover:border-primary/30 hover:shadow-md transition-all h-full">
+                    <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
+                      <usp.icon className="w-5 h-5 text-primary" />
+                    </div>
+                    <h3 className="font-bold text-gray-900 text-sm mb-2">{usp.title}</h3>
+                    <p className="text-xs text-gray-500 leading-relaxed">{usp.desc}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+
+            <Reveal delay={200}>
+              <div className="text-center">
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-primary text-white font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 text-sm"
+                >
+                  <Calendar className="w-4 h-4" />
+                  Book a Free Demo to See This Live
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════
+            6. CASE STUDIES — Before / After Proof
+        ══════════════════════════════════════════════════════════ */}
+        <section id="results" className="py-20 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="text-center mb-14">
+                <span className="text-xs font-semibold uppercase tracking-widest text-primary">
+                  Real Results — Not Promises
+                </span>
+                <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-4">
+                  These restaurants made the switch.{" "}
+                  <span className="text-primary">Here&apos;s what happened.</span>
+                </h2>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  Real restaurants. Real numbers. Before and after Eats Desk.
+                </p>
+              </div>
+            </Reveal>
+
+            <div className="grid md:grid-cols-3 gap-6 mb-10">
               {caseStudies.map((cs, i) => (
                 <CaseStudyCard key={i} {...cs} delay={i * 100} />
               ))}
             </div>
 
             <Reveal delay={200}>
-              <div className="text-center mt-10">
+              <div className="text-center">
                 <Link
                   href="/signup"
                   className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-primary text-white font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 text-sm"
@@ -684,9 +731,81 @@ export default function ReadMore() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════
-            7. HOW IT WORKS — Process Section
+            7. THE OFFER STACK — Everything You Get
         ══════════════════════════════════════════════════════════ */}
-        <section id="how-it-works" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <section id="offer" className="py-20 bg-gray-950 text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="text-center mb-14">
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full mb-5">
+                  <Gift className="w-3.5 h-3.5" />
+                  The Complete Package
+                </span>
+                <h2 className="text-3xl md:text-4xl font-bold leading-tight mb-4">
+                  Here&apos;s everything you get with Eats Desk
+                </h2>
+                <p className="text-gray-400 text-sm max-w-xl mx-auto">
+                  Most restaurants pay for 4–5 separate tools. With Eats Desk, everything is included in one platform.
+                </p>
+              </div>
+            </Reveal>
+
+            <div className="max-w-3xl mx-auto mb-14">
+              {[
+                { item: "Full POS System (touch-optimised for speed)", value: "₨8,000/mo value" },
+                { item: "Kitchen Display System (KDS) for kitchen staff", value: "₨5,000/mo value" },
+                { item: "Real-Time Inventory & Wastage Tracking", value: "₨6,000/mo value" },
+                { item: "Customer Management & Order History", value: "₨4,000/mo value" },
+                { item: "Multi-Branch Dashboard & Comparison Reports", value: "₨7,000/mo value" },
+                { item: "Daily P&L, Sales Reports & Analytics", value: "₨5,000/mo value" },
+                { item: "Free Branded Website with Online Ordering", value: "₨15,000/mo value" },
+                { item: "Staff Roles & Performance Tracking", value: "₨3,000/mo value" },
+                { item: "Dedicated Onboarding + Staff Training", value: "₨25,000 one-time value" },
+                { item: "WhatsApp & Email Support (< 2hr response)", value: "Included" },
+              ].map((row, i) => (
+                <Reveal key={i} delay={i * 40}>
+                  <div className={`flex items-center justify-between py-4 px-5 ${i !== 0 ? "border-t border-white/10" : ""}`}>
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
+                      <span className="text-sm text-white">{row.item}</span>
+                    </div>
+                    <span className="text-xs text-gray-400 font-medium whitespace-nowrap ml-4">{row.value}</span>
+                  </div>
+                </Reveal>
+              ))}
+
+              <Reveal delay={300}>
+                <div className="mt-8 bg-gradient-to-r from-primary/20 to-secondary/15 border border-primary/30 rounded-2xl p-6 text-center">
+                  <p className="text-sm text-gray-300 mb-1">Total value if you bought these separately:</p>
+                  <p className="text-2xl font-bold text-white line-through decoration-red-400 mb-3">₨78,000+/month</p>
+                  <p className="text-sm text-gray-300 mb-1">Your investment with Eats Desk:</p>
+                  <p className="text-4xl font-bold text-primary">Try it free for 3 months</p>
+                  <p className="text-xs text-gray-400 mt-2">Then plans start from just ₨2,999/month. Cancel anytime.</p>
+                </div>
+              </Reveal>
+            </div>
+
+            <Reveal delay={350}>
+              <div className="text-center">
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center gap-2 px-7 py-4 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-all shadow-2xl shadow-primary/40 hover:shadow-primary/50 hover:-translate-y-0.5 text-sm"
+                >
+                  <Calendar className="w-4 h-4" />
+                  Claim Your Free 3-Month Trial
+                </Link>
+                <p className="mt-4 text-xs text-gray-500">
+                  No credit card. No contract. Cancel anytime.
+                </p>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════
+            8. HOW IT WORKS — Simple 4-Step Process
+        ══════════════════════════════════════════════════════════ */}
+        <section className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Reveal>
             <div className="text-center mb-14">
               <span className="text-xs font-semibold uppercase tracking-widest text-primary">
@@ -704,33 +823,32 @@ export default function ReadMore() {
           </Reveal>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 relative">
-            {/* Connector line (desktop) */}
             <div className="hidden lg:block absolute top-10 left-[12.5%] right-[12.5%] h-px bg-gradient-to-r from-primary/20 via-primary/40 to-primary/20" />
 
             {[
               {
                 step: "01",
                 icon: Phone,
-                title: "Discovery Call",
-                desc: "We learn your restaurant's specific setup — branch structure, menu size, and pain points. This call is free and takes 20 minutes.",
+                title: "Free Discovery Call",
+                desc: "We learn your restaurant's setup — branches, menu size, pain points. 20 minutes. Zero pressure.",
               },
               {
                 step: "02",
                 icon: MonitorSmartphone,
-                title: "System Setup & Configuration",
-                desc: "Our team configures your menu, tables, branches, and staff roles. We handle the technical setup — you don't touch a line of code.",
+                title: "We Set Everything Up",
+                desc: "Our team configures your menu, tables, branches, and staff roles. You don't touch a line of code.",
               },
               {
                 step: "03",
                 icon: Users,
                 title: "Staff Training",
-                desc: "We train your cashiers, managers, and kitchen staff on the POS and kitchen display. Most teams are confident within 2 hours.",
+                desc: "We train your cashiers, managers, and kitchen staff live. Most teams are confident within 2 hours.",
               },
               {
                 step: "04",
                 icon: TrendingUp,
                 title: "Go Live & Grow",
-                desc: "Start taking orders on day one. We monitor your first week and optimise your setup based on real order flow data.",
+                desc: "Start taking orders on day one. We monitor your first week and optimize based on real data.",
               },
             ].map((step, i) => (
               <Reveal key={i} delay={i * 100}>
@@ -750,17 +868,17 @@ export default function ReadMore() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════
-            8. SOCIAL PROOF — Testimonials
+            9. TESTIMONIALS — Social Proof
         ══════════════════════════════════════════════════════════ */}
-        <section id="testimonials" className="py-20 bg-gray-50">
+        <section className="py-20 bg-gray-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <Reveal>
               <div className="text-center mb-14">
                 <span className="text-xs font-semibold uppercase tracking-widest text-primary">
-                  Testimonials
+                  Don&apos;t Take Our Word For It
                 </span>
                 <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-4">
-                  Restaurant owners who&apos;ve made the switch
+                  Hear it from owners who made the switch
                 </h2>
                 <div className="flex items-center justify-center gap-2 mt-2">
                   <Stars />
@@ -779,26 +897,104 @@ export default function ReadMore() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════
-            9. THE PROMISE — Trust Section
+            10. COST OF INACTION — "Every day you wait..."
+        ══════════════════════════════════════════════════════════ */}
+        <section className="py-20 bg-white">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="text-center mb-14">
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-red-500 bg-red-50 border border-red-200 px-3 py-1.5 rounded-full mb-5">
+                  <Timer className="w-3.5 h-3.5" />
+                  The Cost of Waiting
+                </span>
+                <h2 className="text-3xl md:text-4xl font-bold leading-tight mb-4">
+                  Every week you delay costs your restaurant real money
+                </h2>
+              </div>
+            </Reveal>
+
+            <div className="grid md:grid-cols-3 gap-6 mb-12">
+              {[
+                {
+                  period: "This Week",
+                  loss: "₨12,500+",
+                  desc: "In billing errors, food waste, and missed online orders",
+                },
+                {
+                  period: "This Month",
+                  loss: "₨50,000+",
+                  desc: "In untracked cash, over-ordered inventory, and zero data insights",
+                },
+                {
+                  period: "This Year",
+                  loss: "₨6,00,000+",
+                  desc: "In lost revenue that goes straight to competitors who run smarter",
+                },
+              ].map((item, i) => (
+                <Reveal key={i} delay={i * 80}>
+                  <div className="bg-red-50 border border-red-100 rounded-2xl p-6 text-center">
+                    <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-2">{item.period}</p>
+                    <p className="text-3xl font-bold text-red-600 mb-2">{item.loss}</p>
+                    <p className="text-xs text-gray-600">{item.desc}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+
+            <Reveal delay={200}>
+              <div className="bg-gradient-to-r from-primary/5 to-green-50 border border-primary/20 rounded-2xl p-8 text-center">
+                <p className="text-sm text-gray-600 mb-2">Meanwhile, the cost of fixing this?</p>
+                <p className="text-3xl font-bold text-gray-900 mb-2">
+                  ₨0 for 3 full months. Then ₨2,999/mo.
+                </p>
+                <p className="text-sm text-gray-500 mb-6">
+                  That&apos;s less than the cost of one wrong order per day.
+                </p>
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-primary text-white font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 text-sm"
+                >
+                  Stop the Bleeding — Book Your Free Demo
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════
+            11. THE GUARANTEE — Risk Reversal
         ══════════════════════════════════════════════════════════ */}
         <section className="py-16 bg-primary">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="text-center mb-10">
+                <HeartHandshake className="w-10 h-10 text-white mx-auto mb-4" />
+                <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">
+                  Our &ldquo;Zero Risk&rdquo; Promise to You
+                </h2>
+                <p className="text-white/70 text-sm max-w-xl mx-auto">
+                  We know switching systems feels risky. So we removed every possible risk.
+                </p>
+              </div>
+            </Reveal>
+
             <div className="grid md:grid-cols-3 gap-8 text-white text-center">
               {[
                 {
                   icon: ShieldCheck,
-                  title: "No Long-Term Contract",
-                  desc: "Cancel anytime. No lock-in, no cancellation fees. We earn your business every month.",
+                  title: "No Lock-In Contract",
+                  desc: "Cancel anytime with zero fees. Monthly or annual billing — your choice. We earn your business every single month.",
                 },
                 {
                   icon: Clock,
-                  title: "2-Hour Support Response",
-                  desc: "Reach us on WhatsApp or email. We respond within 2 hours during business hours.",
+                  title: "< 2 Hour Support",
+                  desc: "Reach us on WhatsApp or email. Dedicated account manager on Professional and Enterprise plans.",
                 },
                 {
-                  icon: CheckCircle2,
-                    title: "3-Months Free Trial",
-                  desc: "Try Eats Desk with full features, no credit card needed. Cancel if it&apos;s not for you.",
+                  icon: BadgeCheck,
+                  title: "3-Months Completely Free",
+                  desc: "Full features. No credit card needed. If it doesn't work for you, walk away — no questions asked.",
                 },
               ].map((item, i) => (
                 <Reveal key={i} delay={i * 80}>
@@ -816,7 +1012,113 @@ export default function ReadMore() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════
-            10. FAQ SECTION
+            12. WHO IS THIS FOR — Qualification
+        ══════════════════════════════════════════════════════════ */}
+        <section className="py-20 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="text-center mb-14">
+                <span className="text-xs font-semibold uppercase tracking-widest text-primary">
+                  Is This Right For You?
+                </span>
+                <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-4">
+                  Eats Desk is built for a specific type of restaurant
+                </h2>
+              </div>
+            </Reveal>
+
+            <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+              <Reveal>
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-6">
+                  <div className="flex items-center gap-2 mb-5">
+                    <Target className="w-5 h-5 text-green-600" />
+                    <h3 className="font-bold text-green-800">This IS for you if...</h3>
+                  </div>
+                  <ul className="space-y-3">
+                    {[
+                      "You run a restaurant, café, fast food outlet, or cloud kitchen in Pakistan",
+                      "You process 50+ orders per day and want to scale",
+                      "You're tired of guessing your numbers at the end of the month",
+                      "You want your own online ordering website (no 30% commissions)",
+                      "You manage multiple branches and need one dashboard",
+                      "You want a system your staff can learn in hours, not weeks",
+                    ].map((item, i) => (
+                      <li key={i} className="flex gap-2.5 text-sm text-gray-700">
+                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Reveal>
+
+              <Reveal delay={100}>
+                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                  <div className="flex items-center gap-2 mb-5">
+                    <XCircle className="w-5 h-5 text-gray-400" />
+                    <h3 className="font-bold text-gray-600">This is NOT for you if...</h3>
+                  </div>
+                  <ul className="space-y-3">
+                    {[
+                      "You run a home-based food business with under 10 orders/day",
+                      "You're looking for a free app with no support or onboarding",
+                      "You don't want to change anything about how you currently operate",
+                      "You're outside Pakistan (we're optimized for local payment methods & workflows)",
+                    ].map((item, i) => (
+                      <li key={i} className="flex gap-2.5 text-sm text-gray-500">
+                        <XCircle className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Reveal>
+            </div>
+
+            <Reveal delay={200}>
+              <p className="text-center mt-10 text-sm text-gray-500">
+                Not sure if you fit?{" "}
+                <Link href="/signup" className="text-primary font-semibold hover:underline">
+                  Book a free call
+                </Link>{" "}
+                — we&apos;ll tell you honestly.
+              </p>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════
+            13. TRUSTED BY — Restaurant Types
+        ══════════════════════════════════════════════════════════ */}
+        <section className="py-14 bg-gray-50 border-y border-gray-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Reveal>
+              <p className="text-center text-xs font-semibold uppercase tracking-widest text-gray-400 mb-8">
+                Trusted by restaurants, cafés &amp; cloud kitchens across Pakistan
+              </p>
+            </Reveal>
+            <div className="flex flex-wrap justify-center gap-3">
+              {[
+                { icon: Utensils, label: "Dine-in Restaurants" },
+                { icon: ChefHat, label: "Cloud Kitchens" },
+                { icon: Package, label: "Fast Food Chains" },
+                { icon: Globe2, label: "Café Groups" },
+                { icon: Users, label: "Multi-Branch Outlets" },
+                { icon: MonitorSmartphone, label: "Takeaway Counters" },
+              ].map((item, i) => (
+                <Reveal key={i} delay={i * 60}>
+                  <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm text-gray-600 shadow-sm">
+                    <item.icon className="w-4 h-4 text-primary" />
+                    {item.label}
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ══════════════════════════════════════════════════════════
+            14. FAQ — Objection Handling
         ══════════════════════════════════════════════════════════ */}
         <section id="faq" className="py-20 max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <Reveal>
@@ -825,10 +1127,10 @@ export default function ReadMore() {
                 FAQ
               </span>
               <h2 className="text-3xl md:text-4xl font-bold mt-3 mb-4">
-                Questions before you book?
+                Still have questions?
               </h2>
               <p className="text-gray-500 text-sm">
-                Everything restaurant owners want to know before switching systems.
+                Every objection we&apos;ve heard — answered honestly.
               </p>
             </div>
           </Reveal>
@@ -855,7 +1157,7 @@ export default function ReadMore() {
         </section>
 
         {/* ══════════════════════════════════════════════════════════
-            11. FINAL CTA — Footer Push
+            15. FINAL CTA — Urgency + Last Push
         ══════════════════════════════════════════════════════════ */}
         <section className="py-24 bg-gray-950 text-white text-center relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10 pointer-events-none" />
@@ -865,21 +1167,24 @@ export default function ReadMore() {
             <Reveal>
               <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full mb-6">
                 <Zap className="w-3.5 h-3.5" />
-                Join 500+ restaurants running smarter
+                Limited onboarding slots available each month
               </span>
             </Reveal>
 
             <Reveal delay={80}>
               <h2 className="text-4xl md:text-5xl font-bold leading-tight mb-5">
-                Ready to stop running your restaurant{" "}
-                <span className="text-primary">on guesswork?</span>
+                You read this far for a reason.{" "}
+                <span className="text-primary">Your restaurant deserves better.</span>
               </h2>
             </Reveal>
 
             <Reveal delay={160}>
-              <p className="text-gray-400 text-base mb-10 leading-relaxed">
-                Book a free 20-minute demo call. We&apos;ll show you exactly how Eats Desk works
-                for your type of restaurant — and what results you can expect in 90 days.
+              <p className="text-gray-400 text-base mb-4 leading-relaxed">
+                Every day you run on manual systems, you&apos;re losing money you could be keeping.
+                The restaurants that switched to Eats Desk aren&apos;t smarter — they just stopped waiting.
+              </p>
+              <p className="text-white font-medium text-lg mb-10">
+                Book your free 20-minute demo. See exactly what Eats Desk would look like for your restaurant.
               </p>
             </Reveal>
 
@@ -890,7 +1195,7 @@ export default function ReadMore() {
                   className="inline-flex items-center gap-2 px-7 py-4 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-all shadow-2xl shadow-primary/40 hover:shadow-primary/50 hover:-translate-y-0.5 text-sm"
                 >
                   <Calendar className="w-4 h-4" />
-                  Book Your Free Demo Call
+                  Book Your Free Demo Call Now
                 </Link>
                 <Link
                   href="/"
@@ -899,9 +1204,22 @@ export default function ReadMore() {
                   Back to Home
                 </Link>
               </div>
-              <p className="mt-5 text-xs text-gray-500">
-                No commitment. No credit card. Cancel anytime.
-              </p>
+              <div className="mt-6 flex flex-col items-center gap-2">
+                <p className="text-xs text-gray-500 flex items-center justify-center gap-4 flex-wrap">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> No commitment
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> No credit card
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Cancel anytime
+                  </span>
+                </p>
+                <p className="text-[11px] text-gray-600">
+                  We only onboard a limited number of restaurants per month to ensure quality setup.
+                </p>
+              </div>
             </Reveal>
           </div>
         </section>
