@@ -150,7 +150,7 @@ export default function Home() {
     <>
       <SEO
         title="Eats Desk - Complete Restaurant Management System for Pakistan | POS, Inventory & Free Website"
-        description="Transform your restaurant with Eats Desk. Lightning-fast POS, smart inventory tracking, and free branded website. Trusted by 500+ restaurants in Pakistan. Start your 3-months free trial today!"
+        description="Transform your restaurant with Eats Desk. Lightning-fast POS, smart inventory tracking, and free branded website. Trusted by 500+ restaurants in Pakistan. Start for just $1/month."
         keywords="restaurant POS system Pakistan, restaurant management software, POS system for restaurants, inventory management restaurant, online ordering system, restaurant website builder, cafe management software, food business software Islamabad Lahore Karachi, restaurant billing software, kitchen management system"
         structuredData={structuredData}
       />
@@ -217,7 +217,7 @@ export default function Home() {
                   href="/signup"
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5"
                 >
-                  Start Free Trial
+                  Start for $1/Month
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
                 <button
@@ -315,7 +315,7 @@ export default function Home() {
                       href="/signup"
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5"
                     >
-                      Start Free 3-Months Trial
+                      Start for $1/Month
                       <ArrowRight className="w-4 h-4" />
                     </Link>
                     <a
@@ -332,7 +332,7 @@ export default function Home() {
                   <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-600">
                     <span className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      No credit card required
+                      Just $1/mo for 3 months
                     </span>
                     <span className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -835,7 +835,7 @@ export default function Home() {
                 <p className="text-gray-600 leading-relaxed">
                   Flexible pricing plans for restaurants of all sizes. All
                   include POS, inventory, menu management and a free restaurant
-                  website. Start with a <span className="font-semibold">3&nbsp;month</span> free trial.
+                  website. Start for just <span className="font-semibold">$1/month</span> for your first 3 months.
                 </p>
               </div>
             </Reveal>
@@ -843,11 +843,11 @@ export default function Home() {
             <div className="grid gap-3 md:grid-cols-4 max-w-5xl mx-auto">
               {[
                 {
-                  plan: "Free Trial",
-                  price: "Free",
-                  currency: "",
-                  period: "for 3 months",
-                  desc: "Try every feature of Eats Desk free for 3 full months.",
+                  plan: "Basic",
+                  price: "1",
+                  currency: "$",
+                  period: "per month for 3 months",
+                  desc: "Try every feature of Eats Desk for just $1/mo for 3 months.",
                   features: [
                     "All features included",
                     "Full access for 3 months",
@@ -856,7 +856,7 @@ export default function Home() {
                     "Advanced analytics & reports",
                     "POS, KDS & reservations",
                   ],
-                  cta: "Start Free Trial",
+                  cta: "Start for $1/Month",
                   popular: false,
                 },
                 {
@@ -875,7 +875,7 @@ export default function Home() {
                     "Sales reports",
                     "Email support",
                   ],
-                  cta: "Start Free Trial",
+                  cta: "Start for $1/Month",
                   popular: false,
                 },
                 {
@@ -896,7 +896,7 @@ export default function Home() {
                     "Custom branded website",
                     "Priority support",
                   ],
-                  cta: "Start Free Trial",
+                  cta: "Start for $1/Month",
                   popular: true,
                 },
                 {
@@ -1018,8 +1018,8 @@ export default function Home() {
                   answer="The system automatically shows low-stock alerts on your dashboard. Menu items with insufficient inventory are automatically hidden from your website and marked as 'Out of Stock' on POS, so you never sell what you can't make."
                 />
                 <FAQItem
-                  question="Can I try it before paying?"
-                  answer="Yes — every new restaurant gets a full 3-months free trial with all features unlocked. No credit card required to start. You can upgrade to a paid plan anytime during or after the trial."
+                  question="Can I try it before committing to a full plan?"
+                  answer="Yes — every new restaurant gets full access for just $1/month for the first 3 months. All features are unlocked from day one. You can upgrade to a paid plan anytime during or after the trial period."
                 />
               </div>
             </Reveal>
@@ -1226,7 +1226,7 @@ export default function Home() {
                   href="/signup"
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-primary text-base font-bold hover:bg-gray-100 transition-all shadow-lg hover:-translate-y-0.5"
                 >
-                  Start Free Trial
+                  Start for $1/Month
                   <ArrowRight className="w-4 h-4" />
                 </Link>
                 <Link
@@ -1355,7 +1355,7 @@ export default function Home() {
                       href="/signup"
                       className="hover:text-white transition-colors"
                     >
-                      Start free trial
+                      Start for $1/month
                     </Link>
                   </li>
                   <li>

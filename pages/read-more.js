@@ -209,7 +209,7 @@ export default function ReadMore() {
     {
       question: "Is there a long-term contract or can I cancel anytime?",
       answer:
-        "No lock-in contracts. You can cancel anytime with zero cancellation fees. We offer monthly billing and annual billing (with a discount). We earn your business every single month — that's our commitment.",
+        "No lock-in contracts. You can cancel anytime with zero cancellation fees. Your first 3 months are just $1/month, then plans start at $49/month. We offer monthly and annual billing (with a discount). We earn your business every single month.",
     },
     {
       question: "Does the free website work with online ordering?",
@@ -457,10 +457,10 @@ export default function ReadMore() {
             <Reveal delay={320}>
               <p className="mt-5 text-xs text-gray-400 flex items-center justify-center gap-4 flex-wrap">
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> 3-months free trial
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Just $1/mo for 3 months
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> No credit card required
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Cancel anytime
                 </span>
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Setup in 48 hours
@@ -478,7 +478,7 @@ export default function ReadMore() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
               {[
                 { value: "500+", label: "Restaurants Onboarded" },
-                { value: "₨2.4B+", label: "Orders Processed" },
+                { value: "$8M+", label: "Orders Processed" },
                 { value: "48 hrs", label: "Average Go-Live Time" },
                 { value: "4.9/5", label: "Average Client Rating" },
               ].map((stat, i) => (
@@ -517,7 +517,7 @@ export default function ReadMore() {
               {[
                 {
                   pain: "End-of-day cash never matches your sales",
-                  cost: "Average restaurant loses ₨15,000–40,000/month to untracked cash leakage.",
+                  cost: "Average restaurant loses $200–500/month to untracked cash leakage.",
                 },
                 {
                   pain: "You find out about a missing ingredient mid-service",
@@ -537,7 +537,7 @@ export default function ReadMore() {
                 },
                 {
                   pain: "Customers order from food apps and you pay 30% commission",
-                  cost: "A restaurant doing ₨5L/month in delivery loses ₨1.5L to platform fees alone.",
+                  cost: "A restaurant doing $5,000/month in delivery loses $1,500 to platform fees alone.",
                 },
               ].map((item, i) => (
                 <Reveal key={i} delay={i * 60}>
@@ -556,7 +556,7 @@ export default function ReadMore() {
               <div className="text-center">
                 <div className="inline-block bg-red-500/10 border border-red-500/20 rounded-2xl px-8 py-6 max-w-2xl">
                   <p className="text-2xl md:text-3xl font-bold text-white mb-2">
-                    Conservative estimate: You&apos;re losing ₨50,000–₨2,00,000 every month.
+                    Conservative estimate: You&apos;re losing $500–$2,000 every month.
                   </p>
                   <p className="text-sm text-gray-400">
                     Not because your food is bad. Because your <span className="text-red-400 font-semibold">systems</span> are broken.
@@ -752,15 +752,15 @@ export default function ReadMore() {
 
             <div className="max-w-3xl mx-auto mb-14">
               {[
-                { item: "Full POS System (touch-optimised for speed)", value: "₨8,000/mo value" },
-                { item: "Kitchen Display System (KDS) for kitchen staff", value: "₨5,000/mo value" },
-                { item: "Real-Time Inventory & Wastage Tracking", value: "₨6,000/mo value" },
-                { item: "Customer Management & Order History", value: "₨4,000/mo value" },
-                { item: "Multi-Branch Dashboard & Comparison Reports", value: "₨7,000/mo value" },
-                { item: "Daily P&L, Sales Reports & Analytics", value: "₨5,000/mo value" },
-                { item: "Free Branded Website with Online Ordering", value: "₨15,000/mo value" },
-                { item: "Staff Roles & Performance Tracking", value: "₨3,000/mo value" },
-                { item: "Dedicated Onboarding + Staff Training", value: "₨25,000 one-time value" },
+                { item: "Full POS System (touch-optimised for speed)", value: "$30/mo value" },
+                { item: "Kitchen Display System (KDS) for kitchen staff", value: "$20/mo value" },
+                { item: "Real-Time Inventory & Wastage Tracking", value: "$25/mo value" },
+                { item: "Customer Management & Order History", value: "$15/mo value" },
+                { item: "Multi-Branch Dashboard & Comparison Reports", value: "$25/mo value" },
+                { item: "Daily P&L, Sales Reports & Analytics", value: "$20/mo value" },
+                { item: "Free Branded Website with Online Ordering", value: "$50/mo value" },
+                { item: "Staff Roles & Performance Tracking", value: "$10/mo value" },
+                { item: "Dedicated Onboarding + Staff Training", value: "$100 one-time value" },
                 { item: "WhatsApp & Email Support (< 2hr response)", value: "Included" },
               ].map((row, i) => (
                 <Reveal key={i} delay={i * 40}>
@@ -777,10 +777,10 @@ export default function ReadMore() {
               <Reveal delay={300}>
                 <div className="mt-8 bg-gradient-to-r from-primary/20 to-secondary/15 border border-primary/30 rounded-2xl p-6 text-center">
                   <p className="text-sm text-gray-300 mb-1">Total value if you bought these separately:</p>
-                  <p className="text-2xl font-bold text-white line-through decoration-red-400 mb-3">₨78,000+/month</p>
+                  <p className="text-2xl font-bold text-white line-through decoration-red-400 mb-3">$295+/month</p>
                   <p className="text-sm text-gray-300 mb-1">Your investment with Eats Desk:</p>
-                  <p className="text-4xl font-bold text-primary">Try it free for 3 months</p>
-                  <p className="text-xs text-gray-400 mt-2">Then plans start from just ₨2,999/month. Cancel anytime.</p>
+                  <p className="text-4xl font-bold text-primary">Just $1/month for 3 months</p>
+                  <p className="text-xs text-gray-400 mt-2">Then plans start from just $49/month. Cancel anytime.</p>
                 </div>
               </Reveal>
             </div>
@@ -792,10 +792,10 @@ export default function ReadMore() {
                   className="inline-flex items-center gap-2 px-7 py-4 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-all shadow-2xl shadow-primary/40 hover:shadow-primary/50 hover:-translate-y-0.5 text-sm"
                 >
                   <Calendar className="w-4 h-4" />
-                  Claim Your Free 3-Month Trial
+                  Start for $1/Month
                 </Link>
                 <p className="mt-4 text-xs text-gray-500">
-                  No credit card. No contract. Cancel anytime.
+                  $1/mo for 3 months. No contract. Cancel anytime.
                 </p>
               </div>
             </Reveal>
@@ -917,17 +917,17 @@ export default function ReadMore() {
               {[
                 {
                   period: "This Week",
-                  loss: "₨12,500+",
+                  loss: "$200+",
                   desc: "In billing errors, food waste, and missed online orders",
                 },
                 {
                   period: "This Month",
-                  loss: "₨50,000+",
+                  loss: "$800+",
                   desc: "In untracked cash, over-ordered inventory, and zero data insights",
                 },
                 {
                   period: "This Year",
-                  loss: "₨6,00,000+",
+                  loss: "$10,000+",
                   desc: "In lost revenue that goes straight to competitors who run smarter",
                 },
               ].map((item, i) => (
@@ -943,12 +943,12 @@ export default function ReadMore() {
 
             <Reveal delay={200}>
               <div className="bg-gradient-to-r from-primary/5 to-green-50 border border-primary/20 rounded-2xl p-8 text-center">
-                <p className="text-sm text-gray-600 mb-2">Meanwhile, the cost of fixing this?</p>
+                <p className="text-sm text-gray-600 mb-2">Meanwhile, the cost of fixing all of this?</p>
                 <p className="text-3xl font-bold text-gray-900 mb-2">
-                  ₨0 for 3 full months. Then ₨2,999/mo.
+                  $1/month for your first 3 months. Then $49/mo.
                 </p>
                 <p className="text-sm text-gray-500 mb-6">
-                  That&apos;s less than the cost of one wrong order per day.
+                  That&apos;s less than what you spend on one wrong order.
                 </p>
                 <Link
                   href="/signup"
@@ -993,8 +993,8 @@ export default function ReadMore() {
                 },
                 {
                   icon: BadgeCheck,
-                  title: "3-Months Completely Free",
-                  desc: "Full features. No credit card needed. If it doesn't work for you, walk away — no questions asked.",
+                  title: "$1/Month for 3 Months",
+                  desc: "Full features for just $1/mo. Try everything risk-free. If it's not for you, cancel — no questions asked.",
                 },
               ].map((item, i) => (
                 <Reveal key={i} delay={i * 80}>
@@ -1207,10 +1207,10 @@ export default function ReadMore() {
               <div className="mt-6 flex flex-col items-center gap-2">
                 <p className="text-xs text-gray-500 flex items-center justify-center gap-4 flex-wrap">
                   <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> No commitment
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> $1/mo for 3 months
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> No credit card
+                    <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> No commitment
                   </span>
                   <span className="flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Cancel anytime
