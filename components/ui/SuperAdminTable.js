@@ -23,14 +23,14 @@ export default function SuperAdminTable({
     : columns;
 
   return (
-    <div className="min-h-[60vh] overflow-auto text-xs border border-gray-200 dark:border-neutral-700 rounded-lg">
+    <div className="max-h-[calc(100vh-18rem)] overflow-auto text-xs border border-gray-200 dark:border-neutral-700 rounded-lg">
       <table className="w-full text-xs">
-        <thead className="text-[11px] uppercase text-gray-800 dark:text-gray-200 border-b border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/50 sticky top-0 z-[1]">
+        <thead className="text-[11px] uppercase text-gray-800 dark:text-gray-200 border-b border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/50 sticky top-0 z-10">
           <tr>
             {allColumns.map((col) => (
               <th
                 key={col.key}
-                className={`py-2 px-3 ${
+                className={`py-2 px-3 whitespace-nowrap ${
                   col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"
                 } ${col.width || ""} ${col.className || ""}`}
               >
