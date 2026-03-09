@@ -173,6 +173,7 @@ export default function POSPage() {
 
   // Restaurant logo (shared across branches, used in printed bills)
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
+  const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
 
   // Check sidebar state from sessionStorage before showing grid (so reload with closed sidebar → 5 cols)
   useLayoutEffect(() => {
@@ -190,6 +191,8 @@ export default function POSPage() {
         if (cancelled) return;
         const url = data?.restaurantLogoUrl || "";
         setRestaurantLogoUrl(url);
+        const height = typeof data?.restaurantLogoHeightPx === "number" ? data.restaurantLogoHeightPx : 100;
+        setRestaurantLogoHeight(height);
       })
       .catch(() => {
         // Ignore logo load errors; printing will just fall back to text
@@ -985,6 +988,7 @@ export default function POSPage() {
       logoUrl: restaurantLogoUrl,
       branchAddress: currentBranch?.address || "",
       orderTakerName: auth?.user?.name || "",
+      logoHeightPx: restaurantLogoHeight,
     });
     if (!win) toast.error("Allow popups to print");
   }

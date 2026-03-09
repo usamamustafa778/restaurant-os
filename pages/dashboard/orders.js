@@ -92,6 +92,7 @@ export default function OrdersPage() {
   const isOrderTaker = role === "order_taker";
 
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
+  const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
 
   async function loadOrders() {
     try {
@@ -118,6 +119,8 @@ export default function OrdersPage() {
       .then((data) => {
         if (cancelled) return;
         setRestaurantLogoUrl(data?.restaurantLogoUrl || "");
+        const height = typeof data?.restaurantLogoHeightPx === "number" ? data.restaurantLogoHeightPx : 100;
+        setRestaurantLogoHeight(height);
       })
       .catch(() => {
         if (!cancelled) setRestaurantLogoUrl("");
@@ -200,6 +203,7 @@ export default function OrdersPage() {
       mode,
       logoUrl: restaurantLogoUrl,
       branchAddress: currentBranch?.address || "",
+      logoHeightPx: restaurantLogoHeight,
     });
     if (!win) toast.error("Allow popups to print");
   }

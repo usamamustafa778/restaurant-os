@@ -44,6 +44,7 @@ export default function BranchesPage() {
   const [logoTab, setLogoTab] = useState("link");
   const [savedLogoUrl, setSavedLogoUrl] = useState("");
   const [logoDirty, setLogoDirty] = useState(false);
+  const [logoHeight, setLogoHeight] = useState(100); // px, used for printed bills
   const logoInputRef = useRef(null);
 
   useEffect(() => {
@@ -93,6 +94,7 @@ export default function BranchesPage() {
         const settings = data || {};
         setRestaurantSettings(settings);
         setSavedLogoUrl(settings.restaurantLogoUrl || "");
+        setLogoHeight(settings.restaurantLogoHeightPx || 100);
         setLogoDirty(false);
       })
       .catch(() => {
@@ -205,9 +207,11 @@ export default function BranchesPage() {
       const updated = await updateRestaurantSettings({
         ...restaurantSettings,
         restaurantLogoUrl,
+        restaurantLogoHeightPx: logoHeight,
       });
       setRestaurantSettings(updated);
       setSavedLogoUrl(updated?.restaurantLogoUrl || "");
+      setLogoHeight(updated?.restaurantLogoHeightPx || logoHeight);
       setLogoDirty(false);
       toast.success("Restaurant logo saved", { id: toastId });
     } catch (err) {
@@ -256,6 +260,34 @@ export default function BranchesPage() {
             <ImageIcon className="w-3.5 h-3.5" />
             Logo
           </label>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] text-gray-500 dark:text-neutral-400">
+              Print size
+            </span>
+            <select
+              value={logoHeight}
+              onChange={(e) => {
+                const value = parseInt(e.target.value, 10) || 100;
+                setLogoHeight(value);
+                setRestaurantSettings((prev) => ({
+                  ...(prev || {}),
+                  restaurantLogoHeightPx: value,
+                }));
+                setLogoDirty(true);
+              }}
+              className="px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
+              disabled={logoLoading}
+            >
+              <option value={60}>Small (60px)</option>
+              <option value={80}>Medium (80px)</option>
+              <option value={100}>Large (100px)</option>
+              <option value={120}>XL (120px)</option>
+            </select>
+            <span className="text-[11px] text-gray-400 dark:text-neutral-500">
+              {logoHeight}px
+            </span>
+          </div>
 
           <div className="flex rounded-lg border-2 border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
             <button
