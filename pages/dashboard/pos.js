@@ -995,6 +995,22 @@ export default function POSPage() {
       return;
     }
 
+    // If we're editing an existing order, just print the current cart as a bill
+    // without creating a brand new order in the backend.
+    if (editingOrderId) {
+      const existingId = editingOrder?.id || editingOrderId;
+      openPrintBill(
+        buildOrderLikeFromCart({
+          orderNumber: existingId,
+          id: existingId,
+          createdAt: editingOrder?.createdAt ?? new Date().toISOString(),
+          paymentMethod: "To be paid",
+        }),
+        "bill",
+      );
+      return;
+    }
+
     try {
       setPrintingMenu(true);
       const result = await createPosOrder({
