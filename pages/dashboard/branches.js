@@ -294,215 +294,10 @@ export default function BranchesPage() {
 
   return (
     <AdminLayout title="Branches">
-      {/* Restaurant logo shared across all branches */}
-      <div className="mb-6 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-sm">
-              <ImageIcon className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                Bill settings & logo
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">
-                Configure how your logo appears on printed bills and receipts.
-              </p>
-            </div>
-          </div>
-          <span className="hidden md:inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700">
-            Live preview
-          </span>
-        </div>
-
-        <div className="flex flex-row gap-6 items-start">
-          {/* Left: Settings */}
-          <div className="space-y-3 flex-1 ">
-            <div className="flex flex-row gap-3 items-center justify-between">
-
-            <div className="flex flex-1 flex-col space-y-3 gap-2  ">
-
-              <label className="text-gray-700  dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
-                <ImageIcon className="w-3.5 h-3.5" />
-                Logo
-              </label>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] text-gray-500 dark:text-neutral-400">
-                  Print size
-                </span>
-                <select
-                  value={logoHeight}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10) || 100;
-                    setLogoHeight(value);
-                    setRestaurantSettings((prev) => ({
-                      ...(prev || {}),
-                      restaurantLogoHeightPx: value,
-                    }));
-                    setLogoDirty(true);
-                  }}
-                  className="px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
-                  disabled={logoLoading}
-                >
-                  <option value={60}>Small </option>
-                  <option value={80}>Medium </option>
-                  <option value={100}>Large </option>
-                  <option value={120}>XL </option>
-                  <option value={140}>2XL </option>
-                  <option value={160}>3XL </option>
-                  <option value={180}>4XL </option>
-
-                </select>
-                <span className="text-[11px] text-gray-400 dark:text-neutral-500">
-                  {logoHeight}px
-                </span>
-              </div>
-
-              <div className="flex rounded-lg border-2 border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
-                <button
-                  type="button"
-                  onClick={() => setLogoTab("link")}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${logoTab === "link"
-                    ? "bg-primary text-white"
-                    : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
-                    }`}
-                >
-                  <LinkIcon className="w-3.5 h-3.5" />
-                  Paste URL
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLogoTab("upload")}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-l-2 border-gray-300 dark:border-neutral-700 transition-colors ${logoTab === "upload"
-                    ? "bg-primary text-white"
-                    : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
-                    }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload from PC
-                </button>
-              </div>
-              {logoTab === "link" && (
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={restaurantLogoUrl}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setRestaurantSettings((prev) => ({
-                        ...(prev || {}),
-                        restaurantLogoUrl: value,
-                      }));
-                      setLogoDirty(true);
-                    }}
-                    placeholder="https://..."
-                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                    disabled={logoLoading}
-                  />
-                </div>
-              )}
-
-            </div>
-            <div className="flex items-center gap-3 mt-1 ">
-              {restaurantLogoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={restaurantLogoUrl}
-                  alt="Restaurant logo preview"
-                  style={{ height: `${logoHeight}px`, width: `${logoHeight}px` }}
-                  className={`h-${logoHeight}px w-${logoHeight}px rounded-lg object-cover border border-gray-200 dark:border-neutral-700`}
-                />
-              ) : (
-                <div className="h-10 w-10 rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 flex items-center justify-center text-[10px] text-gray-400">
-                  No logo
-                </div>
-              )}
-            </div>
-
-            </div>
-
-
-
-            {logoTab === "upload" && (
-              <label className="flex flex-col items-center justify-center w-full h-24 rounded-xl border-2 border-dashed border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 cursor-pointer transition-colors">
-                {logoUploading ? (
-                  <div className="flex flex-col items-center gap-1">
-                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                    <span className="text-xs font-medium text-primary">Uploading...</span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-1">
-                    <Upload className="w-5 h-5 text-gray-400" />
-                    <span className="text-xs text-gray-500 dark:text-neutral-400">
-                      Click to browse or drag &amp; drop
-                    </span>
-                    <span className="text-[10px] text-gray-400 dark:text-neutral-500">
-                      JPG, PNG, WEBP up to 5 MB
-                    </span>
-                  </div>
-                )}
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoUploadChange}
-                  disabled={logoUploading}
-                />
-              </label>
-            )}
-
-            {/* Bill footer message */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
-                Bill footer message
-              </label>
-              <input
-                type="text"
-                value={billFooterMessage}
-                onChange={(e) => {
-                  setBillFooterMessage(e.target.value);
-                  setLogoDirty(true);
-                }}
-                placeholder="Thank you for your order!"
-                maxLength={120}
-                className="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                disabled={logoLoading}
-              />
-              <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                Shown at the bottom of every printed bill.
-              </p>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <Button
-                type="button"
-                size="sm"
-                className="gap-1.5"
-                onClick={handleLogoUrlSave}
-                disabled={logoSaving || logoLoading || !logoDirty}
-              >
-                {logoSaving ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>Save settings</>
-                )}
-              </Button>
-            </div>
-
-          </div>
-
-          {/* Right: Preview — rendered via iframe using the exact same HTML as printBillReceipt */}
-          <BillPreviewPane logoUrl={restaurantLogoUrl} logoHeightPx={logoHeight} footerMessage={billFooterMessage} />
-        </div>
-      </div>
+     
 
       {/* Branches List */}
-      <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+      <div className="mb-6 relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
         {/* Loading Overlay for Refresh */}
         {isLoading && displayList.length > 0 && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-neutral-950/60 backdrop-blur-sm">
@@ -683,6 +478,212 @@ export default function BranchesPage() {
             </div>
           </div>
         )}
+      </div>
+       {/* Restaurant logo shared across all branches */}
+       <div className=" rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-sm">
+              <ImageIcon className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Bill settings & logo
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">
+                Configure how your logo appears on printed bills and receipts.
+              </p>
+            </div>
+          </div>
+          <span className="hidden md:inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700">
+            Live preview
+          </span>
+        </div>
+
+        <div className="flex flex-row gap-6 items-start">
+          {/* Left: Settings */}
+          <div className="space-y-3 flex-1 ">
+            <div className="flex flex-row gap-3 items-center justify-between">
+
+            <div className="flex flex-1 flex-col space-y-3 gap-2  ">
+
+              <label className="text-gray-700  dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
+                <ImageIcon className="w-3.5 h-3.5" />
+                Logo
+              </label>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-gray-500 dark:text-neutral-400">
+                  Print size
+                </span>
+                <select
+                  value={logoHeight}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value, 10) || 100;
+                    setLogoHeight(value);
+                    setRestaurantSettings((prev) => ({
+                      ...(prev || {}),
+                      restaurantLogoHeightPx: value,
+                    }));
+                    setLogoDirty(true);
+                  }}
+                  className="px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                  disabled={logoLoading}
+                >
+                  <option value={60}>Small </option>
+                  <option value={80}>Medium </option>
+                  <option value={100}>Large </option>
+                  <option value={120}>XL </option>
+                  <option value={140}>2XL </option>
+                  <option value={160}>3XL </option>
+                  <option value={180}>4XL </option>
+
+                </select>
+                <span className="text-[11px] text-gray-400 dark:text-neutral-500">
+                  {logoHeight}px
+                </span>
+              </div>
+
+              <div className="flex rounded-lg border-2 border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
+                <button
+                  type="button"
+                  onClick={() => setLogoTab("link")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${logoTab === "link"
+                    ? "bg-primary text-white"
+                    : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    }`}
+                >
+                  <LinkIcon className="w-3.5 h-3.5" />
+                  Paste URL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogoTab("upload")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-l-2 border-gray-300 dark:border-neutral-700 transition-colors ${logoTab === "upload"
+                    ? "bg-primary text-white"
+                    : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Upload from PC
+                </button>
+              </div>
+              {logoTab === "link" && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={restaurantLogoUrl}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setRestaurantSettings((prev) => ({
+                        ...(prev || {}),
+                        restaurantLogoUrl: value,
+                      }));
+                      setLogoDirty(true);
+                    }}
+                    placeholder="https://..."
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                    disabled={logoLoading}
+                  />
+                </div>
+              )}
+
+            </div>
+            <div className="flex items-center gap-3 mt-1 ">
+              {restaurantLogoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={restaurantLogoUrl}
+                  alt="Restaurant logo preview"
+                  style={{ height: `${logoHeight}px`, width: `${logoHeight}px` }}
+                  className={`h-${logoHeight}px w-${logoHeight}px  rounded-lg object-cover border border-gray-200 dark:border-neutral-700`}
+                />
+              ) : (
+                <div className="h-10 w-10 rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 flex items-center justify-center text-[10px] text-gray-400">
+                  No logo
+                </div>
+              )}
+            </div>
+
+            </div>
+
+
+
+            {logoTab === "upload" && (
+              <label className="flex flex-col items-center justify-center w-full h-24 rounded-xl border-2 border-dashed border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 cursor-pointer transition-colors">
+                {logoUploading ? (
+                  <div className="flex flex-col items-center gap-1">
+                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                    <span className="text-xs font-medium text-primary">Uploading...</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-1">
+                    <Upload className="w-5 h-5 text-gray-400" />
+                    <span className="text-xs text-gray-500 dark:text-neutral-400">
+                      Click to browse or drag &amp; drop
+                    </span>
+                    <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                      JPG, PNG, WEBP up to 5 MB
+                    </span>
+                  </div>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLogoUploadChange}
+                  disabled={logoUploading}
+                />
+              </label>
+            )}
+
+            {/* Bill footer message */}
+            <div className="space-y-1 pt-1">
+              <label className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
+                Bill footer message
+              </label>
+              <input
+                type="text"
+                value={billFooterMessage}
+                onChange={(e) => {
+                  setBillFooterMessage(e.target.value);
+                  setLogoDirty(true);
+                }}
+                placeholder="Thank you for your order!"
+                maxLength={120}
+                className="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                disabled={logoLoading}
+              />
+              <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                Shown at the bottom of every printed bill.
+              </p>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleLogoUrlSave}
+                disabled={logoSaving || logoLoading || !logoDirty}
+              >
+                {logoSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>Save settings</>
+                )}
+              </Button>
+            </div>
+
+          </div>
+
+          {/* Right: Preview — rendered via iframe using the exact same HTML as printBillReceipt */}
+          <BillPreviewPane logoUrl={restaurantLogoUrl} logoHeightPx={logoHeight} footerMessage={billFooterMessage} />
+        </div>
       </div>
 
       {displayList.length > 0 && (
