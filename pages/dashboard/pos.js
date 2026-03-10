@@ -985,7 +985,7 @@ export default function POSPage() {
 
   function openPrintBill(orderLike, mode) {
     const auth = getStoredAuth();
-    const win = printBillReceipt(orderLike, {
+    printBillReceipt(orderLike, {
       mode,
       logoUrl: restaurantLogoUrl,
       branchAddress: currentBranch?.address || "",
@@ -993,7 +993,6 @@ export default function POSPage() {
       logoHeightPx: restaurantLogoHeight,
       footerMessage: restaurantBillFooter,
     });
-    if (!win) toast.error("Allow popups to print");
   }
 
   async function printMenuBill() {

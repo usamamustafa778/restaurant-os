@@ -201,14 +201,13 @@ export default function OrdersPage() {
   }
 
   function openPrintBill(order, mode) {
-    const win = printBillReceipt(order, {
+    printBillReceipt(order, {
       mode,
       logoUrl: restaurantLogoUrl,
       branchAddress: currentBranch?.address || "",
       logoHeightPx: restaurantLogoHeight,
       footerMessage: restaurantBillFooter,
     });
-    if (!win) toast.error("Allow popups to print");
   }
 
   async function handleRecordPayment(e) {
