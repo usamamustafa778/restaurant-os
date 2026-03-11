@@ -524,6 +524,11 @@ export default function POSPage() {
         createdAt: new Date().toISOString(),
       });
       closeTakePaymentModal();
+      // When we were editing an existing order, closing payment should also exit edit mode
+      if (editingOrderId) {
+        setEditingOrderId(null);
+        setEditingOrder(null);
+      }
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
@@ -2038,7 +2043,7 @@ export default function POSPage() {
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                {editingOrderId ? `Order #${editingOrder?.id || editingOrderId}` : "Order #56998"}
+                {editingOrderId ? `Order #${editingOrder?.id || editingOrderId}` : "Order #"}
               </h3>
               <span className="text-xs text-gray-500 dark:text-neutral-400">
                 {new Date().toLocaleDateString("en-US", {
