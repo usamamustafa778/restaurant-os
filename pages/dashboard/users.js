@@ -271,17 +271,20 @@ export default function UsersPage() {
               render: (_, row) => {
                 const isOwner = row.role === "restaurant_admin";
                 const isSelf = String(row.id) === String(currentUserId);
+                const canEdit = !isOwner;
                 const canDelete = !isOwner && (!isManager || !isSelf);
                 return (
                   <div className="flex items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(row)}
-                      className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors"
-                      title="Edit"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => startEdit(row)}
+                        className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors"
+                        title="Edit"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {canDelete && (
                       <button
                         type="button"
@@ -320,7 +323,9 @@ export default function UsersPage() {
                     <p className="text-[10px] text-white/60 mt-0.5">Team Member</p>
                   </div>
                   <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button type="button" onClick={() => startEdit(user)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition-colors" title="Edit"><Edit3 className="w-3 h-3" /></button>
+                    {!isOwner && (
+                      <button type="button" onClick={() => startEdit(user)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition-colors" title="Edit"><Edit3 className="w-3 h-3" /></button>
+                    )}
                     {!isOwner && (!isManager || String(user.id) !== String(currentUserId)) && (
                       <button type="button" onClick={() => handleDelete(user.id)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-red-500/80 transition-colors" title="Delete"><Trash2 className="w-3 h-3" /></button>
                     )}
