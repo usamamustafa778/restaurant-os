@@ -129,13 +129,13 @@ export async function middleware(request) {
         const actingAs = request.cookies.get("restaurantos_acting_as")?.value;
         if (!actingAs) {
           const url = request.nextUrl.clone();
-          url.pathname = "/dashboard/super/overview";
-          return NextResponse.rewrite(url);
+          url.pathname = "/super/overview";
+          return NextResponse.redirect(url);
         }
       }
       const url = request.nextUrl.clone();
-      url.pathname = "/dashboard/overview";
-      return NextResponse.rewrite(url);
+      url.pathname = "/overview";
+      return NextResponse.redirect(url);
     }
     return NextResponse.next();
   }

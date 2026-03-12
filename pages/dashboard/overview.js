@@ -8,11 +8,10 @@ import {
   saveDailyCurrency,
   SubscriptionInactiveError,
   getDaySessions,
-  getDaySessionOrders,
-  getBulkDaySessionOrders,
 } from "../../lib/apiClient";
+import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
-import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3, Loader2, LayoutDashboard } from "lucide-react";
+import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3, Loader2, LayoutDashboard, Clock } from "lucide-react";
 import toast from "react-hot-toast";
 
 // Simple SVG line chart for hourly trend
@@ -344,16 +343,26 @@ export default function OverviewPage() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth()); // 0-11
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
 
-  // Day sessions (POS business days) for quick filtering
-  const [daySessions, setDaySessions] = useState([]);
-  const [loadingSessions, setLoadingSessions] = useState(false);
-  const [selectedSession, setSelectedSession] = useState(null);
-  const [selectedSessionSummary, setSelectedSessionSummary] = useState(null);
-  const [selectedSessionOrders, setSelectedSessionOrders] = useState([]);
-  const [loadingSelectedSession, setLoadingSelectedSession] = useState(false);
-  const [showSessionsModal, setShowSessionsModal] = useState(false);
-  const [sessionRangeStart, setSessionRangeStart] = useState(null);
-  const [sessionRangeEnd, setSessionRangeEnd] = useState(null);
+  // Business day (computed from branch cutoff setting)
+  const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
+  const businessDate = getBusinessDate(new Date(), cutoffHour);
+
+  // Legacy session history (read-only, for browsing past sessions)
+  const [showSessionHistoryModal, setShowSessionHistoryModal] = useState(false);
+  const [sessionHistory, setSessionHistory] = useState([]);
+  const [loadingSessionHistory, setLoadingSessionHistory] = useState(false);
+
+  async function loadSessionHistory() {
+    setLoadingSessionHistory(true);
+    try {
+      const res = await getDaySessions(currentBranch?.id);
+      setSessionHistory(Array.isArray(res?.sessions) ? res.sessions : []);
+    } catch {
+      setSessionHistory([]);
+    } finally {
+      setLoadingSessionHistory(false);
+    }
+  }
 
   // Currency note counter (denomination -> quantity), saved per day in backend
   const CURRENCY_NOTES = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
@@ -451,131 +460,6 @@ export default function OverviewPage() {
     })();
   }, []);
 
-  // Load recent day sessions (business days) for the current branch / all branches
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingSessions(true);
-    setSelectedSession(null);
-    setSelectedSessionSummary(null);
-    setSelectedSessionOrders([]);
-    setSessionRangeStart(null);
-    setSessionRangeEnd(null);
-
-    (async () => {
-      try {
-        const res = await getDaySessions(currentBranch?.id);
-        if (!cancelled) {
-          setDaySessions(
-            Array.isArray(res?.sessions)
-              ? [...res.sessions].sort(
-                (a, b) => new Date(a.startAt) - new Date(b.startAt),
-              )
-              : [],
-          );
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("Failed to load day sessions:", err);
-          setDaySessions([]);
-        }
-      } finally {
-        if (!cancelled) setLoadingSessions(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentBranch]);
-
-  function isSessionInRange(session) {
-    if (!sessionRangeStart) return false;
-
-    const startIndex = daySessions.findIndex(
-      (s) => s.id === sessionRangeStart.id,
-    );
-    const endIndexRaw = sessionRangeEnd
-      ? daySessions.findIndex((s) => s.id === sessionRangeEnd.id)
-      : startIndex;
-
-    if (startIndex === -1 || endIndexRaw === -1) return false;
-
-    const idx = daySessions.findIndex((s) => s.id === session.id);
-    if (idx === -1) return false;
-
-    const [from, to] =
-      startIndex <= endIndexRaw
-        ? [startIndex, endIndexRaw]
-        : [endIndexRaw, startIndex];
-
-    return idx >= from && idx <= to;
-  }
-
-  async function loadSessionRange(fromSession, toSession) {
-    setLoadingSelectedSession(true);
-    try {
-      const startIndex = daySessions.findIndex((s) => s.id === fromSession.id);
-      const endIndex = daySessions.findIndex((s) => s.id === toSession.id);
-      if (startIndex === -1 || endIndex === -1) return;
-
-      const [from, to] =
-        startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
-
-      const sessionsInRange = daySessions.slice(from, to + 1);
-      const sessionIds = sessionsInRange.map((s) => s.id);
-
-      // Single API call for all sessions in range
-      const res = await getBulkDaySessionOrders(sessionIds);
-
-      const first = sessionsInRange[0];
-      const last = sessionsInRange[sessionsInRange.length - 1];
-
-      setSelectedSession({
-        id: sessionsInRange.length === 1 ? first.id : `${first.id}-${last.id}`,
-        startAt: first.startAt,
-        endAt: last.endAt,
-      });
-      setSelectedSessionSummary(res?.summary || {
-        totalSales: 0, totalOrders: 0, totalDiscount: 0,
-        totalProfit: 0, cashSales: 0, cardSales: 0,
-      });
-      setSelectedSessionOrders(Array.isArray(res?.orders) ? res.orders : []);
-    } catch (err) {
-      console.error("Failed to load day session details:", err);
-      toast.error(err.message || "Failed to load session data");
-    } finally {
-      setLoadingSelectedSession(false);
-    }
-  }
-
-  async function handleSelectSession(session) {
-    const clickedIndex = daySessions.findIndex((s) => s.id === session.id);
-    if (clickedIndex === -1) return;
-
-    // If no range started yet, or a previous range is already completed,
-    // start a new range from this session and wait for the second click.
-    if (!sessionRangeStart || (sessionRangeStart && sessionRangeEnd)) {
-      setSessionRangeStart(session);
-      setSessionRangeEnd(null);
-      setSelectedSession(null);
-      setSelectedSessionSummary(null);
-      setSelectedSessionOrders([]);
-      return;
-    }
-
-    // We have a start but no end yet: this click decides the end.
-    // Set the end immediately so the UI highlights the range at once,
-    // then load data in the background.
-    setSessionRangeEnd(session);
-    await loadSessionRange(sessionRangeStart, session);
-  }
-
-  // Dashboard quick sessions row – single-click selects a single session
-  async function handleQuickSessionClick(session) {
-    setSessionRangeStart(session);
-    setSessionRangeEnd(session);
-    await loadSessionRange(session, session);
-  }
 
   // Fetch report from backend for the selected period (yesterday, today, or selected month)
   useEffect(() => {
@@ -655,10 +539,6 @@ export default function OverviewPage() {
     color: productColors[i % productColors.length],
   }));
 
-  // Last three sessions (latest first) for quick access row
-  const lastThreeSessions = daySessions.length
-    ? [...daySessions].slice(-3).reverse()
-    : [];
 
   const periodSubtitle =
     reportPeriod === "yesterday"
@@ -696,36 +576,12 @@ export default function OverviewPage() {
       isRemaining: reportPeriod === "monthly" ? day > effectiveTodayInView : false,
     };
   });
-  const sessionPendingOrders = selectedSessionSummary
-    ? selectedSessionOrders.filter((o) => o.status !== "DELIVERED" && o.status !== "CANCELLED").length
-    : 0;
+  const viewTotalOrders = periodReport.totalOrders ?? 0;
+  const viewTotalRevenue = periodReport.totalRevenue ?? 0;
+  const viewTotalProfit = periodReport.totalProfit ?? 0;
+  const viewPendingOrders = stats.pendingOrders;
 
-  const viewTotalOrders = selectedSessionSummary
-    ? selectedSessionSummary.totalOrders || 0
-    : periodReport.totalOrders ?? 0;
-
-  const viewTotalRevenue = selectedSessionSummary
-    ? selectedSessionSummary.totalSales || 0
-    : periodReport.totalRevenue ?? 0;
-
-  const viewTotalProfit = selectedSessionSummary
-    ? selectedSessionSummary.totalProfit || 0
-    : periodReport.totalProfit ?? 0;
-
-  const viewPendingOrders = selectedSessionSummary ? sessionPendingOrders : stats.pendingOrders;
-
-  const sessionHourlySales = selectedSessionSummary
-    ? (() => {
-      const hours = new Array(24).fill(0);
-      for (const o of selectedSessionOrders) {
-        const h = new Date(o.createdAt).getHours();
-        hours[h] += o.total || 0;
-      }
-      return hours;
-    })()
-    : null;
-
-  const baseHourlySales = sessionHourlySales || stats.hourlySales;
+  const baseHourlySales = stats.hourlySales;
   const fullDayHourlySales = Array.from({ length: 24 }, (_, i) =>
     i <= currentHour ? (baseHourlySales[i] || 0) : 0
   );
@@ -788,217 +644,26 @@ export default function OverviewPage() {
         </div>
       ) : (
         <>
-          {/* Day session row */}
-          <div className="mb-4 flex items-center justify-between gap-3 border">
-
-            {lastThreeSessions.length > 0 && (
-              <div className="mb-4 grid grid-cols-1 w-full sm:grid-cols-3 gap-3">
-                {lastThreeSessions.map((s) => {
-                  const isStart = sessionRangeStart?.id === s.id && !sessionRangeEnd;
-                  const isInRange = isSessionInRange(s);
-                  const start = new Date(s.startAt);
-                  const end = s.endAt ? new Date(s.endAt) : null;
-
-                  const cardClasses = isStart
-                    ? "border-primary bg-transparent dark:bg-transparent shadow-sm"
-                    : isInRange
-                      ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-1 ring-primary/30"
-                      : "border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 hover:shadow-md";
-
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => handleQuickSessionClick(s)}
-                      className={`px-3 py-2 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${cardClasses}`}
-                    >
-                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
-                        <span className="text-gray-400 dark:text-neutral-500 mr-1">From</span>
-                        <span className="font-medium">
-                          {start.toLocaleDateString("en-PK", { month: "short", day: "numeric" })}{" "}
-                          {start.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}
-                        </span>
-                      </div>
-                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
-                        <span className="text-gray-400 dark:text-neutral-500 mr-1">To</span>
-                        {end ? (
-                          <span className="font-medium">
-                            {end.toLocaleDateString("en-PK", { month: "short", day: "numeric" })}{" "}
-                            {end.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}
-                          </span>
-                        ) : (
-                          <span className="text-green-500 dark:text-green-400 font-semibold">Open</span>
-                        )}
-                      </div>
-                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400 mt-0.5">
-                        <span className="text-gray-400 dark:text-neutral-500">Sales</span>
-                        <span className="font-bold text-gray-800 dark:text-white text-[10px]">
-                          Rs {(s.totalSales || 0).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
-                        <span className="text-gray-400 dark:text-neutral-500">Orders</span>
-                        <span className="font-bold text-gray-800 dark:text-white text-[10px]">
-                          {s.totalOrders || 0}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <div className="flex w-fit items-center gap-2">
-              {loadingSessions && (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 dark:text-neutral-500" />
-              )}
-              
-              <button
-                type="button"
-                onClick={() => setShowSessionsModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/10 dark:hover:bg-primary/20 transition-all"
-              >
-                Sessions
-              </button>
+          {/* Business day indicator */}
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 text-xs font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
+                Business Day: {formatBusinessDate(businessDate)}
+              </span>
+              <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                Day cutoff: {cutoffHour === 0 ? "12 AM" : cutoffHour < 12 ? `${cutoffHour} AM` : cutoffHour === 12 ? "12 PM" : `${cutoffHour - 12} PM`}
+              </span>
             </div>
-          </div>
-          <div>
-          <div className="flex items-center w-fit gap-2">
-              {selectedSession && (
-                <>
-                
-                
-                <span className="text-xs text-gray-500 dark:text-neutral-400">
-                  {new Date(selectedSession.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
-                  {" – "}
-                  {selectedSession.endAt
-                    ? new Date(selectedSession.endAt).toLocaleString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })
-                    : <span className="text-green-500 dark:text-green-400 font-semibold">Open</span>}
-                </span>
-                <div>
-                  <span className="text-xs text-gray-500 dark:text-neutral-400">Session range</span>
-                {(selectedSession || sessionRangeStart) && !loadingSelectedSession && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedSession(null);
-                    setSelectedSessionSummary(null);
-                    setSelectedSessionOrders([]);
-                    setSessionRangeStart(null);
-                    setSessionRangeEnd(null);
-                  }}
-                  className="text-xs pl-4 font-semibold text-gray-800 dark:text-neutral-500 hover:text-gray-700 dark:hover:text-white underline"
-                >
-                  Clear
-                </button>
-              )}
-                </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Quick sessions row – show current and last two sessions */}
-
-
-          {/* Sessions modal – 5 columns × 6 rows (up to 30) */}
-          {showSessionsModal && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-              onClick={(e) => { if (e.target === e.currentTarget) setShowSessionsModal(false); }}
+            <button
+              type="button"
+              onClick={() => { loadSessionHistory(); setShowSessionHistoryModal(true); }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
             >
-              <div className="bg-white dark:bg-neutral-950 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-                {/* header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800 relative">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-gray-900 dark:text-white">All Sessions</h2>
-                    {loadingSelectedSession && (
-                      <span className="text-xs text-primary font-medium flex items-center gap-1.5">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowSessionsModal(false)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all text-lg font-bold"
-                  >
-                    ×
-                  </button>
-                  {/* animated progress bar – only visible while loading */}
-                  {loadingSelectedSession && (
-                    <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-gray-100 dark:bg-neutral-800 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-primary to-secondary"
-                        style={{ animation: "progressBar 1.2s ease-in-out infinite" }}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* grid */}
-                <div className="overflow-y-auto p-4">
-                  {loadingSessions ? (
-                    <div className="flex items-center justify-center py-16 gap-2 text-gray-500 dark:text-neutral-400">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span className="text-sm">Loading sessions…</span>
-                    </div>
-                  ) : daySessions.length === 0 ? (
-                    <p className="text-center text-sm text-gray-400  dark:text-neutral-500 py-16">No sessions found.</p>
-                  ) : (<>
-                    <div className="grid grid-cols-5 gap-2.5 ">
-                      {daySessions.slice(0, 30).map((s) => {
-                        const isStart = sessionRangeStart?.id === s.id && !sessionRangeEnd;
-                        const isInRange = isSessionInRange(s);
-                        const start = new Date(s.startAt);
-                        const end = s.endAt ? new Date(s.endAt) : null;
-                        return (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={async () => {
-                              const hadStart = !!sessionRangeStart;
-                              const hadEnd = !!sessionRangeEnd;
-                              // If completing a range (second click), close after loading
-                              const isCompletingRange = hadStart && !hadEnd;
-                              await handleSelectSession(s);
-                              if (isCompletingRange) setShowSessionsModal(false);
-                            }}
-                            className={`px-2.5 py-2 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${isStart
-                                ? "border-primary bg-transparent dark:bg-transparent shadow-sm"
-                                : isInRange
-                                  ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-1 ring-primary/30"
-                                  : "border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 hover:shadow-md"
-                              }`}
-                          >
-                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
-                              <span className="text-gray-400 dark:text-neutral-500">From</span>
-                              <span className="font-medium">{start.toLocaleDateString("en-PK", { month: "short", day: "numeric" })} {start.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}</span>
-                            </div>
-                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
-                              <span className="text-gray-400 dark:text-neutral-500">To</span>
-                              {end
-                                ? <span className="font-medium">{end.toLocaleDateString("en-PK", { month: "short", day: "numeric" })} {end.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}</span>
-                                : <span className="text-green-500 dark:text-green-400 font-semibold">Open</span>
-                              }
-                            </div>
-                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400 mt-0.5">
-                              <span className="text-gray-400 dark:text-neutral-500">Sales</span>
-                              <span className="font-bold text-gray-800 dark:text-white text-[10px]">Rs {(s.totalSales || 0).toLocaleString()}</span>
-                            </div>
-                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
-                              <span className="text-gray-400 dark:text-neutral-500">Orders</span>
-                              <span className="font-bold text-gray-800 dark:text-white text-[10px]">{s.totalOrders || 0}</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+              <Clock className="w-3.5 h-3.5" />
+              Past Sessions
+            </button>
+          </div>
 
           {/* KPIs row - Premium style with gradients */}
           <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 mb-6">
@@ -1539,6 +1204,72 @@ export default function OverviewPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Past Session History Modal */}
+      {showSessionHistoryModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowSessionHistoryModal(false); }}
+        >
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Past Sessions</h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
+                  {currentBranch ? `History for ${currentBranch.name}` : "All branches"} — legacy sessions before business day cutoff
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSessionHistoryModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors text-3xl leading-none"
+              >&times;</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {loadingSessionHistory ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : sessionHistory.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-neutral-400 text-sm">No past sessions found</div>
+              ) : (
+                sessionHistory.map((s) => (
+                  <div key={s.id} className="p-4 rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${s.status === "OPEN" ? "bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
+                          {s.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />}
+                          {s.status}
+                        </span>
+                        {!currentBranch && s.branchName && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+                            {s.branchName}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-gray-900 dark:text-white">Rs {(s.totalSales || 0).toLocaleString()}</div>
+                        <div className="text-xs text-gray-500 dark:text-neutral-400">{s.totalOrders || 0} orders</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-neutral-400 space-y-1">
+                      <div className="flex justify-between">
+                        <span className="font-medium">Started:</span>
+                        <span>{new Date(s.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                      </div>
+                      {s.endAt && (
+                        <div className="flex justify-between">
+                          <span className="font-medium">Ended:</span>
+                          <span>{new Date(s.endAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </AdminLayout>
   );

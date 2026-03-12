@@ -79,6 +79,7 @@ export default function BranchesPage() {
     name: "",
     code: "",
     address: "",
+    businessDayCutoffHour: 4,
   });
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
@@ -169,7 +170,7 @@ export default function BranchesPage() {
   const isLoading = loading || contextLoading;
 
   function resetBranchForm() {
-    setBranchForm({ id: null, name: "", code: "", address: "" });
+    setBranchForm({ id: null, name: "", code: "", address: "", businessDayCutoffHour: 4 });
   }
 
   function openCreateBranch() {
@@ -184,6 +185,7 @@ export default function BranchesPage() {
       name: branch.name || "",
       code: branch.code || "",
       address: branch.address || "",
+      businessDayCutoffHour: branch.businessDayCutoffHour ?? 4,
     });
     setBranchModalError("");
     setBranchModalOpen(true);
@@ -209,6 +211,7 @@ export default function BranchesPage() {
         name,
         code: code || undefined,
         address: address || undefined,
+        businessDayCutoffHour: branchForm.businessDayCutoffHour ?? 4,
       };
 
       let createdBranch = null;
@@ -444,8 +447,11 @@ export default function BranchesPage() {
                     )}
                   </div>
                   {branch.address && (
-                    <p className="text-xs text-gray-600 dark:text-neutral-400 mb-4 line-clamp-2">{branch.address}</p>
+                    <p className="text-xs text-gray-600 dark:text-neutral-400 mb-2 line-clamp-2">{branch.address}</p>
                   )}
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 mb-4">
+                    Day cutoff: {(() => { const h = branch.businessDayCutoffHour ?? 4; return h === 0 ? "12:00 AM" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`; })()}
+                  </p>
                   <div className="flex gap-2">
                     {currentBranch?.id !== branch.id && (
                       <button
@@ -745,6 +751,26 @@ export default function BranchesPage() {
                   placeholder="Street, area, city"
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
+                  Business day cutoff
+                </label>
+                <select
+                  value={branchForm.businessDayCutoffHour}
+                  onChange={(e) => setBranchForm((prev) => ({ ...prev, businessDayCutoffHour: parseInt(e.target.value, 10) }))}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {h === 0 ? "12:00 AM (midnight)" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM (noon)" : `${h - 12}:00 PM`}
+                      {h === 4 ? " — recommended" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                  Orders before this time count as the previous business day. Set this 1 hour after your closing time.
+                </p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button
