@@ -31,6 +31,8 @@ import {
   getRestaurantSettings,
   getUsers,
   getDaySessions,
+  getCurrentDaySession,
+  endDaySession,
 } from "../../lib/apiClient";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
@@ -64,6 +66,8 @@ import {
   Settings,
   HelpCircle,
   Edit3,
+  Power,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -152,7 +156,7 @@ export default function POSPage() {
   // Invoice modal
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   
-  // Business day (computed from branch cutoff hour)
+  // Business day (computed from branch day-reset hour)
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDate = getBusinessDate(new Date(), cutoffHour);
 
@@ -160,6 +164,12 @@ export default function POSPage() {
   const [showDayHistoryModal, setShowDayHistoryModal] = useState(false);
   const [daySessionHistory, setDaySessionHistory] = useState([]);
   const [loadingDayHistory, setLoadingDayHistory] = useState(false);
+
+  // End Day
+  const [showEndDayModal, setShowEndDayModal] = useState(false);
+  const [currentSession, setCurrentSession] = useState(null);
+  const [loadingCurrentSession, setLoadingCurrentSession] = useState(false);
+  const [endingDay, setEndingDay] = useState(false);
 
   // Draft management
   const [showTransactionsModal, setShowTransactionsModal] = useState(false);
@@ -784,7 +794,8 @@ export default function POSPage() {
 
   const filteredItems = allItemsForGrid.filter((item) => {
     const matchesCategory =
-      selectedCategory === "all" || item.categoryId === selectedCategory || item.isDeal;
+      selectedCategory === "all" ||
+      (selectedCategory === "deals" ? item.isDeal : item.categoryId === selectedCategory);
     const matchesSearch =
       searchStep !== "itemName" ||
       item.name.toLowerCase().includes(menuSearchQuery.toLowerCase());
@@ -842,48 +853,13 @@ export default function POSPage() {
     return () => window.removeEventListener("resize", updateOrderCols);
   }, [effectiveSidebarOpen]);
 
-  // Continuous order strip: single list, scroll 0% → 100% then reset to 0% (no duplicate orders)
-  useEffect(() => {
-    if (filteredRecentOrders.length <= orderColsCount) return;
-    orderStripOffsetRef.current = 0;
-    orderStripLastTimeRef.current = null;
-
-    const durationMs = 100000; // 45 seconds for one full pass (slower)
-    const totalTravel = 100; // percent (full list)
-
-    const tick = (timestamp) => {
-      orderStripLastTimeRef.current ??= timestamp;
-      const delta = timestamp - orderStripLastTimeRef.current;
-      orderStripLastTimeRef.current = timestamp;
-
-      if (!orderStripPausedRef.current) {
-        orderStripOffsetRef.current += (delta / durationMs) * totalTravel;
-        if (orderStripOffsetRef.current >= totalTravel) {
-          orderStripOffsetRef.current = 0; // loop back to start
-        }
-      }
-      if (orderStripRef.current) {
-        orderStripRef.current.style.transform = `translateX(-${orderStripOffsetRef.current}%)`;
-      }
-      orderStripRafRef.current = requestAnimationFrame(tick);
-    };
-    orderStripRafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (orderStripRafRef.current) cancelAnimationFrame(orderStripRafRef.current);
-    };
-  }, [filteredRecentOrders.length, orderColsCount]);
-
-  // When search is active, scroll the strip so the focused order card is fully in view (not half hidden)
+  // Scroll to focused order card when search is active
   useEffect(() => {
     const hasSearch = recentOrderSearch.trim() !== "";
-    if (!hasSearch || filteredRecentOrders.length === 0) return;
-    const totalCards = filteredRecentOrders.length;
-    const idx = Math.max(0, Math.min(focusedOrderIndex, totalCards - 1));
-    const offset = totalCards > 0 ? (idx / totalCards) * 100 : 0;
-    orderStripOffsetRef.current = offset;
-    if (orderStripRef.current) {
-      orderStripRef.current.style.transform = `translateX(-${offset}%)`;
-    }
+    if (!hasSearch || filteredRecentOrders.length === 0 || !orderStripRef.current) return;
+    const idx = Math.max(0, Math.min(focusedOrderIndex, filteredRecentOrders.length - 1));
+    const cardWidth = 164; // approx card width + gap
+    orderStripRef.current.scrollLeft = idx * cardWidth;
   }, [recentOrderSearch, focusedOrderIndex, filteredRecentOrders.length]);
 
   // Clamp focused item index when filtered list shrinks
@@ -1326,6 +1302,30 @@ export default function POSPage() {
     }
   }
 
+  async function openEndDayModal() {
+    setCurrentSession(null);
+    setShowEndDayModal(true);
+    setLoadingCurrentSession(true);
+    try {
+      const session = await getCurrentDaySession(currentBranch?.id);
+      setCurrentSession(session);
+    } catch { setCurrentSession(null); }
+    finally { setLoadingCurrentSession(false); }
+  }
+
+  async function handleEndDay() {
+    setEndingDay(true);
+    try {
+      await endDaySession(currentBranch?.id);
+      toast.success("Business day ended");
+      setShowEndDayModal(false);
+    } catch (err) {
+      toast.error(err?.message || "Failed to end business day");
+    } finally {
+      setEndingDay(false);
+    }
+  }
+
   // Recent orders in POS header: unpaid only (paid orders are hidden)
   function formatTimeAgo(createdAt) {
     const date = createdAt ? new Date(createdAt) : new Date();
@@ -1367,6 +1367,7 @@ export default function POSPage() {
           time: formatOrderTime(o.createdAt),
           timeAgo: formatTimeAgo(o.createdAt),
           progress: statusProgress[o.status] ?? 25,
+          status: o.status || "NEW_ORDER",
         }));
       setRecentOrders(unpaid);
       if (currentOrderIndex >= Math.max(0, unpaid.length - 1)) {
@@ -1554,27 +1555,17 @@ export default function POSPage() {
                 {/* Navigation Arrows - Compact */}
                 <button
                   onClick={() =>
-                    setCurrentOrderIndex(Math.max(0, currentOrderIndex - 1))
+                    orderStripRef.current?.scrollBy({ left: -160, behavior: "smooth" })
                   }
-                  disabled={currentOrderIndex === 0}
-                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
                 >
                   <ChevronLeft className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
                 </button>
                 <button
                   onClick={() =>
-                    setCurrentOrderIndex(
-                      Math.min(
-                        Math.max(0, filteredRecentOrders.length - (effectiveSidebarOpen ? 4 : 5)),
-                        currentOrderIndex + 1,
-                      ),
-                    )
+                    orderStripRef.current?.scrollBy({ left: 160, behavior: "smooth" })
                   }
-                  disabled={
-                    currentOrderIndex >=
-                    Math.max(0, filteredRecentOrders.length - (effectiveSidebarOpen ? 4 : 5))
-                  }
-                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
                 >
                   <ChevronRight className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
                 </button>
@@ -1624,42 +1615,24 @@ export default function POSPage() {
               </div>
             </div>
 
-            {/* Recent Order Cards - Continuous sliding strip (right to left); single list, no duplicate orders */}
+            {/* Recent Order Cards - horizontally scrollable strip */}
             <div
-              className="overflow-hidden w-full min-w-0 p-1.5"
-              onMouseEnter={() => setOrderGridHovered(true)}
-              onMouseLeave={() => setOrderGridHovered(false)}
+              ref={orderStripRef}
+              className="flex gap-2 overflow-x-auto p-1.5 w-full min-w-0"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
-              <div
-                ref={orderStripRef}
-                className="flex gap-2 shrink-0"
-                style={{
-                  width:
-                    filteredRecentOrders.length > 0
-                      ? `${(filteredRecentOrders.length / orderColsCount) * 100}%`
-                      : "100%",
-                }}
-              >
                 {filteredRecentOrders.map((order, idx) => {
                   const globalIdx = idx;
                   const isFocused =
                     recentOrderSearch.trim() !== "" && globalIdx === focusedOrderIndex;
-                  const orderCols = effectiveSidebarOpen ? 4 : 5;
-                  const totalCards = filteredRecentOrders.length;
                   return (
                   <div
                     key={order.id}
                     role="button"
                     tabIndex={-1}
-                    style={{
-                      flex: `0 0 ${totalCards ? 100 / totalCards : 100}%`,
-                      minWidth: 0,
-                    }}
+                    style={{ flex: "0 0 155px", minWidth: "155px" }}
                     onClick={() => {
                       setFocusedOrderIndex(globalIdx);
-                      setCurrentOrderIndex(
-                        Math.max(0, Math.min(globalIdx, filteredRecentOrders.length - orderCols)),
-                      );
                       // Open this order in edit mode in the right sidebar
                       if (order?.id) {
                         router.push({ pathname: "/pos", query: { edit: order.id } });
@@ -1667,80 +1640,83 @@ export default function POSPage() {
                     }}
                     className={`relative p-2 rounded border transition-all cursor-pointer ${
                       isFocused
-                        ? "ring-2 ring-primary ring-offset-2 shadow-lg border-gray-200 dark:border-neutral-800"
-                        : "border-gray-200 dark:border-neutral-800 hover:border-primary/30"
+                        ? "ring-2 ring-primary ring-offset-2 shadow-lg border-primary/40 dark:border-primary/40"
+                        : "border-gray-200 dark:border-neutral-800 hover:border-primary/40 hover:shadow-sm"
                     }`}
                   >
-                    <div className="flex items-start justify-between mb-1.5">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1 mb-0.5 ">
-                          <span className="text-[8px] font-bold text-gray-500 dark:text-neutral-500">
-                            {order.id}
-                          </span>
-                          
-                        </div>
-                        <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                          {order.customer}
-                        </p>
-                        <p className="text-[10px] text-gray-500 dark:text-neutral-500">
-                          {order.time}
-                        </p>
-                      </div>
-                      <div>
-
-                      <div
-                        className={`px-1 py-0 rounded ${
-                          order.timeAgo.includes("2") ||
-                          order.timeAgo.includes("1")
-                            ? "bg-red-100 dark:bg-red-500/10"
-                            : order.timeAgo.includes("3")
-                              ? "bg-yellow-100 dark:bg-yellow-500/10"
-                              : "bg-emerald-100 dark:bg-emerald-500/10"
+                    {/* Status + Type row */}
+                    <div className="flex items-center justify-between mb-1.5 gap-1">
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold leading-tight ${
+                          order.status === "READY"
+                            ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                            : order.status === "PROCESSING"
+                              ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
+                              : "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400"
                         }`}
                       >
-                        <span
-                          className={`text-[8px] font-bold ${
-                            order.timeAgo.includes("2") ||
-                            order.timeAgo.includes("1")
-                              ? "text-red-600 dark:text-red-400"
-                              : order.timeAgo.includes("3")
+                        {order.status === "READY"
+                          ? "Ready"
+                          : order.status === "PROCESSING"
+                            ? "Processing"
+                            : "New"}
+                      </span>
+                      <span
+                        className={`px-1 py-0.5 rounded text-[9px] font-bold leading-tight ${
+                          order.type === "delivery"
+                            ? "bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            : order.type === "takeaway"
+                              ? "bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                              : "bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400"
+                        }`}
+                      >
+                        {order.type === "delivery"
+                          ? "Del"
+                          : order.type === "takeaway"
+                            ? "Take"
+                            : "Dine"}
+                      </span>
+                    </div>
+
+                    {/* Customer + time */}
+                    <p className="text-xs font-bold text-gray-900 dark:text-white truncate leading-tight">
+                      {order.customer}
+                    </p>
+                    <div className="flex items-center justify-between mt-0.5 mb-1.5">
+                      <span className="text-[9px] text-gray-500 dark:text-neutral-500 truncate">
+                        {order.time}
+                      </span>
+                      <span
+                        className={`text-[9px] font-semibold ml-1 flex-shrink-0 ${
+                          order.timeAgo.includes("h") || order.timeAgo.includes("d")
+                            ? "text-gray-400 dark:text-neutral-600"
+                            : parseInt(order.timeAgo) >= 30
+                              ? "text-red-500 dark:text-red-400"
+                              : parseInt(order.timeAgo) >= 15
                                 ? "text-yellow-600 dark:text-yellow-400"
                                 : "text-emerald-600 dark:text-emerald-400"
-                          }`}
-                        >
-                          {order.timeAgo}
-                        </span>
-                      </div>
-                      <span
-                            className={`px-1 py-0.5 rounded text-[8px] font-bold ${
-                              order.type === "delivery"
-                                ? "bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                                : order.type === "takeaway"
-                                  ? "bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400"
-                                  : "bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400"
-                            }`}
-                          >
-                            ✓{" "}
-                            {order.type === "delivery"
-                              ? "Del"
-                              : order.type === "takeaway"
-                                ? "Take"
-                                : "Dine"}
-                          </span>
-                      </div>
+                        }`}
+                      >
+                        {order.timeAgo}
+                      </span>
                     </div>
 
                     {/* Progress Bar */}
                     <div className="relative h-1 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
                       <div
-                        className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all duration-500"
+                        className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${
+                          order.status === "READY"
+                            ? "bg-emerald-500"
+                            : order.status === "PROCESSING"
+                              ? "bg-yellow-500"
+                              : "bg-primary"
+                        }`}
                         style={{ width: `${order.progress}%` }}
                       />
                     </div>
                   </div>
                   );
                 })}
-              </div>
             </div>
           </div>
 
@@ -1786,68 +1762,49 @@ export default function POSPage() {
 
               {/* Category Cards - Compact */}
               <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2 mb-2">
-              <button
-                onClick={() => setSelectedCategory("all")}
-                  className={`relative p-2 rounded-lg border transition-all ${
-                  selectedCategory === "all"
-                      ? "border-primary bg-primary/5 shadow-sm"
-                      : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900"
+                <button
+                  onClick={() => setSelectedCategory("all")}
+                  className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                    selectedCategory === "all"
+                      ? "border-primary bg-primary/5 text-primary shadow-sm"
+                      : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-lg flex-shrink-0">
-                      🍽️
-                    </div>
-                    <div className="text-left flex-1 min-w-0">
-                      <div className="font-bold text-gray-900 dark:text-white text-xs truncate">
-                        All
-                      </div>
-                      <div className="text-[10px] text-gray-500 dark:text-neutral-400">
-                        {allItemsForGrid.filter((item) => item.isDeal || (item.finalAvailable ?? item.available)).length}
-                      </div>
-                    </div>
-                  </div>
-              </button>
+                  All{" "}
+                  <span className="font-normal opacity-60">
+                    {allItemsForGrid.filter((item) => item.isDeal || (item.finalAvailable ?? item.available)).length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedCategory("deals")}
+                  className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                    selectedCategory === "deals"
+                      ? "border-primary bg-primary/5 text-primary shadow-sm"
+                      : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
+                  }`}
+                >
+                  Deals{" "}
+                  <span className="font-normal opacity-60">
+                    {allItemsForGrid.filter(i => i.isDeal).length}
+                  </span>
+                </button>
 
                 {menu.categories.slice(0, 4).map((cat) => {
-                  const catItemCount = menu.items.filter(
-                    (item) => item.categoryId === cat.id,
-                  ).length;
+                  const catItemCount = menu.items.filter((item) => item.categoryId === cat.id).length;
                   return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                      className={`relative p-2 rounded-lg border transition-all ${
-                    selectedCategory === cat.id
-                          ? "border-primary bg-primary/5 shadow-sm"
-                          : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900"
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                        selectedCategory === cat.id
+                          ? "border-primary bg-primary/5 text-primary shadow-sm"
+                          : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-lg flex-shrink-0">
-                          {cat.name.includes("Pizza")
-                            ? "🍕"
-                            : cat.name.includes("Burger")
-                              ? "🍔"
-                              : cat.name.includes("Drink") ||
-                                  cat.name.includes("Beverage")
-                                ? "🥤"
-                                : cat.name.includes("Salad")
-                                  ? "🥗"
-                                  : cat.name.includes("Dessert")
-                                    ? "🍰"
-                                    : "🍴"}
-                        </div>
-                        <div className="text-left flex-1 min-w-0">
-                          <div className="font-bold text-gray-900 dark:text-white text-xs truncate">
-                  {cat.name}
-                          </div>
-                          <div className="text-[10px] text-gray-500 dark:text-neutral-400">
-                            {catItemCount}
-                          </div>
-                        </div>
-                      </div>
-                </button>
+                      <span className="truncate">{cat.name}</span>{" "}
+                      <span className="font-normal opacity-60">{catItemCount}</span>
+                    </button>
                   );
                 })}
               </div>
@@ -2184,6 +2141,14 @@ export default function POSPage() {
                     title="Past session history"
                   >
                     <Clock className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openEndDayModal}
+                    className="p-1 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                    title="End business day"
+                  >
+                    <Power className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -3881,7 +3846,7 @@ export default function POSPage() {
               <div>
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Past Sessions</h2>
                 <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
-                  {currentBranch ? `History for ${currentBranch.name}` : "All branches"} — legacy sessions before business day cutoff
+                  {currentBranch ? `History for ${currentBranch.name}` : "All branches"} — sessions before the day reset time
                 </p>
               </div>
               <button
@@ -3931,6 +3896,87 @@ export default function POSPage() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* End Day Modal */}
+      {showEndDayModal && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget && !endingDay) setShowEndDayModal(false); }}
+        >
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-500/15 flex items-center justify-center flex-shrink-0">
+                  <Power className="w-4 h-4 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">End Business Day</h2>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">This action cannot be undone</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { if (!endingDay) setShowEndDayModal(false); }}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4">
+              {loadingCurrentSession ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                </div>
+              ) : currentSession ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 dark:text-neutral-400">
+                    Are you sure you want to end today&apos;s session? Here&apos;s the current summary:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">Revenue</p>
+                      <p className="text-base font-bold text-gray-900 dark:text-white">Rs {(currentSession.totalSales || 0).toLocaleString()}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">Orders</p>
+                      <p className="text-base font-bold text-gray-900 dark:text-white">{currentSession.totalOrders || 0}</p>
+                    </div>
+                  </div>
+                  {currentSession.startAt && (
+                    <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                      Session started {new Date(currentSession.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
+                  Are you sure you want to end the current business day? New orders will start a fresh session.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 px-5 pb-5">
+              <button
+                type="button"
+                onClick={() => { if (!endingDay) setShowEndDayModal(false); }}
+                disabled={endingDay}
+                className="flex-1 h-9 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleEndDay}
+                disabled={endingDay}
+                className="flex-1 h-9 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {endingDay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+                {endingDay ? "Ending…" : "End Now"}
+              </button>
             </div>
           </div>
         </div>

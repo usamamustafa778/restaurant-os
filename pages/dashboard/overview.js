@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import Card from "../../components/ui/Card";
 import {
   getOverview,
   getSalesReport,
@@ -8,365 +7,213 @@ import {
   saveDailyCurrency,
   SubscriptionInactiveError,
   getDaySessions,
+  getCurrentDaySession,
+  endDaySession,
+  updateBranch,
 } from "../../lib/apiClient";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
-import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3, Loader2, LayoutDashboard, Clock } from "lucide-react";
+import {
+  ShoppingBag, TrendingUp, DollarSign, Package, CreditCard, BarChart3,
+  Loader2, LayoutDashboard, Clock, Wallet, Activity, X, Zap, Power, ChevronDown,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
-// Simple SVG line chart for hourly trend
-function MiniLineChart({ data }) {
-  const width = 220;
-  const height = 60;
-  const bottomMargin = 18;
-  const leftMargin = 24;
-  const innerWidth = width - leftMargin;
-  const innerHeight = height - bottomMargin;
-  const max = Math.max(...data, 1);
+// ── Smooth area chart (Catmull-Rom → cubic bezier) ───────────────────────────
+function SalesAreaChart({ period, dailySales, hourlySales, remainingHoursStart }) {
+  const W = 1000, H = 260;
+  const pL = 58, pR = 16, pT = 20, pB = 36;
+  const iW = W - pL - pR, iH = H - pT - pB;
 
-  const points = data
-    .map((v, i) => {
-      const x = leftMargin + (i / (data.length - 1 || 1)) * innerWidth;
-      const y = innerHeight - (v / max) * innerHeight;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const isMonthly = period === "monthly";
+  const data = isMonthly
+    ? (dailySales || []).map((d) => ({ y: d.sales ?? 0, label: String(d.day), isRem: !!d.isRemaining, show: true }))
+    : Array.from({ length: (hourlySales || []).length }, (_, i) => ({
+        y: (hourlySales || [])[i] || 0,
+        label: i % 4 === 0 ? `${i}h` : "",
+        isRem: remainingHoursStart != null && i >= remainingHoursStart,
+        show: i % 4 === 0,
+      }));
 
-  const hours = Array.from({ length: 24 }, (_, i) =>
-    `${i.toString().padStart(2, "0")}:00`
-  );
+  const n = data.length;
+  if (n === 0) return <div style={{ height: H }} className="flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">No data for this period</div>;
+
+  const maxY = Math.max(...data.map((d) => d.y), 1);
+  const xOf = (i) => pL + (n > 1 ? (i / (n - 1)) * iW : iW / 2);
+  const yOf = (v) => pT + iH - (Math.min(v, maxY) / maxY) * iH;
+  const pts = data.map((d, i) => ({ x: xOf(i), y: yOf(d.y) }));
+
+  const smooth = (arr) => {
+    if (!arr || arr.length < 2) return arr?.length === 1 ? `M ${arr[0].x},${arr[0].y}` : "";
+    const k = 0.3;
+    let d = `M ${arr[0].x.toFixed(1)},${arr[0].y.toFixed(1)}`;
+    for (let i = 0; i < arr.length - 1; i++) {
+      const a = arr[Math.max(0, i - 1)], b = arr[i], c = arr[i + 1], e = arr[Math.min(arr.length - 1, i + 2)];
+      d += ` C ${(b.x + (c.x - a.x) * k).toFixed(1)},${(b.y + (c.y - a.y) * k).toFixed(1)} ${(c.x - (e.x - b.x) * k).toFixed(1)},${(c.y - (e.y - b.y) * k).toFixed(1)} ${c.x.toFixed(1)},${c.y.toFixed(1)}`;
+    }
+    return d;
+  };
+
+  const linePath = smooth(pts);
+  const areaPath = linePath ? `${linePath} L ${pts[pts.length - 1].x.toFixed(1)},${pT + iH} L ${pts[0].x.toFixed(1)},${pT + iH} Z` : "";
+  const splitIdx = data.findIndex((d) => d.isRem);
+  const splitX = splitIdx > 0 ? xOf(splitIdx) : splitIdx === 0 ? pL : W + 10;
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => maxY * f);
+  const fmt = (v) => v === 0 ? "0" : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : String(Math.round(v));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-28">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }} preserveAspectRatio="xMidYMid meet">
       <defs>
-        <linearGradient id="lineFill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#ef4444" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
+        <linearGradient id="ovFill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="#f97316" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#f97316" stopOpacity="0.01" />
         </linearGradient>
+        <linearGradient id="ovLine" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor="#f97316" />
+          <stop offset="100%" stopColor="#ef4444" />
+        </linearGradient>
+        <clipPath id="ovSolid"><rect x={pL} y={0} width={Math.max(0, splitX - pL)} height={H} /></clipPath>
+        <clipPath id="ovRem"><rect x={Math.max(pL, splitX - 1)} y={0} width={W} height={H} /></clipPath>
       </defs>
-
-      {/* Axes */}
-      <line
-        x1={leftMargin}
-        y1={innerHeight}
-        x2={width}
-        y2={innerHeight}
-        stroke="#e5e7eb"
-        strokeWidth="1"
-      />
-      <line
-        x1={leftMargin}
-        y1={0}
-        x2={leftMargin}
-        y2={innerHeight}
-        stroke="#e5e7eb"
-        strokeWidth="1"
-      />
-
-      {/* Line + area */}
-      <polyline
-        fill="none"
-        stroke="#ef4444"
-        strokeWidth="2"
-        points={points}
-      />
-      <polygon
-        fill="url(#lineFill)"
-        points={`${points} ${leftMargin + innerWidth},${innerHeight} ${leftMargin},${innerHeight}`}
-      />
-
-      {/* Y axis labels (0 and max) */}
-      <text
-        x={leftMargin - 4}
-        y={innerHeight}
-        textAnchor="end"
-        fontSize="7"
-        fill="#9ca3af"
-        dy="-1"
-      >
-        0
-      </text>
-      <text
-        x={leftMargin - 4}
-        y={0}
-        textAnchor="end"
-        fontSize="7"
-        fill="#9ca3af"
-        dy="6"
-      >
-        {max >= 1000 ? `${(max / 1000).toFixed(0)}k` : max}
-      </text>
-
-      {/* X axis labels for each hour (tilted for readability, show every hour) */}
-      {hours.map((label, i) => {
-        const x = leftMargin + (i / (hours.length - 1)) * innerWidth;
-        const y = height - 1;
-        return (
-          <text
-            key={label}
-            x={x}
-            y={y}
-            textAnchor="end"
-            fontSize="7"
-            fill="#9ca3af"
-            transform={`rotate(-45 ${x} ${y})`}
-          >
-            {label}
-          </text>
-        );
-      })}
+      {yTicks.map((v, i) => (
+        <g key={i}>
+          <line x1={pL} y1={yOf(v)} x2={W - pR} y2={yOf(v)} stroke="#e5e7eb" strokeWidth={i === 0 ? 1 : 0.5} strokeDasharray={i > 0 ? "4 7" : "none"} className="dark:stroke-neutral-800" />
+          <text x={pL - 8} y={yOf(v)} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="#9ca3af">{fmt(v)}</text>
+        </g>
+      ))}
+      {areaPath && <path d={areaPath} fill="url(#ovFill)" clipPath="url(#ovSolid)" />}
+      {linePath && <path d={linePath} fill="none" stroke="url(#ovLine)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#ovSolid)" />}
+      {linePath && splitIdx >= 0 && <path d={linePath} fill="none" stroke="#d1d5db" strokeWidth="1.5" strokeDasharray="5 6" strokeLinecap="round" clipPath="url(#ovRem)" className="dark:stroke-neutral-700" />}
+      {splitIdx > 0 && (() => { const py = yOf(data[splitIdx - 1]?.y ?? 0); return <g><circle cx={splitX} cy={py} r="6" fill="#f97316" opacity="0.2" /><circle cx={splitX} cy={py} r="3.5" fill="#f97316" stroke="white" strokeWidth="2" /></g>; })()}
+      {data.map((d, i) => d.show && d.label ? (
+        <text key={i} x={xOf(i)} y={H - 8} textAnchor="middle" fontSize="11" fill={d.isRem ? "#d1d5db" : "#9ca3af"} className={d.isRem ? "dark:fill-neutral-700" : "dark:fill-neutral-500"}>{d.label}</text>
+      ) : null)}
     </svg>
   );
 }
 
-// Simple multi-segment pie chart using stroked circles
-function MiniPieChart({ segments }) {
-  const total = segments.reduce((sum, s) => sum + s.value, 0) || 1;
-  const radius = 16;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
-
+// ── Donut ring chart ──────────────────────────────────────────────────────────
+function DonutChart({ segments, size = 100 }) {
+  const total = segments.reduce((s, g) => s + g.value, 0) || 1;
+  const r = Math.round(size * 0.36);
+  const sw = Math.round(size * 0.17);
+  const c = size / 2;
+  const circ = 2 * Math.PI * r;
+  let acc = 0;
   return (
-    <svg viewBox="0 0 40 40" className="w-24 h-24">
-      <circle
-        cx="20"
-        cy="20"
-        r={radius}
-        fill="none"
-        stroke="#111827"
-        strokeWidth="8"
-      />
-      {segments.map((seg, idx) => {
-        const fraction = seg.value / total;
-        const dash = fraction * circumference;
-        const dashArray = `${dash} ${circumference - dash}`;
-        const rotation = (offset / total) * 360 - 90;
-        offset += seg.value;
-        return (
-          <circle
-            key={idx}
-            cx="20"
-            cy="20"
-            r={radius}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth="8"
-            strokeDasharray={dashArray}
-            transform={`rotate(${rotation} 20 20)`}
-          />
-        );
+    <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="flex-shrink-0">
+      <circle cx={c} cy={c} r={r} fill="none" stroke="#f3f4f6" strokeWidth={sw} className="dark:stroke-neutral-800" />
+      {segments.map((seg, i) => {
+        const frac = seg.value / total;
+        if (frac < 0.005) { acc += seg.value; return null; }
+        const dash = frac * circ, gap = circ - dash;
+        const rot = (acc / total) * 360 - 90;
+        acc += seg.value;
+        return <circle key={i} cx={c} cy={c} r={r} fill="none" stroke={seg.color} strokeWidth={sw} strokeDasharray={`${dash.toFixed(2)} ${gap.toFixed(2)}`} transform={`rotate(${rot.toFixed(2)} ${c} ${c})`} />;
       })}
     </svg>
   );
 }
 
-// Map distribution keys to display labels and colors
+// ── Map distribution keys to display labels and colors ────────────────────────
 const typeColors = { DINE_IN: "#f97316", TAKEAWAY: "#22c55e", DELIVERY: "#3b82f6" };
 const typeLabels = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", DELIVERY: "Delivery" };
 const paymentColors = { CASH: "#0ea5e9", CARD: "#22c55e", ONLINE: "#6366f1", OTHER: "#f97316" };
 const paymentLabels = { CASH: "Cash", CARD: "Card", ONLINE: "Online", OTHER: "Foodpanda" };
-const sourceColors = { POS: "#3b82f6", WEBSITE: "#6366f1", FOODPANDA: "#f97316" };
-const sourceLabels = { POS: "POS", WEBSITE: "Website", FOODPANDA: "Foodpanda" };
-const productColors = ["#3b82f6", "#22c55e", "#6366f1", "#f97316", "#eab308"];
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const productColors = ["#f97316", "#3b82f6", "#22c55e", "#6366f1", "#eab308"];
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function buildSegments(distribution, labels, colors) {
   return Object.entries(distribution)
     .filter(([, v]) => v > 0)
-    .map(([key, value]) => ({
-      label: labels[key] || key,
-      value,
-      color: colors[key] || "#9ca3af",
-    }));
-}
-
-// Bar chart: columns with revenue (Rs) on top of each column. Used for Total Revenue card.
-function RevenueBarChart({ data, xLabel, columnMinWidth = 28 }) {
-  if (!data || data.length === 0) return null;
-  const maxVal = Math.max(...data.map((d) => d.value), 1);
-  const barHeight = 140;
-  return (
-    <div className="w-full overflow-x-auto">
-      <div className="flex items-end gap-0.5 min-w-max" style={{ height: barHeight + 56 }}>
-        {data.map((d, i) => {
-          const h = maxVal > 0 ? (d.value / maxVal) * barHeight : 0;
-          return (
-            <div key={i} className="flex flex-col items-center flex-1 min-w-0" style={{ minWidth: columnMinWidth }}>
-              <span className="text-[9px] font-semibold text-gray-700 dark:text-neutral-300 mb-0 truncate w-full text-center" title={`Rs ${d.value.toLocaleString()}`}>
-                {d.value > 0 ? `${d.value >= 1000 ? `${(d.value / 1000).toFixed(1)}k` : d.value}` : ""}
-              </span>
-              <div
-                className="w-full rounded-t transition-all bg-gradient-to-t from-blue-600 to-blue-500 dark:from-blue-500 dark:to-blue-400 min-h-[2px]"
-                style={{ height: Math.max(h, 2) }}
-              />
-              <span className={`text-[9px] font-medium mt-1 truncate w-full text-center ${d.isRemaining ? "text-gray-400 dark:text-neutral-500" : "text-gray-600 dark:text-neutral-400"}`}>
-                {xLabel(d)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Daily/hourly sales line chart (non-cumulative): X = day or hour, Y = sales (Rs). Shows remaining days/hours.
-function DailySalesLineChart({ period, dailySales, hourlySales, remainingHoursStart }) {
-  const width = 1000;
-  const height = 220;
-  const leftMargin = 40;
-  const bottomMargin = 28;
-  const rightMargin = 12;
-  const topMargin = 12;
-  const innerWidth = width - leftMargin - rightMargin;
-  const innerHeight = height - topMargin - bottomMargin;
-
-  const isMonthly = period === "monthly";
-  const data = isMonthly
-    ? (dailySales || []).map((d) => ({ x: d.day, y: d.sales, label: String(d.day), isRemaining: !!d.isRemaining }))
-    : Array.from({ length: hourlySales?.length || 0 }, (_, i) => ({
-      x: i,
-      y: (hourlySales || [])[i] || 0,
-      label: `${i}:00`,
-      isRemaining: remainingHoursStart != null && i >= remainingHoursStart,
-    }));
-
-  const maxY = data.length > 0 ? Math.max(...data.map((d) => d.y), 0) : 1;
-  const formatY = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
-
-  const n = data.length;
-  const xScale = n > 1 ? (i) => (i / (n - 1)) * innerWidth : () => innerWidth / 2;
-  const yScale = (y) => (maxY > 0 ? (y / maxY) * innerHeight : 0);
-
-  const points = data
-    .map((d, i) => {
-      const x = leftMargin + xScale(i);
-      const y = topMargin + innerHeight - yScale(d.y);
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <div className="w-full min-w-0 ">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-52 text-gray-600 dark:text-neutral-400" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <linearGradient id="dailySalesLineFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {/* Axes */}
-        <line x1={leftMargin} y1={topMargin} x2={leftMargin} y2={topMargin + innerHeight} stroke="currentColor" strokeWidth="1" opacity={0.3} />
-        <line x1={leftMargin} y1={topMargin + innerHeight} x2={leftMargin + innerWidth} y2={topMargin + innerHeight} stroke="currentColor" strokeWidth="1" opacity={0.3} />
-        {/* Y labels: 0 and max (dynamic to highest single-day/hour sale) */}
-        <text x={leftMargin - 6} y={topMargin + innerHeight} textAnchor="end" fontSize="10" fill="currentColor" opacity={0.7}>0</text>
-        <text x={leftMargin - 6} y={topMargin} textAnchor="end" fontSize="10" fill="currentColor" opacity={0.7}>{formatY(maxY)}</text>
-        {/* Area under line */}
-        <polygon
-          fill="url(#dailySalesLineFill)"
-          points={`${points} ${leftMargin + innerWidth},${topMargin + innerHeight} ${leftMargin},${topMargin + innerHeight}`}
-        />
-        {/* Line (goes up and down with daily/hourly sales) */}
-        <polyline
-          fill="none"
-          stroke="#0ea5e9"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-          className="dark:stroke-sky-400"
-        />
-        {/* X-axis labels: remaining times/days in muted style */}
-        {data.map((d, i) => (
-          <text
-            key={i}
-            x={leftMargin + xScale(i)}
-            y={topMargin + innerHeight + 16}
-            textAnchor="middle"
-            fontSize="9"
-            fill={d.isRemaining ? "#94a3b8" : "currentColor"}
-            opacity={d.isRemaining ? 0.7 : 0.8}
-            className={d.isRemaining ? "dark:fill-neutral-500" : ""}
-          >
-            {d.label}
-          </text>
-        ))}
-      </svg>
-    </div>
-  );
+    .map(([key, value]) => ({ label: labels[key] || key, value, color: colors[key] || "#9ca3af" }));
 }
 
 export default function OverviewPage() {
-  const { currentBranch } = useBranch() || {};
+  const { currentBranch, setCurrentBranch } = useBranch() || {};
 
   const [stats, setStats] = useState({
-    totalOrders: 0,
-    pendingOrders: 0,
-    revenue: 0,
-    totalBudgetCost: 0,
-    totalProfit: 0,
-    lowStockItems: [],
+    totalOrders: 0, pendingOrders: 0, revenue: 0,
+    totalBudgetCost: 0, totalProfit: 0, lowStockItems: [],
     hourlySales: new Array(24).fill(0),
-    salesTypeDistribution: {},
-    paymentDistribution: {},
-    sourceDistribution: {},
-    topProducts: [],
-    productsPerformance: [],
+    salesTypeDistribution: {}, paymentDistribution: {},
+    sourceDistribution: {}, topProducts: [], productsPerformance: [],
   });
 
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [periodReport, setPeriodReport] = useState({
-    totalRevenue: 0,
-    totalProfit: 0,
-    totalOrders: 0,
-    topItems: [],
-    dailySales: [],
-    hourlySales: null,
-    paymentDistribution: {},
+    totalRevenue: 0, totalProfit: 0, totalOrders: 0,
+    topItems: [], dailySales: [], hourlySales: null, paymentDistribution: {},
   });
-  const [reportPeriod, setReportPeriod] = useState("today"); // "yesterday" | "today" | "monthly" – default today
+  const [reportPeriod, setReportPeriod] = useState("today");
   const [periodLoading, setPeriodLoading] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth()); // 0-11
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
 
-  // Business day (computed from branch cutoff setting)
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDate = getBusinessDate(new Date(), cutoffHour);
 
-  // Legacy session history (read-only, for browsing past sessions)
   const [showSessionHistoryModal, setShowSessionHistoryModal] = useState(false);
   const [sessionHistory, setSessionHistory] = useState([]);
   const [loadingSessionHistory, setLoadingSessionHistory] = useState(false);
+
+  const [showEndDayModal, setShowEndDayModal] = useState(false);
+  const [currentSession, setCurrentSession] = useState(null);
+  const [loadingSession, setLoadingSession] = useState(false);
+  const [endingDay, setEndingDay] = useState(false);
+  const [savingCutoff, setSavingCutoff] = useState(false);
 
   async function loadSessionHistory() {
     setLoadingSessionHistory(true);
     try {
       const res = await getDaySessions(currentBranch?.id);
       setSessionHistory(Array.isArray(res?.sessions) ? res.sessions : []);
-    } catch {
-      setSessionHistory([]);
+    } catch { setSessionHistory([]); }
+    finally { setLoadingSessionHistory(false); }
+  }
+
+  async function openEndDayModal() {
+    setCurrentSession(null);
+    setShowEndDayModal(true);
+    setLoadingSession(true);
+    try {
+      const session = await getCurrentDaySession(currentBranch?.id);
+      setCurrentSession(session);
+    } catch { setCurrentSession(null); }
+    finally { setLoadingSession(false); }
+  }
+
+  async function handleEndDay() {
+    setEndingDay(true);
+    try {
+      await endDaySession(currentBranch?.id);
+      toast.success("Business day ended");
+      setShowEndDayModal(false);
+    } catch (err) {
+      toast.error(err.message || "Failed to end business day");
     } finally {
-      setLoadingSessionHistory(false);
+      setEndingDay(false);
     }
   }
 
-  // Currency note counter (denomination -> quantity), saved per day in backend
+  async function handleCutoffChange(e) {
+    const newHour = Number(e.target.value);
+    if (!currentBranch?.id) return;
+    setSavingCutoff(true);
+    try {
+      await updateBranch(currentBranch.id, { ...currentBranch, businessDayCutoffHour: newHour });
+      setCurrentBranch({ ...currentBranch, businessDayCutoffHour: newHour });
+      toast.success("Day reset time updated");
+    } catch (err) {
+      toast.error(err.message || "Failed to update");
+    } finally {
+      setSavingCutoff(false);
+    }
+  }
+
   const CURRENCY_NOTES = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
-  const [currencyDate, setCurrencyDate] = useState("today"); // "today" | "yesterday"
+  const [currencyDate, setCurrencyDate] = useState("today");
   const [currencyQuantities, setCurrencyQuantities] = useState(() =>
     Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""]))
   );
@@ -376,26 +223,16 @@ export default function OverviewPage() {
   const currencyDirtyRef = useRef(false);
   const currencyDateValue =
     currencyDate === "today"
-      ? (() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      })()
-      : (() => {
-        const d = new Date();
-        d.setDate(d.getDate() - 1);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      })();
-  const isCurrencyEditable = true; // only today/yesterday are selectable, both editable
-  const currencyTotal = CURRENCY_NOTES.reduce(
-    (sum, note) => sum + (Number(currencyQuantities[note]) || 0) * note,
-    0
-  );
+      ? (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })()
+      : (() => { const d = new Date(); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const isCurrencyEditable = true;
+  const currencyTotal = CURRENCY_NOTES.reduce((sum, note) => sum + (Number(currencyQuantities[note]) || 0) * note, 0);
+
   function setCurrencyQty(note, value) {
     currencyDirtyRef.current = true;
     setCurrencyQuantities((prev) => ({ ...prev, [note]: value }));
   }
 
-  // Load daily currency when date changes
   useEffect(() => {
     let cancelled = false;
     currencyDirtyRef.current = false;
@@ -404,17 +241,12 @@ export default function OverviewPage() {
       .then((res) => {
         if (cancelled) return;
         const q = res?.quantities || {};
-        const next = Object.fromEntries(
+        setCurrencyQuantities(Object.fromEntries(
           CURRENCY_NOTES.map((n) => [n, q[n] != null ? String(q[n]) : q[String(n)] != null ? String(q[String(n)]) : ""])
-        );
-        setCurrencyQuantities(next);
+        ));
       })
-      .catch(() => {
-        if (!cancelled) setCurrencyQuantities(Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""])));
-      })
-      .finally(() => {
-        if (!cancelled) setCurrencyLoading(false);
-      });
+      .catch(() => { if (!cancelled) setCurrencyQuantities(Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""]))); })
+      .finally(() => { if (!cancelled) setCurrencyLoading(false); });
     return () => {
       cancelled = true;
       if (currencySaveTimeoutRef.current) clearTimeout(currencySaveTimeoutRef.current);
@@ -431,15 +263,8 @@ export default function OverviewPage() {
     });
     setCurrencySaving(true);
     saveDailyCurrency(currencyDateValue, quantitiesToSave)
-      .then(() => {
-        setCurrencySaving(false);
-        currencyDirtyRef.current = false;
-        toast.success("Currency saved");
-      })
-      .catch((err) => {
-        setCurrencySaving(false);
-        toast.error(err.message || "Failed to save currency");
-      });
+      .then(() => { setCurrencySaving(false); currencyDirtyRef.current = false; toast.success("Currency saved"); })
+      .catch((err) => { setCurrencySaving(false); toast.error(err.message || "Failed to save currency"); });
   }
 
   useEffect(() => {
@@ -449,824 +274,621 @@ export default function OverviewPage() {
         setStats(data);
         setPageLoading(false);
       } catch (err) {
-        if (err instanceof SubscriptionInactiveError) {
-          setSuspended(true);
-        } else {
-          console.error("Failed to load overview:", err);
-          toast.error(err.message || "Failed to load overview");
-        }
+        if (err instanceof SubscriptionInactiveError) setSuspended(true);
+        else { console.error("Failed to load overview:", err); toast.error(err.message || "Failed to load overview"); }
         setPageLoading(false);
       }
     })();
   }, []);
 
-
-  // Fetch report from backend for the selected period (yesterday, today, or selected month)
   useEffect(() => {
     let cancelled = false;
     setPeriodLoading(true);
     (async () => {
       const now = new Date();
-      let fromStr;
-      let toStr;
+      let fromStr, toStr;
       if (reportPeriod === "yesterday") {
-        const startYesterday = new Date(now);
-        startYesterday.setDate(startYesterday.getDate() - 1);
-        startYesterday.setHours(0, 0, 0, 0);
-        const endYesterday = new Date(startYesterday);
-        endYesterday.setHours(23, 59, 59, 999);
-        fromStr = startYesterday.toISOString();
-        toStr = endYesterday.toISOString();
+        const s = new Date(now); s.setDate(s.getDate() - 1); s.setHours(0, 0, 0, 0);
+        const e = new Date(s); e.setHours(23, 59, 59, 999);
+        fromStr = s.toISOString(); toStr = e.toISOString();
       } else if (reportPeriod === "today") {
         fromStr = now.toISOString().slice(0, 10);
-        const tomorrow = new Date(now);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        toStr = tomorrow.toISOString().slice(0, 10);
+        const t = new Date(now); t.setDate(t.getDate() + 1);
+        toStr = t.toISOString().slice(0, 10);
       } else {
-        const firstDaySelected = new Date(selectedYear, selectedMonth, 1);
-        fromStr = firstDaySelected.toISOString().slice(0, 10);
-        const firstNextMonth = new Date(selectedYear, selectedMonth + 1, 1);
-        toStr = firstNextMonth.toISOString().slice(0, 10);
+        fromStr = new Date(selectedYear, selectedMonth, 1).toISOString().slice(0, 10);
+        toStr = new Date(selectedYear, selectedMonth + 1, 1).toISOString().slice(0, 10);
       }
       try {
         const report = await getSalesReport({ from: fromStr, to: toStr });
-        if (!cancelled) {
-          setPeriodReport({
-            totalRevenue: report.totalRevenue ?? 0,
-            totalProfit: report.totalProfit ?? 0,
-            totalOrders: report.totalOrders ?? 0,
-            topItems: report.topItems ?? [],
-            dailySales: report.dailySales ?? [],
-            hourlySales: report.hourlySales ?? null,
-            paymentDistribution: report.paymentDistribution ?? {},
-          });
-        }
-      } catch (err) {
-        if (!cancelled) console.error("Failed to load period report:", err);
-      } finally {
-        if (!cancelled) setPeriodLoading(false);
-      }
+        if (!cancelled) setPeriodReport({
+          totalRevenue: report.totalRevenue ?? 0,
+          totalProfit: report.totalProfit ?? 0,
+          totalOrders: report.totalOrders ?? 0,
+          topItems: report.topItems ?? [],
+          dailySales: report.dailySales ?? [],
+          hourlySales: report.hourlySales ?? null,
+          paymentDistribution: report.paymentDistribution ?? {},
+        });
+      } catch (err) { if (!cancelled) console.error("Failed to load period report:", err); }
+      finally { if (!cancelled) setPeriodLoading(false); }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [reportPeriod, selectedMonth, selectedYear]);
 
-  const hasOrdersForPeriod = (periodReport.totalOrders ?? 0) > 0;
-  const salesTypeSegments = hasOrdersForPeriod
-    ? buildSegments(stats.salesTypeDistribution, typeLabels, typeColors)
-    : [];
-  const periodPayment =
-    hasOrdersForPeriod &&
-      periodReport.paymentDistribution &&
-      Object.keys(periodReport.paymentDistribution).length > 0
-      ? periodReport.paymentDistribution
-      : null;
-  const paymentSegments =
-    hasOrdersForPeriod && periodPayment
-      ? buildSegments(periodPayment, paymentLabels, paymentColors)
-      : [];
-  const paymentAmounts = !!periodPayment; // period report sends amounts (Rs)
-  const sourceSegments = buildSegments(stats.sourceDistribution, sourceLabels, sourceColors);
-  const topProductSegments = (stats.topProducts || []).slice(0, 5).map((p, i) => ({
-    label: p.name,
-    value: p.qty,
-    color: productColors[i % productColors.length],
-  }));
-  const displayTopProductSegments = (periodReport.topItems || []).slice(0, 5).map((p, i) => ({
-    label: p.name,
-    value: p.quantity,
-    color: productColors[i % productColors.length],
-  }));
+  // Computed values
+  const hasOrders = (periodReport.totalOrders ?? 0) > 0;
+  const salesTypeSegments = hasOrders ? buildSegments(stats.salesTypeDistribution, typeLabels, typeColors) : [];
+  const periodPayment = hasOrders && periodReport.paymentDistribution && Object.keys(periodReport.paymentDistribution).length > 0
+    ? periodReport.paymentDistribution : null;
+  const paymentSegments = hasOrders && periodPayment ? buildSegments(periodPayment, paymentLabels, paymentColors) : [];
+  const paymentAmounts = !!periodPayment;
 
-
-  const periodSubtitle =
-    reportPeriod === "yesterday"
-      ? (() => {
-        const d = new Date();
-        d.setDate(d.getDate() - 1);
-        return "Yesterday, " + d.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-      })()
-      : reportPeriod === "today"
-        ? new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
-        : new Date(selectedYear, selectedMonth, 1).toLocaleDateString("en-US", {
-          month: "short",
-          year: "numeric",
-        });
+  const displayTopItems = (periodReport.topItems || []).slice(0, 5).map((p, i) => ({
+    label: p.name, value: p.quantity, color: productColors[i % productColors.length],
+  }));
 
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
-  const todayDayOfMonthReal = now.getDate();
   const currentHour = now.getHours();
   const viewingYear = reportPeriod === "monthly" ? selectedYear : currentYear;
   const viewingMonthIndex = reportPeriod === "monthly" ? selectedMonth : currentMonth;
   const lastDayOfMonth = new Date(viewingYear, viewingMonthIndex + 1, 0).getDate();
+  const todayDayOfMonthReal = now.getDate();
   const effectiveTodayInView =
     reportPeriod === "monthly" && (selectedYear !== currentYear || selectedMonth !== currentMonth)
-      ? lastDayOfMonth
-      : todayDayOfMonthReal;
+      ? lastDayOfMonth : todayDayOfMonthReal;
+
   const salesByDay = {};
   (periodReport.dailySales || []).forEach((d) => { salesByDay[d.day] = d.sales; });
-  const fullMonthDailySales = Array.from({ length: lastDayOfMonth }, (_, i) => {
-    const day = i + 1;
-    return {
-      day,
-      sales: salesByDay[day] ?? 0,
-      isRemaining: reportPeriod === "monthly" ? day > effectiveTodayInView : false,
-    };
-  });
+  const fullMonthDailySales = Array.from({ length: lastDayOfMonth }, (_, i) => ({
+    day: i + 1,
+    sales: salesByDay[i + 1] ?? 0,
+    isRemaining: reportPeriod === "monthly" ? (i + 1) > effectiveTodayInView : false,
+  }));
+
+  const baseHourlySales = stats.hourlySales;
+  const fullDayHourlySales = Array.from({ length: 24 }, (_, i) => i <= currentHour ? (baseHourlySales[i] || 0) : 0);
+  const remainingHoursStart = currentHour + 1;
+
   const viewTotalOrders = periodReport.totalOrders ?? 0;
   const viewTotalRevenue = periodReport.totalRevenue ?? 0;
   const viewTotalProfit = periodReport.totalProfit ?? 0;
   const viewPendingOrders = stats.pendingOrders;
-
-  const baseHourlySales = stats.hourlySales;
-  const fullDayHourlySales = Array.from({ length: 24 }, (_, i) =>
-    i <= currentHour ? (baseHourlySales[i] || 0) : 0
-  );
-  const remainingHoursStart = currentHour + 1;
+  const viewAvgOrder = viewTotalOrders ? Math.round(viewTotalRevenue / viewTotalOrders) : 0;
 
   const yearOptions = [];
-  for (let y = currentYear - 2; y <= currentYear + 1; y += 1) {
-    yearOptions.push(y);
-  }
+  for (let y = currentYear - 2; y <= currentYear + 1; y += 1) yearOptions.push(y);
 
-  const subtitleNode = (
-    <span className="inline-flex items-center gap-3">
-      <span>{periodSubtitle}</span>
-      {reportPeriod === "monthly" && (
-        <span className="inline-flex items-center gap-2 ml-2">
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            className="border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 py-1 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-          >
-            {MONTH_NAMES.map((name, idx) => (
-              <option key={name} value={idx}>
-                {name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 py-1 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-          >
-            {yearOptions.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </span>
-      )}
-    </span>
-  );
+  const periodLabel = reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly"
+    ? `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear}` : "Today";
 
   return (
-    <AdminLayout
-      title="Overview"
-      subtitle={subtitleNode}
-      suspended={suspended}
-    >
+    <AdminLayout title="Overview" suspended={suspended}>
       {pageLoading ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <LayoutDashboard className="w-10 h-10 text-primary animate-pulse" />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
+            <LayoutDashboard className="w-8 h-8 text-primary animate-pulse" />
           </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading overview...
-            </p>
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">Loading dashboard…</p>
           </div>
         </div>
       ) : (
         <>
-          {/* Business day indicator */}
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 text-xs font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
-                Business Day: {formatBusinessDate(businessDate)}
-              </span>
-              <span className="text-[10px] text-gray-400 dark:text-neutral-500">
-                Day cutoff: {cutoffHour === 0 ? "12 AM" : cutoffHour < 12 ? `${cutoffHour} AM` : cutoffHour === 12 ? "12 PM" : `${cutoffHour - 12} PM`}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => { loadSessionHistory(); setShowSessionHistoryModal(true); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Past Sessions
-            </button>
-          </div>
-
-          {/* KPIs row - Premium style with gradients */}
-          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 mb-6">
-            {/* Total Orders (this month) */}
-            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-purple-300 dark:hover:border-purple-500/30 transition-all overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
-                    <ShoppingBag className="w-7 h-7 text-white" />
-                  </div>
-                  <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                    +{viewTotalOrders > 0 ? Math.round((viewTotalOrders / (viewTotalOrders + 10)) * 100) : 0}%
-                  </span>
-                </div>
-                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Orders</p>
-                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{viewTotalOrders}</p>
+          {/* ─── Control bar ─────────────────────────────────────────────── */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Business day indicator */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">{formatBusinessDate(businessDate)}</span>
               </div>
-            </div>
 
-            {/* Total Sales (this month) */}
-            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-primary/30 transition-all overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className=" h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
-                    <DollarSign className="w-7 h-7 text-white" />
-                  </div>
-                  <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                    +{viewTotalRevenue > 0 ? Math.round((viewTotalRevenue / (viewTotalRevenue + 1000)) * 100) : 0}%
-                  </span>
+              {/* Default exit time (editable) */}
+              <div className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
+                <Clock className="w-3 h-3 text-gray-400 dark:text-neutral-500 flex-shrink-0" />
+                <span className="text-[11px] text-gray-500 dark:text-neutral-400 whitespace-nowrap">Resets at</span>
+                <div className="relative flex items-center">
+                  <select
+                    value={cutoffHour}
+                    onChange={handleCutoffChange}
+                    disabled={savingCutoff || !currentBranch?.id}
+                    className="appearance-none pr-4 text-xs font-semibold text-gray-700 dark:text-neutral-200 bg-transparent border-none outline-none cursor-pointer disabled:opacity-50"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>
+                        {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
+                      </option>
+                    ))}
+                  </select>
+                  {savingCutoff
+                    ? <Loader2 className="absolute right-0 w-2.5 h-2.5 animate-spin text-primary pointer-events-none" />
+                    : <ChevronDown className="absolute right-0 w-2.5 h-2.5 text-gray-400 pointer-events-none" />
+                  }
                 </div>
-                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Sales</p>
-                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">Rs {Math.round(viewTotalRevenue ?? 0).toLocaleString()}</p>
               </div>
+
+              {/* End Day */}
+              <button
+                type="button"
+                onClick={openEndDayModal}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+              >
+                <Power className="w-3.5 h-3.5" />
+                End Day
+              </button>
+
+              {/* Past Sessions */}
+              <button
+                type="button"
+                onClick={() => { loadSessionHistory(); setShowSessionHistoryModal(true); }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 text-xs font-medium hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Past Sessions
+              </button>
             </div>
 
-            {/* Average Value (this month) */}
-            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-orange-300 dark:hover:border-orange-500/30 transition-all overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/30">
-                    <TrendingUp className="w-7 h-7 text-white" />
-                  </div>
-                  <span className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-500/20 dark:text-red-400 rounded-xl">
-                    -4.8%
-                  </span>
-                </div>
-                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Average Value</p>
-                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">
-                  Rs {viewTotalOrders ? Math.round(viewTotalRevenue / viewTotalOrders).toLocaleString() : 0}
-                </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5">
+                {[
+                  { value: "yesterday", label: "Yesterday" },
+                  { value: "today", label: "Today" },
+                  { value: "monthly", label: "Monthly" },
+                ].map((p) => (
+                  <button key={p.value} type="button" onClick={() => setReportPeriod(p.value)}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      reportPeriod === p.value
+                        ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
+                        : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
-            </div>
-
-            {/* In Progress */}
-            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                    <Package className="w-7 h-7 text-white" />
-                  </div>
-                  <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                    +{viewPendingOrders}%
-                  </span>
+              {reportPeriod === "monthly" && (
+                <div className="flex items-center gap-1.5">
+                  <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary">
+                    {MONTH_NAMES.map((name, idx) => <option key={name} value={idx}>{name}</option>)}
+                  </select>
+                  <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary">
+                    {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+                  </select>
                 </div>
-                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">In Progress</p>
-                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{viewPendingOrders}</p>
-              </div>
+              )}
+              {periodLoading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
             </div>
           </div>
 
-          {/* Monthly Report row */}
-          <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
-            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-emerald-300 dark:border-emerald-500/30 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="relative flex items-center gap-4">
-                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                  <TrendingUp className="w-7 h-7 text-white" />
+          {/* ─── KPI strip ───────────────────────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+            {[
+              { label: "Revenue", sub: periodLabel, value: `Rs ${Math.round(viewTotalRevenue).toLocaleString()}`, icon: DollarSign, color: "text-primary", bg: "bg-primary/10 dark:bg-primary/20", border: "border-primary/20" },
+              { label: "Orders", sub: periodLabel, value: viewTotalOrders.toLocaleString(), icon: ShoppingBag, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-500/10", border: "border-violet-100 dark:border-violet-500/20" },
+              { label: "Net Profit", sub: periodLabel, value: `Rs ${Math.round(viewTotalProfit).toLocaleString()}`, icon: TrendingUp, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-500/10", border: "border-emerald-100 dark:border-emerald-500/20" },
+              { label: "Avg Order", sub: periodLabel, value: `Rs ${viewAvgOrder.toLocaleString()}`, icon: Activity, color: "text-sky-600 dark:text-sky-400", bg: "bg-sky-50 dark:bg-sky-500/10", border: "border-sky-100 dark:border-sky-500/20" },
+              { label: "Active Now", sub: "live orders", value: viewPendingOrders.toLocaleString(), icon: Zap, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-500/10", border: "border-amber-100 dark:border-amber-500/20", pulse: viewPendingOrders > 0 },
+            ].map(({ label, sub, value, icon: Icon, color, bg, border, pulse }) => (
+              <div key={label} className={`bg-white dark:bg-neutral-950 border ${border} rounded-2xl p-4`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+                    <Icon className={`w-4 h-4 ${color}`} />
+                  </div>
+                  {pulse && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />live
+                    </span>
+                  )}
                 </div>
+                <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500 mb-0.5">{label}</p>
+                <p className={`text-lg font-bold leading-tight ${color}`}>{value}</p>
+                <p className="text-[10px] text-gray-400 dark:text-neutral-600 mt-0.5">{sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* ─── Main: chart (2/3) + breakdown (1/3) ────────────────────── */}
+          <div className="grid lg:grid-cols-3 gap-5 mb-5">
+
+            {/* Sales area chart */}
+            <div className="lg:col-span-2 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">
-                    {reportPeriod === "yesterday" ? "Yesterday's Profit" : reportPeriod === "monthly" ? "This Month Profit" : "Today's Profit"}
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Sales Overview</h3>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                    {reportPeriod === "monthly" ? `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear} · by day` : reportPeriod === "yesterday" ? "Yesterday · by hour" : "Today · by hour"}
+                    {splitIdx => splitIdx > 0 ? " · dashed = remaining" : ""}
                   </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalProfit ?? 0).toLocaleString()}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-bold text-gray-900 dark:text-white">Rs {Math.round(viewTotalRevenue).toLocaleString()}</p>
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-500">total revenue</p>
                 </div>
               </div>
-            </div>
-            <div className="sm:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all w-full">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
-                  <BarChart3 className="w-5 h-5 text-white" />
-                </div>
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">Daily sales</h3>
-              </div>
-              {/* <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
-            X-axis: {reportPeriod === "monthly"
-              ? (todayDayOfMonth < lastDayOfMonth ? `day of month (1–${lastDayOfMonth}); days ${todayDayOfMonth + 1}–${lastDayOfMonth} remaining` : `day of month (1–${lastDayOfMonth})`)
-              : (currentHour < 23 ? `hour (0–23); hours ${remainingHoursStart}–23 remaining` : "hour (0–23)")
-            }. Y-axis: sales (Rs). Not cumulative. Data up to {reportPeriod === "monthly" ? "today" : "current hour"}.
-          </p> */}
               {reportPeriod === "monthly" ? (
-                fullMonthDailySales.length > 0 ? (
-                  <DailySalesLineChart period="monthly" dailySales={fullMonthDailySales} hourlySales={null} remainingHoursStart={null} />
-                ) : (
-                  <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data yet this month</p>
-                )
+                fullMonthDailySales.length > 0
+                  ? <SalesAreaChart period="monthly" dailySales={fullMonthDailySales} hourlySales={null} remainingHoursStart={null} />
+                  : <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">No data yet this month</div>
               ) : reportPeriod === "yesterday" ? (
-                periodReport.hourlySales ? (
-                  <DailySalesLineChart period="today" dailySales={null} hourlySales={periodReport.hourlySales} remainingHoursStart={24} />
-                ) : (periodReport.dailySales || []).length > 0 ? (
-                  <DailySalesLineChart period="monthly" dailySales={(periodReport.dailySales || []).map((d) => ({ day: d.day, sales: d.sales, isRemaining: false }))} hourlySales={null} remainingHoursStart={null} />
-                ) : (
-                  <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data for yesterday</p>
-                )
+                periodReport.hourlySales
+                  ? <SalesAreaChart period="today" dailySales={null} hourlySales={periodReport.hourlySales} remainingHoursStart={24} />
+                  : <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">No data for yesterday</div>
               ) : (
-                <DailySalesLineChart period="today" dailySales={null} hourlySales={fullDayHourlySales} remainingHoursStart={remainingHoursStart} />
+                <SalesAreaChart period="today" dailySales={null} hourlySales={fullDayHourlySales} remainingHoursStart={remainingHoursStart} />
               )}
             </div>
-          </div>
 
-          {/* Top Selling & Sales Performance row */}
-          <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
-            {/* Top Selling Item */}
-            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">🔥 Top Selling Items</h3>
-                <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "Monthly" : "Today"}</span>
+            {/* Right panel: Order Types + Profit */}
+            <div className="flex flex-col gap-4">
+              {/* Profit card */}
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <TrendingUp className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-emerald-100 text-xs font-medium">{reportPeriod === "yesterday" ? "Yesterday's" : reportPeriod === "monthly" ? "Monthly" : "Today's"} Profit</p>
+                  <p className="text-white text-2xl font-bold leading-tight">Rs {Math.round(viewTotalProfit).toLocaleString()}</p>
+                </div>
               </div>
-              {displayTopProductSegments.length > 0 ? (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5 border border-orange-200 dark:border-orange-500/20">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
-                        <span className="text-2xl">👑</span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-base font-bold text-gray-900 dark:text-white truncate">
-                          {displayTopProductSegments[0]?.label || "No data"}
-                        </p>
-                        <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium">
-                          {displayTopProductSegments[0]?.value || 0} {reportPeriod === "monthly" ? "sold" : reportPeriod === "yesterday" ? "sold" : "orders"}
-                        </p>
-                      </div>
+
+              {/* Order types donut */}
+              <div className="flex-1 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+                <h4 className="text-xs font-bold text-gray-700 dark:text-neutral-300 uppercase tracking-wider mb-4">Order Types</h4>
+                {salesTypeSegments.length > 0 ? (
+                  <div className="flex items-center gap-4">
+                    <DonutChart segments={salesTypeSegments} size={84} />
+                    <div className="flex-1 space-y-2 min-w-0">
+                      {salesTypeSegments.map((s) => {
+                        const total = salesTypeSegments.reduce((a, b) => a + b.value, 0);
+                        const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
+                        return (
+                          <div key={s.label} className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                            <span className="flex-1 text-xs text-gray-600 dark:text-neutral-400 truncate">{s.label}</span>
+                            <span className="text-xs font-bold text-gray-900 dark:text-white">{pct}%</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-6">
+                    <BarChart3 className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-1" />
+                    <p className="text-xs text-gray-400 dark:text-neutral-600">No order data</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
 
-                  {displayTopProductSegments.slice(1, 5).map((item, i) => (
-                    <div key={item.label} className="flex items-center justify-between py-3 border-t border-gray-100 dark:border-neutral-800">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center h-6 w-6 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-bold text-gray-600 dark:text-neutral-400">
-                          {i + 2}
-                        </span>
-                        <span className="text-sm font-semibold text-gray-700 dark:text-neutral-300">{item.label}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-20 h-2 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${(displayTopProductSegments[0].value ? (item.value / displayTopProductSegments[0].value) * 100 : 0)}%`,
-                              backgroundColor: item.color
-                            }}
-                          />
+          {/* ─── Payment Methods + Top Items + Products table ─────────────── */}
+          <div className="grid lg:grid-cols-3 gap-5 mb-5">
+
+            {/* Payment Methods */}
+            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-500/10 flex items-center justify-center">
+                  <CreditCard className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                </div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Payments</h3>
+              </div>
+              {paymentSegments.length > 0 ? (
+                <div className="space-y-3.5">
+                  {paymentSegments.map((s) => {
+                    const total = paymentSegments.reduce((sum, seg) => sum + seg.value, 0);
+                    const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
+                    const val = Math.round(Number(s.value) || 0);
+                    return (
+                      <div key={s.label}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                            <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">{s.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {paymentAmounts && <span className="text-xs font-bold text-gray-900 dark:text-white">Rs {val.toLocaleString()}</span>}
+                            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">{pct}%</span>
+                          </div>
                         </div>
-                        <span className="text-sm font-bold text-gray-900 dark:text-white w-10 text-right">{item.value}</span>
+                        <div className="h-1.5 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: s.color }} />
+                        </div>
                       </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8">
+                  <CreditCard className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-2" />
+                  <p className="text-xs text-gray-400 dark:text-neutral-600">No payment data</p>
+                </div>
+              )}
+            </div>
+
+            {/* Top Selling Items */}
+            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center">
+                    <ShoppingBag className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Top Selling</h3>
+                </div>
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">{periodLabel}</span>
+              </div>
+              {displayTopItems.length > 0 ? (
+                <div className="space-y-1">
+                  {displayTopItems.map((item, i) => (
+                    <div key={item.label} className={`flex items-center gap-3 px-2.5 py-2 rounded-xl transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 ${i === 0 ? "bg-orange-50/60 dark:bg-orange-500/5" : ""}`}>
+                      <span className={`flex-shrink-0 w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center ${
+                        i === 0 ? "bg-orange-500 text-white" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400"
+                      }`}>
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 dark:text-neutral-200 truncate">{item.label}</p>
+                        <div className="h-1 bg-gray-100 dark:bg-neutral-800 rounded-full mt-1 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${displayTopItems[0].value ? (item.value / displayTopItems[0].value) * 100 : 0}%`, backgroundColor: item.color }} />
+                        </div>
+                      </div>
+                      <span className="flex-shrink-0 text-xs font-bold text-gray-900 dark:text-white">{item.value}</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                    <ShoppingBag className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No sales data yet</p>
+                <div className="flex flex-col items-center justify-center py-8">
+                  <ShoppingBag className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-2" />
+                  <p className="text-xs text-gray-400 dark:text-neutral-600">No sales data yet</p>
                 </div>
               )}
             </div>
 
-            {/* Sales Performance Gauge */}
-            {/* <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">Sales Performance</h3>
-            <button className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
-              View All
-            </button>
-          </div>
-          <div className="flex items-center justify-center py-8">
-            <div className="relative w-40 h-40">
-              <svg className="w-full h-full -rotate-90">
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="70"
-                  fill="none"
-                  stroke="#e5e7eb"
-                  strokeWidth="16"
-                  className="dark:stroke-neutral-800"
-                />
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="70"
-                  fill="none"
-                  stroke="url(#gaugeGradient)"
-                  strokeWidth="16"
-                  strokeDasharray={`${2 * Math.PI * 70 * 0.4} ${2 * Math.PI * 70}`}
-                  strokeLinecap="round"
-                  className="drop-shadow-lg"
-                />
-                <defs>
-                  <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#f97316" />
-                    <stop offset="100%" stopColor="#ea580c" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-4xl font-bold bg-gradient-to-r from-orange-500 to-orange-600 bg-clip-text text-transparent">40%</span>
-                <span className="text-xs text-gray-500 dark:text-neutral-500 font-medium mt-1">Target</span>
-              </div>
-            </div>
-          </div>
-          <div className="text-center px-4 py-3 rounded-xl bg-gradient-to-r from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5 border border-orange-200 dark:border-orange-500/20">
-            <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
-              Weekly target achievement
-            </p>
-          </div>
-        </div> */}
-
-            {/* Payment Distribution (filtered by report period: Yesterday / Today / Month) */}
-            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">💳 Payment Methods</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400 mb-5">
-                {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "today" ? "Today" : "This month"}
-              </p>
-              <div className="space-y-4">
-                {paymentSegments.length > 0 ? paymentSegments.map(s => {
-                  const total = paymentSegments.reduce((sum, seg) => sum + seg.value, 0);
-                  const percent = total > 0 ? ((s.value / total) * 100).toFixed(0) : "0";
-                  const value = Math.round(Number(s.value) || 0);
-                  return (
-                    <div key={s.label}>
-                      <div className="flex items-center justify-between text-sm mb-2">
-                        <span className="font-semibold text-gray-700 dark:text-neutral-300">{s.label}</span>
-                        <span className="flex items-center gap-2">
-                          {paymentAmounts ? (
-                            <span className="font-bold text-primary">Rs {value.toLocaleString()}</span>
-                          ) : (
-                            <span className="font-medium text-gray-600 dark:text-neutral-400">{value} orders</span>
-                          )}
-                          <span className="font-bold text-gray-900 dark:text-white">{percent}%</span>
-                        </span>
-                      </div>
-                      <div className="w-full h-3 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden shadow-inner">
-                        <div
-                          className="h-full rounded-full transition-all duration-500 shadow-sm"
-                          style={{ width: `${percent}%`, backgroundColor: s.color }}
-                        />
-                      </div>
-                    </div>
-                  );
-                }) : (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                      <CreditCard className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-                    </div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No payment data yet</p>
+            {/* Products Performance table */}
+            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center">
+                    <Package className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                   </div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Products</h3>
+                </div>
+                {(periodReport.topItems || []).length > 0 && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
+                    {periodReport.topItems.length} items
+                  </span>
                 )}
               </div>
-            </div>
-          </div>
-
-          {/* Main row with revenue chart and category stats */}
-          <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
-            {/* Total Revenue Chart */}
-            <div className="lg:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-              <div className="mb-5">
-                <div className="flex items-center gap-2 mb-1">
-                  <BarChart3 className="w-5 h-5 text-blue-500" />
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
-                </div>
-                <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-                  {reportPeriod === "yesterday" ? "Yesterday's performance" : reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
-                </p>
-              </div>
-              <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
-                <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                    <TrendingUp className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium mb-0.5">
-                      {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "This Month" : "Today"}
-                    </p>
-                    <span className="text-3xl font-bold text-gray-900 dark:text-white">
-                      Rs {(periodReport.totalRevenue ?? 0).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              {/* Bar chart: 24 columns (hours) for today/yesterday, or one column per day for monthly; revenue on top of each column */}
-              {reportPeriod === "monthly" ? (
-                <div className="mt-4">
-                  <RevenueBarChart
-                    data={fullMonthDailySales.map((d) => ({ value: d.sales, isRemaining: d.isRemaining, day: d.day }))}
-                    xLabel={(d) => String(d.day ?? "")}
-                    columnMinWidth={20}
-                  />
-                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Day of month (1–{lastDayOfMonth})</p>
-                </div>
-              ) : reportPeriod === "yesterday" ? (
-                <div className="mt-4">
-                  <RevenueBarChart
-                    data={Array.from({ length: 24 }, (_, i) => ({
-                      value: (periodReport.hourlySales || [])[i] || 0,
-                      isRemaining: false,
-                      hour: i,
-                    }))}
-                    xLabel={(d) => `${d.hour ?? 0}:00`}
-                    columnMinWidth={28}
-                  />
-                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
-                </div>
-              ) : (
-                <div className="mt-4">
-                  <RevenueBarChart
-                    data={Array.from({ length: 24 }, (_, i) => ({
-                      value: (periodReport.hourlySales && periodReport.hourlySales[i]) ?? fullDayHourlySales[i] ?? 0,
-                      isRemaining: i >= remainingHoursStart,
-                      hour: i,
-                    }))}
-                    xLabel={(d) => `${d.hour ?? 0}:00`}
-                    columnMinWidth={28}
-                  />
-                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
-                </div>
-              )}
-            </div>
-
-            {/* Category Statistics */}
-            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-              <div className="mb-5">
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">📈 Order Types</h3>
-              </div>
-              <div className="flex items-center justify-center mb-6 py-4">
-                {salesTypeSegments.length > 0 ? (
-                  <div className="relative">
-                    <MiniPieChart segments={salesTypeSegments} />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-16 h-16 rounded-full bg-white dark:bg-neutral-950 border-4 border-gray-100 dark:border-neutral-800" />
-                    </div>
-                  </div>
+              <div className="overflow-y-auto" style={{ maxHeight: 280 }}>
+                {(periodReport.topItems || []).length > 0 ? (
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-gray-50 dark:bg-neutral-900/80">
+                      <tr>
+                        <th className="py-2 px-4 text-left font-semibold text-gray-500 dark:text-neutral-400">#</th>
+                        <th className="py-2 px-4 text-left font-semibold text-gray-500 dark:text-neutral-400">Item</th>
+                        <th className="py-2 px-3 text-right font-semibold text-gray-500 dark:text-neutral-400">Qty</th>
+                        <th className="py-2 px-4 text-right font-semibold text-gray-500 dark:text-neutral-400">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50 dark:divide-neutral-800/60">
+                      {periodReport.topItems.map((p, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors">
+                          <td className="py-2.5 px-4">
+                            <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold ${
+                              idx === 0 ? "bg-orange-100 dark:bg-orange-500/20 text-orange-600" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-500"
+                            }`}>{idx + 1}</span>
+                          </td>
+                          <td className="py-2.5 px-4 font-semibold text-gray-900 dark:text-white max-w-[100px] truncate">{p.name}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">{p.quantity ?? 0}</span>
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-bold text-primary whitespace-nowrap">Rs {(p.revenue ?? 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 ) : (
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800" />
-                )}
-              </div>
-              <div className="space-y-3">
-                {salesTypeSegments.length > 0 ? salesTypeSegments.map(s => (
-                  <div key={s.label} className="flex items-center justify-between text-sm p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: s.color }} />
-                      <span className="font-semibold text-gray-700 dark:text-neutral-300">{s.label}</span>
-                    </div>
-                    <span className="font-bold text-gray-900 dark:text-white">{s.value}</span>
+                  <div className="flex flex-col items-center justify-center py-10">
+                    <Package className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-2" />
+                    <p className="text-xs text-gray-400 dark:text-neutral-600">No product data yet</p>
                   </div>
-                )) : (
-                  <p className="text-sm text-center text-gray-500 dark:text-neutral-400 py-4">No order data yet</p>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Products performance table - Premium design (filtered by report period: Yesterday / Today / Month) */}
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
-            <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
-              <div className="flex items-center gap-3 mb-1">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                  <Package className="w-5 h-5 text-white" />
+          {/* ─── Currency Counter ─────────────────────────────────────────── */}
+          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
+                  <Wallet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Products Performance</h3>
-                  <p className="text-xs text-gray-500 dark:text-neutral-400">
-                    {reportPeriod === "yesterday"
-                      ? "Items sold yesterday based on completed orders"
-                      : reportPeriod === "today"
-                        ? "Items sold today based on completed orders"
-                        : "Items sold this month based on completed orders"}
-                  </p>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Currency Counter</h3>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500">Count notes & coins — saved per day</p>
                 </div>
               </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
-                  <tr>
-                    <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Product Name</th>
-                    <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Category</th>
-                    <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Qty Sold</th>
-                    <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Revenue</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
-                  {(periodReport.topItems || []).length > 0 ? (
-                    periodReport.topItems.map((p, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
-                        <td className="py-4 px-6 font-bold text-gray-900 dark:text-white">{p.name}</td>
-                        <td className="py-4 px-6">
-                          <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs font-semibold">
-                            {p.category ?? "—"}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-right">
-                          <span className="inline-flex items-center justify-center min-w-[60px] px-3 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold">
-                            {p.quantity ?? 0}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-right font-bold text-primary text-base">Rs {(p.revenue ?? 0).toLocaleString()}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4} className="py-16 text-center">
-                        <div className="flex flex-col items-center">
-                          <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                            <Package className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-                          </div>
-                          <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">
-                            No sales data yet {reportPeriod === "yesterday" ? "yesterday" : reportPeriod === "today" ? "today" : "this month"}
-                          </p>
-                          <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Products will appear here once orders are completed</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Currency note counter - bottom section (saved per day; editable only for Today / Yesterday) */}
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all mt-6">
-            <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
-                    <DollarSign className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-gray-900 dark:text-white">Currency counter</h3>
-                    <p className="text-xs text-gray-500 dark:text-neutral-400">Enter quantity of each note to get total amount (Rs). Saved per day.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-gray-500 dark:text-neutral-400">Date:</span>
-                  <div className="inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setCurrencyDate("today")}
-                      className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "today" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
-                    >
-                      Today
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-0.5">
+                  {["today", "yesterday"].map((d) => (
+                    <button key={d} type="button" onClick={() => setCurrencyDate(d)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all capitalize ${currencyDate === d ? "bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 dark:text-neutral-400"}`}>
+                      {d === "today" ? "Today" : "Yesterday"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setCurrencyDate("yesterday")}
-                      className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "yesterday" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
-                    >
-                      Yesterday
-                    </button>
-                  </div>
-                  {currencyLoading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-                  {currencySaving && <span className="text-xs text-gray-500 dark:text-neutral-400">Saving…</span>}
-                  <button
-                    type="button"
-                    onClick={handleSaveCurrency}
-                    disabled={!isCurrencyEditable || currencySaving}
-                    className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {currencySaving ? "Saving…" : "Save"}
-                  </button>
+                  ))}
                 </div>
+                {currencyLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Total</span>
+                  <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Rs {currencyTotal.toLocaleString()}</span>
+                </div>
+                <button type="button" onClick={handleSaveCurrency} disabled={!isCurrencyEditable || currencySaving}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-md hover:shadow-primary/25 disabled:opacity-50 transition-all">
+                  {currencySaving ? <><Loader2 className="w-3 h-3 animate-spin" />Saving…</> : "Save"}
+                </button>
               </div>
             </div>
-            <div className="px-4 pb-4 pt-2">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs max-w-xl">
-                  <thead className="bg-gray-50 dark:bg-neutral-900/50">
-                    <tr>
-                      <th className="py-2 px-3 text-left font-bold text-gray-700 dark:text-neutral-300">Note (Rs)</th>
-                      <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Qty</th>
-                      <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Amount (Rs)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
-                    {CURRENCY_NOTES.map((note) => {
-                      const qty = Number(currencyQuantities[note]) || 0;
-                      const amount = qty * note;
-                      return (
-                        <tr key={note} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30">
-                          <td className="py-1.5 px-3 font-semibold text-gray-900 dark:text-white">{note.toLocaleString()}</td>
-                          <td className="py-1.5 px-3 text-right">
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={currencyQuantities[note]}
-                              onChange={(e) => setCurrencyQty(note, e.target.value.replace(/\D/g, ""))}
-                              placeholder="0"
-                              disabled={!isCurrencyEditable}
-                              readOnly={!isCurrencyEditable}
-                              className={`w-20 text-right px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary focus:border-primary ${isCurrencyEditable ? "bg-white dark:bg-neutral-900 text-gray-900 dark:text-white" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-500 cursor-not-allowed"}`}
-                            />
-                          </td>
-                          <td className="py-1.5 px-3 text-right font-semibold text-primary">
-                            Rs {amount.toLocaleString()}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-gray-100 dark:bg-neutral-800/50 border-t border-gray-200 dark:border-neutral-700">
-                    <tr>
-                      <td className="py-2 px-3 font-bold text-gray-900 dark:text-white" colSpan={2}>
-                        Total
-                      </td>
-                      <td className="py-2 px-3 text-right text-base font-bold text-primary">
-                        Rs {currencyTotal.toLocaleString()}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+            <div className="p-4">
+              <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-10 gap-2">
+                {CURRENCY_NOTES.map((note) => {
+                  const qty = Number(currencyQuantities[note]) || 0;
+                  const amount = qty * note;
+                  return (
+                    <div key={note} className={`rounded-xl border text-center p-2.5 transition-all ${qty > 0 ? "border-primary/30 bg-primary/5 dark:bg-primary/10" : "border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50"}`}>
+                      <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 mb-1.5">Rs {note.toLocaleString()}</p>
+                      <input
+                        type="number" min="0" step="1"
+                        value={currencyQuantities[note]}
+                        onChange={(e) => setCurrencyQty(note, e.target.value.replace(/\D/g, ""))}
+                        placeholder="0" disabled={!isCurrencyEditable}
+                        className={`w-full text-center text-sm font-bold rounded-lg px-1 py-1 border-0 outline-none focus:ring-2 focus:ring-primary/20 bg-transparent ${qty > 0 ? "text-primary" : "text-gray-900 dark:text-white"} ${!isCurrencyEditable ? "cursor-not-allowed opacity-50" : ""}`}
+                      />
+                      {amount > 0 && <p className="text-[9px] font-medium text-primary/70 mt-1">{(amount / 1000).toFixed(amount < 1000 ? 0 : 1)}{amount >= 1000 ? "k" : ""}</p>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
         </>
       )}
 
-      {/* Past Session History Modal */}
+      {/* Past Sessions Modal */}
       {showSessionHistoryModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setShowSessionHistoryModal(false); }}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowSessionHistoryModal(false); }}>
           <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
               <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Past Sessions</h2>
-                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
-                  {currentBranch ? `History for ${currentBranch.name}` : "All branches"} — legacy sessions before business day cutoff
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Past Sessions</h2>
+                <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                  {currentBranch ? `History for ${currentBranch.name}` : "All branches"}
                 </p>
               </div>
-              <button
-                onClick={() => setShowSessionHistoryModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors text-3xl leading-none"
-              >&times;</button>
+              <button onClick={() => setShowSessionHistoryModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {loadingSessionHistory ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
                 </div>
               ) : sessionHistory.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 dark:text-neutral-400 text-sm">No past sessions found</div>
+                <div className="text-center py-12 text-sm text-gray-400 dark:text-neutral-600">No past sessions found</div>
               ) : (
                 sessionHistory.map((s) => (
-                  <div key={s.id} className="p-4 rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900">
+                  <div key={s.id} className="p-4 rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/50 hover:bg-white dark:hover:bg-neutral-900 transition-colors">
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${s.status === "OPEN" ? "bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
-                          {s.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />}
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.status === "OPEN" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
+                          {s.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
                           {s.status}
                         </span>
                         {!currentBranch && s.branchName && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
                             {s.branchName}
                           </span>
                         )}
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex-shrink-0">
                         <div className="text-sm font-bold text-gray-900 dark:text-white">Rs {(s.totalSales || 0).toLocaleString()}</div>
-                        <div className="text-xs text-gray-500 dark:text-neutral-400">{s.totalOrders || 0} orders</div>
+                        <div className="text-[10px] text-gray-500 dark:text-neutral-400">{s.totalOrders || 0} orders</div>
                       </div>
                     </div>
-                    <div className="text-xs text-gray-600 dark:text-neutral-400 space-y-1">
-                      <div className="flex justify-between">
-                        <span className="font-medium">Started:</span>
-                        <span>{new Date(s.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
-                      </div>
-                      {s.endAt && (
-                        <div className="flex justify-between">
-                          <span className="font-medium">Ended:</span>
-                          <span>{new Date(s.endAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
-                        </div>
-                      )}
+                    <div className="grid grid-cols-2 gap-x-4 text-xs text-gray-500 dark:text-neutral-500">
+                      <div><span className="font-medium">Started: </span>{new Date(s.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</div>
+                      {s.endAt && <div><span className="font-medium">Ended: </span>{new Date(s.endAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</div>}
                     </div>
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* End Day Confirmation Modal */}
+      {showEndDayModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget && !endingDay) setShowEndDayModal(false); }}>
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-sm overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-500/15 flex items-center justify-center flex-shrink-0">
+                  <Power className="w-4 h-4 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">End Business Day</h2>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">This action cannot be undone</p>
+                </div>
+              </div>
+              <button onClick={() => { if (!endingDay) setShowEndDayModal(false); }}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Session summary */}
+            <div className="px-5 py-4">
+              {loadingSession ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                </div>
+              ) : currentSession ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 dark:text-neutral-400">
+                    Are you sure you want to end today&apos;s session? Here&apos;s the current summary:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">Revenue</p>
+                      <p className="text-base font-bold text-gray-900 dark:text-white">Rs {(currentSession.totalSales || 0).toLocaleString()}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">Orders</p>
+                      <p className="text-base font-bold text-gray-900 dark:text-white">{currentSession.totalOrders || 0}</p>
+                    </div>
+                  </div>
+                  {currentSession.startAt && (
+                    <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                      Session started {new Date(currentSession.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
+                  Are you sure you want to end the current business day? All open orders will remain, but new orders will start a new session.
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2.5 px-5 pb-5">
+              <button
+                type="button"
+                onClick={() => { if (!endingDay) setShowEndDayModal(false); }}
+                disabled={endingDay}
+                className="flex-1 h-9 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleEndDay}
+                disabled={endingDay}
+                className="flex-1 h-9 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {endingDay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+                {endingDay ? "Ending…" : "End Now"}
+              </button>
             </div>
           </div>
         </div>

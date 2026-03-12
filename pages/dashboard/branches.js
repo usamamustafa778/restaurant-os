@@ -507,7 +507,7 @@ export default function BranchesPage() {
                         )}
                         <div className="flex items-center gap-1 mb-3">
                           <Clock className="w-3 h-3 text-gray-400" />
-                          <span className="text-[11px] text-gray-400 dark:text-neutral-500">Day cutoff: {formatCutoff(branch.businessDayCutoffHour ?? 4)}</span>
+                          <span className="text-[11px] text-gray-400 dark:text-neutral-500">Resets at {formatCutoff(branch.businessDayCutoffHour ?? 4)}</span>
                         </div>
                         <div className="flex gap-2 pt-1 border-t border-gray-100 dark:border-neutral-800">
                           {!isActive && (
@@ -661,7 +661,7 @@ export default function BranchesPage() {
                 </div>
               ))}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Business Day Cutoff</label>
+                <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Day resets at</label>
                 <select value={branchForm.businessDayCutoffHour} onChange={e => setBranchForm(p => ({ ...p, businessDayCutoffHour: parseInt(e.target.value, 10) }))} className={inp}>
                   {Array.from({ length: 24 }, (_, h) => (
                     <option key={h} value={h}>
@@ -670,7 +670,7 @@ export default function BranchesPage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-[11px] text-gray-400 dark:text-neutral-500">Orders before this time count as the previous business day.</p>
+                <p className="text-[11px] text-gray-400 dark:text-neutral-500">A new business day begins at this time. Orders placed before it still count toward the previous day&apos;s report.</p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => { resetBranchForm(); setBranchModalOpen(false); }} disabled={branchSaving}
