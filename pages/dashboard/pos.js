@@ -25,6 +25,7 @@ import {
   getTables,
   getCustomers,
   createCustomer,
+  updateCustomer,
   getBranch,
   updateBranch,
   getRestaurantSettings,
@@ -62,6 +63,7 @@ import {
   Sparkles,
   Settings,
   HelpCircle,
+  Edit3,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -185,6 +187,9 @@ export default function POSPage() {
   const [customerAddForm, setCustomerAddForm] = useState({ name: "", phone: "", address: "", notes: "" });
   const [quickCustomerName, setQuickCustomerName] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState(null);
+  const [editCustomerForm, setEditCustomerForm] = useState({ name: "", phone: "" });
+  const [savingCustomer, setSavingCustomer] = useState(false);
 
   // Restaurant logo (shared across branches, used in printed bills)
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
@@ -430,6 +435,7 @@ export default function POSPage() {
   function closeCustomerModal() {
     setShowCustomerModal(false);
     setCustomerModalError("");
+    setEditingCustomerId(null);
   }
 
   function selectCustomerForOrder(customer) {
@@ -3634,20 +3640,82 @@ export default function POSPage() {
                           <ul className="space-y-1">
                             {filtered.map((c) => (
                               <li key={c.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => selectCustomerForOrder(c)}
-                                  className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800/50 text-sm"
-                                >
-                                  <span className="font-medium text-gray-900 dark:text-white">
-                                    {c.name}
-                                  </span>
-                                  {c.phone && (
-                                    <span className="text-gray-500 dark:text-neutral-400 ml-2">
-                                      {c.phone}
-                                    </span>
-                                  )}
-                                </button>
+                                {editingCustomerId === c.id ? (
+                                  <div className="px-3 py-2.5 rounded-lg border border-primary/50 bg-primary/5 dark:bg-primary/10 space-y-2">
+                                    <input
+                                      type="text"
+                                      value={editCustomerForm.name}
+                                      onChange={(e) => setEditCustomerForm((prev) => ({ ...prev, name: e.target.value }))}
+                                      placeholder="Name"
+                                      className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={editCustomerForm.phone}
+                                      onChange={(e) => setEditCustomerForm((prev) => ({ ...prev, phone: e.target.value }))}
+                                      placeholder="Phone"
+                                      className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                                    />
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={savingCustomer}
+                                        onClick={async () => {
+                                          if (!editCustomerForm.name.trim()) return;
+                                          setSavingCustomer(true);
+                                          try {
+                                            const updated = await updateCustomer(c.id, { name: editCustomerForm.name, phone: editCustomerForm.phone });
+                                            setCustomersList((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...updated } : x)));
+                                            setEditingCustomerId(null);
+                                            toast.success("Customer updated");
+                                          } catch (err) {
+                                            toast.error(err.message || "Failed to update customer");
+                                          } finally {
+                                            setSavingCustomer(false);
+                                          }
+                                        }}
+                                        className="flex-1 px-3 py-1.5 rounded-md bg-primary text-white text-xs font-semibold disabled:opacity-50"
+                                      >
+                                        {savingCustomer ? "Saving…" : "Save"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingCustomerId(null)}
+                                        className="px-3 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 text-xs text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="group relative flex items-center px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800/50">
+                                    <button
+                                      type="button"
+                                      onClick={() => selectCustomerForOrder(c)}
+                                      className="flex-1 text-left text-sm"
+                                    >
+                                      <span className="font-medium text-gray-900 dark:text-white">
+                                        {c.name}
+                                      </span>
+                                      {c.phone && (
+                                        <span className="text-gray-500 dark:text-neutral-400 ml-2">
+                                          {c.phone}
+                                        </span>
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCustomerId(c.id);
+                                        setEditCustomerForm({ name: c.name || "", phone: c.phone || "" });
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-gray-400 hover:text-primary transition-all flex-shrink-0"
+                                      title="Edit customer"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
                               </li>
                             ))}
                           </ul>

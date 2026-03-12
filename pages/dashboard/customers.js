@@ -12,6 +12,7 @@ import {
 import { UserPlus, Trash2, Edit3, User, Phone, Mail, MapPin, UserCheck, Loader2, Users } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
+import DataTable from "../../components/ui/DataTable";
 import toast from "react-hot-toast";
 
 export default function CustomersPage() {
@@ -124,17 +125,15 @@ export default function CustomersPage() {
     <AdminLayout title="Customers" suspended={suspended}>
       {/* Search and Add Button */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
-        <div className="flex-1">
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, phone or email..."
-            className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-          />
-        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, phone or email..."
+          className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+        />
         {currentBranch && (
-          <label className="inline-flex items-center gap-2.5 px-4 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 cursor-pointer hover:border-primary/30 transition-all whitespace-nowrap">
+          <label className="inline-flex items-center gap-2.5 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 cursor-pointer hover:border-primary/30 transition-all whitespace-nowrap flex-shrink-0">
             <input
               type="checkbox"
               checked={allBranches}
@@ -148,7 +147,7 @@ export default function CustomersPage() {
           type="button"
           onClick={() => { resetForm(); setModalError(""); setIsModalOpen(true); }}
           disabled={!canCreate}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none whitespace-nowrap flex-shrink-0"
           title={!canCreate ? "Select a branch to add customers" : ""}
         >
           <UserPlus className="w-4 h-4" />
@@ -192,85 +191,96 @@ export default function CustomersPage() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
-                <tr>
-                  <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Customer</th>
-                  <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Contact</th>
-                  <th className="py-4 px-6 text-center font-bold text-gray-700 dark:text-neutral-300">Orders</th>
-                  <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Total Spent</th>
-                  <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
-                {filtered.map(c => (
-                  <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg">
-                          {c.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-bold text-gray-900 dark:text-white">{c.name}</div>
-                          {c.address && (
-                            <div className="text-xs text-gray-500 dark:text-neutral-500 flex items-center gap-1 mt-0.5">
-                              <MapPin className="w-3 h-3" />
-                              {c.address}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-gray-700 dark:text-neutral-300">
-                          <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="font-medium">{c.phone}</span>
-                        </div>
-                        {c.email && (
-                          <div className="flex items-center gap-1.5 text-gray-500 dark:text-neutral-400 text-xs">
-                            <Mail className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{c.email}</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      <span className="inline-flex items-center justify-center min-w-[50px] px-3 py-1.5 rounded-lg bg-primary/10 text-primary font-bold">
-                        {c.totalOrders ?? 0}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <span className="text-base font-bold text-primary">
-                        Rs {(c.totalSpent ?? 0).toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <button 
-                          type="button" 
-                          onClick={() => startEdit(c)} 
-                          className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors" 
-                          title="Edit"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button 
-                          type="button" 
-                          onClick={() => handleDelete(c.id)} 
-                          className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors" 
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            rows={filtered}
+            emptyMessage="No customers found."
+            columns={[
+              {
+                key: "name",
+                header: "Customer",
+                render: (val) => (
+                  <span className="font-semibold text-gray-900 dark:text-white">{val}</span>
+                ),
+              },
+              {
+                key: "phone",
+                header: "Phone",
+                render: (val) => (
+                  <div className="flex items-center gap-1.5 text-gray-700 dark:text-neutral-300">
+                    <Phone className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="font-medium">{val}</span>
+                  </div>
+                ),
+              },
+              {
+                key: "email",
+                header: "Email",
+                hideOnMobile: true,
+                render: (val) => val ? (
+                  <div className="flex items-center gap-1.5 text-gray-600 dark:text-neutral-400">
+                    <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span>{val}</span>
+                  </div>
+                ) : <span className="text-gray-300 dark:text-neutral-600">—</span>,
+              },
+              {
+                key: "totalOrders",
+                header: "Orders",
+                align: "center",
+                render: (val) => (
+                  <span className="inline-flex items-center justify-center min-w-[40px] px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold">
+                    {val ?? 0}
+                  </span>
+                ),
+              },
+              {
+                key: "totalSpent",
+                header: "Total Spent",
+                align: "right",
+                render: (val) => (
+                  <span className="font-semibold text-primary">
+                    Rs {(val ?? 0).toLocaleString()}
+                  </span>
+                ),
+              },
+              {
+                key: "address",
+                header: "Address",
+                hideOnTablet: true,
+                render: (val) => val ? (
+                  <div className="flex items-center gap-1 text-gray-600 dark:text-neutral-400">
+                    <MapPin className="w-3 h-3 flex-shrink-0 text-gray-400" />
+                    <span>{val}</span>
+                  </div>
+                ) : <span className="text-gray-300 dark:text-neutral-600">—</span>,
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                align: "right",
+                render: (_, c) => (
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(c)}
+                      className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors"
+                      title="Edit"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(c.id)}
+                      className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         )}
       </div>
 

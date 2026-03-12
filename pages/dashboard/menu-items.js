@@ -598,21 +598,19 @@ export default function MenuItemsPage() {
 
       {/* Search, View Toggle and Add Button – always visible */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
-        <div className="flex-1">
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, category or price..."
-            className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-          />
-        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, category or price..."
+          className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+        />
         <ViewToggle viewMode={viewMode} onChange={setViewMode} />
         {currentBranch?.id && (
           <button
             type="button"
             onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
-            className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-primary text-primary font-semibold hover:bg-primary/10 transition-all whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl border-2 border-primary text-primary text-sm font-semibold hover:bg-primary/10 transition-all whitespace-nowrap flex-shrink-0"
           >
             <Copy className="w-4 h-4" />
             Copy Item
@@ -621,7 +619,7 @@ export default function MenuItemsPage() {
         <button
           type="button"
           onClick={startCreate}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
           Add New Item
@@ -882,30 +880,34 @@ export default function MenuItemsPage() {
               render: (_, item) => {
                 const isDeleting = deletingId === item.id;
                 return (
-                  <div className="inline-flex items-center gap-2">
+                  <div className="inline-flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => openRecipeDialog(item)}
                       disabled={isDeleting}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                      className="px-2 py-1 rounded-lg text-xs font-semibold text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center gap-1"
+                      title="Recipe"
                     >
-                      Recipe
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Recipe</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => startEdit(item)}
                       disabled={isDeleting}
-                      className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                      className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors disabled:opacity-50"
+                      title="Edit"
                     >
-                      <Edit2 className="w-4 h-4" />
+                      <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(item.id)}
                       disabled={isDeleting}
-                      className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                      className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                      title="Delete"
                     >
-                      {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 );

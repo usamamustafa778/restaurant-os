@@ -4,6 +4,7 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import { getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
 import { Filter, BarChart3, DollarSign, ShoppingBag, TrendingUp, Calendar, HelpCircle, Loader2 } from "lucide-react";
+import DataTable from "../../components/ui/DataTable";
 import toast from "react-hot-toast";
 
 export default function HistoryPage() {
@@ -111,10 +112,8 @@ export default function HistoryPage() {
             <input
               type="date"
               value={filters.from}
-              onChange={e =>
-                setFilters(prev => ({ ...prev, from: e.target.value }))
-              }
-              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+              onChange={e => setFilters(prev => ({ ...prev, from: e.target.value }))}
+              className="w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
             />
           </div>
 
@@ -123,16 +122,14 @@ export default function HistoryPage() {
             <input
               type="date"
               value={filters.to}
-              onChange={e =>
-                setFilters(prev => ({ ...prev, to: e.target.value }))
-              }
-              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+              onChange={e => setFilters(prev => ({ ...prev, to: e.target.value }))}
+              className="w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
             />
           </div>
 
-          <button 
-            type="submit" 
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+          <button
+            type="submit"
+            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
           >
             <Filter className="w-4 h-4" />
             Apply Filter
@@ -140,7 +137,7 @@ export default function HistoryPage() {
           <button
             type="button"
             onClick={handleResetFilters}
-            className="px-5 py-3 rounded-xl text-sm font-bold text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+            className="h-10 px-5 rounded-xl text-sm font-bold text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors whitespace-nowrap"
           >
             Reset
           </button>
@@ -210,55 +207,44 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
-              <tr>
-                <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Item</th>
-                <th className="py-4 px-6 text-center font-bold text-gray-700 dark:text-neutral-300">Quantity Sold</th>
-                <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Revenue</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
-              {report.topItems.map((item, index) => (
-                <tr key={item.menuItemId} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white font-bold shadow-lg">
-                        #{index + 1}
-                      </div>
-                      <div className="font-bold text-gray-900 dark:text-white">{item.name}</div>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6 text-center">
-                    <span className="inline-flex items-center justify-center min-w-[60px] px-3 py-1.5 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 font-bold">
-                      {item.quantity}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <span className="text-base font-bold text-primary">
-                      Rs {item.revenue?.toFixed ? item.revenue.toFixed(0).toLocaleString() : item.revenue}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-
-              {report.topItems.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                        <BarChart3 className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-                      </div>
-                      <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No sales data for this range</p>
-                      <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Try selecting a different date range</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
+        <DataTable
+          rows={report.topItems.map((item, index) => ({ ...item, _rank: index + 1 }))}
+          emptyMessage="No sales data for this range. Try selecting a different date range."
+          columns={[
+            {
+              key: "name",
+              header: "Item",
+              render: (val, item) => (
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold shadow-md flex-shrink-0">
+                    #{item._rank}
+                  </div>
+                  <span className="font-semibold text-gray-900 dark:text-white">{val}</span>
+                </div>
+              ),
+            },
+            {
+              key: "quantity",
+              header: "Qty Sold",
+              align: "center",
+              render: (val) => (
+                <span className="inline-flex items-center justify-center min-w-[48px] px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-sm font-bold">
+                  {val}
+                </span>
+              ),
+            },
+            {
+              key: "revenue",
+              header: "Revenue",
+              align: "right",
+              render: (val) => (
+                <span className="font-bold text-primary">
+                  Rs {val?.toFixed ? Number(val.toFixed(0)).toLocaleString() : val}
+                </span>
+              ),
+            },
+          ]}
+        />
         </div>
         </>
       )}

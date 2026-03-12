@@ -16,7 +16,7 @@ export default function DataTable({
             {columns.map(col => (
               <th
                 key={col.key || col.header}
-                className={`px-6 py-4 text-xs font-semibold text-gray-600 dark:text-neutral-400 uppercase tracking-wider ${
+                className={`px-4 py-2.5 text-xs font-semibold text-gray-600 dark:text-neutral-400 uppercase tracking-wider ${
                   col.align === "right"
                     ? "text-right"
                     : col.align === "center"
@@ -54,7 +54,7 @@ export default function DataTable({
                 return (
                   <td
                     key={col.key || col.header}
-                    className={`px-6 py-4 text-sm ${
+                    className={`px-4 py-2.5 text-sm ${
                       col.align === "right"
                         ? "text-right"
                         : col.align === "center"

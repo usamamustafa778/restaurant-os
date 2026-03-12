@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
@@ -61,6 +62,7 @@ export default function UsersPage() {
   const [viewMode, setViewMode] = useState("card"); // "card" | "table"
   const [showPassword, setShowPassword] = useState(false);
   const { confirm } = useConfirmDialog();
+  const router = useRouter();
 
   const branches = branchList?.length ? branchList : [];
 
@@ -149,32 +151,32 @@ export default function UsersPage() {
   });
 
   return (
-    <AdminLayout title="User Management" suspended={suspended}>
-      {/* Search, view toggle & add button – consistent header layout */}
+    <AdminLayout title="Staff Management" suspended={suspended}>
+      {/* Search, view toggle & add button */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, email or role..."
-          className="flex-1 w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+          className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
         />
-        <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
+        <div className="inline-flex h-10 rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden flex-shrink-0">
           <button
             type="button"
             onClick={() => setViewMode("card")}
-            className={`px-4 py-2.5 transition-all ${viewMode === "card" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
+            className={`px-3.5 flex items-center transition-all ${viewMode === "card" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
             title="Card view"
           >
-            <LayoutGrid className="w-5 h-5" />
+            <LayoutGrid className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={() => setViewMode("table")}
-            className={`px-4 py-2.5 transition-all ${viewMode === "table" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
+            className={`px-3.5 flex items-center transition-all ${viewMode === "table" ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}
             title="Table view"
           >
-            <List className="w-5 h-5" />
+            <List className="w-4 h-4" />
           </button>
         </div>
         <button
@@ -184,7 +186,7 @@ export default function UsersPage() {
             setModalError("");
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
         >
           <UserPlus className="w-4 h-4" />
           Add Team Member
@@ -305,91 +307,88 @@ export default function UsersPage() {
         />
       ) : (
         /* ════════════ CARD VIEW ════════════ */
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
-          {filtered.map((user, idx) => {
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+          {filtered.map((user) => {
             const isOwner = user.role === "restaurant_admin";
+            const canEdit = !isOwner;
+            const canDelete = !isOwner && (!isManager || String(user.id) !== String(currentUserId));
+            const initials = getInitials(user.name);
             return (
               <div
                 key={user.id}
-                className="relative group w-full rounded-2xl overflow-hidden bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col"
+                className="group relative flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 hover:border-primary/30 dark:hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all duration-200"
               >
-                {/* Top section */}
-                <div className="relative bg-primary h-28 overflow-hidden flex-shrink-0">
-                  <svg className="absolute -top-6 -right-6 w-24 h-24 text-secondary opacity-60" viewBox="0 0 100 100" fill="currentColor"><circle cx="50" cy="50" r="50" /></svg>
-                  <svg className="absolute -bottom-8 -left-4 w-20 h-20 text-secondary opacity-40" viewBox="0 0 100 100" fill="currentColor"><circle cx="50" cy="50" r="50" /></svg>
-                  <svg className="absolute top-4 left-1/2 w-10 h-10 text-white opacity-5" viewBox="0 0 100 100" fill="currentColor"><circle cx="50" cy="50" r="50" /></svg>
-                  <div className="relative z-10 px-4 pt-3">
-                    <p className="text-[11px] font-bold text-white/90 tracking-wide uppercase">ID Card</p>
-                    <p className="text-[10px] text-white/60 mt-0.5">Team Member</p>
-                  </div>
-                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {!isOwner && (
-                      <button type="button" onClick={() => startEdit(user)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-white/25 transition-colors" title="Edit"><Edit3 className="w-3 h-3" /></button>
-                    )}
-                    {!isOwner && (!isManager || String(user.id) !== String(currentUserId)) && (
-                      <button type="button" onClick={() => handleDelete(user.id)} className="p-1.5 rounded-lg bg-white/15 backdrop-blur-sm text-white hover:bg-red-500/80 transition-colors" title="Delete"><Trash2 className="w-3 h-3" /></button>
-                    )}
-                  </div>
-                </div>
-
                 {/* Avatar */}
-                <div className="flex justify-center -mt-12 relative z-10">
-                  <div className="rounded-full p-1 bg-white dark:bg-neutral-950 shadow-lg">
-                    {user.profileImageUrl ? (
-                      <img src={user.profileImageUrl} alt={user.name} className="w-20 h-20 rounded-full object-cover border-[3px] border-secondary" />
-                    ) : (
-                      <div className="w-20 h-20 rounded-full border-[3px] border-secondary bg-bg-secondary dark:bg-neutral-900 flex items-center justify-center">
-                        <User className="w-9 h-9 text-primary/40 dark:text-neutral-600" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Body */}
-                <div className="px-4 pt-2 pb-5 text-center flex-1 flex flex-col">
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white leading-tight truncate">{user.name}</h3>
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 dark:bg-primary/20">
-                    <Briefcase className="w-3 h-3 text-primary dark:text-secondary" />
-                    <span className="text-[11px] font-semibold text-primary dark:text-secondary">{getRoleLabel(user.role)}</span>
-                  </div>
-                  <div className="mt-4 space-y-2.5 text-left">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">Email</span>
-                      <span className="text-xs text-gray-800 dark:text-neutral-300 truncate">{user.email}</span>
+                <div className="flex-shrink-0">
+                  {user.profileImageUrl ? (
+                    <img
+                      src={user.profileImageUrl}
+                      alt={user.name}
+                      className="w-14 h-14 rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                      <span className="text-lg font-bold text-white leading-none">{initials}</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">Role</span>
-                      <span className="text-xs text-gray-800 dark:text-neutral-300">{getRoleLabel(user.role)}</span>
-                    </div>
-                    {(user.branches || []).length > 0 && (
-                      <div className="flex items-center gap-3">
-                        <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">Branches</span>
-                        <span className="text-xs text-gray-800 dark:text-neutral-300">
-                          {(user.branches || []).map(b => b.branchName).join(", ")}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">ID No</span>
-                      <span className="text-xs text-gray-800 dark:text-neutral-300 font-mono">{String(idx + 1).padStart(5, "0")}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-500 uppercase tracking-wider w-12 flex-shrink-0">Joined</span>
-                      <span className="text-xs text-gray-800 dark:text-neutral-300">{new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer - pinned to bottom of card */}
-                <div className="bg-primary px-4 py-2 flex items-center justify-between mt-auto flex-shrink-0">
-                  <div className="flex items-center gap-1.5">
-                    <Mail className="w-3 h-3 text-white/60" />
-                    <span className="text-[10px] text-white/80 truncate max-w-[140px]">{user.email}</span>
-                  </div>
-                  {isOwner && (
-                    <span className="text-[9px] font-bold text-white/90 uppercase tracking-widest bg-white/15 px-2 py-0.5 rounded-full">Owner</span>
                   )}
                 </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate leading-tight">{user.name}</h3>
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => router.push("/profile")}
+                        className="flex-shrink-0 text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/30 transition-colors cursor-pointer"
+                        title="View profile"
+                      >
+                        Owner
+                      </button>
+                    )}
+                  </div>
+                  <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-primary/10 dark:bg-primary/20 text-[10px] font-semibold text-primary dark:text-secondary">
+                    <Briefcase className="w-2.5 h-2.5" />
+                    {getRoleLabel(user.role)}
+                  </span>
+                  <p className="mt-1.5 text-[11px] text-gray-500 dark:text-neutral-400 truncate flex items-center gap-1">
+                    <Mail className="w-3 h-3 flex-shrink-0" />
+                    {user.email}
+                  </p>
+                  {(user.branches || []).length > 0 && (
+                    <p className="mt-1 text-[11px] text-gray-400 dark:text-neutral-500 truncate flex items-center gap-1">
+                      <MapPin className="w-3 h-3 flex-shrink-0" />
+                      {(user.branches || []).map(b => b.branchName).join(", ")}
+                    </p>
+                  )}
+                </div>
+
+                {/* Hover actions */}
+                {(canEdit || canDelete) && (
+                  <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => startEdit(user)}
+                        className="p-1.5 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:text-primary dark:hover:text-secondary hover:border-primary/30 transition-colors shadow-sm"
+                        title="Edit"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(user.id)}
+                        className="p-1.5 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:text-red-500 hover:border-red-200 dark:hover:border-red-500/30 transition-colors shadow-sm"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

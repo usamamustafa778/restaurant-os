@@ -4,6 +4,9 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
 import Button from "../../components/ui/Button";
+import DataTable from "../../components/ui/DataTable";
+import ViewToggle from "../../components/ui/ViewToggle";
+import { useViewMode } from "../../hooks/useViewMode";
 import {
   getOrders,
   getNextStatuses,
@@ -90,6 +93,7 @@ export default function OrdersPage() {
 
   const role = getStoredAuth()?.user?.role;
   const isOrderTaker = role === "order_taker";
+  const { viewMode, setViewMode } = useViewMode("grid");
 
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
@@ -274,21 +278,19 @@ export default function OrdersPage() {
 
   return (
     <AdminLayout title="All Orders" suspended={suspended}>
-      {/* Filters Bar - search left, controls right (no extra card border) */}
+      {/* Filters Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
-        <div className="flex-1">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by order ID, customer, phone..."
-            className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-          />
-        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by order ID, customer, phone..."
+          className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+        />
         <select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
-          className="px-4 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap"
+          className="h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap flex-shrink-0"
         >
           <option value="All Sources">All Sources</option>
           <option value="POS">POS</option>
@@ -298,24 +300,21 @@ export default function OrdersPage() {
         <select
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
-          className="px-4 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap"
+          className="h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap flex-shrink-0"
         >
           <option>Newest First</option>
           <option>Oldest First</option>
         </select>
+        <ViewToggle viewMode={viewMode} onChange={setViewMode} />
         <button
           type="button"
           onClick={() => {
             const toastId = toast.loading("Refreshing orders...");
             loadOrders()
-              .then(() => {
-                toast.success("Orders refreshed!", { id: toastId });
-              })
-              .catch(() => {
-                toast.dismiss(toastId);
-              });
+              .then(() => { toast.success("Orders refreshed!", { id: toastId }); })
+              .catch(() => { toast.dismiss(toastId); });
           }}
-          className="px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+          className="h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
         >
           Refresh
         </button>
@@ -345,21 +344,155 @@ export default function OrdersPage() {
         })}
       </div>
 
-      {/* Order cards grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {pageLoading ? (
-          <div className="col-span-full flex flex-col items-center justify-center min-h-[280px] py-12">
-            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-3">
-              <ShoppingBag className="w-8 h-8 text-primary animate-pulse" />
-            </div>
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
-                Loading orders...
-              </p>
-            </div>
+      {/* Loading state */}
+      {pageLoading && (
+        <div className="flex flex-col items-center justify-center min-h-[280px] py-12">
+          <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-3">
+            <ShoppingBag className="w-8 h-8 text-primary animate-pulse" />
           </div>
-        ) : (
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">Loading orders...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Table view */}
+      {!pageLoading && viewMode === "table" && (
+        <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+          <DataTable
+            rows={filtered}
+            emptyMessage="No orders found. Try adjusting your filters."
+            columns={[
+              {
+                key: "id",
+                header: "Order",
+                render: (_, order) => (
+                  <span className="font-semibold text-gray-900 dark:text-white">#{getDisplayOrderId(order)}</span>
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (_, order) => <StatusBadge status={order.status} />,
+              },
+              {
+                key: "customerName",
+                header: "Customer",
+                render: (_, order) => (
+                  <span className="font-medium text-gray-900 dark:text-white text-sm">
+                    {(order.customerName || "").trim() || (order.source === "FOODPANDA" ? "Foodpanda Customer" : "N/A")}
+                  </span>
+                ),
+              },
+              {
+                key: "customerPhone",
+                header: "Phone",
+                hideOnMobile: true,
+                render: (val) => (
+                  <span className="text-sm text-gray-600 dark:text-neutral-400">{val || "—"}</span>
+                ),
+              },
+              {
+                key: "type",
+                header: "Type",
+                hideOnMobile: true,
+                render: (_, order) => (
+                  <div className="text-sm text-gray-600 dark:text-neutral-400 capitalize">
+                    {order.tableName ? (
+                      <span className="flex items-center gap-1"><UtensilsCrossed className="w-3.5 h-3.5" />{order.tableName}</span>
+                    ) : order.deliveryAddress ? (
+                      <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />Delivery</span>
+                    ) : (
+                      order.type || "—"
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: "createdAt",
+                header: "Date & Time",
+                hideOnTablet: true,
+                render: (val) => {
+                  const d = new Date(val);
+                  return (
+                    <span className="text-sm text-gray-600 dark:text-neutral-400 whitespace-nowrap">
+                      {d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })}{" "}
+                      {d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "paymentMethod",
+                header: "Payment",
+                hideOnMobile: true,
+                render: (val) => (
+                  <span className="text-sm text-gray-600 dark:text-neutral-400">{val || "—"}</span>
+                ),
+              },
+              {
+                key: "total",
+                header: "Total",
+                align: "right",
+                render: (val) => (
+                  <span className="font-semibold text-primary">Rs {Number(val).toFixed(2)}</span>
+                ),
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                align: "right",
+                render: (_, order) => {
+                  const isUpdating = updatingId === order.id || updatingId === order._id;
+                  const nextStatuses = getNextStatuses(order.status);
+                  const primaryNext = nextStatuses[0];
+                  const NEXT_LABELS = { PROCESSING: "Processing", READY: "Ready", DELIVERED: "Delivered" };
+                  return (
+                    <div className="inline-flex items-center gap-1">
+                      {order.status !== "CANCELLED" && order.status !== "DELIVERED" && order.status !== "COMPLETED" && !isOrderTaker && (
+                        <button type="button" disabled={isUpdating} onClick={() => openCancelModal(order)}
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors disabled:opacity-50" title="Cancel">
+                          <XCircle className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {!isOrderPaidOrNonEditable(order) && !isOrderTaker && (
+                        <button type="button" onClick={() => router.push(`/pos?edit=${order.id || order._id}`)}
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary transition-colors" title="Edit">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {order.status !== "CANCELLED" && !isOrderTaker && (
+                        <button type="button" onClick={() => openPrintBill(order, order.status === "DELIVERED" || order.status === "COMPLETED" ? "receipt" : "bill")}
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary transition-colors" title="Print">
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {order.status !== "CANCELLED" && !isOrderPaidOrNonEditable(order) && !isOrderTaker && (
+                        <button type="button" onClick={() => openPaymentModal(order)}
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 transition-colors" title="Take payment">
+                          <Banknote className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {primaryNext && !isOrderTaker && (
+                        <button type="button" disabled={isUpdating}
+                          onClick={() => handleUpdateStatus(order.id || order._id, primaryNext)}
+                          className="px-2.5 py-1 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 whitespace-nowrap">
+                          {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (NEXT_LABELS[primaryNext] || primaryNext)}
+                        </button>
+                      )}
+                    </div>
+                  );
+                },
+              },
+            ]}
+          />
+        </div>
+      )}
+
+      {/* Order cards grid */}
+      {!pageLoading && viewMode === "grid" && (
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <>
         {filtered.map(order => {
           const nextStatuses = getNextStatuses(order.status);
@@ -619,14 +752,12 @@ export default function OrdersPage() {
               <CircleDot className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
             </div>
             <p className="text-sm font-medium text-gray-600 dark:text-neutral-400">No orders found</p>
-            <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
-              Try adjusting your filters
-            </p>
+            <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Try adjusting your filters</p>
           </div>
         )}
         </>
-        )}
       </div>
+      )}
 
       {/* Take payment modal */}
       {showPaymentModal && paymentOrder && (

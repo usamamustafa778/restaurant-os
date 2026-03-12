@@ -118,7 +118,7 @@ const tenantNav = [
   { type: "section", label: "ADMINISTRATION" },
   {
     path: "/users",
-    label: "Users",
+    label: "Staff Management",
     icon: Users,
     roles: ["restaurant_admin", "admin", "manager"],
   },

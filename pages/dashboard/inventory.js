@@ -3,6 +3,7 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import { Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown, AlertTriangle, Copy, X, Loader2 } from "lucide-react";
+import DataTable from "../../components/ui/DataTable";
 import { getInventory, createInventoryItem, updateInventoryItem, deleteInventoryItem, getStoredAuth, getSourceBranchInventory, copyInventoryFromBranch, SubscriptionInactiveError } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -420,20 +421,18 @@ export default function InventoryPage() {
 
           {/* Search and Add Button */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
-            <div className="flex-1">
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search inventory items..."
-                className="w-full px-5 py-3.5 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-              />
-            </div>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search inventory items..."
+              className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+            />
             {currentBranch?.id && (
               <button
                 type="button"
                 onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-primary text-primary font-semibold hover:bg-primary/10 transition-all whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl border-2 border-primary text-primary text-sm font-semibold hover:bg-primary/10 transition-all whitespace-nowrap flex-shrink-0"
               >
                 <Copy className="w-4 h-4" />
                 Copy Inventory
@@ -442,7 +441,7 @@ export default function InventoryPage() {
             <button
               type="button"
               onClick={startCreateItem}
-              className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+              className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
             >
               <Plus className="w-4 h-4" />
               Add Item
@@ -495,107 +494,114 @@ export default function InventoryPage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
-                    <tr>
-                      <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Item</th>
-                      <th className="py-4 px-6 text-center font-bold text-gray-700 dark:text-neutral-300">Current Stock</th>
-                      <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Cost Price</th>
-                      <th className="py-4 px-6 text-center font-bold text-gray-700 dark:text-neutral-300">Low Stock Alert</th>
-                      <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
-                    {filtered.map(item => {
+              <DataTable
+                rows={filtered}
+                emptyMessage="No inventory items found."
+                columns={[
+                  {
+                    key: "name",
+                    header: "Item",
+                    render: (_, item) => {
                       const isLowStock = item.currentStock <= (item.lowStockThreshold || 0);
                       return (
-                        <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-3">
-                              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shadow-lg ${
-                                isLowStock 
-                                  ? 'bg-gradient-to-br from-orange-500 to-orange-600' 
-                                  : 'bg-gradient-to-br from-primary to-secondary'
-                              }`}>
-                                <Package className="w-5 h-5 text-white" />
-                              </div>
-                              <div>
-                                <div className="font-bold text-gray-900 dark:text-white">{item.name}</div>
-                                <div className="text-xs text-gray-500 dark:text-neutral-500">
-                                  Unit: {item.unit}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-4 px-6 text-center">
-                            <span className={`inline-flex items-center justify-center min-w-[80px] px-3 py-1.5 rounded-lg font-bold ${
-                              isLowStock
-                                ? 'bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400'
-                                : 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-                            }`}>
-                              {item.currentStock} {item.unit}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6 text-right">
-                            {item.costPrice > 0 ? (
-                              <div>
-                                <span className="text-base font-bold text-primary">Rs {item.costPrice.toLocaleString()}</span>
-                                <div className="text-xs text-gray-500 dark:text-neutral-500">{costPriceLabel(item.unit)}</div>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400 dark:text-neutral-500 text-sm">Not set</span>
+                        <div>
+                          <div className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                            {item.name}
+                            {isLowStock && (
+                              <AlertTriangle className="w-3.5 h-3.5 text-orange-500 flex-shrink-0" />
                             )}
-                          </td>
-                          <td className="py-4 px-6 text-center">
-                            <span className="text-sm text-gray-600 dark:text-neutral-400">
-                              {item.lowStockThreshold || 0} {item.unit}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6 text-right">
-                            <div className="inline-flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => startEditItem(item)}
-                                className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-                                title="Edit"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openAdjustDialog(item, "add")}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center gap-1"
-                                title="Add stock"
-                              >
-                                <TrendingUp className="w-3.5 h-3.5" />
-                                Add
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openAdjustDialog(item, "remove")}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors flex items-center gap-1"
-                                title="Remove stock"
-                              >
-                                <TrendingDown className="w-3.5 h-3.5" />
-                                Remove
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(item)}
-                                className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-neutral-500 capitalize">{item.unit}</div>
+                        </div>
                       );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                    },
+                  },
+                  {
+                    key: "currentStock",
+                    header: "Current Stock",
+                    align: "center",
+                    render: (_, item) => {
+                      const isLowStock = item.currentStock <= (item.lowStockThreshold || 0);
+                      return (
+                        <span className={`inline-flex items-center justify-center min-w-[80px] px-2.5 py-1 rounded-lg text-xs font-bold ${
+                          isLowStock
+                            ? "bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400"
+                            : "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        }`}>
+                          {item.currentStock} {item.unit}
+                        </span>
+                      );
+                    },
+                  },
+                  {
+                    key: "costPrice",
+                    header: "Cost Price",
+                    align: "right",
+                    render: (val, item) => val > 0 ? (
+                      <div>
+                        <div className="font-semibold text-primary">Rs {val.toLocaleString()}</div>
+                        <div className="text-xs text-gray-500 dark:text-neutral-500">{costPriceLabel(item.unit)}</div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 dark:text-neutral-500">—</span>
+                    ),
+                  },
+                  {
+                    key: "lowStockThreshold",
+                    header: "Low Stock Alert",
+                    align: "center",
+                    hideOnMobile: true,
+                    render: (val, item) => (
+                      <span className="text-gray-600 dark:text-neutral-400">
+                        {val || 0} {item.unit}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "actions",
+                    header: "Actions",
+                    align: "right",
+                    render: (_, item) => (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEditItem(item)}
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openAdjustDialog(item, "add")}
+                          className="px-2 py-1 rounded-lg text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors flex items-center gap-1"
+                          title="Add stock"
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openAdjustDialog(item, "remove")}
+                          className="px-2 py-1 rounded-lg text-xs font-semibold text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors flex items-center gap-1"
+                          title="Remove stock"
+                        >
+                          <TrendingDown className="w-3.5 h-3.5" />
+                          Remove
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item)}
+                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
             )}
           </div>
 
