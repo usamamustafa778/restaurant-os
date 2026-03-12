@@ -114,19 +114,11 @@ const tenantNav = [
     icon: Factory,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
-
-  { type: "section", label: "ADMINISTRATION" },
   {
     path: "/users",
     label: "Staff Management",
     icon: Users,
     roles: ["restaurant_admin", "admin", "manager"],
-  },
-  {
-    path: "/branches",
-    label: "Branches",
-    icon: MapPin,
-    roles: ["restaurant_admin", "admin"],
   },
   {
     path: "/tables",
@@ -142,6 +134,12 @@ const tenantNav = [
   },
 
   { type: "section", label: "SETTINGS" },
+  {
+    path: "/branches",
+    label: "Business Settings",
+    icon: MapPin,
+    roles: ["restaurant_admin", "admin"],
+  },
   {
     path: "/website",
     label: "Website Settings",

@@ -1,68 +1,131 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import Card from "../../components/ui/Card";
-import Button from "../../components/ui/Button";
 import { getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
-import { Filter, BarChart3, DollarSign, ShoppingBag, TrendingUp, Calendar, HelpCircle, Loader2 } from "lucide-react";
-import DataTable from "../../components/ui/DataTable";
+import {
+  BarChart3, DollarSign, ShoppingBag, TrendingUp,
+  HelpCircle, Loader2, Award, RefreshCw,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
-export default function HistoryPage() {
-  const [showDateHelpModal, setShowDateHelpModal] = useState(false);
-  const [filters, setFilters] = useState({
-    from: "",
-    to: ""
-  });
-  const [report, setReport] = useState({
-    totalRevenue: 0,
-    totalOrders: 0,
-    topItems: []
-  });
+const PRESETS = [
+  { id: "today",      label: "Today" },
+  { id: "yesterday",  label: "Yesterday" },
+  { id: "this_week",  label: "This Week" },
+  { id: "this_month", label: "This Month" },
+  { id: "last_month", label: "Last Month" },
+  { id: "all",        label: "All Time" },
+  { id: "custom",     label: "Custom" },
+];
 
+function fmt(d) {
+  return d.toISOString().split("T")[0];
+}
+
+function getPresetDates(preset) {
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  switch (preset) {
+    case "today":
+      return { from: fmt(today), to: fmt(tomorrow) };
+    case "yesterday": {
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      return { from: fmt(y), to: fmt(today) };
+    }
+    case "this_week": {
+      const dow = today.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      return { from: fmt(monday), to: fmt(tomorrow) };
+    }
+    case "this_month": {
+      const first = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { from: fmt(first), to: fmt(tomorrow) };
+    }
+    case "last_month": {
+      const firstThis = new Date(today.getFullYear(), today.getMonth(), 1);
+      const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      return { from: fmt(firstLast), to: fmt(firstThis) };
+    }
+    case "all":
+      return { from: "", to: "" };
+    default:
+      return null;
+  }
+}
+
+function buildPeriodLabel(preset, customFrom, customTo) {
+  if (preset === "custom") {
+    if (customFrom && customTo)
+      return `${new Date(customFrom).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} — ${new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
+    if (customFrom)
+      return `From ${new Date(customFrom).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
+    if (customTo)
+      return `Up to ${new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
+    return "Custom range";
+  }
+  return PRESETS.find(p => p.id === preset)?.label || "All Time";
+}
+
+export default function HistoryPage() {
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [preset, setPreset] = useState("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [report, setReport] = useState({ totalRevenue: 0, totalOrders: 0, topItems: [] });
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  async function loadReport(input = filters) {
+  async function loadReport(input) {
     try {
       const data = await getSalesReport(input);
       setReport({
         totalRevenue: data.totalRevenue || 0,
         totalOrders: data.totalOrders || 0,
-        topItems: data.topItems || []
+        topItems: data.topItems || [],
       });
-      setPageLoading(false);
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) {
         setSuspended(true);
       } else {
-        console.error("Failed to load sales report:", err);
         toast.error(err.message || "Failed to load sales report");
       }
+    } finally {
       setPageLoading(false);
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadReport();
+    loadReport({ from: "", to: "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleApplyFilters(e) {
-    e.preventDefault();
-    const toastId = toast.loading("Loading report...");
-    try {
-      await loadReport(filters);
-      toast.success("Report loaded successfully!", { id: toastId });
-    } catch (err) {
-      toast.error(err.message || "Failed to load report", { id: toastId });
-    }
+  function applyPreset(id) {
+    setPreset(id);
+    if (id === "custom") return;
+    const dates = getPresetDates(id);
+    setLoading(true);
+    loadReport(dates);
   }
 
-  function handleResetFilters() {
-    const reset = { from: "", to: "" };
-    setFilters(reset);
-    loadReport(reset);
+  function applyCustom(e) {
+    e.preventDefault();
+    setLoading(true);
+    loadReport({ from: customFrom, to: customTo });
   }
+
+  const avgTicket = report.totalOrders
+    ? Math.round(report.totalRevenue / report.totalOrders)
+    : 0;
+
+  const topRevenue = report.topItems[0]?.revenue || 1;
+  const totalItemRevenue = report.topItems.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
+  const periodLabel = buildPeriodLabel(preset, customFrom, customTo);
 
   return (
     <AdminLayout title="Sales & Reports" suspended={suspended}>
@@ -71,213 +134,252 @@ export default function HistoryPage() {
           <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
             <BarChart3 className="w-10 h-10 text-primary animate-pulse" />
           </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading sales report...
-            </p>
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">Loading sales report...</p>
           </div>
         </div>
       ) : (
-        <>
-          {/* Filters */}
-          <div className="mb-6 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-3 mb-5">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-              <Calendar className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">Date Range Filter</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">Select a custom date range for your report</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowDateHelpModal(true)}
-            className="p-2 rounded-lg text-gray-500 dark:text-neutral-400 hover:text-primary dark:hover:text-primary hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-            title="How does date filtering work?"
-            aria-label="How does date filtering work?"
-          >
-            <HelpCircle className="w-5 h-5" />
-          </button>
-        </div>
+        <div className="space-y-5">
 
-        <form
-          onSubmit={handleApplyFilters}
-          className="grid gap-4 md:grid-cols-[1fr_1fr_auto_auto] items-end"
-        >
-          <div className="space-y-2">
-            <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">From Date</label>
-            <input
-              type="date"
-              value={filters.from}
-              onChange={e => setFilters(prev => ({ ...prev, from: e.target.value }))}
-              className="w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-            />
-          </div>
+          {/* ── Filter panel ── */}
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
 
-          <div className="space-y-2">
-            <label className="text-gray-700 dark:text-neutral-300 text-sm font-semibold">To Date</label>
-            <input
-              type="date"
-              value={filters.to}
-              onChange={e => setFilters(prev => ({ ...prev, to: e.target.value }))}
-              className="w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
-          >
-            <Filter className="w-4 h-4" />
-            Apply Filter
-          </button>
-          <button
-            type="button"
-            onClick={handleResetFilters}
-            className="h-10 px-5 rounded-xl text-sm font-bold text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors whitespace-nowrap"
-          >
-            Reset
-          </button>
-        </form>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid gap-5 md:grid-cols-3 mb-6">
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-primary/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
-                <DollarSign className="w-7 h-7 text-white" />
+            {/* Header row */}
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Report Period</h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
+                  Showing: <span className="font-semibold text-primary">{periodLabel}</span>
+                  {loading && <Loader2 className="inline w-3 h-3 ml-1.5 animate-spin text-primary" />}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(true)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors flex-shrink-0"
+                title="How does date filtering work?"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
             </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Revenue</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">
-              Rs {report.totalRevenue.toFixed(0).toLocaleString()}
-            </p>
-          </div>
-        </div>
 
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-purple-300 dark:hover:border-purple-500/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
-                <ShoppingBag className="w-7 h-7 text-white" />
-              </div>
+            {/* Quick presets */}
+            <div className="px-5 py-3 flex flex-wrap gap-2 border-b border-gray-100 dark:border-neutral-800">
+              {PRESETS.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPreset(p.id)}
+                  disabled={loading}
+                  className={`h-8 px-4 rounded-xl text-xs font-semibold transition-all disabled:opacity-60 ${
+                    preset === p.id
+                      ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm shadow-primary/30"
+                      : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Orders</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{report.totalOrders}</p>
-          </div>
-        </div>
 
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                <TrendingUp className="w-7 h-7 text-white" />
-              </div>
-            </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Average Ticket</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">
-              Rs{" "}
-              {report.totalOrders
-                ? Math.round(report.totalRevenue / report.totalOrders).toLocaleString()
-                : 0}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Top Items Table */}
-      <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
-        <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
-              <BarChart3 className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">Top Selling Items</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">Best performing products in selected period</p>
-            </div>
-          </div>
-        </div>
-
-        <DataTable
-          rows={report.topItems.map((item, index) => ({ ...item, _rank: index + 1 }))}
-          emptyMessage="No sales data for this range. Try selecting a different date range."
-          columns={[
-            {
-              key: "name",
-              header: "Item",
-              render: (val, item) => (
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold shadow-md flex-shrink-0">
-                    #{item._rank}
-                  </div>
-                  <span className="font-semibold text-gray-900 dark:text-white">{val}</span>
+            {/* Custom date inputs — only shown when Custom is selected */}
+            {preset === "custom" && (
+              <form
+                onSubmit={applyCustom}
+                className="px-5 py-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3"
+              >
+                <div className="flex-1 space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-neutral-400">From Date</label>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={e => setCustomFrom(e.target.value)}
+                    className="w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                  />
                 </div>
-              ),
-            },
-            {
-              key: "quantity",
-              header: "Qty Sold",
-              align: "center",
-              render: (val) => (
-                <span className="inline-flex items-center justify-center min-w-[48px] px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-sm font-bold">
-                  {val}
+                <div className="flex-1 space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-neutral-400">To Date</label>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={e => setCustomTo(e.target.value)}
+                    className="w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading || (!customFrom && !customTo)}
+                  className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                >
+                  {loading
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <RefreshCw className="w-4 h-4" />
+                  }
+                  Apply
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* ── KPI cards ── */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 hover:shadow-xl hover:border-primary/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">Total Revenue</p>
+                  <p className="text-3xl font-extrabold text-gray-900 dark:text-white">
+                    Rs {Number(report.totalRevenue.toFixed(0)).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">from completed orders</p>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30 flex-shrink-0">
+                  <DollarSign className="w-6 h-6 text-white" />
+                </div>
+              </div>
+            </div>
+
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 hover:shadow-xl hover:border-violet-300 dark:hover:border-violet-500/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">Total Orders</p>
+                  <p className="text-3xl font-extrabold text-gray-900 dark:text-white">{report.totalOrders}</p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">completed & delivered</p>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/30 flex-shrink-0">
+                  <ShoppingBag className="w-6 h-6 text-white" />
+                </div>
+              </div>
+            </div>
+
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 hover:shadow-xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">Avg. Ticket Size</p>
+                  <p className="text-3xl font-extrabold text-gray-900 dark:text-white">Rs {avgTicket.toLocaleString()}</p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">revenue per order</p>
+                </div>
+                <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30 flex-shrink-0">
+                  <TrendingUp className="w-6 h-6 text-white" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Top selling items ── */}
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-md">
+                  <Award className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Top Selling Items</h3>
+                  <p className="text-xs text-gray-500 dark:text-neutral-400">Best performers in selected period</p>
+                </div>
+              </div>
+              {report.topItems.length > 0 && (
+                <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">
+                  {report.topItems.length} items
                 </span>
-              ),
-            },
-            {
-              key: "revenue",
-              header: "Revenue",
-              align: "right",
-              render: (val) => (
-                <span className="font-bold text-primary">
-                  Rs {val?.toFixed ? Number(val.toFixed(0)).toLocaleString() : val}
-                </span>
-              ),
-            },
-          ]}
-        />
+              )}
+            </div>
+
+            {report.topItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                  <BarChart3 className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
+                </div>
+                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">No sales data for this range</p>
+                <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Try selecting a different period</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                {report.topItems.map((item, index) => {
+                  const barPct = Math.round((item.revenue / topRevenue) * 100);
+                  const sharePct = Math.round((item.revenue / totalItemRevenue) * 100);
+                  const medals = ["🥇", "🥈", "🥉"];
+                  return (
+                    <div key={item.menuItemId} className="px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="w-7 text-center flex-shrink-0">
+                          {index < 3 ? (
+                            <span className="text-lg leading-none">{medals[index]}</span>
+                          ) : (
+                            <span className="text-xs font-bold text-gray-400 dark:text-neutral-500">#{index + 1}</span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">{item.name}</span>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
+                                <ShoppingBag className="w-3 h-3" />{item.quantity} sold
+                              </span>
+                              <span className="text-xs text-gray-400 dark:text-neutral-500 font-medium hidden sm:block">
+                                {sharePct}% share
+                              </span>
+                              <span className="text-sm font-bold text-primary min-w-[72px] text-right">
+                                Rs {item.revenue?.toFixed ? Number(item.revenue.toFixed(0)).toLocaleString() : item.revenue}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-primary to-secondary transition-all duration-700"
+                              style={{ width: `${barPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
         </div>
-        </>
       )}
 
-      {/* Date filter help modal */}
-      {showDateHelpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDateHelpModal(false)}>
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-2xl shadow-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+      {/* ── Help modal ── */}
+      {showHelpModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setShowHelpModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-2xl shadow-xl max-w-md w-full p-6"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
                 <HelpCircle className="w-5 h-5 text-primary" />
               </div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">How date filtering works</h3>
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">How date filtering works</h3>
             </div>
             <div className="space-y-3 text-sm text-gray-700 dark:text-neutral-300">
+              <p><strong>From date</strong> — includes from the <strong>start of this day</strong> (00:00).</p>
               <p>
-                <strong>From date</strong> — Report includes from the <strong>start of this day</strong> (00:00).
+                <strong>To date</strong> — includes up to the <strong>start of this day</strong> (00:00).
+                The &quot;To&quot; date itself is not included.
               </p>
-              <p>
-                <strong>To date</strong> — Report includes up to the <strong>start of this day</strong> (00:00). So the &quot;To&quot; date itself is not included; only the moment at midnight is.
+              <p className="text-gray-500 dark:text-neutral-400">
+                <strong>Example:</strong> From <strong>14 Feb</strong> to <strong>15 Feb</strong> covers only
+                the full day of the 14th. To include the 15th, set To to <strong>16 Feb</strong>.
               </p>
-              <p className="text-gray-600 dark:text-neutral-400">
-                <strong>Example:</strong> If you select From <strong>14 Feb</strong> and To <strong>15 Feb</strong>, you get completed orders from the <strong>full day of the 14th only</strong>. To include the 15th as well, select To <strong>16 Feb</strong> (or the day after your last desired day).
-              </p>
-              <p className="text-gray-600 dark:text-neutral-400">
-                Only <strong>completed</strong> orders are included in revenue, orders count, and top selling items.
+              <p className="text-gray-500 dark:text-neutral-400">
+                Only <strong>completed</strong> orders count towards all metrics.
               </p>
             </div>
             <div className="mt-6 flex justify-end">
               <button
                 type="button"
-                onClick={() => setShowDateHelpModal(false)}
-                className="px-4 py-2.5 rounded-xl bg-primary text-white font-semibold hover:opacity-90 transition-opacity"
+                onClick={() => setShowHelpModal(false)}
+                className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
               >
                 Got it
               </button>
@@ -288,4 +390,3 @@ export default function HistoryPage() {
     </AdminLayout>
   );
 }
-

@@ -1,20 +1,18 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { buildBillHtml } from "../../lib/printBillReceipt";
 import AdminLayout from "../../components/layout/AdminLayout";
-import Button from "../../components/ui/Button";
 import {
-  getBranches,
-  getDeletedBranches,
-  createBranch,
-  deleteBranch,
-  restoreBranch,
-  updateBranch,
-  getRestaurantSettings,
-  updateRestaurantSettings,
-  uploadImage,
+  getBranches, getDeletedBranches, createBranch, deleteBranch,
+  restoreBranch, updateBranch, getRestaurantSettings,
+  updateRestaurantSettings, getWebsiteSettings, updateWebsiteSettings, uploadImage,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
-import { MapPin, Loader2, Check, Trash2, X, Edit2, Plus, Image as ImageIcon, Upload, Link as LinkIcon } from "lucide-react";
+import {
+  MapPin, Loader2, Check, Trash2, X, Pencil, Plus,
+  Image as ImageIcon, Upload, Link as LinkIcon,
+  Building2, FileText, Clock, RotateCcw, Settings,
+  Eye, EyeOff, Phone, Mail, Palette,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 const DEMO_ORDER = {
@@ -46,41 +44,42 @@ function BillPreviewPane({ logoUrl, logoHeightPx, footerMessage }) {
     }),
     [logoUrl, logoHeightPx, footerMessage]
   );
-
   return (
-    <div className="hidden lg:flex items-stretch w-[380px] ">
-      <div className="w-full rounded-xl border border-dashed border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/60 px-4 py-4 flex flex-col">
-        <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-200 mb-2">
-          Bill preview
-        </p>
-        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden" style={{ height: "600px" }}>
-          <iframe
-            srcDoc={html}
-            title="Bill preview"
-            style={{ width: "100%", height: "100%", border: "none", background: "#fff" }}
-            scrolling="yes"
-            className=""
-          />
-        </div>
+    <div className="hidden lg:flex flex-col w-72 flex-shrink-0">
+      <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-2 flex items-center gap-1.5">
+        <FileText className="w-3.5 h-3.5" /> Live Bill Preview
+      </p>
+      <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/50 overflow-hidden">
+        <iframe srcDoc={html} title="Bill preview" style={{ width: "100%", height: "750px", border: "none", background: "#fff", display: "block" }} scrolling="yes" />
       </div>
     </div>
   );
 }
 
+function formatCutoff(h) {
+  if (h === 0) return "12:00 AM";
+  if (h < 12) return `${h}:00 AM`;
+  if (h === 12) return "12:00 PM";
+  return `${h - 12}:00 PM`;
+}
+
+const SECTIONS = [
+  { id: "branding",  label: "Branding",      icon: Palette },
+  { id: "branches",  label: "Branches",       icon: Building2 },
+  { id: "bill",      label: "Bill Settings",  icon: FileText },
+];
+
 export default function BranchesPage() {
   const { branches: contextBranches, currentBranch, setCurrentBranch, loading: contextLoading } = useBranch() || {};
+  const [activeSection, setActiveSection] = useState("branding");
+
+  // Branches
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [branchModalOpen, setBranchModalOpen] = useState(false);
   const [branchSaving, setBranchSaving] = useState(false);
   const [branchModalError, setBranchModalError] = useState("");
-  const [branchForm, setBranchForm] = useState({
-    id: null,
-    name: "",
-    code: "",
-    address: "",
-    businessDayCutoffHour: 4,
-  });
+  const [branchForm, setBranchForm] = useState({ id: null, name: "", code: "", address: "", businessDayCutoffHour: 4 });
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -88,679 +87,582 @@ export default function BranchesPage() {
   const [deletedLoading, setDeletedLoading] = useState(false);
   const [deletedDropdownOpen, setDeletedDropdownOpen] = useState(false);
 
-  // Restaurant logo (shared across all branches)
+  // Branding
+  const [websiteSettings, setWebsiteSettings] = useState(null);
+  const [websiteLoading, setWebsiteLoading] = useState(true);
+  const [websiteSaving, setWebsiteSaving] = useState(false);
+  const [websiteLogoTab, setWebsiteLogoTab] = useState("link");
+  const [websiteBannerTab, setWebsiteBannerTab] = useState("link");
+  const [uploadingWebsiteLogo, setUploadingWebsiteLogo] = useState(false);
+  const [uploadingWebsiteBanner, setUploadingWebsiteBanner] = useState(false);
+  const websiteLogoInputRef = useRef(null);
+  const websiteBannerInputRef = useRef(null);
+
+  // Bill settings
   const [restaurantSettings, setRestaurantSettings] = useState(null);
   const [logoLoading, setLogoLoading] = useState(true);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoSaving, setLogoSaving] = useState(false);
   const [logoTab, setLogoTab] = useState("link");
-  const [savedLogoUrl, setSavedLogoUrl] = useState("");
   const [logoDirty, setLogoDirty] = useState(false);
-  const [logoHeight, setLogoHeight] = useState(100); // px, used for printed bills
+  const [logoHeight, setLogoHeight] = useState(100);
   const [billFooterMessage, setBillFooterMessage] = useState("Thank you for your order!");
   const logoInputRef = useRef(null);
 
+  // ── Fetch branches ──
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     getBranches()
-      .then((data) => {
-        if (cancelled) return;
-        const list = data?.branches ?? (Array.isArray(data) ? data : []);
-        setBranches(list);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          toast.error(err.message || "Failed to load branches");
-          setBranches([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-    // Load recently deleted branches (owner/admin only; ignore 403 errors)
+      .then(d => { if (!cancelled) setBranches(d?.branches ?? (Array.isArray(d) ? d : [])); })
+      .catch(err => { if (!cancelled) { toast.error(err.message || "Failed to load branches"); setBranches([]); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
     setDeletedLoading(true);
     getDeletedBranches()
-      .then((data) => {
-        if (cancelled) return;
-        const list = data?.branches ?? (Array.isArray(data) ? data : []);
-        setDeletedBranches(list);
-      })
-      .catch(() => {
-        if (!cancelled) setDeletedBranches([]);
-      })
-      .finally(() => {
-        if (!cancelled) setDeletedLoading(false);
-      });
+      .then(d => { if (!cancelled) setDeletedBranches(d?.branches ?? (Array.isArray(d) ? d : [])); })
+      .catch(() => { if (!cancelled) setDeletedBranches([]); })
+      .finally(() => { if (!cancelled) setDeletedLoading(false); });
     return () => { cancelled = true; };
-  }, [contextBranches?.length]); // Refetch when context branches change (e.g. after backend adds one)
+  }, [contextBranches?.length]);
 
-  // Load restaurant settings (for restaurant logo used on bills)
+  // ── Fetch branding ──
+  useEffect(() => {
+    let cancelled = false;
+    setWebsiteLoading(true);
+    getWebsiteSettings()
+      .then(d => { if (!cancelled) setWebsiteSettings(d || {}); })
+      .catch(() => { if (!cancelled) setWebsiteSettings({}); })
+      .finally(() => { if (!cancelled) setWebsiteLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── Fetch bill settings ──
   useEffect(() => {
     let cancelled = false;
     setLogoLoading(true);
     getRestaurantSettings()
-      .then((data) => {
+      .then(s => {
         if (cancelled) return;
-        const settings = data || {};
-        setRestaurantSettings(settings);
-        setSavedLogoUrl(settings.restaurantLogoUrl || "");
-        setLogoHeight(settings.restaurantLogoHeightPx || 100);
-        setBillFooterMessage(settings.billFooterMessage || "Thank you for your order!");
+        const d = s || {};
+        setRestaurantSettings(d);
+        setLogoHeight(d.restaurantLogoHeightPx || 100);
+        setBillFooterMessage(d.billFooterMessage || "Thank you for your order!");
         setLogoDirty(false);
       })
-      .catch(() => {
-        if (!cancelled) {
-          setRestaurantSettings({});
-          setSavedLogoUrl("");
-          setLogoDirty(false);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLogoLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => { if (!cancelled) { setRestaurantSettings({}); } })
+      .finally(() => { if (!cancelled) setLogoLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const displayList = branches.length > 0 ? branches : (contextBranches ?? []);
   const isLoading = loading || contextLoading;
+  const restaurantLogoUrl = restaurantSettings?.restaurantLogoUrl || "";
 
-  function resetBranchForm() {
-    setBranchForm({ id: null, name: "", code: "", address: "", businessDayCutoffHour: 4 });
-  }
-
-  function openCreateBranch() {
-    resetBranchForm();
-    setBranchModalError("");
-    setBranchModalOpen(true);
-  }
-
-  function openEditBranch(branch) {
-    setBranchForm({
-      id: branch.id,
-      name: branch.name || "",
-      code: branch.code || "",
-      address: branch.address || "",
-      businessDayCutoffHour: branch.businessDayCutoffHour ?? 4,
-    });
-    setBranchModalError("");
-    setBranchModalOpen(true);
-  }
+  // ── Branch helpers ──
+  function resetBranchForm() { setBranchForm({ id: null, name: "", code: "", address: "", businessDayCutoffHour: 4 }); }
+  function openCreateBranch() { resetBranchForm(); setBranchModalError(""); setBranchModalOpen(true); }
+  function openEditBranch(b) { setBranchForm({ id: b.id, name: b.name || "", code: b.code || "", address: b.address || "", businessDayCutoffHour: b.businessDayCutoffHour ?? 4 }); setBranchModalError(""); setBranchModalOpen(true); }
 
   async function handleBranchSubmit(e) {
     e.preventDefault();
     const name = branchForm.name.trim();
-    const code = branchForm.code.trim();
-    const address = branchForm.address.trim();
-    if (!name) {
-      setBranchModalError("Branch name is required");
-      toast.error("Branch name is required");
-      return;
-    }
-
-    setBranchSaving(true);
-    setBranchModalError("");
+    if (!name) { setBranchModalError("Branch name is required"); return; }
+    setBranchSaving(true); setBranchModalError("");
     const isEdit = !!branchForm.id;
     const toastId = toast.loading(isEdit ? "Saving changes..." : "Creating branch...");
     try {
-      const payload = {
-        name,
-        code: code || undefined,
-        address: address || undefined,
-        businessDayCutoffHour: branchForm.businessDayCutoffHour ?? 4,
-      };
-
-      let createdBranch = null;
-      if (isEdit) {
-        await updateBranch(branchForm.id, payload);
-      } else {
-        const created = await createBranch(payload);
-        createdBranch = created?.branch || created;
-      }
-
+      const payload = { name, code: branchForm.code.trim() || undefined, address: branchForm.address.trim() || undefined, businessDayCutoffHour: branchForm.businessDayCutoffHour ?? 4 };
+      let created = null;
+      if (isEdit) { await updateBranch(branchForm.id, payload); }
+      else { const c = await createBranch(payload); created = c?.branch || c; }
       const data = await getBranches();
       const list = data?.branches ?? (Array.isArray(data) ? data : []);
       setBranches(list);
-
       if (!isEdit) {
-        if (createdBranch?.id) {
-          setCurrentBranch(createdBranch);
-        }
-        toast.success(`Branch "${createdBranch?.name || name}" created successfully!`, { id: toastId });
+        if (created?.id) setCurrentBranch(created);
+        toast.success(`Branch "${created?.name || name}" created!`, { id: toastId });
       } else {
-        // Keep current branch selection up to date if it was edited
-        if (currentBranch?.id) {
-          const updated = list.find((b) => b.id === currentBranch.id);
-          if (updated) {
-            setCurrentBranch(updated);
-          }
-        }
-        toast.success(`Branch "${name}" updated successfully!`, { id: toastId });
+        if (currentBranch?.id) { const u = list.find(b => b.id === currentBranch.id); if (u) setCurrentBranch(u); }
+        toast.success(`Branch "${name}" updated!`, { id: toastId });
       }
-
-      resetBranchForm();
-      setBranchModalOpen(false);
-    } catch (err) {
-      setBranchModalError(err.message || (isEdit ? "Failed to update branch" : "Failed to create branch"));
-      toast.error(err.message || "Failed to save branch", { id: toastId });
-    } finally {
-      setBranchSaving(false);
-    }
+      resetBranchForm(); setBranchModalOpen(false);
+    } catch (err) { setBranchModalError(err.message || "Failed to save branch"); toast.error(err.message || "Failed to save branch", { id: toastId }); }
+    finally { setBranchSaving(false); }
   }
 
-  const restaurantLogoUrl = restaurantSettings?.restaurantLogoUrl || "";
+  // ── Branding helpers ──
+  async function handleWebsiteSubmit(e) {
+    e.preventDefault();
+    if (!websiteSettings) return;
+    setWebsiteSaving(true);
+    const toastId = toast.loading("Saving branding...");
+    try {
+      const updated = await updateWebsiteSettings(websiteSettings);
+      setWebsiteSettings(updated);
+      toast.success("Branding saved!", { id: toastId });
+    } catch (err) { toast.error(err.message || "Failed to save branding", { id: toastId }); }
+    finally { setWebsiteSaving(false); }
+  }
+  const onWebsiteChange = f => e => setWebsiteSettings(p => ({ ...p, [f]: e.target.value }));
 
-  async function handleLogoUrlSave(e) {
-    if (e && e.preventDefault) e.preventDefault();
+  async function handleWebsiteLogoUpload(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setUploadingWebsiteLogo(true);
+    try { const { url } = await uploadImage(file); setWebsiteSettings(p => ({ ...(p || {}), logoUrl: url })); }
+    catch (err) { toast.error(err.message || "Upload failed"); }
+    finally { setUploadingWebsiteLogo(false); if (websiteLogoInputRef.current) websiteLogoInputRef.current.value = ""; }
+  }
+  async function handleWebsiteBannerUpload(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setUploadingWebsiteBanner(true);
+    try { const { url } = await uploadImage(file); setWebsiteSettings(p => ({ ...(p || {}), bannerUrl: url })); }
+    catch (err) { toast.error(err.message || "Upload failed"); }
+    finally { setUploadingWebsiteBanner(false); if (websiteBannerInputRef.current) websiteBannerInputRef.current.value = ""; }
+  }
+
+  // ── Bill settings helpers ──
+  async function handleLogoSave() {
     if (!restaurantSettings) return;
     setLogoSaving(true);
-    const toastId = toast.loading("Saving restaurant logo...");
+    const toastId = toast.loading("Saving bill settings...");
     try {
-      const updated = await updateRestaurantSettings({
-        ...restaurantSettings,
-        restaurantLogoUrl,
-        restaurantLogoHeightPx: logoHeight,
-        billFooterMessage,
-      });
+      const updated = await updateRestaurantSettings({ ...restaurantSettings, restaurantLogoUrl, restaurantLogoHeightPx: logoHeight, billFooterMessage });
       setRestaurantSettings(updated);
-      setSavedLogoUrl(updated?.restaurantLogoUrl || "");
       setLogoHeight(updated?.restaurantLogoHeightPx || logoHeight);
       setBillFooterMessage(updated?.billFooterMessage || "Thank you for your order!");
       setLogoDirty(false);
-      toast.success("Restaurant logo saved", { id: toastId });
-    } catch (err) {
-      toast.error(err.message || "Failed to save restaurant logo", { id: toastId });
-    } finally {
-      setLogoSaving(false);
-    }
+      toast.success("Bill settings saved!", { id: toastId });
+    } catch (err) { toast.error(err.message || "Failed to save settings", { id: toastId }); }
+    finally { setLogoSaving(false); }
+  }
+  async function handleLogoUploadChange(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setLogoUploading(true);
+    try { const { url } = await uploadImage(file); setRestaurantSettings(p => ({ ...(p || {}), restaurantLogoUrl: url })); setLogoDirty(true); }
+    catch (err) { toast.error(err.message || "Upload failed"); }
+    finally { setLogoUploading(false); if (logoInputRef.current) logoInputRef.current.value = ""; }
   }
 
-  async function handleLogoUploadChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLogoUploading(true);
-    try {
-      const { url } = await uploadImage(file);
-      setRestaurantSettings((prev) => ({ ...(prev || {}), restaurantLogoUrl: url }));
-      setLogoDirty(true);
-    } catch (err) {
-      toast.error(err.message || "Logo upload failed");
-    } finally {
-      setLogoUploading(false);
-      if (logoInputRef.current) logoInputRef.current.value = "";
-    }
+  // shared input class
+  const inp = "w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all";
+
+  function MediaToggle({ tab, setTab, onLink, linkValue, onUpload, uploading, inputRef }) {
+    return (
+      <div className="space-y-2">
+        <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
+          {[["link", LinkIcon, "URL"], ["upload", Upload, "Upload"]].map(([t, Icon, label]) => (
+            <button key={t} type="button" onClick={() => setTab(t)}
+              className={`inline-flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-colors ${t !== "link" ? "border-l-2 border-gray-200 dark:border-neutral-700" : ""} ${tab === t ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}>
+              <Icon className="w-3.5 h-3.5" />{label}
+            </button>
+          ))}
+        </div>
+        {tab === "link" ? (
+          <div className="flex gap-2 items-center">
+            <input type="text" value={linkValue} onChange={onLink} placeholder="https://..." className={inp} />
+            {linkValue
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={linkValue} alt="" className="h-10 w-10 rounded-lg object-cover border-2 border-gray-200 dark:border-neutral-700 flex-shrink-0" />
+              : <div className="h-10 w-10 rounded-lg border-2 border-dashed border-gray-200 dark:border-neutral-700 flex items-center justify-center flex-shrink-0"><ImageIcon className="w-4 h-4 text-gray-300" /></div>
+            }
+          </div>
+        ) : (
+          <label className="flex flex-col items-center justify-center w-full h-20 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/50 cursor-pointer transition-colors">
+            {uploading
+              ? <><Loader2 className="w-5 h-5 text-primary animate-spin" /><span className="text-xs text-primary mt-1">Uploading...</span></>
+              : <><Upload className="w-5 h-5 text-gray-400" /><span className="text-xs text-gray-500 mt-1">Click to browse</span></>
+            }
+            <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onUpload} disabled={uploading} />
+          </label>
+        )}
+      </div>
+    );
+  }
+
+  function scrollTo(id) {
+    setActiveSection(id);
+    document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
-    <AdminLayout title="Branches">
-     
+    <AdminLayout title="Business Settings">
+      <div className="flex gap-6 items-start">
 
-      {/* Branches List */}
-      <div className="mb-6 relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
-        {/* Loading Overlay for Refresh */}
-        {isLoading && displayList.length > 0 && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-neutral-950/60 backdrop-blur-sm">
-            <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 shadow-lg">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-              <span className="text-sm font-medium text-gray-700 dark:text-neutral-300">Refreshing...</span>
-            </div>
-          </div>
-        )}
+        {/* ── Left anchor navigation ── */}
+        <div className="w-48 flex-shrink-0 sticky top-4 space-y-1">
 
-        {isLoading && displayList.length === 0 ? (
-          <div className="flex items-center justify-center gap-3 py-20">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <span className="text-gray-500 dark:text-neutral-400">Loading branches…</span>
-          </div>
-        ) : displayList.length === 0 ? (
-          <div className="py-20 text-center">
-            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mx-auto mb-4">
-              <MapPin className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
-            </div>
-            <p className="text-sm font-medium text-gray-600 dark:text-neutral-400">
-              No branches yet
-            </p>
-            <p className="mt-2 text-xs text-gray-400 dark:text-neutral-500 max-w-md mx-auto">
-              Create your first branch using the form above to manage multiple restaurant locations
-            </p>
-          </div>
-        ) : (
-          <div className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">All Branches</h3>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={openCreateBranch}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Branch
-                </button>
-                {deletedBranches.length > 0 && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setDeletedDropdownOpen((prev) => !prev)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50/60 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
-                    >
-                      Recently deleted
-                      <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-amber-700 text-[10px] text-white">
-                        {deletedBranches.length}
-                      </span>
-                    </button>
-                    {deletedDropdownOpen && (
-                      <div className="absolute right-0 mt-2 w-72 rounded-xl bg-white dark:bg-neutral-950 border border-amber-200 dark:border-amber-700 shadow-lg z-10">
-                        <div className="px-3 py-2 border-b border-amber-100 dark:border-amber-800 flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-200">
-                            Restore branches (48h)
-                          </span>
-                          {deletedLoading && (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                          )}
-                        </div>
-                        <div className="max-h-64 overflow-y-auto py-1">
-                          {deletedBranches.map((branch) => (
-                            <div
-                              key={branch.id}
-                              className="px-3 py-2 text-xs flex items-center justify-between gap-2 hover:bg-amber-50 dark:hover:bg-amber-900/30"
-                            >
-                              <div className="min-w-0">
-                                <p className="font-semibold text-amber-900 dark:text-amber-100 truncate">
-                                  {branch.name}
-                                </p>
-                                {branch.code && (
-                                  <p className="text-[10px] text-amber-700 dark:text-amber-300 font-mono truncate">
-                                    {branch.code}
-                                  </p>
-                                )}
-                              </div>
-                              <button
-                                type="button"
-                                className="px-2 py-1 rounded-md bg-emerald-600 text-[10px] text-white font-semibold hover:bg-emerald-700"
-                                onClick={async () => {
-                                  const toastId = toast.loading(`Restoring "${branch.name}"...`);
-                                  try {
-                                    await restoreBranch(branch.id);
-                                    const [activeData, deletedData] = await Promise.all([
-                                      getBranches(),
-                                      getDeletedBranches(),
-                                    ]);
-                                    const act = activeData?.branches ?? (Array.isArray(activeData) ? activeData : []);
-                                    const del = deletedData?.branches ?? (Array.isArray(deletedData) ? deletedData : []);
-                                    setBranches(act);
-                                    setDeletedBranches(del);
-                                    setDeletedDropdownOpen(false);
-                                    toast.success(`Branch "${branch.name}" restored successfully!`, { id: toastId });
-                                  } catch (err) {
-                                    toast.error(err.message || "Failed to restore branch", { id: toastId });
-                                  }
-                                }}
-                              >
-                                Restore
-                              </button>
-                            </div>
-                          ))}
-                          {deletedBranches.length === 0 && (
-                            <p className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-                              No branches available to restore.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+          {SECTIONS.map(({ id, label, icon: Icon }, index) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => scrollTo(id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left group relative ${
+                activeSection === id
+                  ? "bg-white dark:bg-neutral-950 text-gray-900 dark:text-white shadow-sm border-2 border-gray-200 dark:border-neutral-800"
+                  : "text-gray-500 dark:text-neutral-400 hover:bg-white/70 dark:hover:bg-neutral-950/70 hover:text-gray-800 dark:hover:text-neutral-200"
+              }`}
+            >
+              {activeSection === id && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+              )}
+              <div className={`h-8 w-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
+                activeSection === id
+                  ? "bg-gradient-to-br from-orange-500 to-orange-600 shadow-md shadow-orange-500/30"
+                  : "bg-gray-100 dark:bg-neutral-800 group-hover:bg-gray-200 dark:group-hover:bg-neutral-700"
+              }`}>
+                <Icon className={`w-4 h-4 ${activeSection === id ? "text-white" : "text-gray-500 dark:text-neutral-400"}`} />
               </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {displayList.map((branch) => (
-                <div
-                  key={branch.id}
-                  className={`relative p-5 rounded-xl border-2 transition-all hover:shadow-lg ${currentBranch?.id === branch.id
-                    ? "border-primary bg-primary/5 dark:bg-primary/10"
-                    : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-primary/30"
-                    }`}
-                >
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${currentBranch?.id === branch.id
-                      ? "bg-gradient-to-br from-primary to-secondary"
-                      : "bg-gray-100 dark:bg-neutral-800"
-                      }`}>
-                      <MapPin className={`w-6 h-6 ${currentBranch?.id === branch.id ? "text-white" : "text-gray-600 dark:text-neutral-400"
-                        }`} />
+              <span className="leading-none">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ── Right content area — all sections visible ── */}
+        <div className="flex-1 min-w-0 space-y-6">
+
+          {/* ════ BRANDING ════ */}
+          <div id="section-branding">
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-md flex-shrink-0">
+                  <Palette className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Branding</h3>
+                  <p className="text-xs text-gray-500 dark:text-neutral-400">Configure your restaurant's public appearance</p>
+                </div>
+              </div>
+
+              {websiteLoading ? (
+                <div className="flex items-center justify-center gap-2 py-12">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm text-gray-500 dark:text-neutral-400">Loading branding settings...</span>
+                </div>
+              ) : (
+                <form onSubmit={handleWebsiteSubmit} className="p-6 space-y-5 max-w-xl">
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Restaurant Name</label>
+                    <input type="text" value={websiteSettings?.name || ""} onChange={onWebsiteChange("name")} placeholder="Your Restaurant Name" className={inp} />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Description</label>
+                    <textarea rows={3} value={websiteSettings?.description || ""} onChange={onWebsiteChange("description")} placeholder="Tell customers about your restaurant..."
+                      className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 resize-none transition-all" />
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300 flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" />Logo</label>
+                      <MediaToggle tab={websiteLogoTab} setTab={setWebsiteLogoTab} linkValue={websiteSettings?.logoUrl || ""} onLink={onWebsiteChange("logoUrl")} onUpload={handleWebsiteLogoUpload} uploading={uploadingWebsiteLogo} inputRef={websiteLogoInputRef} />
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-bold text-gray-900 dark:text-white truncate">{branch.name}</h4>
-                      {branch.code && (
-                        <p className="text-xs text-gray-500 dark:text-neutral-500 font-mono mt-0.5">{branch.code}</p>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300 flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" />Banner</label>
+                      <MediaToggle tab={websiteBannerTab} setTab={setWebsiteBannerTab} linkValue={websiteSettings?.bannerUrl || ""} onLink={onWebsiteChange("bannerUrl")} onUpload={handleWebsiteBannerUpload} uploading={uploadingWebsiteBanner} inputRef={websiteBannerInputRef} />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" />Contact Phone</label>
+                      <input type="text" value={websiteSettings?.contactPhone || ""} onChange={onWebsiteChange("contactPhone")} placeholder="03XX-XXXXXXX" className={inp} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" />Contact Email</label>
+                      <input type="email" value={websiteSettings?.contactEmail || ""} onChange={onWebsiteChange("contactEmail")} placeholder="contact@restaurant.com" className={inp} />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300 flex items-center gap-1.5">
+                      {websiteSettings?.isPublic ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      Website Visibility
+                    </label>
+                    <select value={websiteSettings?.isPublic ? "yes" : "no"} onChange={e => setWebsiteSettings(p => ({ ...p, isPublic: e.target.value === "yes" }))}
+                      className={inp + " font-semibold"}>
+                      <option value="yes">✓ Visible to Public</option>
+                      <option value="no">✗ Hidden (Website Offline)</option>
+                    </select>
+                  </div>
+
+                  <button type="submit" disabled={websiteSaving}
+                    className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none">
+                    {websiteSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : "Save Branding"}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+
+          {/* ════ BRANCHES ════ */}
+          <div id="section-branches">
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-md flex-shrink-0">
+                    <Building2 className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">Branches</h3>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400">Manage your restaurant locations</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {deletedBranches.length > 0 && (
+                    <div className="relative">
+                      <button type="button" onClick={() => setDeletedDropdownOpen(p => !p)}
+                        className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border-2 border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors">
+                        <RotateCcw className="w-3.5 h-3.5" />Restore
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-600 text-[10px] text-white font-bold">{deletedBranches.length}</span>
+                      </button>
+                      {deletedDropdownOpen && (
+                        <div className="absolute right-0 mt-2 w-72 rounded-xl bg-white dark:bg-neutral-950 border-2 border-amber-200 dark:border-amber-700/50 shadow-xl z-20">
+                          <div className="px-4 py-2.5 border-b border-amber-100 dark:border-amber-800/50 flex items-center justify-between">
+                            <span className="text-xs font-bold text-amber-800 dark:text-amber-200">Recently deleted (48h)</span>
+                            {deletedLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                          </div>
+                          <div className="max-h-64 overflow-y-auto py-1">
+                            {deletedBranches.map(branch => (
+                              <div key={branch.id} className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-amber-50/60 dark:hover:bg-amber-900/20">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">{branch.name}</p>
+                                  {branch.code && <p className="text-[10px] text-gray-500 font-mono">{branch.code}</p>}
+                                </div>
+                                <button type="button" className="h-7 px-3 rounded-lg bg-emerald-600 text-[11px] text-white font-semibold hover:bg-emerald-700 flex-shrink-0 transition-colors"
+                                  onClick={async () => {
+                                    const toastId = toast.loading(`Restoring "${branch.name}"...`);
+                                    try {
+                                      await restoreBranch(branch.id);
+                                      const [a, d] = await Promise.all([getBranches(), getDeletedBranches()]);
+                                      setBranches(a?.branches ?? (Array.isArray(a) ? a : []));
+                                      setDeletedBranches(d?.branches ?? (Array.isArray(d) ? d : []));
+                                      setDeletedDropdownOpen(false);
+                                      toast.success(`"${branch.name}" restored!`, { id: toastId });
+                                    } catch (err) { toast.error(err.message || "Failed to restore", { id: toastId }); }
+                                  }}>Restore</button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
-                    {currentBranch?.id === branch.id && (
-                      <div className="flex-shrink-0">
-                        <Check className="w-5 h-5 text-primary" />
-                      </div>
-                    )}
-                  </div>
-                  {branch.address && (
-                    <p className="text-xs text-gray-600 dark:text-neutral-400 mb-2 line-clamp-2">{branch.address}</p>
                   )}
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 mb-4">
-                    Day cutoff: {(() => { const h = branch.businessDayCutoffHour ?? 4; return h === 0 ? "12:00 AM" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`; })()}
-                  </p>
-                  <div className="flex gap-2">
-                    {currentBranch?.id !== branch.id && (
-                      <button
-                        onClick={() => setCurrentBranch(branch)}
-                        className="flex-1 px-3 py-2 rounded-lg bg-primary/10 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors"
-                      >
-                        Switch to Branch
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => openEditBranch(branch)}
-                      className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-                    >
-                      <Edit2 className="w-4 h-4 inline-block mr-1 align-middle" />
-                      Edit
-                    </button>
-                    {/* Delete (soft delete) – require name confirmation in modal */}
-                    <button
-                      type="button"
-                      onClick={() => { setDeleteTarget(branch); setDeleteConfirmName(""); }}
-                      className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4 inline-block mr-1 align-middle" />
-                      Delete
-                    </button>
+                  <button type="button" onClick={openCreateBranch}
+                    className="inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all">
+                    <Plus className="w-3.5 h-3.5" /> Add Branch
+                  </button>
+                </div>
+              </div>
+
+              {isLoading && displayList.length === 0 ? (
+                <div className="flex items-center justify-center gap-3 py-20">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <span className="text-sm text-gray-500 dark:text-neutral-400">Loading branches…</span>
+                </div>
+              ) : displayList.length === 0 ? (
+                <div className="py-20 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mx-auto mb-4">
+                    <MapPin className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
                   </div>
+                  <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">No branches yet</p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1 max-w-xs mx-auto">Add your first branch to manage multiple locations</p>
+                  <button type="button" onClick={openCreateBranch}
+                    className="mt-4 inline-flex items-center gap-2 h-9 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-lg hover:shadow-primary/30 transition-all">
+                    <Plus className="w-3.5 h-3.5" /> Add First Branch
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-       {/* Restaurant logo shared across all branches */}
-       <div className=" rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-sm">
-              <ImageIcon className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                Bill settings & logo
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">
-                Configure how your logo appears on printed bills and receipts.
-              </p>
-            </div>
-          </div>
-          <span className="hidden md:inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700">
-            Live preview
-          </span>
-        </div>
-
-        <div className="flex flex-row gap-6 items-start">
-          {/* Left: Settings */}
-          <div className="space-y-3 flex-1 ">
-            <div className="flex flex-row gap-3 items-center justify-between">
-
-            <div className="flex flex-1 flex-col space-y-3 gap-2  ">
-
-              <label className="text-gray-700  dark:text-neutral-300 text-sm font-semibold flex items-center gap-1">
-                <ImageIcon className="w-3.5 h-3.5" />
-                Logo
-              </label>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] text-gray-500 dark:text-neutral-400">
-                  Print size
-                </span>
-                <select
-                  value={logoHeight}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10) || 100;
-                    setLogoHeight(value);
-                    setRestaurantSettings((prev) => ({
-                      ...(prev || {}),
-                      restaurantLogoHeightPx: value,
-                    }));
-                    setLogoDirty(true);
-                  }}
-                  className="px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
-                  disabled={logoLoading}
-                >
-                  <option value={60}>Small </option>
-                  <option value={80}>Medium </option>
-                  <option value={100}>Large </option>
-                  <option value={120}>XL </option>
-                  <option value={140}>2XL </option>
-                  <option value={160}>3XL </option>
-                  <option value={180}>4XL </option>
-
-                </select>
-                <span className="text-[11px] text-gray-400 dark:text-neutral-500">
-                  {logoHeight}px
-                </span>
-              </div>
-
-              <div className="flex rounded-lg border-2 border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
-                <button
-                  type="button"
-                  onClick={() => setLogoTab("link")}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${logoTab === "link"
-                    ? "bg-primary text-white"
-                    : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
-                    }`}
-                >
-                  <LinkIcon className="w-3.5 h-3.5" />
-                  Paste URL
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLogoTab("upload")}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-l-2 border-gray-300 dark:border-neutral-700 transition-colors ${logoTab === "upload"
-                    ? "bg-primary text-white"
-                    : "bg-gray-50 dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
-                    }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload from PC
-                </button>
-              </div>
-              {logoTab === "link" && (
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={restaurantLogoUrl}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setRestaurantSettings((prev) => ({
-                        ...(prev || {}),
-                        restaurantLogoUrl: value,
-                      }));
-                      setLogoDirty(true);
-                    }}
-                    placeholder="https://..."
-                    className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                    disabled={logoLoading}
-                  />
-                </div>
-              )}
-
-            </div>
-            <div className="flex items-center gap-3 mt-1 ">
-              {restaurantLogoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={restaurantLogoUrl}
-                  alt="Restaurant logo preview"
-                  style={{ height: `${logoHeight}px`, width: `${logoHeight}px` }}
-                  className={`h-${logoHeight}px w-${logoHeight}px  rounded-lg object-cover border border-gray-200 dark:border-neutral-700`}
-                />
               ) : (
-                <div className="h-10 w-10 rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 flex items-center justify-center text-[10px] text-gray-400">
-                  No logo
+                <div className="p-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 relative">
+                  {isLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-neutral-950/60 backdrop-blur-sm rounded-b-2xl">
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 shadow-lg">
+                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        <span className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Refreshing...</span>
+                      </div>
+                    </div>
+                  )}
+                  {displayList.map(branch => {
+                    const isActive = currentBranch?.id === branch.id;
+                    return (
+                      <div key={branch.id} className={`relative rounded-xl border-2 p-4 transition-all ${isActive ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md shadow-primary/10" : "border-gray-200 dark:border-neutral-700 hover:border-primary/40 hover:shadow-md"}`}>
+                        {isActive && (
+                          <div className="absolute top-3 right-3 h-6 w-6 rounded-full bg-primary flex items-center justify-center shadow-sm">
+                            <Check className="w-3.5 h-3.5 text-white" />
+                          </div>
+                        )}
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isActive ? "bg-gradient-to-br from-orange-500 to-orange-600 shadow-md shadow-orange-500/30" : "bg-gray-100 dark:bg-neutral-800"}`}>
+                            <MapPin className={`w-5 h-5 ${isActive ? "text-white" : "text-gray-500 dark:text-neutral-400"}`} />
+                          </div>
+                          <div className="min-w-0 flex-1 pr-6">
+                            <h4 className="font-bold text-sm text-gray-900 dark:text-white truncate">{branch.name}</h4>
+                            {branch.code && <p className="text-[11px] text-gray-400 dark:text-neutral-500 font-mono mt-0.5">{branch.code}</p>}
+                          </div>
+                        </div>
+                        {branch.address && (
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 mb-2 line-clamp-2 flex items-start gap-1">
+                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0 text-gray-400" />{branch.address}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-1 mb-3">
+                          <Clock className="w-3 h-3 text-gray-400" />
+                          <span className="text-[11px] text-gray-400 dark:text-neutral-500">Day cutoff: {formatCutoff(branch.businessDayCutoffHour ?? 4)}</span>
+                        </div>
+                        <div className="flex gap-2 pt-1 border-t border-gray-100 dark:border-neutral-800">
+                          {!isActive && (
+                            <button type="button" onClick={() => setCurrentBranch(branch)}
+                              className="flex-1 h-8 rounded-lg bg-primary/10 dark:bg-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 dark:hover:bg-primary/30 transition-colors">
+                              Switch
+                            </button>
+                          )}
+                          <button type="button" onClick={() => openEditBranch(branch)} className="h-8 px-3 rounded-lg border-2 border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors" title="Edit">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button type="button" onClick={() => { setDeleteTarget(branch); setDeleteConfirmName(""); }} className="h-8 px-3 rounded-lg border-2 border-red-200 dark:border-red-500/30 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors" title="Delete">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {displayList.length > 0 && (
+                <div className="mx-5 mb-5 bg-blue-50 dark:bg-blue-500/5 border-2 border-blue-100 dark:border-blue-500/20 rounded-xl px-4 py-3">
+                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                    <span className="font-semibold">Tip:</span> Selecting a branch scopes dashboard data (orders, inventory, POS) to that specific location via the{" "}
+                    <code className="bg-blue-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded font-mono">x-branch-id</code> header.
+                  </p>
                 </div>
               )}
             </div>
-
-            </div>
-
-
-
-            {logoTab === "upload" && (
-              <label className="flex flex-col items-center justify-center w-full h-24 rounded-xl border-2 border-dashed border-gray-300 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 cursor-pointer transition-colors">
-                {logoUploading ? (
-                  <div className="flex flex-col items-center gap-1">
-                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                    <span className="text-xs font-medium text-primary">Uploading...</span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-1">
-                    <Upload className="w-5 h-5 text-gray-400" />
-                    <span className="text-xs text-gray-500 dark:text-neutral-400">
-                      Click to browse or drag &amp; drop
-                    </span>
-                    <span className="text-[10px] text-gray-400 dark:text-neutral-500">
-                      JPG, PNG, WEBP up to 5 MB
-                    </span>
-                  </div>
-                )}
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoUploadChange}
-                  disabled={logoUploading}
-                />
-              </label>
-            )}
-
-            {/* Bill footer message */}
-            <div className="space-y-1 pt-1">
-              <label className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
-                Bill footer message
-              </label>
-              <input
-                type="text"
-                value={billFooterMessage}
-                onChange={(e) => {
-                  setBillFooterMessage(e.target.value);
-                  setLogoDirty(true);
-                }}
-                placeholder="Thank you for your order!"
-                maxLength={120}
-                className="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                disabled={logoLoading}
-              />
-              <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                Shown at the bottom of every printed bill.
-              </p>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <Button
-                type="button"
-                size="sm"
-                className="gap-1.5"
-                onClick={handleLogoUrlSave}
-                disabled={logoSaving || logoLoading || !logoDirty}
-              >
-                {logoSaving ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>Save settings</>
-                )}
-              </Button>
-            </div>
-
           </div>
 
-          {/* Right: Preview — rendered via iframe using the exact same HTML as printBillReceipt */}
-          <BillPreviewPane logoUrl={restaurantLogoUrl} logoHeightPx={logoHeight} footerMessage={billFooterMessage} />
+          {/* ════ BILL SETTINGS ════ */}
+          <div id="section-bill">
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-md flex-shrink-0">
+                    <FileText className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">Bill Settings</h3>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400">Logo and footer shown on every printed bill</p>
+                  </div>
+                </div>
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">
+                  <FileText className="w-3 h-3" /> Live preview on right
+                </span>
+              </div>
+
+              <div className="p-6 flex gap-8 items-start">
+                <div className="flex-1 space-y-5 min-w-0">
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Logo Source</label>
+                    <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
+                      {[["link", LinkIcon, "Paste URL"], ["upload", Upload, "Upload"]].map(([t, Icon, label]) => (
+                        <button key={t} type="button" onClick={() => setLogoTab(t)}
+                          className={`inline-flex items-center gap-1.5 px-4 h-9 text-xs font-semibold transition-colors ${t !== "link" ? "border-l-2 border-gray-200 dark:border-neutral-700" : ""} ${logoTab === t ? "bg-gradient-to-r from-primary to-secondary text-white" : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"}`}>
+                          <Icon className="w-3.5 h-3.5" />{label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {logoTab === "link" ? (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-600 dark:text-neutral-400">Logo URL</label>
+                      <div className="flex gap-3 items-center">
+                        <input type="text" value={restaurantLogoUrl} onChange={e => { setRestaurantSettings(p => ({ ...(p || {}), restaurantLogoUrl: e.target.value })); setLogoDirty(true); }} placeholder="https://your-logo.png" disabled={logoLoading} className={inp + " flex-1"} />
+                        {restaurantLogoUrl
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={restaurantLogoUrl} alt="Logo" className="h-10 w-10 rounded-lg object-cover border-2 border-gray-200 dark:border-neutral-700 flex-shrink-0" />
+                          : <div className="h-10 w-10 rounded-lg border-2 border-dashed border-gray-200 dark:border-neutral-700 flex items-center justify-center flex-shrink-0"><ImageIcon className="w-4 h-4 text-gray-300" /></div>
+                        }
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-28 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/50 hover:bg-primary/5 cursor-pointer transition-colors">
+                      {logoUploading ? <><Loader2 className="w-6 h-6 text-primary animate-spin" /><span className="text-xs font-semibold text-primary mt-1">Uploading...</span></>
+                        : <><Upload className="w-6 h-6 text-gray-400" /><span className="text-xs font-semibold text-gray-600 dark:text-neutral-400 mt-1">Click or drag & drop</span><span className="text-[10px] text-gray-400 mt-0.5">JPG, PNG, WEBP · max 5 MB</span></>
+                      }
+                      <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUploadChange} disabled={logoUploading} />
+                    </label>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-gray-600 dark:text-neutral-400">Logo Print Size</label>
+                    <div className="flex items-center gap-3">
+                      <select value={logoHeight} onChange={e => { const v = parseInt(e.target.value, 10) || 100; setLogoHeight(v); setRestaurantSettings(p => ({ ...(p || {}), restaurantLogoHeightPx: v })); setLogoDirty(true); }} disabled={logoLoading}
+                        className="h-10 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all">
+                        <option value={60}>Small (60px)</option>
+                        <option value={80}>Medium (80px)</option>
+                        <option value={100}>Large (100px)</option>
+                        <option value={120}>XL (120px)</option>
+                        <option value={140}>2XL (140px)</option>
+                        <option value={160}>3XL (160px)</option>
+                        <option value={180}>4XL (180px)</option>
+                      </select>
+                      <span className="text-xs text-gray-400 dark:text-neutral-500">Height on printed bill</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-gray-600 dark:text-neutral-400">Bill Footer Message</label>
+                    <input type="text" value={billFooterMessage} onChange={e => { setBillFooterMessage(e.target.value); setLogoDirty(true); }} placeholder="Thank you for your order!" maxLength={120} disabled={logoLoading} className={inp} />
+                    <p className="text-[11px] text-gray-400 dark:text-neutral-500">Shown at the bottom of every printed bill · max 120 characters</p>
+                  </div>
+
+                  <button type="button" onClick={handleLogoSave} disabled={logoSaving || logoLoading || !logoDirty}
+                    className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none">
+                    {logoSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : "Save Bill Settings"}
+                  </button>
+                </div>
+
+                <BillPreviewPane logoUrl={restaurantLogoUrl} logoHeightPx={logoHeight} footerMessage={billFooterMessage} />
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      {displayList.length > 0 && (
-        <div className="mt-6 bg-blue-50/50 dark:bg-blue-500/5 border border-blue-200 dark:border-blue-500/20 rounded-xl px-4 py-3">
-          <p className="text-xs text-blue-700 dark:text-blue-400">
-            💡 Selecting a branch scopes dashboard data (orders, inventory, POS) to that specific location when the backend supports <code className="bg-blue-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">x-branch-id</code> header.
-          </p>
-        </div>
-      )}
-
-      {/* Create / Edit Branch Modal */}
+      {/* ── Create / Edit Branch Modal ── */}
       {branchModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-5 shadow-xl text-xs">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-              {branchForm.id ? "Edit branch" : "Add new branch"}
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
-              Manage your restaurant locations. Each branch can have its own POS, menu and reports.
-            </p>
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-neutral-800">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">{branchForm.id ? "Edit Branch" : "Add New Branch"}</h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">Each branch can have its own POS and reports</p>
+              </div>
+              <button type="button" onClick={() => { resetBranchForm(); setBranchModalOpen(false); }} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             {branchModalError && (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
-                {branchModalError}
-              </div>
+              <div className="mx-6 mt-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-2.5 text-xs text-red-700 dark:text-red-400">{branchModalError}</div>
             )}
-            <form onSubmit={handleBranchSubmit} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  Branch name
-                </label>
-                <input
-                  type="text"
-                  value={branchForm.name}
-                  onChange={(e) => setBranchForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g. DHA Phase 5"
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  Branch code <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={branchForm.code}
-                  onChange={(e) => setBranchForm((prev) => ({ ...prev, code: e.target.value }))}
-                  placeholder="e.g. dha5"
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  Address <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={branchForm.address}
-                  onChange={(e) => setBranchForm((prev) => ({ ...prev, address: e.target.value }))}
-                  placeholder="Street, area, city"
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
-                  Business day cutoff
-                </label>
-                <select
-                  value={branchForm.businessDayCutoffHour}
-                  onChange={(e) => setBranchForm((prev) => ({ ...prev, businessDayCutoffHour: parseInt(e.target.value, 10) }))}
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                >
+            <form onSubmit={handleBranchSubmit} className="p-6 space-y-4">
+              {[
+                { label: "Branch Name", key: "name", placeholder: "e.g. DHA Phase 5", required: true },
+                { label: "Branch Code", key: "code", placeholder: "e.g. dha5", optional: true },
+                { label: "Address", key: "address", placeholder: "Street, area, city", optional: true },
+              ].map(field => (
+                <div key={field.key} className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                    {field.label} {field.optional && <span className="text-gray-400 font-normal">(optional)</span>}
+                  </label>
+                  <input type="text" value={branchForm[field.key]} onChange={e => setBranchForm(p => ({ ...p, [field.key]: e.target.value }))} placeholder={field.placeholder} className={inp} />
+                </div>
+              ))}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Business Day Cutoff</label>
+                <select value={branchForm.businessDayCutoffHour} onChange={e => setBranchForm(p => ({ ...p, businessDayCutoffHour: parseInt(e.target.value, 10) }))} className={inp}>
                   {Array.from({ length: 24 }, (_, h) => (
                     <option key={h} value={h}>
                       {h === 0 ? "12:00 AM (midnight)" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM (noon)" : `${h - 12}:00 PM`}
@@ -768,117 +670,72 @@ export default function BranchesPage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                  Orders before this time count as the previous business day. Set this 1 hour after your closing time.
-                </p>
+                <p className="text-[11px] text-gray-400 dark:text-neutral-500">Orders before this time count as the previous business day.</p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    resetBranchForm();
-                    setBranchModalOpen(false);
-                  }}
-                  disabled={branchSaving}
-                >
+                <button type="button" onClick={() => { resetBranchForm(); setBranchModalOpen(false); }} disabled={branchSaving}
+                  className="h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-50">
                   Cancel
-                </Button>
-                <Button type="submit" className="gap-1.5" disabled={branchSaving}>
-                  {branchSaving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {branchForm.id ? "Saving..." : "Creating..."}
-                    </>
-                  ) : (
-                    <>{branchForm.id ? "Save changes" : "Create branch"}</>
-                  )}
-                </Button>
+                </button>
+                <button type="submit" disabled={branchSaving}
+                  className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 transition-all disabled:opacity-70">
+                  {branchSaving ? <><Loader2 className="w-4 h-4 animate-spin" />{branchForm.id ? "Saving..." : "Creating..."}</> : <>{branchForm.id ? "Save Changes" : "Create Branch"}</>}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-
-      {/* Delete branch confirmation modal */}
+      {/* ── Delete confirmation modal ── */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Delete branch</h2>
-              <button
-                type="button"
-                onClick={() => { setDeleteTarget(null); setDeleteConfirmName(""); }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
-              >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-red-100 dark:bg-red-500/10 flex items-center justify-center">
+                  <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                </div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Delete Branch</h2>
+              </div>
+              <button type="button" onClick={() => { setDeleteTarget(null); setDeleteConfirmName(""); }} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="px-5 py-4 space-y-3">
-              <p className="text-xs text-gray-600 dark:text-neutral-400">
-                This will <span className="font-semibold">soft delete</span> the branch{" "}
-                <span className="font-semibold">"{deleteTarget.name}"</span>. It can be recovered within{" "}
-                <span className="font-semibold">48 hours</span>. To confirm, type the branch name exactly.
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-gray-600 dark:text-neutral-400">
+                This will soft-delete <span className="font-semibold text-gray-900 dark:text-white">"{deleteTarget.name}"</span>. It can be recovered within <span className="font-semibold">48 hours</span>.
               </p>
-              <div>
-                <label className="block text-[11px] font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                  Type <span className="font-mono">{deleteTarget.name}</span> to confirm
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                  Type <span className="font-mono text-red-600 dark:text-red-400">{deleteTarget.name}</span> to confirm
                 </label>
-                <input
-                  type="text"
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-                  placeholder={deleteTarget.name}
-                />
+                <input type="text" value={deleteConfirmName} onChange={e => setDeleteConfirmName(e.target.value)} placeholder={deleteTarget.name}
+                  className="w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all" />
               </div>
             </div>
-            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => { setDeleteTarget(null); setDeleteConfirmName(""); }}
-                className="px-4"
-              >
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-neutral-800">
+              <button type="button" onClick={() => { setDeleteTarget(null); setDeleteConfirmName(""); }}
+                className="h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors">
                 Cancel
-              </Button>
-              <Button
-                type="button"
-                className="px-4 bg-red-600 hover:bg-red-700 text-white"
-                disabled={
-                  deleteLoading ||
-                  deleteConfirmName.trim() !== (deleteTarget.name || "").trim()
-                }
+              </button>
+              <button type="button" disabled={deleteLoading || deleteConfirmName.trim() !== (deleteTarget.name || "").trim()}
                 onClick={async () => {
                   setDeleteLoading(true);
                   const toastId = toast.loading(`Deleting "${deleteTarget.name}"...`);
                   try {
                     await deleteBranch(deleteTarget.id);
-                    // Refresh list after soft delete
-                    const data = await getBranches();
-                    const list = data?.branches ?? (Array.isArray(data) ? data : []);
-                    setBranches(list);
-                    // Refresh deleted branches list
-                    const deletedData = await getDeletedBranches();
-                    const delList = deletedData?.branches ?? (Array.isArray(deletedData) ? deletedData : []);
-                    setDeletedBranches(delList);
-                    setDeleteTarget(null);
-                    setDeleteConfirmName("");
-                    toast.success(`Branch "${deleteTarget.name}" deleted successfully!`, { id: toastId });
-                  } catch (err) {
-                    toast.error(err.message || "Failed to delete branch", { id: toastId });
-                  } finally {
-                    setDeleteLoading(false);
-                  }
+                    const [d, del] = await Promise.all([getBranches(), getDeletedBranches()]);
+                    setBranches(d?.branches ?? (Array.isArray(d) ? d : []));
+                    setDeletedBranches(del?.branches ?? (Array.isArray(del) ? del : []));
+                    setDeleteTarget(null); setDeleteConfirmName("");
+                    toast.success(`"${deleteTarget.name}" deleted!`, { id: toastId });
+                  } catch (err) { toast.error(err.message || "Failed to delete", { id: toastId }); }
+                  finally { setDeleteLoading(false); }
                 }}
-              >
-                {deleteLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  "Delete branch"
-                )}
-              </Button>
+                className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Trash2 className="w-4 h-4" />Delete Branch</>}
+              </button>
             </div>
           </div>
         </div>
