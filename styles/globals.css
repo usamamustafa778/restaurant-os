@@ -101,3 +101,9 @@ body {
   @apply bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30;
 }
 
+@keyframes progressBar {
+  0%   { transform: translateX(-100%); width: 40%; }
+  50%  { width: 70%; }
+  100% { transform: translateX(300%); width: 40%; }
+}
+

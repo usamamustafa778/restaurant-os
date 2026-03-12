@@ -1,7 +1,17 @@
 import { useEffect, useState, useRef } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
-import { getOverview, getSalesReport, getDailyCurrency, saveDailyCurrency, SubscriptionInactiveError } from "../../lib/apiClient";
+import {
+  getOverview,
+  getSalesReport,
+  getDailyCurrency,
+  saveDailyCurrency,
+  SubscriptionInactiveError,
+  getDaySessions,
+  getDaySessionOrders,
+  getBulkDaySessionOrders,
+} from "../../lib/apiClient";
+import { useBranch } from "../../contexts/BranchContext";
 import { ShoppingBag, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, BarChart3, Loader2, LayoutDashboard } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -204,7 +214,7 @@ function RevenueBarChart({ data, xLabel, columnMinWidth = 28 }) {
                 style={{ height: Math.max(h, 2) }}
               />
               <span className={`text-[9px] font-medium mt-1 truncate w-full text-center ${d.isRemaining ? "text-gray-400 dark:text-neutral-500" : "text-gray-600 dark:text-neutral-400"}`}>
-               {xLabel(d)}
+                {xLabel(d)}
               </span>
             </div>
           );
@@ -229,11 +239,11 @@ function DailySalesLineChart({ period, dailySales, hourlySales, remainingHoursSt
   const data = isMonthly
     ? (dailySales || []).map((d) => ({ x: d.day, y: d.sales, label: String(d.day), isRemaining: !!d.isRemaining }))
     : Array.from({ length: hourlySales?.length || 0 }, (_, i) => ({
-        x: i,
-        y: (hourlySales || [])[i] || 0,
-        label: `${i}:00`,
-        isRemaining: remainingHoursStart != null && i >= remainingHoursStart,
-      }));
+      x: i,
+      y: (hourlySales || [])[i] || 0,
+      label: `${i}:00`,
+      isRemaining: remainingHoursStart != null && i >= remainingHoursStart,
+    }));
 
   const maxY = data.length > 0 ? Math.max(...data.map((d) => d.y), 0) : 1;
   const formatY = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
@@ -301,6 +311,8 @@ function DailySalesLineChart({ period, dailySales, hourlySales, remainingHoursSt
 }
 
 export default function OverviewPage() {
+  const { currentBranch } = useBranch() || {};
+
   const [stats, setStats] = useState({
     totalOrders: 0,
     pendingOrders: 0,
@@ -332,6 +344,17 @@ export default function OverviewPage() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth()); // 0-11
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
 
+  // Day sessions (POS business days) for quick filtering
+  const [daySessions, setDaySessions] = useState([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [selectedSessionSummary, setSelectedSessionSummary] = useState(null);
+  const [selectedSessionOrders, setSelectedSessionOrders] = useState([]);
+  const [loadingSelectedSession, setLoadingSelectedSession] = useState(false);
+  const [showSessionsModal, setShowSessionsModal] = useState(false);
+  const [sessionRangeStart, setSessionRangeStart] = useState(null);
+  const [sessionRangeEnd, setSessionRangeEnd] = useState(null);
+
   // Currency note counter (denomination -> quantity), saved per day in backend
   const CURRENCY_NOTES = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
   const [currencyDate, setCurrencyDate] = useState("today"); // "today" | "yesterday"
@@ -345,14 +368,14 @@ export default function OverviewPage() {
   const currencyDateValue =
     currencyDate === "today"
       ? (() => {
-          const d = new Date();
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        })()
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      })()
       : (() => {
-          const d = new Date();
-          d.setDate(d.getDate() - 1);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        })();
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      })();
   const isCurrencyEditable = true; // only today/yesterday are selectable, both editable
   const currencyTotal = CURRENCY_NOTES.reduce(
     (sum, note) => sum + (Number(currencyQuantities[note]) || 0) * note,
@@ -428,6 +451,132 @@ export default function OverviewPage() {
     })();
   }, []);
 
+  // Load recent day sessions (business days) for the current branch / all branches
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingSessions(true);
+    setSelectedSession(null);
+    setSelectedSessionSummary(null);
+    setSelectedSessionOrders([]);
+    setSessionRangeStart(null);
+    setSessionRangeEnd(null);
+
+    (async () => {
+      try {
+        const res = await getDaySessions(currentBranch?.id);
+        if (!cancelled) {
+          setDaySessions(
+            Array.isArray(res?.sessions)
+              ? [...res.sessions].sort(
+                (a, b) => new Date(a.startAt) - new Date(b.startAt),
+              )
+              : [],
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load day sessions:", err);
+          setDaySessions([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingSessions(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch]);
+
+  function isSessionInRange(session) {
+    if (!sessionRangeStart) return false;
+
+    const startIndex = daySessions.findIndex(
+      (s) => s.id === sessionRangeStart.id,
+    );
+    const endIndexRaw = sessionRangeEnd
+      ? daySessions.findIndex((s) => s.id === sessionRangeEnd.id)
+      : startIndex;
+
+    if (startIndex === -1 || endIndexRaw === -1) return false;
+
+    const idx = daySessions.findIndex((s) => s.id === session.id);
+    if (idx === -1) return false;
+
+    const [from, to] =
+      startIndex <= endIndexRaw
+        ? [startIndex, endIndexRaw]
+        : [endIndexRaw, startIndex];
+
+    return idx >= from && idx <= to;
+  }
+
+  async function loadSessionRange(fromSession, toSession) {
+    setLoadingSelectedSession(true);
+    try {
+      const startIndex = daySessions.findIndex((s) => s.id === fromSession.id);
+      const endIndex = daySessions.findIndex((s) => s.id === toSession.id);
+      if (startIndex === -1 || endIndex === -1) return;
+
+      const [from, to] =
+        startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+
+      const sessionsInRange = daySessions.slice(from, to + 1);
+      const sessionIds = sessionsInRange.map((s) => s.id);
+
+      // Single API call for all sessions in range
+      const res = await getBulkDaySessionOrders(sessionIds);
+
+      const first = sessionsInRange[0];
+      const last = sessionsInRange[sessionsInRange.length - 1];
+
+      setSelectedSession({
+        id: sessionsInRange.length === 1 ? first.id : `${first.id}-${last.id}`,
+        startAt: first.startAt,
+        endAt: last.endAt,
+      });
+      setSelectedSessionSummary(res?.summary || {
+        totalSales: 0, totalOrders: 0, totalDiscount: 0,
+        totalProfit: 0, cashSales: 0, cardSales: 0,
+      });
+      setSelectedSessionOrders(Array.isArray(res?.orders) ? res.orders : []);
+    } catch (err) {
+      console.error("Failed to load day session details:", err);
+      toast.error(err.message || "Failed to load session data");
+    } finally {
+      setLoadingSelectedSession(false);
+    }
+  }
+
+  async function handleSelectSession(session) {
+    const clickedIndex = daySessions.findIndex((s) => s.id === session.id);
+    if (clickedIndex === -1) return;
+
+    // If no range started yet, or a previous range is already completed,
+    // start a new range from this session and wait for the second click.
+    if (!sessionRangeStart || (sessionRangeStart && sessionRangeEnd)) {
+      setSessionRangeStart(session);
+      setSessionRangeEnd(null);
+      setSelectedSession(null);
+      setSelectedSessionSummary(null);
+      setSelectedSessionOrders([]);
+      return;
+    }
+
+    // We have a start but no end yet: this click decides the end.
+    // Set the end immediately so the UI highlights the range at once,
+    // then load data in the background.
+    setSessionRangeEnd(session);
+    await loadSessionRange(sessionRangeStart, session);
+  }
+
+  // Dashboard quick sessions row – single-click selects a single session
+  async function handleQuickSessionClick(session) {
+    setSessionRangeStart(session);
+    setSessionRangeEnd(session);
+    await loadSessionRange(session, session);
+  }
+
   // Fetch report from backend for the selected period (yesterday, today, or selected month)
   useEffect(() => {
     let cancelled = false;
@@ -485,8 +634,8 @@ export default function OverviewPage() {
     : [];
   const periodPayment =
     hasOrdersForPeriod &&
-    periodReport.paymentDistribution &&
-    Object.keys(periodReport.paymentDistribution).length > 0
+      periodReport.paymentDistribution &&
+      Object.keys(periodReport.paymentDistribution).length > 0
       ? periodReport.paymentDistribution
       : null;
   const paymentSegments =
@@ -506,19 +655,24 @@ export default function OverviewPage() {
     color: productColors[i % productColors.length],
   }));
 
+  // Last three sessions (latest first) for quick access row
+  const lastThreeSessions = daySessions.length
+    ? [...daySessions].slice(-3).reverse()
+    : [];
+
   const periodSubtitle =
     reportPeriod === "yesterday"
       ? (() => {
-          const d = new Date();
-          d.setDate(d.getDate() - 1);
-          return "Yesterday, " + d.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-        })()
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        return "Yesterday, " + d.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      })()
       : reportPeriod === "today"
         ? new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
         : new Date(selectedYear, selectedMonth, 1).toLocaleDateString("en-US", {
-            month: "short",
-            year: "numeric",
-          });
+          month: "short",
+          year: "numeric",
+        });
 
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -542,7 +696,39 @@ export default function OverviewPage() {
       isRemaining: reportPeriod === "monthly" ? day > effectiveTodayInView : false,
     };
   });
-  const fullDayHourlySales = Array.from({ length: 24 }, (_, i) => (i <= currentHour ? (stats.hourlySales[i] || 0) : 0));
+  const sessionPendingOrders = selectedSessionSummary
+    ? selectedSessionOrders.filter((o) => o.status !== "DELIVERED" && o.status !== "CANCELLED").length
+    : 0;
+
+  const viewTotalOrders = selectedSessionSummary
+    ? selectedSessionSummary.totalOrders || 0
+    : periodReport.totalOrders ?? 0;
+
+  const viewTotalRevenue = selectedSessionSummary
+    ? selectedSessionSummary.totalSales || 0
+    : periodReport.totalRevenue ?? 0;
+
+  const viewTotalProfit = selectedSessionSummary
+    ? selectedSessionSummary.totalProfit || 0
+    : periodReport.totalProfit ?? 0;
+
+  const viewPendingOrders = selectedSessionSummary ? sessionPendingOrders : stats.pendingOrders;
+
+  const sessionHourlySales = selectedSessionSummary
+    ? (() => {
+      const hours = new Array(24).fill(0);
+      for (const o of selectedSessionOrders) {
+        const h = new Date(o.createdAt).getHours();
+        hours[h] += o.total || 0;
+      }
+      return hours;
+    })()
+    : null;
+
+  const baseHourlySales = sessionHourlySales || stats.hourlySales;
+  const fullDayHourlySales = Array.from({ length: 24 }, (_, i) =>
+    i <= currentHour ? (baseHourlySales[i] || 0) : 0
+  );
   const remainingHoursStart = currentHour + 1;
 
   const yearOptions = [];
@@ -602,235 +788,401 @@ export default function OverviewPage() {
         </div>
       ) : (
         <>
-          {/* Period filter – applies to full page data from backend */}
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-        <span className="text-sm font-semibold text-gray-600 dark:text-neutral-400">Report period:</span>
-        <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setReportPeriod("yesterday")}
-            disabled={periodLoading}
-            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
-              reportPeriod === "yesterday"
-                ? "bg-primary text-white shadow-md"
-                : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-neutral-800"
-            }`}
-          >
-            Yesterday
-          </button>
-          <button
-            type="button"
-            onClick={() => setReportPeriod("today")}
-            disabled={periodLoading}
-            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
-              reportPeriod === "today"
-                ? "bg-primary text-white shadow-md"
-                : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-neutral-800"
-            }`}
-          >
-            Today
-          </button>
-          <button
-            type="button"
-            onClick={() => setReportPeriod("monthly")}
-            disabled={periodLoading}
-            className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
-              reportPeriod === "monthly"
-                ? "bg-primary text-white shadow-md"
-                : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-neutral-800"
-            }`}
-          >
-            Month
-          </button>
-        </div>
-        {periodLoading && (
-          <span className="text-xs text-gray-500 dark:text-neutral-400">Loading…</span>
-        )}
-      </div>
+          {/* Day session row */}
+          <div className="mb-4 flex items-center justify-between gap-3 border">
 
-      {/* KPIs row - Premium style with gradients */}
-      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 mb-6">
-        {/* Total Orders (this month) */}
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-purple-300 dark:hover:border-purple-500/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
-                <ShoppingBag className="w-7 h-7 text-white" />
+            {lastThreeSessions.length > 0 && (
+              <div className="mb-4 grid grid-cols-1 w-full sm:grid-cols-3 gap-3">
+                {lastThreeSessions.map((s) => {
+                  const isStart = sessionRangeStart?.id === s.id && !sessionRangeEnd;
+                  const isInRange = isSessionInRange(s);
+                  const start = new Date(s.startAt);
+                  const end = s.endAt ? new Date(s.endAt) : null;
+
+                  const cardClasses = isStart
+                    ? "border-primary bg-transparent dark:bg-transparent shadow-sm"
+                    : isInRange
+                      ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-1 ring-primary/30"
+                      : "border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 hover:shadow-md";
+
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => handleQuickSessionClick(s)}
+                      className={`px-3 py-2 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${cardClasses}`}
+                    >
+                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
+                        <span className="text-gray-400 dark:text-neutral-500 mr-1">From</span>
+                        <span className="font-medium">
+                          {start.toLocaleDateString("en-PK", { month: "short", day: "numeric" })}{" "}
+                          {start.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                        </span>
+                      </div>
+                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
+                        <span className="text-gray-400 dark:text-neutral-500 mr-1">To</span>
+                        {end ? (
+                          <span className="font-medium">
+                            {end.toLocaleDateString("en-PK", { month: "short", day: "numeric" })}{" "}
+                            {end.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                          </span>
+                        ) : (
+                          <span className="text-green-500 dark:text-green-400 font-semibold">Open</span>
+                        )}
+                      </div>
+                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400 mt-0.5">
+                        <span className="text-gray-400 dark:text-neutral-500">Sales</span>
+                        <span className="font-bold text-gray-800 dark:text-white text-[10px]">
+                          Rs {(s.totalSales || 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
+                        <span className="text-gray-400 dark:text-neutral-500">Orders</span>
+                        <span className="font-bold text-gray-800 dark:text-white text-[10px]">
+                          {s.totalOrders || 0}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                +{periodReport.totalOrders > 0 ? Math.round((periodReport.totalOrders / (periodReport.totalOrders + 10)) * 100) : 0}%
-              </span>
+            )}
+            <div className="flex w-fit items-center gap-2">
+              {loadingSessions && (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 dark:text-neutral-500" />
+              )}
+              
+              <button
+                type="button"
+                onClick={() => setShowSessionsModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/10 dark:hover:bg-primary/20 transition-all"
+              >
+                Sessions
+              </button>
             </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Orders</p>
-            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{periodReport.totalOrders}</p>
           </div>
-        </div>
+          <div>
+          <div className="flex items-center w-fit gap-2">
+              {selectedSession && (
+                <>
+                
+                
+                <span className="text-xs text-gray-500 dark:text-neutral-400">
+                  {new Date(selectedSession.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                  {" – "}
+                  {selectedSession.endAt
+                    ? new Date(selectedSession.endAt).toLocaleString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })
+                    : <span className="text-green-500 dark:text-green-400 font-semibold">Open</span>}
+                </span>
+                <div>
+                  <span className="text-xs text-gray-500 dark:text-neutral-400">Session range</span>
+                {(selectedSession || sessionRangeStart) && !loadingSelectedSession && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSession(null);
+                    setSelectedSessionSummary(null);
+                    setSelectedSessionOrders([]);
+                    setSessionRangeStart(null);
+                    setSessionRangeEnd(null);
+                  }}
+                  className="text-xs pl-4 font-semibold text-gray-800 dark:text-neutral-500 hover:text-gray-700 dark:hover:text-white underline"
+                >
+                  Clear
+                </button>
+              )}
+                </div>
+                </>
+              )}
+            </div>
+          </div>
 
-        {/* Total Sales (this month) */}
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-primary/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className=" h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
-                <DollarSign className="w-7 h-7 text-white" />
+          {/* Quick sessions row – show current and last two sessions */}
+
+
+          {/* Sessions modal – 5 columns × 6 rows (up to 30) */}
+          {showSessionsModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+              onClick={(e) => { if (e.target === e.currentTarget) setShowSessionsModal(false); }}
+            >
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                {/* header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800 relative">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white">All Sessions</h2>
+                    {loadingSelectedSession && (
+                      <span className="text-xs text-primary font-medium flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSessionsModal(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all text-lg font-bold"
+                  >
+                    ×
+                  </button>
+                  {/* animated progress bar – only visible while loading */}
+                  {loadingSelectedSession && (
+                    <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-gray-100 dark:bg-neutral-800 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-primary to-secondary"
+                        style={{ animation: "progressBar 1.2s ease-in-out infinite" }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* grid */}
+                <div className="overflow-y-auto p-4">
+                  {loadingSessions ? (
+                    <div className="flex items-center justify-center py-16 gap-2 text-gray-500 dark:text-neutral-400">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">Loading sessions…</span>
+                    </div>
+                  ) : daySessions.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400  dark:text-neutral-500 py-16">No sessions found.</p>
+                  ) : (<>
+                    <div className="grid grid-cols-5 gap-2.5 ">
+                      {daySessions.slice(0, 30).map((s) => {
+                        const isStart = sessionRangeStart?.id === s.id && !sessionRangeEnd;
+                        const isInRange = isSessionInRange(s);
+                        const start = new Date(s.startAt);
+                        const end = s.endAt ? new Date(s.endAt) : null;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={async () => {
+                              const hadStart = !!sessionRangeStart;
+                              const hadEnd = !!sessionRangeEnd;
+                              // If completing a range (second click), close after loading
+                              const isCompletingRange = hadStart && !hadEnd;
+                              await handleSelectSession(s);
+                              if (isCompletingRange) setShowSessionsModal(false);
+                            }}
+                            className={`px-2.5 py-2 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${isStart
+                                ? "border-primary bg-transparent dark:bg-transparent shadow-sm"
+                                : isInRange
+                                  ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-md ring-1 ring-primary/30"
+                                  : "border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 hover:shadow-md"
+                              }`}
+                          >
+                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
+                              <span className="text-gray-400 dark:text-neutral-500">From</span>
+                              <span className="font-medium">{start.toLocaleDateString("en-PK", { month: "short", day: "numeric" })} {start.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                            </div>
+                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
+                              <span className="text-gray-400 dark:text-neutral-500">To</span>
+                              {end
+                                ? <span className="font-medium">{end.toLocaleDateString("en-PK", { month: "short", day: "numeric" })} {end.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                                : <span className="text-green-500 dark:text-green-400 font-semibold">Open</span>
+                              }
+                            </div>
+                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400 mt-0.5">
+                              <span className="text-gray-400 dark:text-neutral-500">Sales</span>
+                              <span className="font-bold text-gray-800 dark:text-white text-[10px]">Rs {(s.totalSales || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="text-[9px] leading-tight flex items-center justify-between text-gray-500 dark:text-neutral-400">
+                              <span className="text-gray-400 dark:text-neutral-500">Orders</span>
+                              <span className="font-bold text-gray-800 dark:text-white text-[10px]">{s.totalOrders || 0}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                  )}
+                </div>
               </div>
-              <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                +{periodReport.totalRevenue > 0 ? Math.round((periodReport.totalRevenue / (periodReport.totalRevenue + 1000)) * 100) : 0}%
-              </span>
             </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Sales</p>
-            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalRevenue ?? 0).toLocaleString()}</p>
-          </div>
-        </div>
+          )}
 
-        {/* Average Value (this month) */}
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-orange-300 dark:hover:border-orange-500/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/30">
-                <TrendingUp className="w-7 h-7 text-white" />
+          {/* KPIs row - Premium style with gradients */}
+          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4 mb-6">
+            {/* Total Orders (this month) */}
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-purple-300 dark:hover:border-purple-500/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
+                    <ShoppingBag className="w-7 h-7 text-white" />
+                  </div>
+                  <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
+                    +{viewTotalOrders > 0 ? Math.round((viewTotalOrders / (viewTotalOrders + 10)) * 100) : 0}%
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Orders</p>
+                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{viewTotalOrders}</p>
               </div>
-              <span className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-500/20 dark:text-red-400 rounded-xl">
-                -4.8%
-              </span>
             </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Average Value</p>
-            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">
-              Rs {periodReport.totalOrders ? Math.round((periodReport.totalRevenue ?? 0) / periodReport.totalOrders).toLocaleString() : 0}
-            </p>
-          </div>
-        </div>
 
-        {/* In Progress */}
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                <Package className="w-7 h-7 text-white" />
+            {/* Total Sales (this month) */}
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-primary/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className=" h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/30">
+                    <DollarSign className="w-7 h-7 text-white" />
+                  </div>
+                  <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
+                    +{viewTotalRevenue > 0 ? Math.round((viewTotalRevenue / (viewTotalRevenue + 1000)) * 100) : 0}%
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Total Sales</p>
+                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">Rs {Math.round(viewTotalRevenue ?? 0).toLocaleString()}</p>
               </div>
-              <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
-                +{stats.pendingOrders}%
-              </span>
             </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">In Progress</p>
-            <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{stats.pendingOrders}</p>
-          </div>
-        </div>
-      </div>
 
-      {/* Monthly Report row */}
-      <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
-        <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-emerald-300 dark:border-emerald-500/30 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative flex items-center gap-4">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <TrendingUp className="w-7 h-7 text-white" />
+            {/* Average Value (this month) */}
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-orange-300 dark:hover:border-orange-500/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/30">
+                    <TrendingUp className="w-7 h-7 text-white" />
+                  </div>
+                  <span className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-500/20 dark:text-red-400 rounded-xl">
+                    -4.8%
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">Average Value</p>
+                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">
+                  Rs {viewTotalOrders ? Math.round(viewTotalRevenue / viewTotalOrders).toLocaleString() : 0}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">
-                {reportPeriod === "yesterday" ? "Yesterday's Profit" : reportPeriod === "monthly" ? "This Month Profit" : "Today's Profit"}
-              </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalProfit ?? 0).toLocaleString()}</p>
+
+            {/* In Progress */}
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="h-10 w-10 md:h-14 md:w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                    <Package className="w-7 h-7 text-white" />
+                  </div>
+                  <span className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-400 rounded-xl">
+                    +{viewPendingOrders}%
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400 mb-2">In Progress</p>
+                <p className="text-xl md:text-3xl font-bold text-gray-900 dark:text-white">{viewPendingOrders}</p>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="sm:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all w-full">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
-              <BarChart3 className="w-5 h-5 text-white" />
+
+          {/* Monthly Report row */}
+          <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+            <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-emerald-300 dark:border-emerald-500/30 rounded-2xl p-6 hover:shadow-2xl hover:border-emerald-300 dark:hover:border-emerald-500/30 transition-all overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative flex items-center gap-4">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                  <TrendingUp className="w-7 h-7 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">
+                    {reportPeriod === "yesterday" ? "Yesterday's Profit" : reportPeriod === "monthly" ? "This Month Profit" : "Today's Profit"}
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">Rs {Math.round(periodReport.totalProfit ?? 0).toLocaleString()}</p>
+                </div>
+              </div>
             </div>
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">Daily sales</h3>
-          </div>
-          {/* <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
+            <div className="sm:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all w-full">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
+                  <BarChart3 className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">Daily sales</h3>
+              </div>
+              {/* <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
             X-axis: {reportPeriod === "monthly"
               ? (todayDayOfMonth < lastDayOfMonth ? `day of month (1–${lastDayOfMonth}); days ${todayDayOfMonth + 1}–${lastDayOfMonth} remaining` : `day of month (1–${lastDayOfMonth})`)
               : (currentHour < 23 ? `hour (0–23); hours ${remainingHoursStart}–23 remaining` : "hour (0–23)")
             }. Y-axis: sales (Rs). Not cumulative. Data up to {reportPeriod === "monthly" ? "today" : "current hour"}.
           </p> */}
-          {reportPeriod === "monthly" ? (
-            fullMonthDailySales.length > 0 ? (
-              <DailySalesLineChart period="monthly" dailySales={fullMonthDailySales} hourlySales={null} remainingHoursStart={null} />
-            ) : (
-              <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data yet this month</p>
-            )
-          ) : reportPeriod === "yesterday" ? (
-            periodReport.hourlySales ? (
-              <DailySalesLineChart period="today" dailySales={null} hourlySales={periodReport.hourlySales} remainingHoursStart={24} />
-            ) : (periodReport.dailySales || []).length > 0 ? (
-              <DailySalesLineChart period="monthly" dailySales={(periodReport.dailySales || []).map((d) => ({ day: d.day, sales: d.sales, isRemaining: false }))} hourlySales={null} remainingHoursStart={null} />
-            ) : (
-              <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data for yesterday</p>
-            )
-          ) : (
-            <DailySalesLineChart period="today" dailySales={null} hourlySales={fullDayHourlySales} remainingHoursStart={remainingHoursStart} />
-          )}
-        </div>
-      </div>
-
-      {/* Top Selling & Sales Performance row */}
-      <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
-        {/* Top Selling Item */}
-        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">🔥 Top Selling Items</h3>
-            <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "Monthly" : "Today"}</span>
+              {reportPeriod === "monthly" ? (
+                fullMonthDailySales.length > 0 ? (
+                  <DailySalesLineChart period="monthly" dailySales={fullMonthDailySales} hourlySales={null} remainingHoursStart={null} />
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data yet this month</p>
+                )
+              ) : reportPeriod === "yesterday" ? (
+                periodReport.hourlySales ? (
+                  <DailySalesLineChart period="today" dailySales={null} hourlySales={periodReport.hourlySales} remainingHoursStart={24} />
+                ) : (periodReport.dailySales || []).length > 0 ? (
+                  <DailySalesLineChart period="monthly" dailySales={(periodReport.dailySales || []).map((d) => ({ day: d.day, sales: d.sales, isRemaining: false }))} hourlySales={null} remainingHoursStart={null} />
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-neutral-400 py-6 text-center">No data for yesterday</p>
+                )
+              ) : (
+                <DailySalesLineChart period="today" dailySales={null} hourlySales={fullDayHourlySales} remainingHoursStart={remainingHoursStart} />
+              )}
+            </div>
           </div>
-          {displayTopProductSegments.length > 0 ? (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5 border border-orange-200 dark:border-orange-500/20">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
-                    <span className="text-2xl">👑</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-base font-bold text-gray-900 dark:text-white truncate">
-                      {displayTopProductSegments[0]?.label || "No data"}
-                    </p>
-                    <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium">
-                      {displayTopProductSegments[0]?.value || 0} {reportPeriod === "monthly" ? "sold" : reportPeriod === "yesterday" ? "sold" : "orders"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              {displayTopProductSegments.slice(1, 5).map((item, i) => (
-                <div key={item.label} className="flex items-center justify-between py-3 border-t border-gray-100 dark:border-neutral-800">
-                  <div className="flex items-center gap-3">
-                    <span className="flex items-center justify-center h-6 w-6 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-bold text-gray-600 dark:text-neutral-400">
-                      {i + 2}
-                    </span>
-                    <span className="text-sm font-semibold text-gray-700 dark:text-neutral-300">{item.label}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-20 h-2 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full rounded-full transition-all" 
-                        style={{ 
-                          width: `${(displayTopProductSegments[0].value ? (item.value / displayTopProductSegments[0].value) * 100 : 0)}%`,
-                          backgroundColor: item.color 
-                        }} 
-                      />
-                    </div>
-                    <span className="text-sm font-bold text-gray-900 dark:text-white w-10 text-right">{item.value}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-12">
-              <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                <ShoppingBag className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-              </div>
-              <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No sales data yet</p>
-            </div>
-          )}
-        </div>
 
-        {/* Sales Performance Gauge */}
-        {/* <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+          {/* Top Selling & Sales Performance row */}
+          <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
+            {/* Top Selling Item */}
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">🔥 Top Selling Items</h3>
+                <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "Monthly" : "Today"}</span>
+              </div>
+              {displayTopProductSegments.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100/50 dark:from-orange-500/10 dark:to-orange-500/5 border border-orange-200 dark:border-orange-500/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
+                        <span className="text-2xl">👑</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base font-bold text-gray-900 dark:text-white truncate">
+                          {displayTopProductSegments[0]?.label || "No data"}
+                        </p>
+                        <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium">
+                          {displayTopProductSegments[0]?.value || 0} {reportPeriod === "monthly" ? "sold" : reportPeriod === "yesterday" ? "sold" : "orders"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {displayTopProductSegments.slice(1, 5).map((item, i) => (
+                    <div key={item.label} className="flex items-center justify-between py-3 border-t border-gray-100 dark:border-neutral-800">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center h-6 w-6 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-bold text-gray-600 dark:text-neutral-400">
+                          {i + 2}
+                        </span>
+                        <span className="text-sm font-semibold text-gray-700 dark:text-neutral-300">{item.label}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-20 h-2 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${(displayTopProductSegments[0].value ? (item.value / displayTopProductSegments[0].value) * 100 : 0)}%`,
+                              backgroundColor: item.color
+                            }}
+                          />
+                        </div>
+                        <span className="text-sm font-bold text-gray-900 dark:text-white w-10 text-right">{item.value}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                    <ShoppingBag className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No sales data yet</p>
+                </div>
+              )}
+            </div>
+
+            {/* Sales Performance Gauge */}
+            {/* <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-base font-bold text-gray-900 dark:text-white">Sales Performance</h3>
             <button className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
@@ -880,312 +1232,312 @@ export default function OverviewPage() {
           </div>
         </div> */}
 
-        {/* Payment Distribution (filtered by report period: Yesterday / Today / Month) */}
-        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">💳 Payment Methods</h3>
-          <p className="text-xs text-gray-500 dark:text-neutral-400 mb-5">
-            {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "today" ? "Today" : "This month"}
-          </p>
-          <div className="space-y-4">
-            {paymentSegments.length > 0 ? paymentSegments.map(s => {
-              const total = paymentSegments.reduce((sum, seg) => sum + seg.value, 0);
-              const percent = total > 0 ? ((s.value / total) * 100).toFixed(0) : "0";
-              const value = Math.round(Number(s.value) || 0);
-              return (
-                <div key={s.label}>
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="font-semibold text-gray-700 dark:text-neutral-300">{s.label}</span>
-                    <span className="flex items-center gap-2">
-                      {paymentAmounts ? (
-                        <span className="font-bold text-primary">Rs {value.toLocaleString()}</span>
-                      ) : (
-                        <span className="font-medium text-gray-600 dark:text-neutral-400">{value} orders</span>
-                      )}
-                      <span className="font-bold text-gray-900 dark:text-white">{percent}%</span>
+            {/* Payment Distribution (filtered by report period: Yesterday / Today / Month) */}
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">💳 Payment Methods</h3>
+              <p className="text-xs text-gray-500 dark:text-neutral-400 mb-5">
+                {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "today" ? "Today" : "This month"}
+              </p>
+              <div className="space-y-4">
+                {paymentSegments.length > 0 ? paymentSegments.map(s => {
+                  const total = paymentSegments.reduce((sum, seg) => sum + seg.value, 0);
+                  const percent = total > 0 ? ((s.value / total) * 100).toFixed(0) : "0";
+                  const value = Math.round(Number(s.value) || 0);
+                  return (
+                    <div key={s.label}>
+                      <div className="flex items-center justify-between text-sm mb-2">
+                        <span className="font-semibold text-gray-700 dark:text-neutral-300">{s.label}</span>
+                        <span className="flex items-center gap-2">
+                          {paymentAmounts ? (
+                            <span className="font-bold text-primary">Rs {value.toLocaleString()}</span>
+                          ) : (
+                            <span className="font-medium text-gray-600 dark:text-neutral-400">{value} orders</span>
+                          )}
+                          <span className="font-bold text-gray-900 dark:text-white">{percent}%</span>
+                        </span>
+                      </div>
+                      <div className="w-full h-3 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden shadow-inner">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 shadow-sm"
+                          style={{ width: `${percent}%`, backgroundColor: s.color }}
+                        />
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                      <CreditCard className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No payment data yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Main row with revenue chart and category stats */}
+          <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
+            {/* Total Revenue Chart */}
+            <div className="lg:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+              <div className="mb-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <BarChart3 className="w-5 h-5 text-blue-500" />
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
+                  {reportPeriod === "yesterday" ? "Yesterday's performance" : reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
+                </p>
+              </div>
+              <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                    <TrendingUp className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium mb-0.5">
+                      {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "This Month" : "Today"}
+                    </p>
+                    <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                      Rs {(periodReport.totalRevenue ?? 0).toLocaleString()}
                     </span>
                   </div>
-                  <div className="w-full h-3 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden shadow-inner">
-                    <div 
-                      className="h-full rounded-full transition-all duration-500 shadow-sm" 
-                      style={{ width: `${percent}%`, backgroundColor: s.color }}
-                    />
-                  </div>
-                </div>
-              );
-            }) : (
-              <div className="flex flex-col items-center justify-center py-12">
-                <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                  <CreditCard className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-                </div>
-                <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No payment data yet</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Main row with revenue chart and category stats */}
-      <div className="grid gap-5 lg:grid-cols-3 mb-6 ">
-        {/* Total Revenue Chart */}
-        <div className="lg:col-span-2 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <div className="mb-5">
-            <div className="flex items-center gap-2 mb-1">
-              <BarChart3 className="w-5 h-5 text-blue-500" />
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">Total Revenue</h3>
-            </div>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-              {reportPeriod === "yesterday" ? "Yesterday's performance" : reportPeriod === "monthly" ? "Monthly performance" : "Today's performance"}
-            </p>
-          </div>
-          <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
-            <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                <TrendingUp className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-600 dark:text-neutral-400 font-medium mb-0.5">
-                  {reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly" ? "This Month" : "Today"}
-                </p>
-                <span className="text-3xl font-bold text-gray-900 dark:text-white">
-                  Rs {(periodReport.totalRevenue ?? 0).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          </div>
-          {/* Bar chart: 24 columns (hours) for today/yesterday, or one column per day for monthly; revenue on top of each column */}
-          {reportPeriod === "monthly" ? (
-            <div className="mt-4">
-              <RevenueBarChart
-                data={fullMonthDailySales.map((d) => ({ value: d.sales, isRemaining: d.isRemaining, day: d.day }))}
-                xLabel={(d) => String(d.day ?? "")}
-                columnMinWidth={20}
-              />
-              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Day of month (1–{lastDayOfMonth})</p>
-            </div>
-          ) : reportPeriod === "yesterday" ? (
-            <div className="mt-4">
-              <RevenueBarChart
-                data={Array.from({ length: 24 }, (_, i) => ({ 
-                  value: (periodReport.hourlySales || [])[i] || 0,
-                  isRemaining: false,
-                  hour: i,
-                }))}
-                xLabel={(d) => `${d.hour ?? 0}:00`}
-                columnMinWidth={28}
-              />
-              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
-            </div>
-          ) : (
-            <div className="mt-4">
-              <RevenueBarChart
-                data={Array.from({ length: 24 }, (_, i) => ({
-                  value: (periodReport.hourlySales && periodReport.hourlySales[i]) ?? fullDayHourlySales[i] ?? 0,
-                  isRemaining: i >= remainingHoursStart,
-                  hour: i,
-                }))}
-                xLabel={(d) => `${d.hour ?? 0}:00`}
-                columnMinWidth={28}
-              />
-              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
-            </div>
-          )}
-        </div>
-
-        {/* Category Statistics */}
-        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
-          <div className="mb-5">
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">📈 Order Types</h3>
-          </div>
-          <div className="flex items-center justify-center mb-6 py-4">
-            {salesTypeSegments.length > 0 ? (
-              <div className="relative">
-                <MiniPieChart segments={salesTypeSegments} />
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-16 h-16 rounded-full bg-white dark:bg-neutral-950 border-4 border-gray-100 dark:border-neutral-800" />
                 </div>
               </div>
-            ) : (
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800" />
-            )}
-          </div>
-          <div className="space-y-3">
-            {salesTypeSegments.length > 0 ? salesTypeSegments.map(s => (
-              <div key={s.label} className="flex items-center justify-between text-sm p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: s.color }} />
-                  <span className="font-semibold text-gray-700 dark:text-neutral-300">{s.label}</span>
+              {/* Bar chart: 24 columns (hours) for today/yesterday, or one column per day for monthly; revenue on top of each column */}
+              {reportPeriod === "monthly" ? (
+                <div className="mt-4">
+                  <RevenueBarChart
+                    data={fullMonthDailySales.map((d) => ({ value: d.sales, isRemaining: d.isRemaining, day: d.day }))}
+                    xLabel={(d) => String(d.day ?? "")}
+                    columnMinWidth={20}
+                  />
+                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Day of month (1–{lastDayOfMonth})</p>
                 </div>
-                <span className="font-bold text-gray-900 dark:text-white">{s.value}</span>
-              </div>
-            )) : (
-              <p className="text-sm text-center text-gray-500 dark:text-neutral-400 py-4">No order data yet</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Products performance table - Premium design (filtered by report period: Yesterday / Today / Month) */}
-      <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
-        <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-              <Package className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">Products Performance</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">
-                {reportPeriod === "yesterday"
-                  ? "Items sold yesterday based on completed orders"
-                  : reportPeriod === "today"
-                    ? "Items sold today based on completed orders"
-                    : "Items sold this month based on completed orders"}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
-              <tr>
-                <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Product Name</th>
-                <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Category</th>
-                <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Qty Sold</th>
-                <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Revenue</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
-              {(periodReport.topItems || []).length > 0 ? (
-                periodReport.topItems.map((p, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
-                    <td className="py-4 px-6 font-bold text-gray-900 dark:text-white">{p.name}</td>
-                    <td className="py-4 px-6">
-                      <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs font-semibold">
-                        {p.category ?? "—"}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <span className="inline-flex items-center justify-center min-w-[60px] px-3 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold">
-                        {p.quantity ?? 0}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-right font-bold text-primary text-base">Rs {(p.revenue ?? 0).toLocaleString()}</td>
-                  </tr>
-                ))
+              ) : reportPeriod === "yesterday" ? (
+                <div className="mt-4">
+                  <RevenueBarChart
+                    data={Array.from({ length: 24 }, (_, i) => ({
+                      value: (periodReport.hourlySales || [])[i] || 0,
+                      isRemaining: false,
+                      hour: i,
+                    }))}
+                    xLabel={(d) => `${d.hour ?? 0}:00`}
+                    columnMinWidth={28}
+                  />
+                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
+                </div>
               ) : (
-                <tr>
-                  <td colSpan={4} className="py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                        <Package className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-                      </div>
-                      <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">
-                        No sales data yet {reportPeriod === "yesterday" ? "yesterday" : reportPeriod === "today" ? "today" : "this month"}
-                      </p>
-                      <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Products will appear here once orders are completed</p>
-                    </div>
-                  </td>
-                </tr>
+                <div className="mt-4">
+                  <RevenueBarChart
+                    data={Array.from({ length: 24 }, (_, i) => ({
+                      value: (periodReport.hourlySales && periodReport.hourlySales[i]) ?? fullDayHourlySales[i] ?? 0,
+                      isRemaining: i >= remainingHoursStart,
+                      hour: i,
+                    }))}
+                    xLabel={(d) => `${d.hour ?? 0}:00`}
+                    columnMinWidth={28}
+                  />
+                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 text-center">Hour (0–23)</p>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+
+            {/* Category Statistics */}
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all">
+              <div className="mb-5">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">📈 Order Types</h3>
+              </div>
+              <div className="flex items-center justify-center mb-6 py-4">
+                {salesTypeSegments.length > 0 ? (
+                  <div className="relative">
+                    <MiniPieChart segments={salesTypeSegments} />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-16 h-16 rounded-full bg-white dark:bg-neutral-950 border-4 border-gray-100 dark:border-neutral-800" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800" />
+                )}
+              </div>
+              <div className="space-y-3">
+                {salesTypeSegments.length > 0 ? salesTypeSegments.map(s => (
+                  <div key={s.label} className="flex items-center justify-between text-sm p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: s.color }} />
+                      <span className="font-semibold text-gray-700 dark:text-neutral-300">{s.label}</span>
+                    </div>
+                    <span className="font-bold text-gray-900 dark:text-white">{s.value}</span>
+                  </div>
+                )) : (
+                  <p className="text-sm text-center text-gray-500 dark:text-neutral-400 py-4">No order data yet</p>
+                )}
+              </div>
+            </div>
           </div>
 
-      {/* Currency note counter - bottom section (saved per day; editable only for Today / Yesterday) */}
-      <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all mt-6">
-        <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
-                <DollarSign className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-gray-900 dark:text-white">Currency counter</h3>
-                <p className="text-xs text-gray-500 dark:text-neutral-400">Enter quantity of each note to get total amount (Rs). Saved per day.</p>
+          {/* Products performance table - Premium design (filtered by report period: Yesterday / Today / Month) */}
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all">
+            <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
+                  <Package className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Products Performance</h3>
+                  <p className="text-xs text-gray-500 dark:text-neutral-400">
+                    {reportPeriod === "yesterday"
+                      ? "Items sold yesterday based on completed orders"
+                      : reportPeriod === "today"
+                        ? "Items sold today based on completed orders"
+                        : "Items sold this month based on completed orders"}
+                  </p>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-gray-500 dark:text-neutral-400">Date:</span>
-              <div className="inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setCurrencyDate("today")}
-                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "today" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrencyDate("yesterday")}
-                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "yesterday" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
-                >
-                  Yesterday
-                </button>
-              </div>
-              {currencyLoading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-              {currencySaving && <span className="text-xs text-gray-500 dark:text-neutral-400">Saving…</span>}
-              <button
-                type="button"
-                onClick={handleSaveCurrency}
-                disabled={!isCurrencyEditable || currencySaving}
-                className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {currencySaving ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="px-4 pb-4 pt-2">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs max-w-xl">
-              <thead className="bg-gray-50 dark:bg-neutral-900/50">
-                <tr>
-                  <th className="py-2 px-3 text-left font-bold text-gray-700 dark:text-neutral-300">Note (Rs)</th>
-                  <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Qty</th>
-                  <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Amount (Rs)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
-                {CURRENCY_NOTES.map((note) => {
-                  const qty = Number(currencyQuantities[note]) || 0;
-                  const amount = qty * note;
-                  return (
-                    <tr key={note} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30">
-                      <td className="py-1.5 px-3 font-semibold text-gray-900 dark:text-white">{note.toLocaleString()}</td>
-                      <td className="py-1.5 px-3 text-right">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={currencyQuantities[note]}
-                          onChange={(e) => setCurrencyQty(note, e.target.value.replace(/\D/g, ""))}
-                          placeholder="0"
-                          disabled={!isCurrencyEditable}
-                          readOnly={!isCurrencyEditable}
-                          className={`w-20 text-right px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary focus:border-primary ${isCurrencyEditable ? "bg-white dark:bg-neutral-900 text-gray-900 dark:text-white" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-500 cursor-not-allowed"}`}
-                        />
-                      </td>
-                      <td className="py-1.5 px-3 text-right font-semibold text-primary">
-                        Rs {amount.toLocaleString()}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
+                  <tr>
+                    <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Product Name</th>
+                    <th className="py-4 px-6 text-left font-bold text-gray-700 dark:text-neutral-300">Category</th>
+                    <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Qty Sold</th>
+                    <th className="py-4 px-6 text-right font-bold text-gray-700 dark:text-neutral-300">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
+                  {(periodReport.topItems || []).length > 0 ? (
+                    periodReport.topItems.map((p, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors group">
+                        <td className="py-4 px-6 font-bold text-gray-900 dark:text-white">{p.name}</td>
+                        <td className="py-4 px-6">
+                          <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+                            {p.category ?? "—"}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          <span className="inline-flex items-center justify-center min-w-[60px] px-3 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold">
+                            {p.quantity ?? 0}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6 text-right font-bold text-primary text-base">Rs {(p.revenue ?? 0).toLocaleString()}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-16 text-center">
+                        <div className="flex flex-col items-center">
+                          <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                            <Package className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
+                          </div>
+                          <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">
+                            No sales data yet {reportPeriod === "yesterday" ? "yesterday" : reportPeriod === "today" ? "today" : "this month"}
+                          </p>
+                          <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Products will appear here once orders are completed</p>
+                        </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot className="bg-gray-100 dark:bg-neutral-800/50 border-t border-gray-200 dark:border-neutral-700">
-                <tr>
-                  <td className="py-2 px-3 font-bold text-gray-900 dark:text-white" colSpan={2}>
-                    Total
-                  </td>
-                  <td className="py-2 px-3 text-right text-base font-bold text-primary">
-                    Rs {currencyTotal.toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Currency note counter - bottom section (saved per day; editable only for Today / Yesterday) */}
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all mt-6">
+            <div className="px-6 py-5 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-gray-50/50 dark:from-neutral-900/30 to-transparent">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+                    <DollarSign className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">Currency counter</h3>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400">Enter quantity of each note to get total amount (Rs). Saved per day.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 dark:text-neutral-400">Date:</span>
+                  <div className="inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCurrencyDate("today")}
+                      className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "today" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrencyDate("yesterday")}
+                      className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${currencyDate === "yesterday" ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"}`}
+                    >
+                      Yesterday
+                    </button>
+                  </div>
+                  {currencyLoading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+                  {currencySaving && <span className="text-xs text-gray-500 dark:text-neutral-400">Saving…</span>}
+                  <button
+                    type="button"
+                    onClick={handleSaveCurrency}
+                    disabled={!isCurrencyEditable || currencySaving}
+                    className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {currencySaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="px-4 pb-4 pt-2">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs max-w-xl">
+                  <thead className="bg-gray-50 dark:bg-neutral-900/50">
+                    <tr>
+                      <th className="py-2 px-3 text-left font-bold text-gray-700 dark:text-neutral-300">Note (Rs)</th>
+                      <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Qty</th>
+                      <th className="py-2 px-3 text-right font-bold text-gray-700 dark:text-neutral-300">Amount (Rs)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    {CURRENCY_NOTES.map((note) => {
+                      const qty = Number(currencyQuantities[note]) || 0;
+                      const amount = qty * note;
+                      return (
+                        <tr key={note} className="hover:bg-gray-50 dark:hover:bg-neutral-900/30">
+                          <td className="py-1.5 px-3 font-semibold text-gray-900 dark:text-white">{note.toLocaleString()}</td>
+                          <td className="py-1.5 px-3 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={currencyQuantities[note]}
+                              onChange={(e) => setCurrencyQty(note, e.target.value.replace(/\D/g, ""))}
+                              placeholder="0"
+                              disabled={!isCurrencyEditable}
+                              readOnly={!isCurrencyEditable}
+                              className={`w-20 text-right px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 focus:ring-2 focus:ring-primary focus:border-primary ${isCurrencyEditable ? "bg-white dark:bg-neutral-900 text-gray-900 dark:text-white" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-500 cursor-not-allowed"}`}
+                            />
+                          </td>
+                          <td className="py-1.5 px-3 text-right font-semibold text-primary">
+                            Rs {amount.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-gray-100 dark:bg-neutral-800/50 border-t border-gray-200 dark:border-neutral-700">
+                    <tr>
+                      <td className="py-2 px-3 font-bold text-gray-900 dark:text-white" colSpan={2}>
+                        Total
+                      </td>
+                      <td className="py-2 px-3 text-right text-base font-bold text-primary">
+                        Rs {currencyTotal.toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
         </>
       )}
     </AdminLayout>

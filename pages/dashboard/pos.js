@@ -8,7 +8,9 @@ import {
   createPosOrder,
   getOrder,
   updateOrder,
+  recordOrderPayment,
   SubscriptionInactiveError,
+  getDeals,
   getActiveDealsByBranch,
   findApplicableDeals,
   getStoredAuth,
@@ -26,6 +28,9 @@ import {
   getBranch,
   updateBranch,
   getRestaurantSettings,
+  getCurrentDaySession,
+  endDaySession,
+  getDaySessions,
 } from "../../lib/apiClient";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import { useBranch } from "../../contexts/BranchContext";
@@ -144,6 +149,14 @@ export default function POSPage() {
   // Invoice modal
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   
+  // Day session management
+  const [currentDaySession, setCurrentDaySession] = useState(null);
+  const [loadingEndDay, setLoadingEndDay] = useState(false);
+  const [showEndDayConfirm, setShowEndDayConfirm] = useState(false);
+  const [showDayHistoryModal, setShowDayHistoryModal] = useState(false);
+  const [daySessionHistory, setDaySessionHistory] = useState([]);
+  const [loadingDayHistory, setLoadingDayHistory] = useState(false);
+
   // Draft management
   const [showTransactionsModal, setShowTransactionsModal] = useState(false);
   const [transactionTab, setTransactionTab] = useState("sale"); // 'sale' or 'draft'
@@ -211,6 +224,7 @@ export default function POSPage() {
     loadTransactions();
     loadTables();
     loadRecentOrders();
+    loadCurrentDaySession();
 
     // Listen for sidebar toggle events from AdminLayout
     function handleSidebarToggle(e) {
@@ -492,27 +506,58 @@ export default function POSPage() {
     setPaymentError("");
     const toastId = toast.loading("Processing...");
     try {
-      const result = await createPosOrder({
-        items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
-        orderType,
-        paymentMethod,
-        discountAmount: totalDiscount,
-        appliedDeals:
-          selectedDeals.length > 0
-            ? selectedDeals.map((dealId) => {
-                const deal = applicableDeals.find((d) => d.id === dealId);
-                return { dealId, dealName: deal?.name || "", dealType: deal?.dealType || "" };
-              })
-            : undefined,
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        deliveryAddress: customerAddress.trim(),
-        branchId: currentBranch?.id ?? undefined,
-        tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
-        ...(paymentMethod === "CASH" && amountReceived !== "" ? { amountReceived: Number(amountReceived) } : {}),
-      });
-      toast.success("Order placed and payment recorded", { id: toastId });
-      const orderNum = result?.orderNumber ?? result?.id ?? "";
+      let orderNum = "";
+
+      if (editingOrderId) {
+        // Edit mode: update the existing order's items first, then record payment on it
+        await updateOrder(editingOrderId, {
+          items: cart.map((item) => ({
+            menuItemId: String(item.id).startsWith("edit-") ? null : item.id,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            name: item.name,
+          })),
+          discountAmount: totalDiscount,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          deliveryAddress: customerAddress.trim(),
+          orderType,
+          tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+        });
+        const receivedAmt = paymentMethod === "CASH" ? Number(amountReceived) : undefined;
+        const returnedAmt = paymentMethod === "CASH" ? Math.max(0, Number(amountReceived) - billTotal) : undefined;
+        await recordOrderPayment(editingOrderId, {
+          paymentMethod,
+          ...(receivedAmt != null ? { amountReceived: receivedAmt } : {}),
+          ...(returnedAmt != null ? { amountReturned: returnedAmt } : {}),
+        });
+        orderNum = editingOrder?.orderNumber ?? editingOrder?.id ?? editingOrderId;
+        toast.success("Order updated and payment recorded", { id: toastId });
+      } else {
+        // New order: create and pay in one shot
+        const result = await createPosOrder({
+          items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
+          orderType,
+          paymentMethod,
+          discountAmount: totalDiscount,
+          appliedDeals:
+            selectedDeals.length > 0
+              ? selectedDeals.map((dealId) => {
+                  const deal = applicableDeals.find((d) => d.id === dealId);
+                  return { dealId, dealName: deal?.name || "", dealType: deal?.dealType || "" };
+                })
+              : undefined,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          deliveryAddress: customerAddress.trim(),
+          branchId: currentBranch?.id ?? undefined,
+          tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+          ...(paymentMethod === "CASH" && amountReceived !== "" ? { amountReceived: Number(amountReceived) } : {}),
+        });
+        orderNum = result?.orderNumber ?? result?.id ?? "";
+        toast.success("Order placed and payment recorded", { id: toastId });
+      }
+
       const received = paymentMethod === "CASH" ? Number(amountReceived) : total;
       const returned = paymentMethod === "CASH" ? Math.max(0, received - total) : 0;
       printPaymentBill({
@@ -524,11 +569,8 @@ export default function POSPage() {
         createdAt: new Date().toISOString(),
       });
       closeTakePaymentModal();
-      // When we were editing an existing order, closing payment should also exit edit mode
-      if (editingOrderId) {
-        setEditingOrderId(null);
-        setEditingOrder(null);
-      }
+      setEditingOrderId(null);
+      setEditingOrder(null);
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
@@ -539,9 +581,10 @@ export default function POSPage() {
       setShowCustomerDetails(false);
       setTableName("");
       loadRecentOrders();
+      router.replace("/dashboard/pos");
     } catch (err) {
-      setPaymentError(err.message || "Failed to place order");
-      toast.error(err.message || "Failed to place order", { id: toastId });
+      setPaymentError(err.message || "Failed to process payment");
+      toast.error(err.message || "Failed to process payment", { id: toastId });
     } finally {
       setPaymentLoading(false);
     }
@@ -587,8 +630,21 @@ export default function POSPage() {
   async function loadActiveDeals() {
     try {
       const branchId = currentBranch?.id;
-      const deals = await getActiveDealsByBranch(branchId);
-      setAvailableDeals(Array.isArray(deals) ? deals : []);
+      const allDeals = await getDeals(false);
+      const deals = Array.isArray(allDeals)
+        ? allDeals.filter((d) => {
+            if (!d.isActive) return false;
+            if (d.endDate && new Date(d.endDate) < new Date()) return false;
+            // If deal has branch restrictions, only show for matching branch
+            if (branchId && d.branches?.length > 0) {
+              return d.branches.some(
+                (b) => String(b._id || b) === String(branchId)
+              );
+            }
+            return true;
+          })
+        : [];
+      setAvailableDeals(deals);
     } catch (err) {
       console.error("Failed to load deals:", err);
       setAvailableDeals([]);
@@ -687,9 +743,22 @@ export default function POSPage() {
     }
   }
 
-  const filteredItems = menu.items.filter((item) => {
+  // Build virtual menu items for active combo deals so they appear at the end of the menu grid
+  const dealMenuItems = (availableDeals || [])
+    .filter((d) => d.dealType === "COMBO" && d.showOnPOS !== false)
+    .map((d) => ({
+      id: `deal-${d._id || d.id}`,
+      name: d.name,
+      price: d.comboPrice || 0,
+      imageUrl: d.imageUrl || "",
+      isDeal: true,
+    }));
+
+  const allItemsForGrid = [...menu.items, ...dealMenuItems];
+
+  const filteredItems = allItemsForGrid.filter((item) => {
     const matchesCategory =
-      selectedCategory === "all" || item.categoryId === selectedCategory;
+      selectedCategory === "all" || item.categoryId === selectedCategory || item.isDeal;
     const matchesSearch =
       searchStep !== "itemName" ||
       item.name.toLowerCase().includes(menuSearchQuery.toLowerCase());
@@ -703,7 +772,7 @@ export default function POSPage() {
       (dietaryFilter === "egg" && item.name.toLowerCase().includes("egg"));
 
     // Use finalAvailable if available (branch-aware), otherwise fall back to available
-    const isAvailable = item.finalAvailable ?? item.available;
+    const isAvailable = item.isDeal ? true : item.finalAvailable ?? item.available;
     return matchesCategory && matchesSearch && matchesDietary && isAvailable;
   });
 
@@ -801,6 +870,7 @@ export default function POSPage() {
   const addToCart = (item, qty = 1) => {
     const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
     const existingItem = cart.find((i) => i.id === item.id);
+    const isDeal = item.isDeal;
     if (existingItem) {
       setCart(
         cart.map((i) =>
@@ -808,8 +878,17 @@ export default function POSPage() {
         ),
       );
     } else {
-      const itemPrice = item.finalPrice ?? item.price;
-      setCart([...cart, { ...item, price: itemPrice, quantity }]);
+      const itemPrice = isDeal
+        ? item.price
+        : item.finalPrice ?? item.price;
+      setCart([
+        ...cart,
+        {
+          ...item,
+          price: itemPrice,
+          quantity,
+        },
+      ]);
     }
   };
 
@@ -1206,6 +1285,44 @@ export default function POSPage() {
       setTransactions([]);
     } finally {
       setLoadingTransactions(false);
+    }
+  }
+
+  // DAY SESSION FUNCTIONS
+  async function loadCurrentDaySession() {
+    try {
+      const data = await getCurrentDaySession(currentBranch?.id);
+      setCurrentDaySession(data?.session || null);
+    } catch (err) {
+      console.error("Failed to load day session:", err);
+    }
+  }
+
+  async function handleEndDay() {
+    setLoadingEndDay(true);
+    const toastId = toast.loading("Ending day session...");
+    try {
+      const data = await endDaySession(currentBranch?.id);
+      setCurrentDaySession(null);
+      setShowEndDayConfirm(false);
+      toast.success(`Day ended: ${data?.session?.sessionKey || ""}`, { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to end day", { id: toastId });
+    } finally {
+      setLoadingEndDay(false);
+    }
+  }
+
+  async function loadDayHistory() {
+    setLoadingDayHistory(true);
+    try {
+      const data = await getDaySessions(currentBranch?.id);
+      setDaySessionHistory(Array.isArray(data?.sessions) ? data.sessions : []);
+    } catch (err) {
+      console.error("Failed to load day history:", err);
+      setDaySessionHistory([]);
+    } finally {
+      setLoadingDayHistory(false);
     }
   }
 
@@ -1686,7 +1803,7 @@ export default function POSPage() {
                         All
                       </div>
                       <div className="text-[10px] text-gray-500 dark:text-neutral-400">
-                        {menu.items.length}
+                        {allItemsForGrid.filter((item) => item.isDeal || (item.finalAvailable ?? item.available)).length}
                       </div>
                     </div>
                   </div>
@@ -2043,16 +2160,49 @@ export default function POSPage() {
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                {editingOrderId ? `Order #${editingOrder?.id || editingOrderId}` : "Order #"}
+              Order #
               </h3>
-              <span className="text-xs text-gray-500 dark:text-neutral-400">
-                {new Date().toLocaleDateString("en-US", {
-                  day: "2-digit",
-                  month: "short",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 dark:text-neutral-400">
+                  {new Date().toLocaleDateString("en-US", {
+                    day: "2-digit",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                {/* Day Session indicator + End Day button */}
+                <div className="flex items-center gap-1">
+                  {currentDaySession ? (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 text-xs font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
+                      Day Open
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400 text-xs font-semibold">
+                      No Session
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { loadDayHistory(); setShowDayHistoryModal(true); }}
+                    className="p-1 rounded-lg bg-gray-100 dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-800 transition-colors"
+                    title="Day session history"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                  </button>
+                  {currentDaySession && (
+                    <button
+                      type="button"
+                      onClick={() => setShowEndDayConfirm(true)}
+                      className="px-2 py-0.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                      title="End day session"
+                    >
+                      End Day
+                    </button>
+                  )}
+                </div>
+              </div>
           </div>
 
             {/* Order Type Buttons + Settings (beside Delivery) */}
@@ -3669,6 +3819,128 @@ export default function POSPage() {
           </div>
         </div>
       )}
+      {/* End Day Confirm Modal */}
+      {showEndDayConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                <Clock className="w-5 h-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">End Day Session?</h3>
+                <p className="text-sm text-gray-500 dark:text-neutral-400">
+                  This will close the current business day. Next order will auto-start a new day.
+                </p>
+              </div>
+            </div>
+            {currentDaySession && (
+              <div className="mb-4 p-3 rounded-lg bg-gray-50 dark:bg-neutral-900 text-xs text-gray-600 dark:text-neutral-400">
+                <div className="flex justify-between mb-1">
+                  <span className="font-medium">Day started:</span>
+                  <span>{new Date(currentDaySession.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium">Opened by:</span>
+                  <span>{currentDaySession.openedBy?.name || "System"}</span>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowEndDayConfirm(false)}
+                disabled={loadingEndDay}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleEndDay}
+                disabled={loadingEndDay}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loadingEndDay ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" />Ending...</>
+                ) : (
+                  <>End Day</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day Session History Modal */}
+      {showDayHistoryModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Day Sessions</h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
+                  {currentBranch ? `History of ${currentBranch.name}` : "History of all branches"}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDayHistoryModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors text-3xl leading-none"
+              >×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {loadingDayHistory ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : daySessionHistory.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-neutral-400 text-sm">No day sessions found</div>
+              ) : (
+                daySessionHistory.map((s) => (
+                  <div key={s.id} className="p-4 rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${s.status === "OPEN" ? "bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
+                          {s.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />}
+                          {s.status}
+                        </span>
+                        {/* Show branch name only in "All branches" view (currentBranch is null) */}
+                        {!currentBranch && s.branchName && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+                            🏪 {s.branchName}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-gray-900 dark:text-white">Rs {(s.totalSales || 0).toLocaleString()}</div>
+                        <div className="text-xs text-gray-500 dark:text-neutral-400">{s.totalOrders || 0} orders</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-neutral-400 space-y-1">
+                      <div className="flex justify-between">
+                        <span className="font-medium">Started:</span>
+                        <span>{new Date(s.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                      </div>
+                      {s.endAt && (
+                        <div className="flex justify-between">
+                          <span className="font-medium">Ended:</span>
+                          <span>{new Date(s.endAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                        </div>
+                      )}
+                      {s.sessionKey && (
+                        <div className="mt-2 p-2 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 font-mono text-xs text-gray-500 dark:text-neutral-500 break-all">
+                          {s.sessionKey}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </AdminLayout>
   );
 }

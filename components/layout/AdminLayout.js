@@ -94,6 +94,12 @@ const tenantNav = [
     icon: ShoppingBag,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
+  {
+    path: "/deals",
+    label: "Deals",
+    icon: Percent,
+    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+  },
 
   { type: "section", label: "OPERATIONS" },
   {
