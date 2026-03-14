@@ -16,12 +16,13 @@ import {
   SubscriptionInactiveError,
   getStoredAuth,
   getRestaurantSettings,
+  getPaymentAccounts,
 } from "../../lib/apiClient";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
-import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag, UtensilsCrossed, Headset } from "lucide-react";
+import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag, UtensilsCrossed, Headset, Smartphone, X, CircleCheckBig, Receipt } from "lucide-react";
 
 const ORDER_STATUSES = [
   "All Orders",
@@ -84,6 +85,9 @@ export default function OrdersPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [onlineProvider, setOnlineProvider] = useState(null);
+  const [paymentAccounts, setPaymentAccounts] = useState([]);
+  const [paymentAccountsLoading, setPaymentAccountsLoading] = useState(true);
   const [amountReceived, setAmountReceived] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
@@ -134,6 +138,16 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPaymentAccountsLoading(true);
+    getPaymentAccounts()
+      .then((d) => { if (!cancelled) setPaymentAccounts(Array.isArray(d) ? d : (d?.accounts ?? [])); })
+      .catch(() => { if (!cancelled) setPaymentAccounts([]); })
+      .finally(() => { if (!cancelled) setPaymentAccountsLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -193,6 +207,7 @@ export default function OrdersPage() {
   function openPaymentModal(order) {
     setPaymentOrder(order);
     setPaymentMethod("CASH");
+    setOnlineProvider(null);
     setAmountReceived("");
     setPaymentError("");
     setShowPaymentModal(true);
@@ -201,6 +216,7 @@ export default function OrdersPage() {
   function closePaymentModal() {
     setShowPaymentModal(false);
     setPaymentOrder(null);
+    setOnlineProvider(null);
     setPaymentError("");
   }
 
@@ -235,6 +251,9 @@ export default function OrdersPage() {
         const received = Number(amountReceived);
         payload.amountReceived = received;
         payload.amountReturned = received - billTotal;
+      }
+      if (paymentMethod === "ONLINE" && onlineProvider) {
+        payload.paymentProvider = onlineProvider;
       }
       const updated = await recordOrderPayment(orderId, payload);
       setOrders(prev =>
@@ -427,9 +446,20 @@ export default function OrdersPage() {
                 key: "paymentMethod",
                 header: "Payment",
                 hideOnMobile: true,
-                render: (val) => (
-                  <span className="text-sm text-gray-600 dark:text-neutral-400">{val || "—"}</span>
-                ),
+                render: (val, row) => {
+                  const providerLabels = { JAZZCASH: "JazzCash", EASYPAISA: "Easypaisa", BANK: "Bank Account" };
+                  const provider = val?.toUpperCase() === "ONLINE" && row?.paymentProvider
+                    ? providerLabels[row.paymentProvider] ?? row.paymentProvider
+                    : null;
+                  return (
+                    <div className="flex flex-col">
+                      <span className="text-sm text-gray-600 dark:text-neutral-400">{val || "—"}</span>
+                      {provider && (
+                        <span className="text-[11px] text-violet-600 dark:text-violet-400 font-medium">{provider}</span>
+                      )}
+                    </div>
+                  );
+                },
               },
               {
                 key: "total",
@@ -662,7 +692,14 @@ export default function OrdersPage() {
                 {order.paymentMethod && (
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-500 dark:text-neutral-500">Payment</span>
-                    <span className="font-semibold text-gray-700 dark:text-neutral-300">{order.paymentMethod}</span>
+                    <div className="flex flex-col items-end">
+                      <span className="font-semibold text-gray-700 dark:text-neutral-300">{order.paymentMethod}</span>
+                      {order.paymentMethod?.toUpperCase() === "ONLINE" && order.paymentProvider && (
+                        <span className="text-[11px] font-medium text-violet-600 dark:text-violet-400">
+                          {{ JAZZCASH: "JazzCash", EASYPAISA: "Easypaisa", BANK: "Bank Account" }[order.paymentProvider] ?? order.paymentProvider}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
                 {discountPercent > 0 && (
@@ -761,89 +798,231 @@ export default function OrdersPage() {
 
       {/* Take payment modal */}
       {showPaymentModal && paymentOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Take payment</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                  <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">Take Payment</h2>
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">Order #{getDisplayOrderId(paymentOrder)}</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={closePaymentModal}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
               >
-                <span className="text-2xl">×</span>
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleRecordPayment} className="p-4 space-y-4">
-              <p className="text-sm text-gray-600 dark:text-neutral-400">
-                Order #{getDisplayOrderId(paymentOrder)} · Rs {Number(paymentOrder.total).toFixed(2)}
-              </p>
+
+            {/* Bill total hero */}
+            <div className="px-5 pt-5">
+              <div className="text-center py-4 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">Bill Total</p>
+                <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
+                  Rs {Math.round(Number(paymentOrder.total)).toLocaleString()}
+                </p>
+                {Number(paymentOrder.total) % 1 !== 0 && (
+                  <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">{Number(paymentOrder.total).toFixed(2)}</p>
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={handleRecordPayment} className="px-5 pt-4 pb-5 space-y-4">
               {paymentError && (
-                <p className="text-sm text-red-600 dark:text-red-400">{paymentError}</p>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                  <p className="text-xs font-medium text-red-600 dark:text-red-400">{paymentError}</p>
+                </div>
               )}
+
+              {/* Payment method tiles */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-2">Payment method</label>
-                <div className="flex gap-2">
+                <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Payment method</label>
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("CASH")}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === "CASH" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300"}`}
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${
+                      paymentMethod === "CASH"
+                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"
+                    }`}
                   >
-                    <Banknote className="w-4 h-4" /> Cash
+                    <Banknote className="w-5 h-5" />
+                    Cash
                   </button>
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("CARD")}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === "CARD" ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300"}`}
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${
+                      paymentMethod === "CARD"
+                        ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400"
+                        : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"
+                    }`}
                   >
-                    <CreditCard className="w-4 h-4" /> Card
+                    <CreditCard className="w-5 h-5" />
+                    Card
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPaymentMethod("ONLINE"); setOnlineProvider(null); }}
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${
+                      paymentMethod === "ONLINE"
+                        ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400"
+                        : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"
+                    }`}
+                  >
+                    <Smartphone className="w-5 h-5" />
+                    Online
                   </button>
                 </div>
               </div>
-              {paymentMethod === "CASH" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Bill total (Rs)</label>
-                    <div className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white">
-                      Rs {Number(paymentOrder.total).toFixed(2)}
+
+              {/* Online provider sub-options — dynamic from Business Settings */}
+              {paymentMethod === "ONLINE" && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Paid to</label>
+                  {paymentAccountsLoading ? (
+                    <div className="flex items-center justify-center gap-2 py-4">
+                      <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+                      <span className="text-xs text-gray-400 dark:text-neutral-500">Loading accounts…</span>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Amount received (Rs) *</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      required={paymentMethod === "CASH"}
-                      value={amountReceived}
-                      onChange={e => setAmountReceived(e.target.value)}
-                      placeholder="e.g. 5000"
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  {amountReceived !== "" && !isNaN(Number(amountReceived)) && Number(amountReceived) >= Number(paymentOrder.total) && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Return to customer (Rs)</label>
-                      <div className="px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                        Rs {(Number(amountReceived) - Number(paymentOrder.total)).toFixed(2)}
-                      </div>
+                  ) : paymentAccounts.length === 0 ? (
+                    <div className="px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
+                      No payment accounts configured. Go to <span className="font-semibold">Business Settings → Payment Accounts</span> to add them.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {paymentAccounts.map((acc) => (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => setOnlineProvider(acc.name)}
+                          className={`px-3 py-2.5 rounded-xl border-2 text-left transition-all ${
+                            onlineProvider === acc.name
+                              ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10"
+                              : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"
+                          }`}
+                        >
+                          <p className={`text-xs font-semibold truncate ${onlineProvider === acc.name ? "text-violet-700 dark:text-violet-400" : "text-gray-700 dark:text-neutral-300"}`}>{acc.name}</p>
+                          {acc.description && <p className="text-[10px] text-gray-400 dark:text-neutral-500 truncate mt-0.5">{acc.description}</p>}
+                        </button>
+                      ))}
                     </div>
                   )}
-                </>
+                  {paymentAccounts.length > 0 && !onlineProvider && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">Please select an account to continue.</p>
+                  )}
+                </div>
               )}
-              <div className="flex gap-2 pt-2">
+
+              {/* Cash-specific fields */}
+              {paymentMethod === "CASH" && (() => {
+                const orderTotal = Number(paymentOrder.total);
+                const exactAmt = Math.ceil(orderTotal);
+                const roundDenominations = [100, 200, 500, 1000, 2000, 5000, 10000];
+                const quickAmounts = [exactAmt, ...roundDenominations.filter((v) => v > exactAmt)].slice(0, 4);
+                const receivedNum = Number(amountReceived);
+                const isUnderpaid = amountReceived !== "" && !isNaN(receivedNum) && receivedNum < orderTotal;
+                const isOverpaid  = amountReceived !== "" && !isNaN(receivedNum) && receivedNum >= orderTotal;
+                return (
+                  <>
+                    {/* Quick-amount presets */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Quick amount</label>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {quickAmounts.map((amt) => (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => setAmountReceived(String(amt))}
+                            className={`py-2 rounded-lg text-xs font-bold transition-all border ${
+                              receivedNum === amt
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                            }`}
+                          >
+                            {amt.toLocaleString()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Amount received input */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                        Amount received (Rs)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        required={paymentMethod === "CASH"}
+                        value={amountReceived}
+                        onChange={(e) => setAmountReceived(e.target.value)}
+                        placeholder={`Min. ${exactAmt.toLocaleString()}`}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                      />
+                    </div>
+
+                    {/* Change */}
+                    {isOverpaid && (
+                      <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Change</span>
+                        </div>
+                        <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                          Rs {(receivedNum - orderTotal).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Short-by warning */}
+                    {isUnderpaid && (
+                      <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-red-500" />
+                          <span className="text-xs font-semibold text-red-700 dark:text-red-400">Short by</span>
+                        </div>
+                        <span className="text-xl font-black text-red-700 dark:text-red-400 tabular-nums">
+                          Rs {(orderTotal - receivedNum).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
                 <button
                   type="button"
                   onClick={closePaymentModal}
-                  className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={paymentLoading || (paymentMethod === "CASH" && (amountReceived === "" || Number(amountReceived) < Number(paymentOrder.total)))}
-                  className="flex-1 px-3 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  disabled={
+                    paymentLoading ||
+                    (paymentMethod === "CASH" && (amountReceived === "" || Number(amountReceived) < Number(paymentOrder.total))) ||
+                    (paymentMethod === "ONLINE" && !onlineProvider)
+                  }
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
                 >
-                  {paymentLoading ? "Recording…" : "Record payment"}
+                  {paymentLoading
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                    : <><CircleCheckBig className="w-4 h-4" /> Record Payment</>
+                  }
                 </button>
               </div>
             </form>

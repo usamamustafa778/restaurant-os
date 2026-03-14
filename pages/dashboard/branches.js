@@ -5,13 +5,14 @@ import {
   getBranches, getDeletedBranches, createBranch, deleteBranch,
   restoreBranch, updateBranch, getRestaurantSettings,
   updateRestaurantSettings, getWebsiteSettings, updateWebsiteSettings, uploadImage,
+  getPaymentAccounts, createPaymentAccount, updatePaymentAccount, deletePaymentAccount,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import {
   MapPin, Loader2, Check, Trash2, X, Pencil, Plus,
   Image as ImageIcon, Upload, Link as LinkIcon,
   Building2, FileText, Clock, RotateCcw, Settings,
-  Eye, EyeOff, Phone, Mail, Palette,
+  Eye, EyeOff, Phone, Mail, Palette, Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -64,9 +65,10 @@ function formatCutoff(h) {
 }
 
 const SECTIONS = [
-  { id: "branding",  label: "Branding",      icon: Palette },
-  { id: "branches",  label: "Branches",       icon: Building2 },
-  { id: "bill",      label: "Bill Settings",  icon: FileText },
+  { id: "branding",          label: "Branding",           icon: Palette },
+  { id: "branches",          label: "Branches",            icon: Building2 },
+  { id: "bill",              label: "Bill Settings",       icon: FileText },
+  { id: "payment-accounts",  label: "Payment Accounts",    icon: Wallet },
 ];
 
 export default function BranchesPage() {
@@ -108,6 +110,16 @@ export default function BranchesPage() {
   const [logoHeight, setLogoHeight] = useState(100);
   const [billFooterMessage, setBillFooterMessage] = useState("Thank you for your order!");
   const logoInputRef = useRef(null);
+
+  // Payment accounts
+  const [paymentAccounts, setPaymentAccounts] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [accountForm, setAccountForm] = useState({ id: null, name: "", description: "" });
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [accountModalError, setAccountModalError] = useState("");
+  const [accountDeleteTarget, setAccountDeleteTarget] = useState(null);
+  const [accountDeleteLoading, setAccountDeleteLoading] = useState(false);
 
   // ── Fetch branches ──
   useEffect(() => {
@@ -154,9 +166,70 @@ export default function BranchesPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // ── Fetch payment accounts ──
+  useEffect(() => {
+    let cancelled = false;
+    setAccountsLoading(true);
+    getPaymentAccounts()
+      .then(d => { if (!cancelled) setPaymentAccounts(Array.isArray(d) ? d : (d?.accounts ?? [])); })
+      .catch(() => { if (!cancelled) setPaymentAccounts([]); })
+      .finally(() => { if (!cancelled) setAccountsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   const displayList = branches.length > 0 ? branches : (contextBranches ?? []);
   const isLoading = loading || contextLoading;
   const restaurantLogoUrl = restaurantSettings?.restaurantLogoUrl || "";
+
+  // ── Payment account helpers ──
+  function openCreateAccount() {
+    setAccountForm({ id: null, name: "", description: "" });
+    setAccountModalError("");
+    setAccountModalOpen(true);
+  }
+  function openEditAccount(acc) {
+    setAccountForm({ id: acc.id, name: acc.name, description: acc.description || "" });
+    setAccountModalError("");
+    setAccountModalOpen(true);
+  }
+  async function handleAccountSubmit(e) {
+    e.preventDefault();
+    const name = accountForm.name.trim();
+    if (!name) { setAccountModalError("Account name is required"); return; }
+    setAccountSaving(true);
+    setAccountModalError("");
+    const toastId = toast.loading(accountForm.id ? "Saving..." : "Adding...");
+    try {
+      if (accountForm.id) {
+        await updatePaymentAccount(accountForm.id, { name, description: accountForm.description.trim() });
+      } else {
+        await createPaymentAccount({ name, description: accountForm.description.trim() });
+      }
+      const updated = await getPaymentAccounts();
+      setPaymentAccounts(Array.isArray(updated) ? updated : (updated?.accounts ?? []));
+      setAccountModalOpen(false);
+      toast.success(accountForm.id ? "Account updated" : "Account added", { id: toastId });
+    } catch (err) {
+      setAccountModalError(err.message || "Failed to save");
+      toast.dismiss(toastId);
+    } finally {
+      setAccountSaving(false);
+    }
+  }
+  async function handleAccountDelete(acc) {
+    setAccountDeleteLoading(true);
+    const toastId = toast.loading("Deleting...");
+    try {
+      await deletePaymentAccount(acc.id);
+      setPaymentAccounts(prev => prev.filter(a => a.id !== acc.id));
+      setAccountDeleteTarget(null);
+      toast.success("Account deleted", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to delete", { id: toastId });
+    } finally {
+      setAccountDeleteLoading(false);
+    }
+  }
 
   // ── Branch helpers ──
   function resetBranchForm() { setBranchForm({ id: null, name: "", code: "", address: "", businessDayCutoffHour: 4 }); }
@@ -628,6 +701,72 @@ export default function BranchesPage() {
             </div>
           </div>
 
+          {/* ════ PAYMENT ACCOUNTS ════ */}
+          <div id="section-payment-accounts">
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center shadow-md flex-shrink-0">
+                    <Wallet className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">Payment Accounts</h3>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400">Online receiving accounts shown to cashiers at checkout</p>
+                  </div>
+                </div>
+                <button type="button" onClick={openCreateAccount}
+                  className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-gradient-to-r from-violet-500 to-violet-600 text-white text-xs font-semibold hover:shadow-lg hover:shadow-violet-500/30 hover:-translate-y-0.5 transition-all">
+                  <Plus className="w-3.5 h-3.5" /> Add Account
+                </button>
+              </div>
+
+              <div className="px-6 pb-6">
+                {accountsLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-10">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <span className="text-sm text-gray-500 dark:text-neutral-400">Loading accounts...</span>
+                  </div>
+                ) : paymentAccounts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center mb-3">
+                      <Wallet className="w-6 h-6 text-violet-400" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">No payment accounts yet</p>
+                    <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Add accounts like JazzCash, Easypaisa, or your bank details.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {paymentAccounts.map((acc) => (
+                      <div key={acc.id} className="flex items-center justify-between px-4 py-3 rounded-xl border-2 border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/40 hover:border-violet-200 dark:hover:border-violet-500/20 transition-colors group">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+                            <Wallet className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{acc.name}</p>
+                            {acc.description && (
+                              <p className="text-xs text-gray-400 dark:text-neutral-500 truncate">{acc.description}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0 ml-3">
+                          <button type="button" onClick={() => openEditAccount(acc)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button type="button" onClick={() => setAccountDeleteTarget(acc)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -735,6 +874,83 @@ export default function BranchesPage() {
                 }}
                 className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Trash2 className="w-4 h-4" />Delete Branch</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add / Edit Payment Account Modal ── */}
+      {accountModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-neutral-800">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">{accountForm.id ? "Edit Account" : "Add Payment Account"}</h2>
+                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">This will appear as an option when recording online payments</p>
+              </div>
+              <button type="button" onClick={() => setAccountModalOpen(false)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {accountModalError && (
+              <div className="mx-6 mt-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-2.5 text-xs text-red-700 dark:text-red-400">{accountModalError}</div>
+            )}
+            <form onSubmit={handleAccountSubmit} className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Account Name <span className="text-red-500">*</span></label>
+                <input type="text" value={accountForm.name} onChange={e => setAccountForm(p => ({ ...p, name: e.target.value }))}
+                  placeholder="e.g. JazzCash – 03001234567" className={inp} autoFocus />
+                <p className="text-[11px] text-gray-400 dark:text-neutral-500">Include the account number or holder name so cashiers know which account to use.</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input type="text" value={accountForm.description} onChange={e => setAccountForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="e.g. For Easypaisa transfers only" className={inp} />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setAccountModalOpen(false)} disabled={accountSaving}
+                  className="h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-50">
+                  Cancel
+                </button>
+                <button type="submit" disabled={accountSaving}
+                  className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-violet-500 to-violet-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-violet-500/30 transition-all disabled:opacity-70">
+                  {accountSaving ? <><Loader2 className="w-4 h-4 animate-spin" />{accountForm.id ? "Saving..." : "Adding..."}</> : <>{accountForm.id ? "Save Changes" : "Add Account"}</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Payment Account confirmation ── */}
+      {accountDeleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-red-100 dark:bg-red-500/10 flex items-center justify-center">
+                  <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                </div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Delete Account</h2>
+              </div>
+              <button type="button" onClick={() => setAccountDeleteTarget(null)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-gray-600 dark:text-neutral-400">
+                Remove <span className="font-semibold text-gray-900 dark:text-white">&ldquo;{accountDeleteTarget.name}&rdquo;</span> from your payment accounts? This won&apos;t affect past orders.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-neutral-800">
+              <button type="button" onClick={() => setAccountDeleteTarget(null)} disabled={accountDeleteLoading}
+                className="h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="button" onClick={() => handleAccountDelete(accountDeleteTarget)} disabled={accountDeleteLoading}
+                className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50">
+                {accountDeleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Trash2 className="w-4 h-4" />Delete</>}
               </button>
             </div>
           </div>

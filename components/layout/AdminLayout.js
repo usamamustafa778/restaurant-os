@@ -41,7 +41,7 @@ import { getTenantRoute } from "../../lib/routes";
 
 // Single tenant nav: each item has `roles` – only roles that can see it. No roles = all tenant roles.
 // Admin: all. Manager: all except Branches, Subscription. Product manager: Overview, Categories, Items, Inventory, Profile.
-// Cashier: Overview, POS, Orders, Reservations, Customers, Profile. Kitchen: KDS, Profile.
+// Cashier: POS, Orders, Customers, Profile only. Kitchen: KDS, Profile.
 // Order taker uses dedicated /order-taker mobile UI and does not see the dashboard sidebar.
 const tenantNav = [
   {
@@ -53,7 +53,6 @@ const tenantNav = [
       "admin",
       "manager",
       "product_manager",
-      "cashier",
     ],
   },
   {
@@ -78,7 +77,7 @@ const tenantNav = [
     path: "/reservations",
     label: "Reservations",
     icon: History,
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
+    roles: ["restaurant_admin", "admin", "manager"],
   },
 
   { type: "section", label: "MENU MANAGEMENT" },
@@ -106,7 +105,7 @@ const tenantNav = [
     path: "/customers",
     label: "Customers",
     icon: UserCheck,
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
+    roles: ["restaurant_admin", "admin", "manager"],
   },
   {
     path: "/inventory",
@@ -391,6 +390,16 @@ export default function AdminLayout({
       (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
     if (path === "/overview") {
       router.replace("/kitchen");
+    }
+  }, [role, router]);
+
+  // Restrict cashier to POS – redirect away from the analytics dashboard
+  useEffect(() => {
+    if (role !== "cashier") return;
+    const path =
+      (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
+    if (path === "/overview") {
+      router.replace("/pos");
     }
   }, [role, router]);
 
