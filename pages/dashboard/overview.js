@@ -10,6 +10,7 @@ import {
   getCurrentDaySession,
   endDaySession,
   updateBranch,
+  getInventory,
 } from "../../lib/apiClient";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
@@ -139,6 +140,9 @@ export default function OverviewPage() {
     salesTypeDistribution: {}, paymentDistribution: {},
     sourceDistribution: {}, topProducts: [], productsPerformance: [],
   });
+
+  const [invItems, setInvItems]   = useState([]);
+  const [invLoading, setInvLoading] = useState(true);
 
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
@@ -282,6 +286,13 @@ export default function OverviewPage() {
   }, []);
 
   useEffect(() => {
+    getInventory()
+      .then((data) => setInvItems(Array.isArray(data) ? data : []))
+      .catch(() => setInvItems([]))
+      .finally(() => setInvLoading(false));
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     setPeriodLoading(true);
     (async () => {
@@ -360,6 +371,14 @@ export default function OverviewPage() {
 
   const yearOptions = [];
   for (let y = currentYear - 2; y <= currentYear + 1; y += 1) yearOptions.push(y);
+
+  // Inventory health stats
+  const invFiltered  = invItems.filter((i) => i.hasBranchRecord !== false);
+  const invTotal     = invFiltered.length;
+  const invOut       = invFiltered.filter((i) => (i.currentStock ?? 0) <= 0).length;
+  const invLow       = invFiltered.filter((i) => { const s = i.currentStock ?? 0, t = i.lowStockThreshold ?? 0; return s > 0 && t > 0 && s <= t; }).length;
+  const invHealthy   = invTotal - invOut - invLow;
+  const invNeedAttn  = invFiltered.filter((i) => (i.currentStock ?? 0) <= (i.lowStockThreshold ?? 0));
 
   const periodLabel = reportPeriod === "yesterday" ? "Yesterday" : reportPeriod === "monthly"
     ? `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear}` : "Today";
@@ -700,6 +719,75 @@ export default function OverviewPage() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* ─── Inventory Health ────────────────────────────────────────── */}
+          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5 mb-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center">
+                  <Package className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Inventory Health</h3>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500">Stock status overview</p>
+                </div>
+              </div>
+              <a href="/dashboard/inventory" className="text-xs font-semibold text-primary hover:underline">
+                View all →
+              </a>
+            </div>
+
+            {invLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              </div>
+            ) : invTotal === 0 ? (
+              <p className="text-xs text-gray-400 dark:text-neutral-600 text-center py-6">No inventory items found</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Total Items",   value: invTotal,   color: "text-blue-700 dark:text-blue-400",    bg: "bg-blue-50 dark:bg-blue-500/10",       border: "border-blue-100 dark:border-blue-500/20"    },
+                    { label: "Healthy",       value: invHealthy, color: "text-emerald-700 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-500/10", border: "border-emerald-100 dark:border-emerald-500/20" },
+                    { label: "Low Stock",     value: invLow,     color: "text-orange-700 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-500/10",   border: "border-orange-100 dark:border-orange-500/20"  },
+                    { label: "Out of Stock",  value: invOut,     color: "text-red-700 dark:text-red-400",       bg: "bg-red-50 dark:bg-red-500/10",         border: "border-red-100 dark:border-red-500/20"        },
+                  ].map(({ label, value, color, bg, border }) => (
+                    <div key={label} className={`flex flex-col items-center justify-center p-3 rounded-xl border ${bg} ${border}`}>
+                      <p className={`text-2xl font-black tabular-nums leading-tight ${color}`}>{value}</p>
+                      <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 mt-0.5 text-center">{label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {invNeedAttn.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 dark:border-neutral-800">
+                    <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-2">Needs Attention</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {invNeedAttn.slice(0, 8).map((item) => {
+                        const isOut = (item.currentStock ?? 0) <= 0;
+                        return (
+                          <span key={item.id} className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold ${
+                            isOut
+                              ? "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400"
+                              : "bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400"
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isOut ? "bg-red-500" : "bg-orange-400"}`} />
+                            {item.name}
+                            <span className="opacity-60">{isOut ? "· out" : "· low"}</span>
+                          </span>
+                        );
+                      })}
+                      {invNeedAttn.length > 8 && (
+                        <span className="text-xs text-gray-400 dark:text-neutral-500 self-center">
+                          +{invNeedAttn.length - 8} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {/* ─── Currency Counter ─────────────────────────────────────────── */}

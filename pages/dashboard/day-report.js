@@ -3,8 +3,23 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import DataTable from "../../components/ui/DataTable";
 import { getDayReport, SubscriptionInactiveError } from "../../lib/apiClient";
-import { Calendar, Loader2 } from "lucide-react";
+import { Calendar, Loader2, FileDown, Printer } from "lucide-react";
 import toast from "react-hot-toast";
+
+// ─── Export helpers ───────────────────────────────────────────────────────────
+
+function toCSVRow(cells) {
+  return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
+}
+
+function downloadCSV(filename, rows) {
+  const content = rows.map(toCSVRow).join("\n");
+  const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function DayReportPage() {
   const [report, setReport] = useState(null);
@@ -49,6 +64,121 @@ export default function DayReportPage() {
     year: "numeric", month: "short", day: "numeric",
   });
 
+  function handleExportCSV() {
+    const rows = [
+      ["Day Report"],
+      ["Date", formattedDate],
+      ["Generated", new Date().toLocaleString("en-PK")],
+      [],
+      ["SALES DETAILS"],
+      ["Metric", "Value (Rs)"],
+      ["Gross Sales", salesDetails.grossSales],
+      ["Net Sales (Inc. Tax)", salesDetails.netSales],
+      ["Total Revenue", salesDetails.totalRevenue],
+      ["Discounts", salesDetails.discounts],
+      ["Delivery Charges", salesDetails.deliveryCharges],
+      ["Tax Amount", salesDetails.taxAmount],
+      [],
+      ["BUDGET COST & PROFIT"],
+      ["Total Inventory Cost", salesDetails.budgetCost],
+      ["Net Profit", salesDetails.profit],
+      salesDetails.totalRevenue > 0
+        ? ["Profit Margin %", `${((salesDetails.profit / salesDetails.totalRevenue) * 100).toFixed(1)}%`]
+        : ["Profit Margin %", "N/A"],
+      [],
+      ["INSIGHTS"],
+      ["Metric", "Count"],
+      ["Total Orders", insights.totalOrders],
+      ["Completed Sales", insights.completedSales],
+      ["Paid Sales", insights.paidSales],
+      ["Cancelled Orders", insights.cancelledToday],
+      ...(paymentRows.length > 0 ? [
+        [],
+        ["PAYMENT WISE SALES"],
+        ["Payment Method", "Orders", "Amount (Rs)", "Percentage"],
+        ...paymentRows.map((r) => [r.method, r.orders, r.amount, r.percent]),
+      ] : []),
+      ...(orderTypeRows.length > 0 ? [
+        [],
+        ["ORDER TYPE SALES"],
+        ["Order Type", "Orders", "Amount (Rs)", "Percentage"],
+        ...orderTypeRows.map((r) => [r.type, r.orders, r.amount, r.percent]),
+      ] : []),
+    ];
+    downloadCSV(`day-report-${selectedDate}.csv`, rows);
+    toast.success("CSV exported");
+  }
+
+  function handlePrint() {
+    const generated = new Date().toLocaleString("en-PK");
+    const isProfit = salesDetails.profit >= 0;
+    const marginPct = salesDetails.totalRevenue > 0
+      ? ((salesDetails.profit / salesDetails.totalRevenue) * 100).toFixed(1) : "0";
+
+    const paymentTable = paymentRows.length > 0
+      ? `<h2>Payment Wise Sales</h2><table>
+          <thead><tr><th>Method</th><th>Orders</th><th>Amount</th><th>%</th></tr></thead>
+          <tbody>${paymentRows.map((r) => `<tr><td>${r.method}</td><td>${r.orders}</td><td>Rs ${r.amount?.toLocaleString?.() ?? r.amount}</td><td>${r.percent}</td></tr>`).join("")}</tbody>
+        </table>` : "";
+
+    const orderTypeTable = orderTypeRows.length > 0
+      ? `<h2>Order Type Sales</h2><table>
+          <thead><tr><th>Type</th><th>Orders</th><th>Amount</th><th>%</th></tr></thead>
+          <tbody>${orderTypeRows.map((r) => `<tr><td>${r.type}</td><td>${r.orders}</td><td>Rs ${r.amount?.toLocaleString?.() ?? r.amount}</td><td>${r.percent}</td></tr>`).join("")}</tbody>
+        </table>` : "";
+
+    const html = `<!DOCTYPE html><html><head><title>Day Report – ${formattedDate}</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  .meta{font-size:12px;color:#6b7280;margin-bottom:28px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+  .section{border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+  .section-title{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:700;margin-bottom:12px}
+  .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6;font-size:13px}
+  .row:last-child{border-bottom:none}
+  .val{font-weight:700}
+  .profit{color:${isProfit ? "#059669" : "#dc2626"}}
+  h2{font-size:14px;font-weight:700;margin:20px 0 10px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}
+  td{padding:10px 12px;border-bottom:1px solid #f3f4f6;font-size:13px}
+  @media print{body{padding:0}}
+</style></head><body>
+<h1>Day Report</h1>
+<p class="meta">Date: <strong>${formattedDate}</strong> &nbsp;·&nbsp; Generated: ${generated}</p>
+
+<div class="grid2">
+  <div class="section">
+    <div class="section-title">Sales Details</div>
+    <div class="row"><span>Gross Sales</span><span class="val">Rs ${salesDetails.grossSales.toLocaleString()}</span></div>
+    <div class="row"><span>Net Sales (Inc. Tax)</span><span class="val">Rs ${salesDetails.netSales.toLocaleString()}</span></div>
+    <div class="row"><span>Total Revenue</span><span class="val">Rs ${salesDetails.totalRevenue.toLocaleString()}</span></div>
+    <div class="row"><span>Discounts</span><span class="val" style="color:#dc2626">- Rs ${salesDetails.discounts.toLocaleString()}</span></div>
+    <div class="row"><span>Delivery Charges</span><span class="val">Rs ${salesDetails.deliveryCharges.toLocaleString()}</span></div>
+    <div class="row"><span>Tax Amount</span><span class="val">Rs ${salesDetails.taxAmount.toLocaleString()}</span></div>
+  </div>
+  <div class="section">
+    <div class="section-title">Insights</div>
+    <div class="row"><span>Total Orders</span><span class="val">${insights.totalOrders}</span></div>
+    <div class="row"><span>Completed Sales</span><span class="val" style="color:#059669">${insights.completedSales}</span></div>
+    <div class="row"><span>Paid Sales</span><span class="val">${insights.paidSales}</span></div>
+    <div class="row"><span>Cancelled</span><span class="val" style="color:#dc2626">${insights.cancelledToday}</span></div>
+    <div class="row"><span>Inventory Cost</span><span class="val" style="color:#d97706">Rs ${salesDetails.budgetCost.toLocaleString()}</span></div>
+    <div class="row"><span>Net Profit</span><span class="val profit">Rs ${salesDetails.profit.toLocaleString()} (${marginPct}%)</span></div>
+  </div>
+</div>
+${paymentTable}
+${orderTypeTable}
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Pop-up blocked — please allow pop-ups to print."); return; }
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 300);
+  }
+
   return (
     <AdminLayout title="Day Report" suspended={suspended}>
       {pageLoading ? (
@@ -66,7 +196,30 @@ export default function DayReportPage() {
       ) : (
         <>
           {/* Branch / Day header */}
-          <Card title="Day Report">
+          <Card title="Day Report"
+            headerActions={
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  disabled={pageLoading || !report}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={pageLoading || !report}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print
+                </button>
+              </div>
+            }
+          >
         <div className="grid gap-4 md:grid-cols-4 text-xs">
           <div>
             <div className="text-neutral-500">Branch</div>

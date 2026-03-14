@@ -3,7 +3,7 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import { getSalesReport, SubscriptionInactiveError } from "../../lib/apiClient";
 import {
   BarChart3, DollarSign, ShoppingBag, TrendingUp,
-  HelpCircle, Loader2, Award, RefreshCw,
+  HelpCircle, Loader2, Award, RefreshCw, FileDown, Printer,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -55,6 +55,21 @@ function getPresetDates(preset) {
     default:
       return null;
   }
+}
+
+// ─── Export helpers ───────────────────────────────────────────────────────────
+
+function toCSVRow(cells) {
+  return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
+}
+
+function downloadCSV(filename, rows) {
+  const content = rows.map(toCSVRow).join("\n");
+  const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
 }
 
 function buildPeriodLabel(preset, customFrom, customTo) {
@@ -127,6 +142,82 @@ export default function HistoryPage() {
   const totalItemRevenue = report.topItems.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
   const periodLabel = buildPeriodLabel(preset, customFrom, customTo);
 
+  function handleExportCSV() {
+    const rows = [
+      ["Sales & Reports"],
+      ["Period", periodLabel],
+      ["Generated", new Date().toLocaleString("en-PK")],
+      [],
+      ["SUMMARY"],
+      ["Metric", "Value"],
+      ["Total Revenue", `Rs ${Number(report.totalRevenue.toFixed(0)).toLocaleString()}`],
+      ["Total Orders", report.totalOrders],
+      ["Avg Ticket Size", `Rs ${avgTicket.toLocaleString()}`],
+      [],
+      ["TOP SELLING ITEMS"],
+      ["Rank", "Item Name", "Qty Sold", "Revenue (Rs)", "Revenue Share %"],
+      ...report.topItems.map((item, i) => [
+        i + 1,
+        item.name,
+        item.quantity ?? 0,
+        Number(item.revenue?.toFixed?.(0) ?? 0),
+        `${Math.round(((item.revenue || 0) / totalItemRevenue) * 100)}%`,
+      ]),
+    ];
+    downloadCSV(`sales-report-${periodLabel.replace(/[\s/]/g, "-")}.csv`, rows);
+    toast.success("CSV exported");
+  }
+
+  function handlePrint() {
+    const generated = new Date().toLocaleString("en-PK");
+    const itemRows = report.topItems.map((item, i) => {
+      const sharePct = Math.round(((item.revenue || 0) / totalItemRevenue) * 100);
+      const medals = ["🥇", "🥈", "🥉"];
+      return `<tr>
+        <td>${i < 3 ? medals[i] : `#${i + 1}`}</td>
+        <td><strong>${item.name}</strong></td>
+        <td>${item.quantity ?? 0}</td>
+        <td style="font-weight:700">Rs ${Number((item.revenue || 0).toFixed(0)).toLocaleString()}</td>
+        <td>${sharePct}%</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><title>Sales Report – ${periodLabel}</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  .meta{font-size:12px;color:#6b7280;margin-bottom:28px}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px}
+  .kpi{border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+  .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:4px}
+  .kpi-value{font-size:24px;font-weight:800;color:#111}
+  h2{font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}
+  td{padding:10px 12px;border-bottom:1px solid #f3f4f6;font-size:13px}
+  @media print{body{padding:0}}
+</style></head><body>
+<h1>Sales & Reports</h1>
+<p class="meta">Period: <strong>${periodLabel}</strong> &nbsp;·&nbsp; Generated: ${generated}</p>
+<div class="kpis">
+  <div class="kpi"><div class="kpi-label">Total Revenue</div><div class="kpi-value">Rs ${Number(report.totalRevenue.toFixed(0)).toLocaleString()}</div></div>
+  <div class="kpi"><div class="kpi-label">Total Orders</div><div class="kpi-value">${report.totalOrders}</div></div>
+  <div class="kpi"><div class="kpi-label">Avg Ticket Size</div><div class="kpi-value">Rs ${avgTicket.toLocaleString()}</div></div>
+</div>
+<h2>Top Selling Items</h2>
+<table>
+  <thead><tr><th>Rank</th><th>Item Name</th><th>Qty Sold</th><th>Revenue</th><th>Share %</th></tr></thead>
+  <tbody>${itemRows || '<tr><td colspan="5" style="text-align:center;color:#9ca3af">No data for this period</td></tr>'}</tbody>
+</table>
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Pop-up blocked — please allow pop-ups to print."); return; }
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 300);
+  }
+
   return (
     <AdminLayout title="Sales & Reports" suspended={suspended}>
       {pageLoading ? (
@@ -154,14 +245,36 @@ export default function HistoryPage() {
                   {loading && <Loader2 className="inline w-3 h-3 ml-1.5 animate-spin text-primary" />}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowHelpModal(true)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors flex-shrink-0"
-                title="How does date filtering work?"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  disabled={loading || report.topItems.length === 0}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Export to Excel / CSV"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Print report"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowHelpModal(true)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                  title="How does date filtering work?"
+                >
+                  <HelpCircle className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Quick presets */}
