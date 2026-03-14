@@ -163,10 +163,18 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
 
       {/* Items */}
       <div className="mx-3 border-t border-gray-100 dark:border-neutral-800" />
-      <div className="px-3 py-2.5 space-y-1.5 flex-1">
+      <div className="px-3 pt-2 pb-0.5 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">Items</span>
+        {order.items?.length > 0 && (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-[10px] font-bold text-gray-500 dark:text-neutral-400 tabular-nums">
+            {order.items.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0)} qty
+          </span>
+        )}
+      </div>
+      <div className="px-3 py-2 space-y-1.5 flex-1">
         {order.items?.map((item, idx) => (
           <div key={idx} className="flex items-baseline gap-2">
-            <span className="text-xs font-black text-primary w-5 flex-shrink-0 tabular-nums">{item.quantity}×</span>
+            <span className="text-xs font-black text-primary w-5 flex-shrink-0 tabular-nums">{item.qty ?? item.quantity}×</span>
             <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 leading-snug">{item.name}</span>
           </div>
         ))}
@@ -505,7 +513,7 @@ export default function KitchenPage() {
                           </div>
                           {order.items?.length > 0 && (
                             <p className="text-[10px] text-gray-500 dark:text-neutral-500 truncate leading-tight">
-                              {order.items.map((i) => `${i.quantity}× ${i.name}`).join(", ")}
+                              {order.items.map((i) => `${i.qty ?? i.quantity}× ${i.name}`).join(", ")}
                             </p>
                           )}
                         </div>
