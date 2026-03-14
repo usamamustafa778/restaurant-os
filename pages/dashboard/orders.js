@@ -97,6 +97,7 @@ export default function OrdersPage() {
 
   const role = getStoredAuth()?.user?.role;
   const isOrderTaker = role === "order_taker";
+  const isCashier = role === "cashier";
   const { viewMode, setViewMode } = useViewMode("grid");
 
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
@@ -269,8 +270,22 @@ export default function OrdersPage() {
     }
   }
 
+  // Cashier scope: today's orders + any still-active orders from previous days
+  // (so they can complete pending orders without seeing historical data)
+  const cashierBaseOrders = useMemo(() => {
+    if (!isCashier) return orders;
+    const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    return orders.filter(o => {
+      const isToday = (o.createdAt || "").slice(0, 10) === todayStr;
+      const isActive = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(
+        (o.status || "").toUpperCase()
+      );
+      return isToday || isActive;
+    });
+  }, [orders, isCashier]);
+
   const filtered = useMemo(() => {
-    return orders
+    return cashierBaseOrders
       .filter(o => {
         const term = search.trim().toLowerCase();
         if (!term) return true;
@@ -293,7 +308,7 @@ export default function OrdersPage() {
         const db = new Date(b.createdAt).getTime();
         return sortOrder === "Newest First" ? db - da : da - db;
       });
-  }, [orders, search, statusFilter, sourceFilter, sortOrder]);
+  }, [cashierBaseOrders, search, statusFilter, sourceFilter, sortOrder]);
 
   return (
     <AdminLayout title="All Orders" suspended={suspended}>
@@ -316,14 +331,16 @@ export default function OrdersPage() {
           <option value="FOODPANDA">Foodpanda</option>
           <option value="WEBSITE">Website</option>
         </select>
-        <select
-          value={sortOrder}
-          onChange={(e) => setSortOrder(e.target.value)}
-          className="h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap flex-shrink-0"
-        >
-          <option>Newest First</option>
-          <option>Oldest First</option>
-        </select>
+        {!isCashier && (
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            className="h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all whitespace-nowrap flex-shrink-0"
+          >
+            <option>Newest First</option>
+            <option>Oldest First</option>
+          </select>
+        )}
         <ViewToggle viewMode={viewMode} onChange={setViewMode} />
         <button
           type="button"
@@ -345,8 +362,8 @@ export default function OrdersPage() {
           const isActive = statusFilter === s;
           const count =
             s === "All Orders"
-              ? orders.length
-              : orders.filter(o => orderStatusForTab(o.status) === s).length;
+              ? cashierBaseOrders.length
+              : cashierBaseOrders.filter(o => orderStatusForTab(o.status) === s).length;
           return (
             <button
               key={s}
