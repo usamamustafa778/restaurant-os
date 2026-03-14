@@ -107,3 +107,11 @@ body {
   100% { transform: translateX(300%); width: 40%; }
 }
 
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+

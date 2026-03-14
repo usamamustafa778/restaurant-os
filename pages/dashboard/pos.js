@@ -206,6 +206,14 @@ export default function POSPage() {
   const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
   const [restaurantBillFooter, setRestaurantBillFooter] = useState("Thank you for your order!");
 
+  // Client-only clock — avoids SSR/hydration mismatch for any date rendered in JSX
+  const [now, setNow] = useState(null);
+  useEffect(() => {
+    setNow(new Date());
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   // Check sidebar state from sessionStorage before showing grid (so reload with closed sidebar → 5 cols)
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
@@ -1761,10 +1769,10 @@ export default function POSPage() {
               </div>
 
               {/* Category Cards - Compact */}
-              <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2 mb-2">
+              <div className="flex gap-2 mb-2 overflow-x-auto pb-1 scrollbar-hide">
                 <button
                   onClick={() => setSelectedCategory("all")}
-                  className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                  className={`flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left capitalize ${
                     selectedCategory === "all"
                       ? "border-primary bg-primary/5 text-primary shadow-sm"
                       : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
@@ -1778,7 +1786,7 @@ export default function POSPage() {
 
                 <button
                   onClick={() => setSelectedCategory("deals")}
-                  className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                  className={`flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left capitalize ${
                     selectedCategory === "deals"
                       ? "border-primary bg-primary/5 text-primary shadow-sm"
                       : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
@@ -1790,19 +1798,19 @@ export default function POSPage() {
                   </span>
                 </button>
 
-                {menu.categories.slice(0, 4).map((cat) => {
+                {menu.categories.map((cat) => {
                   const catItemCount = menu.items.filter((item) => item.categoryId === cat.id).length;
                   return (
                     <button
                       key={cat.id}
                       onClick={() => setSelectedCategory(cat.id)}
-                      className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                      className={`flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left capitalize ${
                         selectedCategory === cat.id
                           ? "border-primary bg-primary/5 text-primary shadow-sm"
                           : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
                       }`}
                     >
-                      <span className="truncate">{cat.name}</span>{" "}
+                      <span className="whitespace-nowrap">{cat.name}</span>{" "}
                       <span className="font-normal opacity-60">{catItemCount}</span>
                     </button>
                   );
@@ -2121,12 +2129,12 @@ export default function POSPage() {
               </h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 dark:text-neutral-400">
-                  {new Date().toLocaleDateString("en-US", {
+                  {now ? now.toLocaleDateString("en-US", {
                     day: "2-digit",
                     month: "short",
                     hour: "2-digit",
                     minute: "2-digit",
-                  })}
+                  }) : ""}
                 </span>
                 {/* Business date indicator + session history */}
                 <div className="flex items-center gap-1">
@@ -3238,17 +3246,16 @@ export default function POSPage() {
                       Date & Time
                     </span>
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {new Date().toLocaleDateString("en-US", {
+                      {now ? now.toLocaleDateString("en-US", {
                         day: "2-digit",
                         month: "2-digit",
                         year: "numeric",
-                      })}{" "}
-                      -{" "}
-                      {new Date().toLocaleTimeString("en-US", {
+                      }) : ""}{" "}
+                      {now ? `- ${now.toLocaleTimeString("en-US", {
                         hour: "2-digit",
                         minute: "2-digit",
                         hour12: true,
-                      })}
+                      })}` : ""}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">

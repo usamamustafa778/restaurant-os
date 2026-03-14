@@ -156,6 +156,7 @@ export default function InventoryPage() {
   const [copySourceLoading, setCopySourceLoading]     = useState(false);
   const [copySelectedItemIds, setCopySelectedItemIds] = useState([]);
   const [copySubmitting, setCopySubmitting]           = useState(false);
+  const [showExportMenu, setShowExportMenu]           = useState(false);
 
   const { confirm } = useConfirmDialog();
   const { currentBranch, branches } = useBranch() || {};
@@ -491,8 +492,6 @@ export default function InventoryPage() {
   const allVisibleSelected = sortedFiltered.length > 0 && sortedFiltered.every((i) => selectedIds.has(i.id));
   const someVisibleSelected = sortedFiltered.some((i) => selectedIds.has(i.id));
   const needsRestock = outOfStock.length + lowStock.length > 0;
-
-  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // ─── Export helpers ───────────────────────────────────────────────────────────
 
