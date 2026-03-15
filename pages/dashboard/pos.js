@@ -70,12 +70,17 @@ import {
   Power,
   X,
   Smartphone,
+  MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
+function isBranchRequiredError(msg) {
+  return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
+}
+
 export default function POSPage() {
   const router = useRouter();
-  const { currentBranch } = useBranch() || {};
+  const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
@@ -160,6 +165,9 @@ export default function POSPage() {
   
   // Invoice modal
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  
+  // Branch selection modal (shown when branchId is required)
+  const [showBranchModal, setShowBranchModal] = useState(false);
   
   // Business day (computed from branch day-reset hour)
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
@@ -655,8 +663,13 @@ export default function POSPage() {
       loadRecentOrders();
       router.replace("/dashboard/pos");
     } catch (err) {
-      setPaymentError(err.message || "Failed to process payment");
-      toast.error(err.message || "Failed to process payment", { id: toastId });
+      if (isBranchRequiredError(err.message) && branches?.length > 0) {
+        toast.dismiss(toastId);
+        setShowBranchModal(true);
+      } else {
+        setPaymentError(err.message || "Failed to process payment");
+        toast.error(err.message || "Failed to process payment", { id: toastId });
+      }
     } finally {
       setPaymentLoading(false);
     }
@@ -1035,7 +1048,12 @@ export default function POSPage() {
       setTableName("");
       loadRecentOrders();
     } catch (err) {
-      toast.error(err.message || "Failed to place order", { id: toastId });
+      if (isBranchRequiredError(err.message) && branches?.length > 0) {
+        toast.dismiss(toastId);
+        setShowBranchModal(true);
+      } else {
+        toast.error(err.message || "Failed to place order", { id: toastId });
+      }
     } finally {
       setLoading(false);
     }
@@ -1201,7 +1219,11 @@ export default function POSPage() {
       setTableName("");
       loadRecentOrders();
     } catch (err) {
-      toast.error(err.message || "Failed to place order for printing");
+      if (isBranchRequiredError(err.message) && branches?.length > 0) {
+        setShowBranchModal(true);
+      } else {
+        toast.error(err.message || "Failed to place order for printing");
+      }
     } finally {
       setPrintingMenu(false);
     }
@@ -1467,7 +1489,12 @@ export default function POSPage() {
       // Clear cart after saving draft
       clearCart();
     } catch (err) {
-      toast.error(err.message || "Failed to save draft", { id: toastId });
+      if (isBranchRequiredError(err.message) && branches?.length > 0) {
+        toast.dismiss(toastId);
+        setShowBranchModal(true);
+      } else {
+        toast.error(err.message || "Failed to save draft", { id: toastId });
+      }
     } finally {
       setLoading(false);
     }
@@ -4183,6 +4210,51 @@ export default function POSPage() {
                 {endingDay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
                 {endingDay ? "Ending…" : "End Now"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBranchModal && branches?.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4.5 h-4.5 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">Select Branch</h2>
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5">Choose a branch to continue</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowBranchModal(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-3 max-h-[320px] overflow-y-auto space-y-1.5">
+              {branches.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => {
+                    setCurrentBranch(b);
+                    setShowBranchModal(false);
+                    toast.success(`Switched to ${b.name}`);
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all border-2 border-transparent hover:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10 active:scale-[0.98]"
+                >
+                  <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{b.name}</p>
+                    {b.address && <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate">{b.address}</p>}
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>

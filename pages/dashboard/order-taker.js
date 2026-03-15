@@ -33,6 +33,7 @@ import {
   Clock,
   Bell,
   PackageCheck,
+  MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -40,8 +41,12 @@ import SEO from "../../components/SEO";
 const STEPS = { TABLE: "table", MENU: "menu", CART: "cart" };
 const TABS = { ORDER: "order", ACTIVE: "active" };
 
+function isBranchRequiredError(msg) {
+  return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
+}
+
 export default function OrderTakerPage() {
-  const { currentBranch } = useBranch() || {};
+  const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
 
   const [activeTab, setActiveTab] = useState(TABS.ORDER);
@@ -64,6 +69,7 @@ export default function OrderTakerPage() {
   const [activeOrders, setActiveOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [showBranchModal, setShowBranchModal] = useState(false);
 
   useEffect(() => {
     const auth = getStoredAuth();
@@ -98,10 +104,10 @@ export default function OrderTakerPage() {
     load();
   }, [currentBranch]);
 
-  // Fetch active orders
+  // Fetch active orders (only those created by this user)
   const fetchActiveOrders = useCallback(async () => {
     try {
-      const data = await getOrders();
+      const data = await getOrders({ mine: true });
       const active = data.filter(
         (o) => o.status !== "DELIVERED" && o.status !== "CANCELLED"
       );
@@ -202,7 +208,11 @@ export default function OrderTakerPage() {
       setCart([]);
       fetchActiveOrders();
     } catch (err) {
-      toast.error(err.message || "Failed to place order");
+      if (isBranchRequiredError(err.message) && branches?.length > 0) {
+        setShowBranchModal(true);
+      } else {
+        toast.error(err.message || "Failed to place order");
+      }
     } finally {
       setPlacing(false);
     }
@@ -1058,6 +1068,45 @@ export default function OrderTakerPage() {
           </button>
         </nav>
       </div>
+
+      {showBranchModal && branches?.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <MapPin className="w-4.5 h-4.5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">Select Branch</h2>
+                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5">Choose a branch to continue placing orders</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 max-h-[320px] overflow-y-auto space-y-1.5">
+              {branches.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => {
+                    setCurrentBranch(b);
+                    setShowBranchModal(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all border-2 border-transparent hover:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10 active:scale-[0.98]"
+                >
+                  <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{b.name}</p>
+                    {b.address && <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate">{b.address}</p>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx global>{`
         .ot-no-scrollbar::-webkit-scrollbar { display: none; }
