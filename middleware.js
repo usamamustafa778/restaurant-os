@@ -19,7 +19,7 @@ const DASHBOARD_PAGES = new Set([
   "users", "branches", "tables", "history",
   "website", "website-content", "integrations",
   "subscription", "profile", "day-report",
-  "order-taker", "rider",
+  "order-taker", "rider", "migrate-pending",
 ]);
 
 // Routes that should only be visible to non-authenticated users

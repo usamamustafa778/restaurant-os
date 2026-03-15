@@ -117,6 +117,7 @@ export default function POSPage() {
   const [discountAmount, setDiscountAmount] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [orderConfirmation, setOrderConfirmation] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -209,9 +210,10 @@ export default function POSPage() {
   const [customerModalError, setCustomerModalError] = useState("");
   const [customerAddForm, setCustomerAddForm] = useState({ name: "", phone: "", address: "", notes: "" });
   const [quickCustomerName, setQuickCustomerName] = useState("");
+  const [quickCustomerAddress, setQuickCustomerAddress] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState(null);
-  const [editCustomerForm, setEditCustomerForm] = useState({ name: "", phone: "" });
+  const [editCustomerForm, setEditCustomerForm] = useState({ name: "", phone: "", address: "" });
   const [savingCustomer, setSavingCustomer] = useState(false);
 
   // Restaurant logo (shared across branches, used in printed bills)
@@ -470,6 +472,7 @@ export default function POSPage() {
     setCustomerModalError("");
     setCustomerAddForm({ name: "", phone: "", address: "", notes: "" });
     setQuickCustomerName("");
+    setQuickCustomerAddress("");
     setAddingQuickCustomer(false);
     loadCustomersForModal();
   }
@@ -515,8 +518,13 @@ export default function POSPage() {
   async function handleQuickAddCustomer() {
     const phone = customerSearch.trim();
     const name = quickCustomerName.trim();
+    const address = quickCustomerAddress.trim();
     if (!phone || !name) {
       setCustomerModalError("Enter customer name and phone to add");
+      return;
+    }
+    if (orderType === "DELIVERY" && !address) {
+      setCustomerModalError("Address is required for delivery orders");
       return;
     }
     setAddingQuickCustomer(true);
@@ -525,6 +533,7 @@ export default function POSPage() {
       const created = await createCustomer({
         name,
         phone,
+        address: address || undefined,
       });
       // Optimistically add to list and select
       setCustomersList((prev) => [created, ...prev]);
@@ -1032,10 +1041,14 @@ export default function POSPage() {
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
       });
 
-      toast.success(
-        `Order ${result.orderNumber || ""} placed successfully! Total: PKR ${result.total}`,
-        { id: toastId }
-      );
+      toast.success("Order placed!", { id: toastId });
+      setOrderConfirmation({
+        orderNumber: result.orderNumber || result.id || "",
+        total: result.total,
+        orderType,
+        customerName: customerName.trim(),
+        tableName: orderType === "DINE_IN" && tableName ? tableName : "",
+      });
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
@@ -1601,202 +1614,6 @@ export default function POSPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_400px] lg:h-[calc(100vh-110px)]">
         {/* Left Column - Recent Orders + Menu */}
         <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
-          {/* Recent Orders Section - Compact */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-2 overflow-hidden min-w-0">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                Recent Orders
-              </h3>
-              <div className="flex items-center gap-1.5">
-                {/* Order Type Filters - Compact */}
-                <div className="flex gap-1">
-                  {[
-                    { value: "all", label: "All" },
-                    { value: "dine-in", label: "Dine" },
-                    { value: "takeaway", label: "Take" },
-                    { value: "delivery", label: "Del." },
-                  ].map((filter) => (
-                    <button
-                      key={filter.value}
-                      onClick={() => setOrderFilter(filter.value)}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
-                        orderFilter === filter.value
-                          ? "bg-primary text-white"
-                          : "bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400"
-                      }`}
-                    >
-                      {filter.label}
-                    </button>
-                  ))}
-        </div>
-                {/* Navigation Arrows - Compact */}
-                <button
-                  onClick={() =>
-                    orderStripRef.current?.scrollBy({ left: -160, behavior: "smooth" })
-                  }
-                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
-                >
-                  <ChevronLeft className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
-                </button>
-                <button
-                  onClick={() =>
-                    orderStripRef.current?.scrollBy({ left: 160, behavior: "smooth" })
-                  }
-                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
-                >
-                  <ChevronRight className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
-                </button>
-              </div>
-            </div>
-
-            {/* Search by Order ID - same style as menu search */}
-            <div className="relative mb-2">
-              <input
-                ref={orderSearchInputRef}
-                type="text"
-                placeholder="Search by order ID..."
-                value={recentOrderSearch}
-                onChange={(e) => setRecentOrderSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  const hasSearch = recentOrderSearch.trim() !== "";
-                  if (!hasSearch || filteredRecentOrders.length === 0) return;
-                  if (e.key === "ArrowLeft") {
-                    e.preventDefault();
-                    const newFocus = Math.max(0, focusedOrderIndex - 1);
-                    setFocusedOrderIndex(newFocus);
-                    setCurrentOrderIndex((c) => (newFocus < c ? newFocus : c));
-                  } else if (e.key === "ArrowRight") {
-                    e.preventDefault();
-                    const newFocus = Math.min(
-                      filteredRecentOrders.length - 1,
-                      focusedOrderIndex + 1,
-                    );
-                    setFocusedOrderIndex(newFocus);
-                    setCurrentOrderIndex((c) =>
-                      newFocus > c + (effectiveSidebarOpen ? 3 : 4)
-                        ? newFocus - (effectiveSidebarOpen ? 3 : 4)
-                        : c,
-                    );
-                  } else if (e.key === "Enter") {
-                    e.preventDefault();
-                    const order = filteredRecentOrders[focusedOrderIndex];
-                    if (order?.id) {
-                      router.push({ pathname: "/pos", query: { edit: order.id } });
-                    }
-                  }
-                }}
-                className="w-full px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
-                🔍
-              </div>
-            </div>
-
-            {/* Recent Order Cards - horizontally scrollable strip */}
-            <div
-              ref={orderStripRef}
-              className="flex gap-2 overflow-x-auto p-1.5 w-full min-w-0"
-              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-            >
-                {filteredRecentOrders.map((order, idx) => {
-                  const globalIdx = idx;
-                  const isFocused =
-                    recentOrderSearch.trim() !== "" && globalIdx === focusedOrderIndex;
-                  return (
-                  <div
-                    key={order.id}
-                    role="button"
-                    tabIndex={-1}
-                    style={{ flex: "0 0 155px", minWidth: "155px" }}
-                    onClick={() => {
-                      setFocusedOrderIndex(globalIdx);
-                      // Open this order in edit mode in the right sidebar
-                      if (order?.id) {
-                        router.push({ pathname: "/pos", query: { edit: order.id } });
-                      }
-                    }}
-                    className={`relative p-2 rounded border transition-all cursor-pointer ${
-                      isFocused
-                        ? "ring-2 ring-primary ring-offset-2 shadow-lg border-primary/40 dark:border-primary/40"
-                        : "border-gray-200 dark:border-neutral-800 hover:border-primary/40 hover:shadow-sm"
-                    }`}
-                  >
-                    {/* Status + Type row */}
-                    <div className="flex items-center justify-between mb-1.5 gap-1">
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold leading-tight ${
-                          order.status === "READY"
-                            ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
-                            : order.status === "PROCESSING"
-                              ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
-                              : "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400"
-                        }`}
-                      >
-                        {order.status === "READY"
-                          ? "Ready"
-                          : order.status === "PROCESSING"
-                            ? "Processing"
-                            : "New"}
-                      </span>
-                      <span
-                        className={`px-1 py-0.5 rounded text-[9px] font-bold leading-tight ${
-                          order.type === "delivery"
-                            ? "bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                            : order.type === "takeaway"
-                              ? "bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400"
-                              : "bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400"
-                        }`}
-                      >
-                        {order.type === "delivery"
-                          ? "Del"
-                          : order.type === "takeaway"
-                            ? "Take"
-                            : "Dine"}
-                      </span>
-                    </div>
-
-                    {/* Customer + time */}
-                    <p className="text-xs font-bold text-gray-900 dark:text-white truncate leading-tight">
-                      {order.customer}
-                    </p>
-                    <div className="flex items-center justify-between mt-0.5 mb-1.5">
-                      <span className="text-[9px] text-gray-500 dark:text-neutral-500 truncate">
-                        {order.time}
-                      </span>
-                      <span
-                        className={`text-[9px] font-semibold ml-1 flex-shrink-0 ${
-                          order.timeAgo.includes("h") || order.timeAgo.includes("d")
-                            ? "text-gray-400 dark:text-neutral-600"
-                            : parseInt(order.timeAgo) >= 30
-                              ? "text-red-500 dark:text-red-400"
-                              : parseInt(order.timeAgo) >= 15
-                                ? "text-yellow-600 dark:text-yellow-400"
-                                : "text-emerald-600 dark:text-emerald-400"
-                        }`}
-                      >
-                        {order.timeAgo}
-                      </span>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="relative h-1 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
-                      <div
-                        className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${
-                          order.status === "READY"
-                            ? "bg-emerald-500"
-                            : order.status === "PROCESSING"
-                              ? "bg-yellow-500"
-                              : "bg-primary"
-                        }`}
-                        style={{ width: `${order.progress}%` }}
-                      />
-                    </div>
-                  </div>
-                  );
-                })}
-            </div>
-          </div>
-
         {/* Menu Items Section */}
           <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1">
             {/* Header with Filters - Compact */}
@@ -3850,15 +3667,26 @@ export default function POSPage() {
                                       placeholder="Phone"
                                       className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                     />
+                                    <input
+                                      type="text"
+                                      value={editCustomerForm.address}
+                                      onChange={(e) => setEditCustomerForm((prev) => ({ ...prev, address: e.target.value }))}
+                                      placeholder={orderType === "DELIVERY" ? "Address *" : "Address"}
+                                      className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                                    />
                                     <div className="flex gap-2">
                                       <button
                                         type="button"
                                         disabled={savingCustomer}
                                         onClick={async () => {
                                           if (!editCustomerForm.name.trim()) return;
+                                          if (orderType === "DELIVERY" && !editCustomerForm.address.trim()) {
+                                            toast.error("Address is required for delivery orders");
+                                            return;
+                                          }
                                           setSavingCustomer(true);
                                           try {
-                                            const updated = await updateCustomer(c.id, { name: editCustomerForm.name, phone: editCustomerForm.phone });
+                                            const updated = await updateCustomer(c.id, { name: editCustomerForm.name, phone: editCustomerForm.phone, address: editCustomerForm.address });
                                             setCustomersList((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...updated } : x)));
                                             setEditingCustomerId(null);
                                             toast.success("Customer updated");
@@ -3885,23 +3713,36 @@ export default function POSPage() {
                                   <div className="group relative flex items-center px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800/50">
                                     <button
                                       type="button"
-                                      onClick={() => selectCustomerForOrder(c)}
+                                      onClick={() => {
+                                        if (orderType === "DELIVERY" && !c.address?.trim()) {
+                                          setEditingCustomerId(c.id);
+                                          setEditCustomerForm({ name: c.name || "", phone: c.phone || "", address: c.address || "" });
+                                          toast.error("Please add an address for delivery");
+                                          return;
+                                        }
+                                        selectCustomerForOrder(c);
+                                      }}
                                       className="flex-1 text-left text-sm"
                                     >
-                                      <span className="font-medium text-gray-900 dark:text-white">
-                                        {c.name}
-                                      </span>
-                                      {c.phone && (
-                                        <span className="text-gray-500 dark:text-neutral-400 ml-2">
-                                          {c.phone}
+                                      <div>
+                                        <span className="font-medium text-gray-900 dark:text-white">
+                                          {c.name}
                                         </span>
+                                        {c.phone && (
+                                          <span className="text-gray-500 dark:text-neutral-400 ml-2">
+                                            {c.phone}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {c.address && (
+                                        <p className="text-xs text-gray-400 dark:text-neutral-500 truncate mt-0.5">{c.address}</p>
                                       )}
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => {
                                         setEditingCustomerId(c.id);
-                                        setEditCustomerForm({ name: c.name || "", phone: c.phone || "" });
+                                        setEditCustomerForm({ name: c.name || "", phone: c.phone || "", address: c.address || "" });
                                       }}
                                       className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-gray-400 hover:text-primary transition-all flex-shrink-0"
                                       title="Edit customer"
@@ -3946,24 +3787,34 @@ export default function POSPage() {
                             <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
                               Name *
                             </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={quickCustomerName}
-                                onChange={(e) => setQuickCustomerName(e.target.value)}
-                                className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                                placeholder="Customer name"
-                              />
-                              <button
-                                type="button"
-                                onClick={handleQuickAddCustomer}
-                                disabled={addingQuickCustomer}
-                                className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50"
-                              >
-                                {addingQuickCustomer ? "Adding…" : "Add"}
-                              </button>
-                            </div>
+                            <input
+                              type="text"
+                              value={quickCustomerName}
+                              onChange={(e) => setQuickCustomerName(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                              placeholder="Customer name"
+                            />
                           </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                              Address{orderType === "DELIVERY" ? " *" : ""}
+                            </label>
+                            <input
+                              type="text"
+                              value={quickCustomerAddress}
+                              onChange={(e) => setQuickCustomerAddress(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                              placeholder="Customer address"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleQuickAddCustomer}
+                            disabled={addingQuickCustomer}
+                            className="w-full px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50"
+                          >
+                            {addingQuickCustomer ? "Adding…" : "Add Customer"}
+                          </button>
                         </div>
                       );
                     })()}
@@ -4255,6 +4106,68 @@ export default function POSPage() {
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Order Confirmation Popup ─────────────────────────────── */}
+      {orderConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden text-center">
+            <div className="pt-8 pb-4 px-6">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center mx-auto mb-4">
+                <CircleCheckBig className="w-9 h-9 text-emerald-500" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Order Sent to Kitchen</h2>
+              <div className="flex items-center justify-center gap-3 text-sm text-gray-500 dark:text-neutral-400">
+                {orderConfirmation.orderNumber && (
+                  <span>Order <span className="font-bold text-gray-900 dark:text-white">#{orderConfirmation.orderNumber}</span></span>
+                )}
+              </div>
+              {orderConfirmation.total && (
+                <p className="text-2xl font-black text-gray-900 dark:text-white mt-3 tabular-nums">
+                  Rs {Math.round(Number(orderConfirmation.total)).toLocaleString()}
+                </p>
+              )}
+              <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+                {orderConfirmation.orderType && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400">
+                    {orderConfirmation.orderType === "DINE_IN" ? "Dine In" : orderConfirmation.orderType === "DELIVERY" ? "Delivery" : "Takeaway"}
+                  </span>
+                )}
+                {orderConfirmation.tableName && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400">
+                    {orderConfirmation.tableName}
+                  </span>
+                )}
+                {orderConfirmation.customerName && (
+                  <span className="text-xs font-medium text-gray-400 dark:text-neutral-500">{orderConfirmation.customerName}</span>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 pb-6 pt-2">
+              <button
+                type="button"
+                onClick={() => setOrderConfirmation(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  printBillReceipt(
+                    { orderNumber: orderConfirmation.orderNumber, id: orderConfirmation.orderNumber, total: orderConfirmation.total, items: [] },
+                    { mode: "bill", logoUrl: restaurantLogoUrl, branchAddress: currentBranch?.address || "", logoHeightPx: restaurantLogoHeight, footerMessage: restaurantBillFooter }
+                  );
+                  setOrderConfirmation(null);
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print Token
+              </button>
             </div>
           </div>
         </div>
