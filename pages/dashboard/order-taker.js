@@ -108,10 +108,9 @@ export default function OrderTakerPage() {
   const fetchActiveOrders = useCallback(async () => {
     try {
       const data = await getOrders({ mine: true });
-      const active = data.filter(
-        (o) => o.status !== "DELIVERED" && o.status !== "CANCELLED"
+      setActiveOrders(
+        data.filter((o) => o.status !== "CANCELLED")
       );
-      setActiveOrders(active);
     } catch (err) {
       console.error("Failed to load active orders:", err);
     }
@@ -232,12 +231,17 @@ export default function OrderTakerPage() {
   const preparingOrders = activeOrders.filter(
     (o) => o.status === "PROCESSING" || o.status === "NEW_ORDER"
   );
+  const completedOrders = activeOrders.filter(
+    (o) => o.status === "DELIVERED" || o.status === "COMPLETED"
+  );
   const filteredActiveOrders =
     activeFilter === "ready"
       ? readyOrders
       : activeFilter === "preparing"
         ? preparingOrders
-        : activeOrders;
+        : activeFilter === "completed"
+          ? completedOrders
+          : activeOrders;
 
   function getTimeAgo(createdAt) {
     const diff = Date.now() - new Date(createdAt).getTime();
@@ -272,12 +276,33 @@ export default function OrderTakerPage() {
         };
       case "NEW_ORDER":
         return {
-          label: "New order",
+          label: "In Kitchen",
           bg: "bg-blue-500",
           bgLight: "bg-blue-50 dark:bg-blue-500/10",
           text: "text-blue-600 dark:text-blue-400",
           border: "border-blue-200 dark:border-blue-500/20",
-          icon: Clock,
+          icon: Send,
+          pulse: false,
+        };
+      case "OUT_FOR_DELIVERY":
+        return {
+          label: "Out for Delivery",
+          bg: "bg-violet-500",
+          bgLight: "bg-violet-50 dark:bg-violet-500/10",
+          text: "text-violet-600 dark:text-violet-400",
+          border: "border-violet-200 dark:border-violet-500/20",
+          icon: Send,
+          pulse: false,
+        };
+      case "DELIVERED":
+      case "COMPLETED":
+        return {
+          label: "Completed",
+          bg: "bg-gray-400",
+          bgLight: "bg-gray-50 dark:bg-neutral-900/50",
+          text: "text-gray-500 dark:text-neutral-400",
+          border: "border-gray-200 dark:border-neutral-800",
+          icon: Check,
           pulse: false,
         };
       default:
@@ -499,6 +524,7 @@ export default function OrderTakerPage() {
                   { key: "all", label: "All", count: activeOrders.length },
                   { key: "ready", label: "Ready", count: readyOrders.length },
                   { key: "preparing", label: "Preparing", count: preparingOrders.length },
+                  { key: "completed", label: "Completed", count: completedOrders.length },
                 ].map((f) => (
                   <button
                     key={f.key}
@@ -548,14 +574,14 @@ export default function OrderTakerPage() {
                         }`}
                       >
                         {/* Status banner */}
-                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
+                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bg}`}>
                           <div className="flex items-center gap-2">
-                            <StatusIcon className={`w-4 h-4 ${sc.text}`} />
-                            <span className={`text-xs font-bold ${sc.text}`}>
+                            <StatusIcon className="w-4 h-4 text-white" />
+                            <span className="text-xs font-bold text-white">
                               {sc.label}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400">
+                          <div className="flex items-center gap-1.5 text-[11px] text-white/70">
                             <Clock className="w-3 h-3" />
                             {getTimeAgo(order.createdAt)}
                           </div>
