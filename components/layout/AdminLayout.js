@@ -33,6 +33,7 @@ import {
   CreditCard,
   Globe,
   Mail,
+  Bike,
 } from "lucide-react";
 import { getToken, getStoredAuth, clearActingAsRestaurant } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -72,6 +73,12 @@ const tenantNav = [
     label: "Kitchen (KDS)",
     icon: ChefHat,
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
+  },
+  {
+    path: "/rider",
+    label: "Rider Portal",
+    icon: Bike,
+    roles: ["delivery_rider"],
   },
   {
     path: "/reservations",
@@ -168,6 +175,7 @@ const tenantNav = [
       "product_manager",
       "cashier",
       "kitchen_staff",
+      "delivery_rider",
     ],
   },
 ];
@@ -403,6 +411,16 @@ export default function AdminLayout({
     }
   }, [role, router]);
 
+  // Restrict delivery_rider to Rider Portal only
+  useEffect(() => {
+    if (role !== "delivery_rider") return;
+    const path =
+      (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
+    if (path === "/overview" || path === "/pos" || path === "/orders" || path === "/kitchen") {
+      router.replace("/rider");
+    }
+  }, [role, router]);
+
   // Close mobile sidebar on route change
   useEffect(() => {
     const handleRouteChange = () => setMobileSidebarOpen(false);
@@ -502,7 +520,9 @@ export default function AdminLayout({
                   ? "Kitchen Staff"
                   : role === "order_taker"
                     ? "Order Taker"
-                    : "Staff";
+                    : role === "delivery_rider"
+                      ? "Delivery Rider"
+                      : "Staff";
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });

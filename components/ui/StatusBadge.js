@@ -11,6 +11,8 @@ const STATUS_STYLES = {
     "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/40",
   READY:
     "bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 border-sky-300 dark:border-sky-500/40",
+  OUT_FOR_DELIVERY:
+    "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-300 dark:border-indigo-500/40",
   DELIVERED:
     "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/40",
   CANCELLED:
@@ -21,9 +23,9 @@ const STATUS_LABELS = {
   NEW_ORDER: "New order",
   PROCESSING: "Processing",
   READY: "Ready",
+  OUT_FOR_DELIVERY: "Out for delivery",
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled",
-  // Legacy (for existing DB records until migrated)
   UNPROCESSED: "New order",
   PENDING: "Processing",
   COMPLETED: "Delivered",

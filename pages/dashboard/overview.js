@@ -147,8 +147,15 @@ export default function OverviewPage() {
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [periodReport, setPeriodReport] = useState({
-    totalRevenue: 0, totalProfit: 0, totalOrders: 0,
-    topItems: [], dailySales: [], hourlySales: null, paymentDistribution: {},
+    totalRevenue: 0,
+    totalProfit: 0,
+    totalOrders: 0,
+    topItems: [],
+    dailySales: [],
+    hourlySales: null,
+    paymentDistribution: {},
+    paymentRows: [],
+    paymentAccountRows: [],
   });
   const [reportPeriod, setReportPeriod] = useState("today");
   const [periodLoading, setPeriodLoading] = useState(false);
@@ -320,6 +327,8 @@ export default function OverviewPage() {
           dailySales: report.dailySales ?? [],
           hourlySales: report.hourlySales ?? null,
           paymentDistribution: report.paymentDistribution ?? {},
+          paymentRows: report.paymentRows ?? [],
+          paymentAccountRows: report.paymentAccountRows ?? [],
         });
       } catch (err) { if (!cancelled) console.error("Failed to load period report:", err); }
       finally { if (!cancelled) setPeriodLoading(false); }
@@ -334,6 +343,39 @@ export default function OverviewPage() {
     ? periodReport.paymentDistribution : null;
   const paymentSegments = hasOrders && periodPayment ? buildSegments(periodPayment, paymentLabels, paymentColors) : [];
   const paymentAmounts = !!periodPayment;
+
+  const paymentRows = (periodReport.paymentRows || []).filter(
+    (row) => row && row.method && row.method !== "Total",
+  );
+  const paymentAccountRows = periodReport.paymentAccountRows || [];
+
+  const paymentSummary = paymentRows.reduce(
+    (acc, row) => {
+      const label = row.method;
+      const amount = Number(row.amount || 0);
+      const orders = Number(row.orders || 0);
+      if (label === "Cash") {
+        acc.CASH.amount += amount;
+        acc.CASH.orders += orders;
+      } else if (label === "Card") {
+        acc.CARD.amount += amount;
+        acc.CARD.orders += orders;
+      } else if (label === "Online") {
+        acc.ONLINE.amount += amount;
+        acc.ONLINE.orders += orders;
+      } else if (label !== "To be paid") {
+        acc.OTHER.amount += amount;
+        acc.OTHER.orders += orders;
+      }
+      return acc;
+    },
+    {
+      CASH: { amount: 0, orders: 0 },
+      CARD: { amount: 0, orders: 0 },
+      ONLINE: { amount: 0, orders: 0 },
+      OTHER: { amount: 0, orders: 0 },
+    },
+  );
 
   const displayTopItems = (periodReport.topItems || []).slice(0, 5).map((p, i) => ({
     label: p.name, value: p.quantity, color: productColors[i % productColors.length],
@@ -591,36 +633,124 @@ export default function OverviewPage() {
 
             {/* Payment Methods */}
             <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-500/10 flex items-center justify-center">
-                  <CreditCard className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-500/10 flex items-center justify-center">
+                    <CreditCard className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">Payments</h3>
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                      How money was received in {periodLabel.toLowerCase()}
+                    </p>
+                  </div>
                 </div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Payments</h3>
               </div>
-              {paymentSegments.length > 0 ? (
-                <div className="space-y-3.5">
-                  {paymentSegments.map((s) => {
-                    const total = paymentSegments.reduce((sum, seg) => sum + seg.value, 0);
-                    const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
-                    const val = Math.round(Number(s.value) || 0);
-                    return (
-                      <div key={s.label}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                            <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">{s.label}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {paymentAmounts && <span className="text-xs font-bold text-gray-900 dark:text-white">Rs {val.toLocaleString()}</span>}
-                            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">{pct}%</span>
-                          </div>
+
+              {hasOrders ? (
+                <div className="space-y-4">
+                  {/* Quick summary chips */}
+                  <div className="grid grid-cols-2 gap-2 mb-1">
+                    {[
+                      { key: "CASH", label: "Cash" },
+                      { key: "CARD", label: "Card" },
+                      { key: "ONLINE", label: "Online" },
+                      { key: "OTHER", label: "Other" },
+                    ].map(({ key, label }) => {
+                      const data = paymentSummary[key];
+                      const hasData = (data?.amount || 0) > 0 || (data?.orders || 0) > 0;
+                      return (
+                        <div
+                          key={key}
+                          className={`rounded-xl border px-2.5 py-2 ${
+                            hasData
+                              ? "border-sky-100 dark:border-sky-500/30 bg-sky-50/60 dark:bg-sky-500/10"
+                              : "border-gray-100 dark:border-neutral-800 bg-gray-50/40 dark:bg-neutral-900/60"
+                          }`}
+                        >
+                          <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+                            {label}
+                          </p>
+                          <p className="text-xs font-bold text-gray-900 dark:text-white">
+                            Rs {Number(data?.amount || 0).toLocaleString()}
+                          </p>
+                          <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                            {Number(data?.orders || 0).toLocaleString()} orders
+                          </p>
                         </div>
-                        <div className="h-1.5 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: s.color }} />
-                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Distribution list (existing behaviour) */}
+                  {paymentSegments.length > 0 ? (
+                    <div className="space-y-3">
+                      {paymentSegments.map((s) => {
+                        const total = paymentSegments.reduce((sum, seg) => sum + seg.value, 0);
+                        const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
+                        const val = Math.round(Number(s.value) || 0);
+                        return (
+                          <div key={s.label}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                                <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">{s.label}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {paymentAmounts && (
+                                  <span className="text-xs font-bold text-gray-900 dark:text-white">
+                                    Rs {val.toLocaleString()}
+                                  </span>
+                                )}
+                                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
+                                  {pct}%
+                                </span>
+                              </div>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-700"
+                                style={{ width: `${pct}%`, backgroundColor: s.color }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-6">
+                      <CreditCard className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-2" />
+                      <p className="text-xs text-gray-400 dark:text-neutral-600">No payment data</p>
+                    </div>
+                  )}
+
+                  {/* Online accounts list */}
+                  <div className="border-t border-gray-100 dark:border-neutral-800 pt-3 mt-1">
+                    <p className="text-[11px] font-semibold text-gray-600 dark:text-neutral-400 mb-2">
+                      Online payment accounts
+                    </p>
+                    {paymentAccountRows.length === 0 ? (
+                      <p className="text-[11px] text-gray-400 dark:text-neutral-600">
+                        No online payments in this period.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-32 overflow-auto pr-1">
+                        {paymentAccountRows.map((row) => (
+                          <div
+                            key={row.accountName}
+                            className="flex items-center justify-between text-[11px]"
+                          >
+                            <span className="text-gray-600 dark:text-neutral-300 truncate pr-2">
+                              {row.accountName}
+                            </span>
+                            <span className="text-gray-900 dark:text-white font-semibold">
+                              Rs {Number(row.amount || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-8">

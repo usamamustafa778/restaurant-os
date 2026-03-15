@@ -17,18 +17,22 @@ import {
   getStoredAuth,
   getRestaurantSettings,
   getPaymentAccounts,
+  getDeliveryRiders,
+  assignRiderToOrder,
+  collectDeliveryPayment,
 } from "../../lib/apiClient";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
-import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag, UtensilsCrossed, Headset, Smartphone, X, CircleCheckBig, Receipt } from "lucide-react";
+import { Loader2, Printer, Clock, User, CircleDot, MapPin, Phone, ExternalLink, Trash2, Banknote, CreditCard, Pencil, XCircle, ChevronDown, ShoppingBag, UtensilsCrossed, Headset, Smartphone, X, CircleCheckBig, Receipt, Bike, UserCheck, Truck } from "lucide-react";
 
 const ORDER_STATUSES = [
   "All Orders",
   "NEW_ORDER",
   "PROCESSING",
   "READY",
+  "OUT_FOR_DELIVERY",
   "DELIVERED",
   "CANCELLED"
 ];
@@ -38,6 +42,7 @@ const STATUS_TAB_LABELS = {
   NEW_ORDER: "New order",
   PROCESSING: "Processing",
   READY: "Ready",
+  OUT_FOR_DELIVERY: "Out for delivery",
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled"
 };
@@ -62,10 +67,24 @@ function getDisplayOrderId(order) {
 function isOrderPaidOrNonEditable(order) {
   if (order.status === "CANCELLED") return true;
   if (order.status === "DELIVERED" || order.status === "COMPLETED") return true;
+  if (order.status === "OUT_FOR_DELIVERY") return true;
   if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0) return true;
   if (order.source === "FOODPANDA") return true;
   const pm = (order.paymentMethod || "").toUpperCase();
   return pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA";
+}
+
+function isDeliveryOrder(order) {
+  const type = (order.type || order.orderType || "").toUpperCase();
+  return type === "DELIVERY";
+}
+
+function isDeliveryPaymentPending(order) {
+  if (!isDeliveryOrder(order)) return false;
+  if (order.status !== "DELIVERED" && order.status !== "COMPLETED") return false;
+  if (order.deliveryPaymentCollected === false) return true;
+  const pm = (order.paymentMethod || "").toUpperCase();
+  return pm === "PENDING" || pm === "TO BE PAID" || !pm;
 }
 
 export default function OrdersPage() {
@@ -94,6 +113,19 @@ export default function OrdersPage() {
   const [expandedOrderItems, setExpandedOrderItems] = useState({});
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrder, setCancelTargetOrder] = useState(null);
+
+  // Rider assignment
+  const [showRiderModal, setShowRiderModal] = useState(false);
+  const [riderTargetOrder, setRiderTargetOrder] = useState(null);
+  const [riders, setRiders] = useState([]);
+  const [ridersLoading, setRidersLoading] = useState(false);
+  const [selectedRiderId, setSelectedRiderId] = useState("");
+  const [riderAssigning, setRiderAssigning] = useState(false);
+
+  // Collect payment from rider
+  const [showCollectModal, setShowCollectModal] = useState(false);
+  const [collectTargetOrder, setCollectTargetOrder] = useState(null);
+  const [collectLoading, setCollectLoading] = useState(false);
 
   const role = getStoredAuth()?.user?.role;
   const isOrderTaker = role === "order_taker";
@@ -221,6 +253,72 @@ export default function OrdersPage() {
     setPaymentError("");
   }
 
+  async function openRiderModal(order) {
+    setRiderTargetOrder(order);
+    setSelectedRiderId("");
+    setShowRiderModal(true);
+    setRidersLoading(true);
+    try {
+      const data = await getDeliveryRiders();
+      setRiders(data);
+    } catch {
+      toast.error("Failed to load delivery riders");
+      setRiders([]);
+    } finally {
+      setRidersLoading(false);
+    }
+  }
+
+  function closeRiderModal() {
+    setShowRiderModal(false);
+    setRiderTargetOrder(null);
+    setSelectedRiderId("");
+  }
+
+  async function handleAssignRider() {
+    if (!riderTargetOrder || !selectedRiderId) return;
+    const orderId = riderTargetOrder.id || riderTargetOrder._id;
+    setRiderAssigning(true);
+    const toastId = toast.loading("Assigning rider...");
+    try {
+      const updated = await assignRiderToOrder(orderId, selectedRiderId);
+      setOrders(prev => prev.map(o => (o._id === orderId || o.id === orderId ? { ...o, ...updated } : o)));
+      toast.success("Rider assigned! Order is out for delivery.", { id: toastId });
+      closeRiderModal();
+    } catch (err) {
+      toast.error(err.message || "Failed to assign rider", { id: toastId });
+    } finally {
+      setRiderAssigning(false);
+    }
+  }
+
+  function openCollectPaymentModal(order) {
+    setCollectTargetOrder(order);
+    setShowCollectModal(true);
+  }
+
+  function closeCollectPaymentModal() {
+    setShowCollectModal(false);
+    setCollectTargetOrder(null);
+  }
+
+  async function handleCollectPayment() {
+    if (!collectTargetOrder) return;
+    const orderId = collectTargetOrder.id || collectTargetOrder._id;
+    setCollectLoading(true);
+    const toastId = toast.loading("Collecting payment...");
+    try {
+      const updated = await collectDeliveryPayment(orderId, { paymentMethod: "CASH" });
+      setOrders(prev => prev.map(o => (o._id === orderId || o.id === orderId ? { ...o, ...updated } : o)));
+      toast.success("Payment collected from rider!", { id: toastId });
+      closeCollectPaymentModal();
+    } catch (err) {
+      toast.error(err.message || "Failed to collect payment", { id: toastId });
+    } finally {
+      setCollectLoading(false);
+    }
+  }
+
   function openPrintBill(order, mode) {
     printBillReceipt(order, {
       mode,
@@ -279,7 +377,7 @@ export default function OrdersPage() {
       const isToday = (o.createdAt || "").slice(0, 10) === todayStr;
       const isActive = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(
         (o.status || "").toUpperCase()
-      );
+      ) || (o.status === "DELIVERED" && isDeliveryPaymentPending(o));
       return isToday || isActive;
     });
   }, [orders, isCashier]);
@@ -492,12 +590,15 @@ export default function OrdersPage() {
                 align: "right",
                 render: (_, order) => {
                   const isUpdating = updatingId === order.id || updatingId === order._id;
-                  const nextStatuses = getNextStatuses(order.status);
+                  const orderType = order.type || order.orderType || "";
+                  const nextStatuses = getNextStatuses(order.status, orderType);
                   const primaryNext = nextStatuses[0];
-                  const NEXT_LABELS = { PROCESSING: "Processing", READY: "Ready", DELIVERED: "Delivered" };
+                  const NEXT_LABELS = { PROCESSING: "Processing", READY: "Ready", OUT_FOR_DELIVERY: "Assign Rider", DELIVERED: "Delivered" };
+                  const showAssignRider = isDeliveryOrder(order) && order.status === "READY" && !isOrderTaker;
+                  const showCollectFromRider = isDeliveryPaymentPending(order) && !isOrderTaker;
                   return (
                     <div className="inline-flex items-center gap-1">
-                      {order.status !== "CANCELLED" && order.status !== "DELIVERED" && order.status !== "COMPLETED" && !isOrderTaker && (
+                      {order.status !== "CANCELLED" && order.status !== "DELIVERED" && order.status !== "COMPLETED" && order.status !== "OUT_FOR_DELIVERY" && !isOrderTaker && (
                         <button type="button" disabled={isUpdating} onClick={() => openCancelModal(order)}
                           className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors disabled:opacity-50" title="Cancel">
                           <XCircle className="w-3.5 h-3.5" />
@@ -515,13 +616,24 @@ export default function OrdersPage() {
                           <Printer className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {order.status !== "CANCELLED" && !isOrderPaidOrNonEditable(order) && !isOrderTaker && (
+                      {order.status !== "CANCELLED" && !isOrderPaidOrNonEditable(order) && !isOrderTaker && !isDeliveryOrder(order) && (
                         <button type="button" onClick={() => openPaymentModal(order)}
                           className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 transition-colors" title="Take payment">
                           <Banknote className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {primaryNext && !isOrderTaker && (
+                      {showCollectFromRider && (
+                        <button type="button" onClick={() => openCollectPaymentModal(order)}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors whitespace-nowrap">
+                          Collect Payment
+                        </button>
+                      )}
+                      {showAssignRider ? (
+                        <button type="button" onClick={() => openRiderModal(order)}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors whitespace-nowrap flex items-center gap-1">
+                          <Bike className="w-3 h-3" /> Assign Rider
+                        </button>
+                      ) : primaryNext && !isOrderTaker && !showCollectFromRider && (
                         <button type="button" disabled={isUpdating}
                           onClick={() => handleUpdateStatus(order.id || order._id, primaryNext)}
                           className="px-2.5 py-1 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 whitespace-nowrap">
@@ -542,13 +654,17 @@ export default function OrdersPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <>
         {filtered.map(order => {
-          const nextStatuses = getNextStatuses(order.status);
+          const orderType = order.type || order.orderType || "";
+          const nextStatuses = getNextStatuses(order.status, orderType);
           const primaryNext = nextStatuses[0];
           const isUpdating = updatingId === order.id || updatingId === order._id;
+          const showAssignRider = isDeliveryOrder(order) && order.status === "READY" && !isOrderTaker;
+          const showCollectFromRider = isDeliveryPaymentPending(order) && !isOrderTaker;
 
           const NEXT_LABELS = {
             PROCESSING: "Processing",
             READY: "Ready",
+            OUT_FOR_DELIVERY: "Assign Rider",
             DELIVERED: "Delivered"
           };
 
@@ -656,6 +772,15 @@ export default function OrdersPage() {
                     <span>{order.orderTakerName}</span>
                   </div>
                 )}
+                {order.assignedRiderName && (
+                  <div className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
+                    <Bike className="w-4 h-4" />
+                    <span className="font-medium">{order.assignedRiderName}</span>
+                    {order.assignedRiderPhone && (
+                      <span className="text-gray-400 dark:text-neutral-500">({order.assignedRiderPhone})</span>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-500">
                   <Clock className="w-3.5 h-3.5" />
                   <span>{dateStr} at {timeStr}</span>
@@ -736,7 +861,15 @@ export default function OrdersPage() {
               <div className="mt-auto px-4 pb-4 pt-3 border-t border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2">
                 {(order.status === "DELIVERED" || order.status === "COMPLETED") ? (
                   <>
-                    {(order.paymentMethod === "To be paid" || order.paymentMethod === "PENDING") && (
+                    {showCollectFromRider ? (
+                      <button
+                        type="button"
+                        onClick={() => openCollectPaymentModal(order)}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-amber-500 text-white px-4 py-2.5 text-xs font-semibold hover:bg-amber-600 transition-colors"
+                      >
+                        <Banknote className="w-3.5 h-3.5" /> Collect from Rider
+                      </button>
+                    ) : (order.paymentMethod === "To be paid" || order.paymentMethod === "PENDING") && !isDeliveryOrder(order) ? (
                       <button
                         type="button"
                         onClick={() => openPaymentModal(order)}
@@ -745,7 +878,7 @@ export default function OrdersPage() {
                       >
                         <Banknote className="w-3.5 h-3.5" />
                       </button>
-                    )}
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => openPrintBill(order, "receipt")}
@@ -755,9 +888,24 @@ export default function OrdersPage() {
                       <Printer className="w-3.5 h-3.5" />
                     </button>
                   </>
+                ) : order.status === "OUT_FOR_DELIVERY" ? (
+                  <div className="flex items-center gap-2 w-full">
+                    <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
+                      <Truck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">Out for delivery</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openPrintBill(order, "bill")}
+                      className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-primary hover:border-primary/30 transition-colors"
+                      title="Print bill"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 ) : (
                   <>
-                    {order.status !== "CANCELLED" && !isOrderPaidOrNonEditable(order) && (
+                    {order.status !== "CANCELLED" && !isOrderPaidOrNonEditable(order) && !isDeliveryOrder(order) && (
                       <button
                         type="button"
                         onClick={() => openPaymentModal(order)}
@@ -777,7 +925,15 @@ export default function OrdersPage() {
                         <Printer className="w-3.5 h-3.5" />
                       </button>
                     )}
-                    {primaryNext && (
+                    {showAssignRider ? (
+                      <button
+                        type="button"
+                        onClick={() => openRiderModal(order)}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2.5 text-xs font-semibold hover:bg-indigo-700 transition-colors"
+                      >
+                        <Bike className="w-3.5 h-3.5" /> Assign Rider
+                      </button>
+                    ) : primaryNext && (
                       <button
                         type="button"
                         disabled={isUpdating}
@@ -791,7 +947,6 @@ export default function OrdersPage() {
                         )}
                       </button>
                     )}
-                    {/* Delete temporarily hidden */}
                   </>
                 )}
               </div>
@@ -1096,6 +1251,178 @@ export default function OrdersPage() {
                     : "Yes, cancel order"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Assign Rider Modal */}
+      {showRiderModal && riderTargetOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
+                  <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">Assign Delivery Rider</h2>
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">Order #{getDisplayOrderId(riderTargetOrder)}</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeRiderModal}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4">
+              {riderTargetOrder.customerName && (
+                <div className="flex items-center gap-2 text-sm mb-2">
+                  <User className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium text-gray-900 dark:text-white">{riderTargetOrder.customerName}</span>
+                </div>
+              )}
+              {riderTargetOrder.deliveryAddress && (
+                <div className="flex items-start gap-2 text-xs text-gray-600 dark:text-neutral-400 mb-2">
+                  <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  <span>{riderTargetOrder.deliveryAddress}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 mb-4">
+                <span className="text-xs text-gray-500 dark:text-neutral-500">Order Total</span>
+                <span className="text-lg font-bold text-primary">Rs {Number(riderTargetOrder.total).toFixed(0)}</span>
+              </div>
+
+              <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Select Rider</label>
+              {ridersLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6">
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                  <span className="text-xs text-gray-400">Loading riders...</span>
+                </div>
+              ) : riders.length === 0 ? (
+                <div className="px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
+                  No delivery riders found. Add riders in <span className="font-semibold">Staff Management</span>.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {riders.map(rider => (
+                    <button
+                      key={rider.id}
+                      type="button"
+                      onClick={() => setSelectedRiderId(rider.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all ${
+                        selectedRiderId === rider.id
+                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10"
+                          : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                        <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-semibold truncate ${selectedRiderId === rider.id ? "text-indigo-700 dark:text-indigo-400" : "text-gray-900 dark:text-white"}`}>
+                          {rider.name}
+                        </p>
+                        {rider.phone && (
+                          <p className="text-[10px] text-gray-400 dark:text-neutral-500">{rider.phone}</p>
+                        )}
+                      </div>
+                      {rider.vehicleType && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400 font-medium capitalize">
+                          {rider.vehicleType}
+                        </span>
+                      )}
+                      {selectedRiderId === rider.id && (
+                        <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 px-5 pb-5">
+              <button type="button" onClick={closeRiderModal}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRiderId || riderAssigning}
+                onClick={handleAssignRider}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
+              >
+                {riderAssigning
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Assigning...</>
+                  : <><Bike className="w-4 h-4" /> Assign &amp; Send</>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Collect Payment from Rider Modal */}
+      {showCollectModal && collectTargetOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                  <Banknote className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">Collect Payment</h2>
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">Order #{getDisplayOrderId(collectTargetOrder)}</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeCollectPaymentModal}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div className="text-center py-4 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">Amount to Collect</p>
+                <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
+                  Rs {Math.round(Number(collectTargetOrder.total)).toLocaleString()}
+                </p>
+              </div>
+
+              {collectTargetOrder.assignedRiderName && (
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
+                  <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <div>
+                    <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">{collectTargetOrder.assignedRiderName}</p>
+                    {collectTargetOrder.assignedRiderPhone && (
+                      <p className="text-[10px] text-indigo-500 dark:text-indigo-500">{collectTargetOrder.assignedRiderPhone}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-gray-500 dark:text-neutral-400">
+                Confirm that the rider has submitted <span className="font-semibold">Rs {Number(collectTargetOrder.total).toFixed(0)}</span> for this delivery order. This will mark the payment as collected.
+              </p>
+            </div>
+
+            <div className="flex gap-2 px-5 pb-5">
+              <button type="button" onClick={closeCollectPaymentModal}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={collectLoading}
+                onClick={handleCollectPayment}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-50 transition-colors"
+              >
+                {collectLoading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
+                  : <><CircleCheckBig className="w-4 h-4" /> Payment Collected</>
+                }
+              </button>
             </div>
           </div>
         </div>

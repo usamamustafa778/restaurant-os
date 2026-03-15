@@ -8,7 +8,7 @@ const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "";
 const ALLOWED_ROLES = [
   "super_admin", "restaurant_admin", "staff", "admin",
   "product_manager", "cashier", "manager", "kitchen_staff",
-  "order_taker",
+  "order_taker", "delivery_rider",
 ];
 
 // Dashboard pages that live under pages/dashboard/ and are now served at /<page>
@@ -19,7 +19,7 @@ const DASHBOARD_PAGES = new Set([
   "users", "branches", "tables", "history",
   "website", "website-content", "integrations",
   "subscription", "profile", "day-report",
-  "order-taker",
+  "order-taker", "rider",
 ]);
 
 // Routes that should only be visible to non-authenticated users
@@ -124,6 +124,12 @@ export async function middleware(request) {
         url.pathname = "/order-taker";
         return NextResponse.redirect(url);
       }
+      // Delivery rider → rider portal
+      if (payload.role === "delivery_rider") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/rider";
+        return NextResponse.redirect(url);
+      }
       // Super admin without "acting as" → super overview
       if (payload.role === "super_admin") {
         const actingAs = request.cookies.get("restaurantos_acting_as")?.value;
@@ -176,6 +182,13 @@ export async function middleware(request) {
     if (payload.role === "order_taker" && pathname !== "/order-taker") {
       const url = request.nextUrl.clone();
       url.pathname = "/order-taker";
+      return NextResponse.redirect(url);
+    }
+
+    // Delivery rider can only access /rider and /profile
+    if (payload.role === "delivery_rider" && pathname !== "/rider" && pathname !== "/profile") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/rider";
       return NextResponse.redirect(url);
     }
 

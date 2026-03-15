@@ -30,9 +30,10 @@ export function BranchProvider({ children }) {
     const role = auth?.user?.role;
     const tenantSlug = auth?.user?.tenantSlug || auth?.tenantSlug;
 
-    // No branch context when not logged in, or super_admin not acting as a tenant
+    // No branch context when not logged in, super_admin not acting as a tenant, or limited roles
     const isSuperAdminWithoutTenant = role === "super_admin" && !tenantSlug;
-    if (isSuperAdminWithoutTenant || !token) {
+    const skipBranchLoad = role === "order_taker" || role === "delivery_rider";
+    if (isSuperAdminWithoutTenant || !token || skipBranchLoad) {
       setBranches([]);
       setCurrentBranchState(null);
       return;
@@ -82,7 +83,7 @@ export function BranchProvider({ children }) {
         const auth = JSON.parse(e.newValue);
         const role = auth?.user?.role;
         const tenantSlug = auth?.user?.tenantSlug || auth?.tenantSlug;
-        const shouldLoad = auth?.token && (role !== "super_admin" || tenantSlug);
+        const shouldLoad = auth?.token && (role !== "super_admin" || tenantSlug) && role !== "order_taker" && role !== "delivery_rider";
         if (shouldLoad) {
           getBranches()
             .then((data) => {

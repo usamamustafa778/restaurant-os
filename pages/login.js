@@ -16,6 +16,7 @@ const ALLOWED_ROLES = [
   "manager",
   "kitchen_staff",
   "order_taker",
+  "delivery_rider",
 ];
 
 export default function LoginPage() {
@@ -133,6 +134,8 @@ export default function LoginPage() {
 
     if (user.role === "order_taker") {
       target = "/order-taker";
+    } else if (user.role === "delivery_rider") {
+      target = "/rider";
     } else if (user.role === "cashier") {
       target = "/pos";
     } else if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {

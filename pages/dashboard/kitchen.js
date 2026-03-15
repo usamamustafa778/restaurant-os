@@ -100,11 +100,11 @@ const COLUMNS = [
 
 function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
   const orderId = order.id || order._id;
-  const nextStatus = getNextStatuses(order.status)[0];
+  const typeKey = (order.orderType || order.type || "DINE_IN").toUpperCase();
+  const nextStatus = getNextStatuses(order.status, typeKey)[0];
   const minutes = getElapsedMinutes(order.createdAt);
   const urgency = getUrgency(minutes);
   const ug = URGENCY[urgency];
-  const typeKey = (order.orderType || order.type || "DINE_IN").toUpperCase();
   const typeConf = TYPE_CONFIG[typeKey] || TYPE_CONFIG.DINE_IN;
   const { AdvIcon } = column;
 
@@ -156,6 +156,12 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
             <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-500">
               <UtensilsCrossed className="w-3 h-3 text-gray-400 flex-shrink-0" />
               <span className="font-medium">{order.tableName}</span>
+            </div>
+          )}
+          {order.deliveryAddress && (
+            <div className="flex items-start gap-1.5 text-xs text-blue-600 dark:text-blue-400">
+              <Car className="w-3 h-3 mt-0.5 text-blue-500 flex-shrink-0" />
+              <span className="truncate font-medium">{order.deliveryAddress}</span>
             </div>
           )}
         </div>
@@ -261,7 +267,8 @@ export default function KitchenPage() {
 
   async function handleStatusAdvance(order) {
     const orderId = order.id || order._id;
-    const nextStatus = getNextStatuses(order.status)[0];
+    const typeKey = (order.orderType || order.type || "DINE_IN").toUpperCase();
+    const nextStatus = getNextStatuses(order.status, typeKey)[0];
     if (!nextStatus) return;
     setUpdatingOrderId(orderId);
     try {

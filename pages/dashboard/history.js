@@ -90,7 +90,14 @@ export default function HistoryPage() {
   const [preset, setPreset] = useState("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [report, setReport] = useState({ totalRevenue: 0, totalOrders: 0, topItems: [] });
+  const [report, setReport] = useState({
+    totalRevenue: 0,
+    totalOrders: 0,
+    topItems: [],
+    paymentRows: [],
+    paymentAccountRows: [],
+    orderTypeRows: [],
+  });
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -102,6 +109,9 @@ export default function HistoryPage() {
         totalRevenue: data.totalRevenue || 0,
         totalOrders: data.totalOrders || 0,
         topItems: data.topItems || [],
+        paymentRows: data.paymentRows || [],
+        paymentAccountRows: data.paymentAccountRows || [],
+        orderTypeRows: data.orderTypeRows || [],
       });
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) {
@@ -142,6 +152,24 @@ export default function HistoryPage() {
   const totalItemRevenue = report.topItems.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
   const periodLabel = buildPeriodLabel(preset, customFrom, customTo);
 
+  const paymentRows = report.paymentRows || [];
+  const paymentAccountRows = report.paymentAccountRows || [];
+  const orderTypeRows = report.orderTypeRows || [];
+
+  const paymentTotalsByMethod = paymentRows.reduce(
+    (acc, row) => {
+      const key = (row.method || "").toUpperCase();
+      if (!key) return acc;
+      const amount = Number(row.amount || 0);
+      const orders = Number(row.orders || 0);
+      if (!acc[key]) acc[key] = { amount: 0, orders: 0 };
+      acc[key].amount += amount;
+      acc[key].orders += orders;
+      return acc;
+    },
+    {},
+  );
+
   function handleExportCSV() {
     const rows = [
       ["Sales & Reports"],
@@ -153,6 +181,30 @@ export default function HistoryPage() {
       ["Total Revenue", `Rs ${Number(report.totalRevenue.toFixed(0)).toLocaleString()}`],
       ["Total Orders", report.totalOrders],
       ["Avg Ticket Size", `Rs ${avgTicket.toLocaleString()}`],
+      ...(paymentRows.length > 0
+        ? [
+            [],
+            ["PAYMENT WISE SALES"],
+            ["Payment Method", "Orders", "Amount (Rs)", "Percentage"],
+            ...paymentRows.map((r) => [r.method, r.orders, r.amount, r.percent]),
+          ]
+        : []),
+      ...(paymentAccountRows.length > 0
+        ? [
+            [],
+            ["ONLINE PAYMENT ACCOUNTS"],
+            ["Paid To", "Orders", "Amount (Rs)"],
+            ...paymentAccountRows.map((r) => [r.accountName, r.orders, r.amount]),
+          ]
+        : []),
+      ...(orderTypeRows.length > 0
+        ? [
+            [],
+            ["ORDER TYPE SALES"],
+            ["Order Type", "Orders", "Amount (Rs)", "Percentage"],
+            ...orderTypeRows.map((r) => [r.type, r.orders, r.amount, r.percent]),
+          ]
+        : []),
       [],
       ["TOP SELLING ITEMS"],
       ["Rank", "Item Name", "Qty Sold", "Revenue (Rs)", "Revenue Share %"],
@@ -182,6 +234,28 @@ export default function HistoryPage() {
       </tr>`;
     }).join("");
 
+    const paymentTable = paymentRows.length > 0
+      ? `<h2>Payment Wise Sales</h2><table>
+          <thead><tr><th>Method</th><th>Orders</th><th>Amount</th><th>%</th></tr></thead>
+          <tbody>${paymentRows
+            .map(
+              (r) =>
+                `<tr><td>${r.method}</td><td>${r.orders}</td><td>Rs ${r.amount?.toLocaleString?.() ?? r.amount}</td><td>${r.percent}</td></tr>`,
+            )
+            .join("")}</tbody>
+        </table>` : "";
+
+    const accountTable = paymentAccountRows.length > 0
+      ? `<h2>Online Payment Accounts</h2><table>
+          <thead><tr><th>Paid To</th><th>Orders</th><th>Amount</th></tr></thead>
+          <tbody>${paymentAccountRows
+            .map(
+              (r) =>
+                `<tr><td>${r.accountName}</td><td>${r.orders}</td><td>Rs ${r.amount?.toLocaleString?.() ?? r.amount}</td></tr>`,
+            )
+            .join("")}</tbody>
+        </table>` : "";
+
     const html = `<!DOCTYPE html><html><head><title>Sales Report – ${periodLabel}</title>
 <style>
   body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}
@@ -191,6 +265,7 @@ export default function HistoryPage() {
   .kpi{border:1px solid #e5e7eb;border-radius:12px;padding:16px}
   .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:4px}
   .kpi-value{font-size:24px;font-weight:800;color:#111}
+  h2{font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}
   h2{font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}
   table{width:100%;border-collapse:collapse}
   th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}
@@ -204,6 +279,8 @@ export default function HistoryPage() {
   <div class="kpi"><div class="kpi-label">Total Orders</div><div class="kpi-value">${report.totalOrders}</div></div>
   <div class="kpi"><div class="kpi-label">Avg Ticket Size</div><div class="kpi-value">Rs ${avgTicket.toLocaleString()}</div></div>
 </div>
+${paymentTable}
+${accountTable}
 <h2>Top Selling Items</h2>
 <table>
   <thead><tr><th>Rank</th><th>Item Name</th><th>Qty Sold</th><th>Revenue</th><th>Share %</th></tr></thead>
@@ -379,6 +456,89 @@ export default function HistoryPage() {
                   <TrendingUp className="w-6 h-6 text-white" />
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* ── Payment breakdown ── */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Payment Summary</h3>
+                  <p className="text-xs text-gray-500 dark:text-neutral-400">
+                    How customers paid in this period
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {["CASH", "CARD", "ONLINE"].map((method) => {
+                  const data = paymentTotalsByMethod[method] || { amount: 0, orders: 0 };
+                  const label =
+                    method === "CASH" ? "Cash" : method === "CARD" ? "Card" : "Online";
+                  return (
+                    <div
+                      key={method}
+                      className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50/70 dark:bg-neutral-900/60 px-3 py-3 flex flex-col justify-between"
+                    >
+                      <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+                        {label}
+                      </p>
+                      <p className="mt-1 text-lg font-extrabold text-gray-900 dark:text-white">
+                        Rs {Number(data.amount || 0).toLocaleString()}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-gray-400 dark:text-neutral-500">
+                        {Number(data.orders || 0).toLocaleString()} orders
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Online Payment Accounts
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-neutral-400">
+                    Breakdown by JazzCash, bank, etc.
+                  </p>
+                </div>
+              </div>
+              {paymentAccountRows.length === 0 ? (
+                <div className="py-6 text-center text-xs text-gray-400 dark:text-neutral-500">
+                  No online payments in this period.
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100 dark:divide-neutral-800 text-xs">
+                  {paymentAccountRows.map((row) => (
+                    <div
+                      key={row.accountName}
+                      className="flex items-center justify-between py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900 dark:text-white truncate">
+                          {row.accountName}
+                        </p>
+                        {row.accountLabel && (
+                          <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate">
+                            {row.accountLabel}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-semibold text-gray-900 dark:text-white">
+                          Rs {Number(row.amount || 0).toLocaleString()}
+                        </p>
+                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                          {Number(row.orders || 0).toLocaleString()} orders
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

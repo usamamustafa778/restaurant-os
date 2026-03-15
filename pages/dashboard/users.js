@@ -4,7 +4,7 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import { getUsers, createUser, updateUser, deleteUser, getBranches, SubscriptionInactiveError, getStoredAuth } from "../../lib/apiClient";
-import { UserPlus, Trash2, Edit3, User, Mail, Briefcase, LayoutGrid, List, MapPin, Eye, EyeOff, Loader2, Users } from "lucide-react";
+import { UserPlus, Trash2, Edit3, User, Mail, Briefcase, LayoutGrid, List, MapPin, Eye, EyeOff, Loader2, Users, Phone, Bike } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import DataTable from "../../components/ui/DataTable";
 import { useBranch } from "../../contexts/BranchContext";
@@ -17,6 +17,7 @@ const ROLE_OPTIONS = [
   { value: "manager", label: "Manager" },
   { value: "kitchen_staff", label: "Kitchen staff" },
   { value: "order_taker", label: "Order taker" },
+  { value: "delivery_rider", label: "Delivery rider" },
 ];
 
 const ROLE_LABELS = {
@@ -27,9 +28,17 @@ const ROLE_LABELS = {
   manager: "Manager",
   kitchen_staff: "Kitchen Staff",
   order_taker: "Order Taker",
+  delivery_rider: "Delivery Rider",
 };
 
-const MANAGER_ALLOWED_ROLES = ["product_manager", "cashier", "kitchen_staff", "order_taker"];
+const VEHICLE_TYPE_OPTIONS = [
+  { value: "bike", label: "Motorbike" },
+  { value: "bicycle", label: "Bicycle" },
+  { value: "car", label: "Car" },
+  { value: "other", label: "Other" },
+];
+
+const MANAGER_ALLOWED_ROLES = ["product_manager", "cashier", "kitchen_staff", "order_taker", "delivery_rider"];
 
 function getRoleLabel(role) {
   return ROLE_LABELS[role] || role;
@@ -52,7 +61,7 @@ export default function UsersPage() {
     ? ROLE_OPTIONS.filter((r) => MANAGER_ALLOWED_ROLES.includes(r.value))
     : ROLE_OPTIONS;
   const [users, setUsers] = useState([]);
-  const [form, setForm] = useState({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "", branchIds: [] });
+  const [form, setForm] = useState({ id: null, name: "", email: "", password: "", role: "manager", profileImageUrl: "", branchIds: [], phone: "", vehicleType: "" });
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [suspended, setSuspended] = useState(false);
@@ -83,14 +92,14 @@ export default function UsersPage() {
   function resetForm() {
     const defaultRole = isManager ? "cashier" : "manager";
     const branchIds = isManager && currentBranch ? [currentBranch.id] : [];
-    setForm({ id: null, name: "", email: "", password: "", role: defaultRole, profileImageUrl: "", branchIds: branchIds });
+    setForm({ id: null, name: "", email: "", password: "", role: defaultRole, profileImageUrl: "", branchIds: branchIds, phone: "", vehicleType: "" });
     setShowPassword(false);
   }
 
   function startEdit(user) {
     const branchIds = isManager && currentBranch ? [currentBranch.id] : (user.branches || []).map(b => b.branchId).filter(Boolean);
     const role = isManager && !MANAGER_ALLOWED_ROLES.includes(user.role) ? roleOptions[0]?.value ?? "cashier" : user.role;
-    setForm({ id: user.id, name: user.name, email: user.email, password: "", role, profileImageUrl: user.profileImageUrl || "", branchIds });
+    setForm({ id: user.id, name: user.name, email: user.email, password: "", role, profileImageUrl: user.profileImageUrl || "", branchIds, phone: user.phone || "", vehicleType: user.vehicleType || "" });
     setModalError("");
     setIsModalOpen(true);
   }
@@ -110,7 +119,8 @@ export default function UsersPage() {
         role: form.role,
         profileImageUrl: form.profileImageUrl || null,
         ...(form.password ? { password: form.password } : {}),
-        ...(branchIds?.length ? { branchIds } : {})
+        ...(branchIds?.length ? { branchIds } : {}),
+        ...(form.role === "delivery_rider" ? { phone: form.phone || null, vehicleType: form.vehicleType || null } : {}),
       };
       if (form.id) {
         const updated = await updateUser(form.id, payload);
@@ -356,6 +366,18 @@ export default function UsersPage() {
                     <Mail className="w-3 h-3 flex-shrink-0" />
                     {user.email}
                   </p>
+                  {user.role === "delivery_rider" && user.phone && (
+                    <p className="mt-1 text-[11px] text-gray-400 dark:text-neutral-500 truncate flex items-center gap-1">
+                      <Phone className="w-3 h-3 flex-shrink-0" />
+                      {user.phone}
+                    </p>
+                  )}
+                  {user.role === "delivery_rider" && user.vehicleType && (
+                    <p className="mt-1 text-[11px] text-gray-400 dark:text-neutral-500 truncate flex items-center gap-1">
+                      <Bike className="w-3 h-3 flex-shrink-0" />
+                      {VEHICLE_TYPE_OPTIONS.find(v => v.value === user.vehicleType)?.label || user.vehicleType}
+                    </p>
+                  )}
                   {(user.branches || []).length > 0 && (
                     <p className="mt-1 text-[11px] text-gray-400 dark:text-neutral-500 truncate flex items-center gap-1">
                       <MapPin className="w-3 h-3 flex-shrink-0" />
@@ -499,6 +521,39 @@ export default function UsersPage() {
                   </button>
                 </div>
               </div>
+
+              {form.role === "delivery_rider" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium flex items-center gap-1">
+                      <Phone className="w-3 h-3" /> Phone
+                    </label>
+                    <input
+                      type="tel"
+                      autoComplete="off"
+                      value={form.phone}
+                      onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="03XX-XXXXXXX"
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium flex items-center gap-1">
+                      <Bike className="w-3 h-3" /> Vehicle
+                    </label>
+                    <select
+                      value={form.vehicleType}
+                      onChange={e => setForm(prev => ({ ...prev, vehicleType: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    >
+                      <option value="">Select vehicle</option>
+                      {VEHICLE_TYPE_OPTIONS.map(v => (
+                        <option key={v.value} value={v.value}>{v.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
 
               {branches.length > 0 && !isManager && (
                 <div className="space-y-1.5">

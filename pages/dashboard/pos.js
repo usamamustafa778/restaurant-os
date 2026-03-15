@@ -556,6 +556,14 @@ export default function POSPage() {
       setPaymentError("Cart is empty");
       return;
     }
+    if (orderType === "DELIVERY" && !customerPhone.trim()) {
+      setPaymentError("Customer phone is required for delivery orders");
+      return;
+    }
+    if (orderType === "DELIVERY" && !customerAddress.trim()) {
+      setPaymentError("Delivery address is required for delivery orders");
+      return;
+    }
     const billTotal = total;
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
@@ -970,6 +978,14 @@ export default function POSPage() {
   const handleCheckout = async () => {
     if (cart.length === 0) {
       toast.error("Cart is empty!");
+      return;
+    }
+    if (orderType === "DELIVERY" && !customerPhone.trim()) {
+      toast.error("Customer phone is required for delivery orders");
+      return;
+    }
+    if (orderType === "DELIVERY" && !customerAddress.trim()) {
+      toast.error("Delivery address is required");
       return;
     }
 
@@ -2200,6 +2216,10 @@ export default function POSPage() {
                   onClick={() => {
                     setOrderType(option.type);
                     if (option.type !== "DINE_IN") setTableName("");
+                    if (option.type === "DELIVERY") {
+                      setShowCustomerDetails(true);
+                      setSelectedWaiter("");
+                    }
                   }}
                   className={`flex-1 px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
                     orderType === option.type
@@ -2251,7 +2271,7 @@ export default function POSPage() {
             {/* Waiter & Customer Selection (hidden until options loaded to avoid flash) */}
             {posOptionsLoaded && (showWaiterPos || showCustomerPos) && (
               <div className={`grid gap-2 ${showWaiterPos && showCustomerPos ? "grid-cols-2" : "grid-cols-1"} mb-2`}>
-                {showWaiterPos && (
+                {showWaiterPos && orderType !== "DELIVERY" && (
                   <select
                     value={selectedWaiter}
                     onChange={(e) => setSelectedWaiter(e.target.value)}
