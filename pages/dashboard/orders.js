@@ -815,7 +815,7 @@ export default function OrdersPage() {
   );
   const closedCount = groupedOrders.DELIVERED?.length || 0;
   const cancelledCount = groupedOrders.CANCELLED?.length || 0;
-  const [showClosed, setShowClosed] = useState(true);
+  const [showClosed, setShowClosed] = useState(false);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
