@@ -203,6 +203,7 @@ export default function POSPage() {
 
   // Customer modal (select or add)
   const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const pendingDeliveryCheckoutRef = useRef(false);
   const [customerModalMode, setCustomerModalMode] = useState("select"); // 'select' | 'add'
   const [customersList, setCustomersList] = useState([]);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -481,13 +482,22 @@ export default function POSPage() {
     setShowCustomerModal(false);
     setCustomerModalError("");
     setEditingCustomerId(null);
+    pendingDeliveryCheckoutRef.current = false;
   }
 
   function selectCustomerForOrder(customer) {
     setCustomerName(customer.name || "");
     setCustomerPhone(customer.phone || "");
     setCustomerAddress(customer.address || "");
+    const shouldCheckout = pendingDeliveryCheckoutRef.current;
     closeCustomerModal();
+    if (shouldCheckout && customer.phone && customer.address) {
+      handleCheckout({
+        customerName: customer.name || "",
+        customerPhone: customer.phone || "",
+        customerAddress: customer.address || "",
+      });
+    }
   }
 
   async function handleAddCustomerSubmit(e) {
@@ -997,17 +1007,18 @@ export default function POSPage() {
   const totalDiscount = dealDiscount + manualDiscount;
   const total = Math.max(0, subtotal - totalDiscount);
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (overrides) => {
     if (cart.length === 0) {
       toast.error("Cart is empty!");
       return;
     }
-    if (orderType === "DELIVERY" && !customerPhone.trim()) {
-      toast.error("Customer phone is required for delivery orders");
-      return;
-    }
-    if (orderType === "DELIVERY" && !customerAddress.trim()) {
-      toast.error("Delivery address is required");
+    const cName = overrides?.customerName ?? customerName.trim();
+    const cPhone = overrides?.customerPhone ?? customerPhone.trim();
+    const cAddress = overrides?.customerAddress ?? customerAddress.trim();
+
+    if (orderType === "DELIVERY" && (!cPhone || !cAddress)) {
+      pendingDeliveryCheckoutRef.current = true;
+      openCustomerModal();
       return;
     }
 
@@ -1034,19 +1045,20 @@ export default function POSPage() {
                 };
               })
             : undefined,
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        deliveryAddress: customerAddress.trim(),
+        customerName: cName,
+        customerPhone: cPhone,
+        deliveryAddress: cAddress,
         branchId: currentBranch?.id ?? undefined,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
       });
 
       toast.success("Order placed!", { id: toastId });
       setOrderConfirmation({
+        orderId: result.id || result._id || "",
         orderNumber: result.orderNumber || result.id || "",
         total: result.total,
         orderType,
-        customerName: customerName.trim(),
+        customerName: cName,
         tableName: orderType === "DINE_IN" && tableName ? tableName : "",
       });
       setCart([]);
@@ -3608,7 +3620,7 @@ export default function POSPage() {
           <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                Customer
+                Select Customer
               </h2>
                   <button
                 type="button"
@@ -4146,13 +4158,18 @@ export default function POSPage() {
                 )}
               </div>
             </div>
-            <div className="flex gap-3 px-6 pb-6 pt-2">
+            <div className="grid grid-cols-3 gap-2 px-6 pb-6 pt-2">
               <button
                 type="button"
-                onClick={() => setOrderConfirmation(null)}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+                onClick={() => {
+                  const id = orderConfirmation.orderId;
+                  setOrderConfirmation(null);
+                  if (id) router.push(`/pos?edit=${id}`);
+                }}
+                className="px-3 py-2.5 rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-bold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-1.5"
               >
-                Close
+                <Edit3 className="w-3.5 h-3.5" />
+                Edit
               </button>
               <button
                 type="button"
@@ -4161,12 +4178,18 @@ export default function POSPage() {
                     { orderNumber: orderConfirmation.orderNumber, id: orderConfirmation.orderNumber, total: orderConfirmation.total, items: [] },
                     { mode: "bill", logoUrl: restaurantLogoUrl, branchAddress: currentBranch?.address || "", logoHeightPx: restaurantLogoHeight, footerMessage: restaurantBillFooter }
                   );
-                  setOrderConfirmation(null);
                 }}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex items-center justify-center gap-1.5"
               >
-                <Printer className="w-4 h-4" />
-                Print Token
+                <Printer className="w-3.5 h-3.5" />
+                Print
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderConfirmation(null)}
+                className="px-3 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>

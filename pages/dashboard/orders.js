@@ -194,6 +194,10 @@ function isPaymentPending(order) {
   return !pm || pm === "PENDING" || pm === "TO BE PAID";
 }
 
+function getOrderTotal(order) {
+  return Number(order.grandTotal ?? order.total) || 0;
+}
+
 function getPaymentStatus(order) {
   if (order.status === "CANCELLED") return "cancelled";
   if (order.source === "FOODPANDA") return "paid";
@@ -303,6 +307,7 @@ export default function OrdersPage() {
   const [riders, setRiders] = useState([]);
   const [ridersLoading, setRidersLoading] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState("");
+  const [deliveryCharges, setDeliveryCharges] = useState("0");
   const [riderAssigning, setRiderAssigning] = useState(false);
 
   const [showCollectModal, setShowCollectModal] = useState(false);
@@ -495,6 +500,7 @@ export default function OrdersPage() {
     setShowRiderModal(false);
     setRiderTargetOrder(null);
     setSelectedRiderId("");
+    setDeliveryCharges("0");
   }
 
   async function handleAssignRider() {
@@ -503,7 +509,8 @@ export default function OrdersPage() {
     setRiderAssigning(true);
     const toastId = toast.loading("Assigning rider...");
     try {
-      const updated = await assignRiderToOrder(orderId, selectedRiderId);
+      const extra = { deliveryCharges: Number(deliveryCharges) || 0 };
+      const updated = await assignRiderToOrder(orderId, selectedRiderId, extra);
       setOrders((prev) =>
         prev.map((o) =>
           o._id === orderId || o.id === orderId ? { ...o, ...updated } : o,
@@ -512,7 +519,10 @@ export default function OrdersPage() {
       toast.success("Rider assigned! Order is out for delivery.", {
         id: toastId,
       });
+      const dcAmount = Number(deliveryCharges) || 0;
+      const orderToPrint = { ...riderTargetOrder, ...updated, deliveryCharges: dcAmount };
       closeRiderModal();
+      openPrintBill(orderToPrint, "bill");
     } catch (err) {
       toast.error(err.message || "Failed to assign rider", { id: toastId });
     } finally {
@@ -624,7 +634,7 @@ export default function OrdersPage() {
     e.preventDefault();
     if (!paymentOrder) return;
     const orderId = paymentOrder.id || paymentOrder._id;
-    const billTotal = Number(paymentOrder.total) || 0;
+    const billTotal = getOrderTotal(paymentOrder);
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
       if (isNaN(received) || received < billTotal) {
@@ -1141,7 +1151,6 @@ export default function OrdersPage() {
                 <ChevronDown
                   className={`w-4 h-4 transition-transform ${showClosed ? "" : "rotate-180"}`}
                 />
-                ki
               </button>
               {showClosed && (
                 <div
@@ -1256,11 +1265,11 @@ export default function OrdersPage() {
                   Bill Total
                 </p>
                 <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
-                  Rs {Math.round(Number(paymentOrder.total)).toLocaleString()}
+                  Rs {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
                 </p>
-                {Number(paymentOrder.total) % 1 !== 0 && (
+                {getOrderTotal(paymentOrder) % 1 !== 0 && (
                   <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
-                    {Number(paymentOrder.total).toFixed(2)}
+                    {getOrderTotal(paymentOrder).toFixed(2)}
                   </p>
                 )}
               </div>
@@ -1372,7 +1381,7 @@ export default function OrdersPage() {
               )}
               {paymentMethod === "CASH" &&
                 (() => {
-                  const orderTotal = Number(paymentOrder.total);
+                  const orderTotal = getOrderTotal(paymentOrder);
                   const exactAmt = Math.ceil(orderTotal);
                   const roundDenominations = [
                     100, 200, 500, 1000, 2000, 5000, 10000,
@@ -1467,7 +1476,7 @@ export default function OrdersPage() {
                     paymentLoading ||
                     (paymentMethod === "CASH" &&
                       (amountReceived === "" ||
-                        Number(amountReceived) < Number(paymentOrder.total))) ||
+                        Number(amountReceived) < getOrderTotal(paymentOrder))) ||
                     (paymentMethod === "ONLINE" && !onlineProvider)
                   }
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
@@ -1601,13 +1610,27 @@ export default function OrdersPage() {
                   <span>{riderTargetOrder.deliveryAddress}</span>
                 </div>
               )}
-              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 mb-4">
-                <span className="text-xs text-gray-500 dark:text-neutral-500">
-                  Order Total
-                </span>
-                <span className="text-lg font-bold text-primary">
-                  Rs {Number(riderTargetOrder.total).toFixed(0)}
-                </span>
+              <div className="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 mb-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500 dark:text-neutral-500">Order Total</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">Rs {Math.round(Number(riderTargetOrder.total)).toLocaleString()}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-gray-500 dark:text-neutral-500 flex-shrink-0">Delivery Charges</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={deliveryCharges}
+                    onChange={(e) => setDeliveryCharges(e.target.value)}
+                    placeholder="0"
+                    className="w-24 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm font-bold text-gray-900 dark:text-white text-right tabular-nums placeholder:text-gray-400 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500/10 transition-all"
+                  />
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-gray-200/60 dark:border-neutral-700">
+                  <span className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Total to Collect</span>
+                  <span className="text-lg font-black text-primary tabular-nums">Rs {(Number(riderTargetOrder.total) + (Number(deliveryCharges) || 0)).toLocaleString()}</span>
+                </div>
               </div>
               <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
                 Select Rider
@@ -1681,7 +1704,7 @@ export default function OrdersPage() {
                   </>
                 ) : (
                   <>
-                    <Bike className="w-4 h-4" /> Assign &amp; Send
+                    <Bike className="w-4 h-4" /> Assign &amp; Print
                   </>
                 )}
               </button>
@@ -1724,7 +1747,7 @@ export default function OrdersPage() {
                 <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
                   Rs{" "}
                   {Math.round(
-                    Number(collectTargetOrder.total),
+                    getOrderTotal(collectTargetOrder),
                   ).toLocaleString()}
                 </p>
               </div>
@@ -1746,7 +1769,7 @@ export default function OrdersPage() {
               <p className="text-xs text-gray-500 dark:text-neutral-400">
                 Confirm that the rider has submitted{" "}
                 <span className="font-semibold">
-                  Rs {Number(collectTargetOrder.total).toFixed(0)}
+                  Rs {Math.round(getOrderTotal(collectTargetOrder)).toLocaleString()}
                 </span>{" "}
                 for this delivery order.
               </p>
@@ -2031,7 +2054,12 @@ function OrderCard({
   const canAdvanceStatus =
     primaryNext &&
     actionLabel &&
-    !(isCashier && (primaryNext === "PROCESSING" || primaryNext === "READY"));
+    !(
+      isCashier &&
+      (primaryNext === "PROCESSING" ||
+        primaryNext === "READY" ||
+        primaryNext === "DELIVERED")
+    );
 
   const showAssignRider =
     isDeliveryOrder(order) && status === "READY" && !isOrderTaker;
@@ -2180,7 +2208,7 @@ function OrderCard({
       <div className="px-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-lg font-black text-gray-900 dark:text-white tabular-nums">
-            Rs {Math.round(Number(order.total)).toLocaleString()}
+            Rs {Math.round(getOrderTotal(order)).toLocaleString()}
           </span>
           {status !== "CANCELLED" && (
             <span
