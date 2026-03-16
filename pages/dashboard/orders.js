@@ -253,7 +253,7 @@ const URGENCY_STYLE = {
 
 function getActionLabel(primaryNext, order) {
   if (!primaryNext) return null;
-  if (primaryNext === "PROCESSING") return "Accept";
+  if (primaryNext === "PROCESSING") return "Start Cooking";
   if (primaryNext === "READY") return "Mark Ready";
   if (primaryNext === "DELIVERED") {
     const s = orderStatusForTab(order.status);
@@ -2054,12 +2054,7 @@ function OrderCard({
   const canAdvanceStatus =
     primaryNext &&
     actionLabel &&
-    !(
-      isCashier &&
-      (primaryNext === "PROCESSING" ||
-        primaryNext === "READY" ||
-        primaryNext === "DELIVERED")
-    );
+    !(isCashier && primaryNext === "DELIVERED" && isDeliveryOrder(order));
 
   const showAssignRider =
     isDeliveryOrder(order) && status === "READY" && !isOrderTaker;
