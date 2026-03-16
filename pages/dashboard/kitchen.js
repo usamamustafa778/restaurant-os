@@ -4,8 +4,7 @@ import { getOrders, getNextStatuses, updateOrderStatus } from "../../lib/apiClie
 import { useSocket } from "../../contexts/SocketContext";
 import {
   Clock, User, ChefHat, Loader2, CheckCircle2, RefreshCw,
-  Package, UtensilsCrossed, Headset, PackageCheck, Car, ShoppingBag,
-  ChevronLeft, ChevronRight, X,
+  Package, UtensilsCrossed, Headset, ShoppingBag, Truck, MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -42,6 +41,16 @@ function getUrgency(minutes) {
   return "normal";
 }
 
+function getOrderTypeLabel(order) {
+  const type = (order.type || order.orderType || "").toUpperCase();
+  if (type.includes("DELIVERY")) return "Delivery";
+  if (type.includes("DINE") || type.includes("DINE_IN")) return "Dine In";
+  if (type.includes("TAKE") || type.includes("PICKUP")) return "Takeaway";
+  if (order.deliveryAddress) return "Delivery";
+  if (order.tableName) return "Dine In";
+  return "Walk-in";
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const URGENCY = {
@@ -51,10 +60,13 @@ const URGENCY = {
   critical: { border: "border-red-400 dark:border-red-500/50",       timerBg: "bg-red-50 dark:bg-red-500/10",       timerText: "text-red-600 dark:text-red-400",       dot: "bg-red-500 animate-pulse" },
 };
 
+const TYPE_BADGE = "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400";
+
 const TYPE_CONFIG = {
-  DINE_IN:  { label: "Dine In",  Icon: UtensilsCrossed, badge: "bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400" },
-  TAKEAWAY: { label: "Takeaway", Icon: ShoppingBag,     badge: "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400" },
-  DELIVERY: { label: "Delivery", Icon: Car,             badge: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
+  "Dine In":  { Icon: UtensilsCrossed, badge: TYPE_BADGE },
+  "Takeaway": { Icon: ShoppingBag,     badge: TYPE_BADGE },
+  "Delivery": { Icon: Truck,           badge: TYPE_BADGE },
+  "Walk-in":  { Icon: User,            badge: TYPE_BADGE },
 };
 
 const COLUMNS = [
@@ -63,9 +75,12 @@ const COLUMNS = [
     title: "New Orders",
     subtitle: "Awaiting kitchen",
     statuses: ["NEW_ORDER", "UNPROCESSED"],
-    header: "from-blue-600 to-blue-700",
+    header: "bg-orange-500",
+    colBg: "bg-orange-50/60 dark:bg-orange-950/20",
+    colBorder: "border-orange-200/60 dark:border-orange-500/15",
+    countBg: "bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400",
     advanceLabel: "Start Cooking",
-    advanceCls: "bg-orange-500 hover:bg-orange-600 active:bg-orange-700",
+    advanceCls: "bg-blue-500 hover:bg-blue-600 active:bg-blue-700",
     AdvIcon: ChefHat,
     EmptyIcon: Package,
     emptyLabel: "No new orders",
@@ -75,7 +90,10 @@ const COLUMNS = [
     title: "In Kitchen",
     subtitle: "Being prepared",
     statuses: ["PROCESSING", "PENDING"],
-    header: "from-orange-500 to-orange-600",
+    header: "bg-blue-500",
+    colBg: "bg-blue-50/60 dark:bg-blue-950/20",
+    colBorder: "border-blue-200/60 dark:border-blue-500/15",
+    countBg: "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400",
     advanceLabel: "Mark Ready",
     advanceCls: "bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700",
     AdvIcon: CheckCircle2,
@@ -85,12 +103,15 @@ const COLUMNS = [
   {
     key: "ready",
     title: "Ready",
-    subtitle: "Awaiting pickup",
+    subtitle: "Awaiting pickup / service",
     statuses: ["READY"],
-    header: "from-emerald-600 to-emerald-700",
-    advanceLabel: "Mark Delivered",
-    advanceCls: "bg-blue-500 hover:bg-blue-600 active:bg-blue-700",
-    AdvIcon: PackageCheck,
+    header: "bg-emerald-500",
+    colBg: "bg-emerald-50/60 dark:bg-emerald-950/20",
+    colBorder: "border-emerald-200/60 dark:border-emerald-500/15",
+    countBg: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400",
+    advanceLabel: null,
+    advanceCls: "",
+    AdvIcon: null,
     EmptyIcon: CheckCircle2,
     emptyLabel: "No ready orders",
   },
@@ -99,14 +120,13 @@ const COLUMNS = [
 // ─── Order Card ───────────────────────────────────────────────────────────────
 
 function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
-  const orderId = order.id || order._id;
-  const typeKey = (order.orderType || order.type || "DINE_IN").toUpperCase();
-  const nextStatus = getNextStatuses(order.status, typeKey)[0];
+  const typeLabel = getOrderTypeLabel(order);
+  const typeConf = TYPE_CONFIG[typeLabel] || TYPE_CONFIG["Walk-in"];
   const minutes = getElapsedMinutes(order.createdAt);
   const urgency = getUrgency(minutes);
   const ug = URGENCY[urgency];
-  const typeConf = TYPE_CONFIG[typeKey] || TYPE_CONFIG.DINE_IN;
   const { AdvIcon } = column;
+  const totalQty = order.items?.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
 
   return (
     <div
@@ -115,17 +135,15 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
       {/* Card header */}
       <div className="px-3 pt-3 pb-2">
         <div className="flex items-start justify-between gap-2 mb-1.5">
-          {/* Token + type badge */}
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-2xl font-black text-gray-900 dark:text-white leading-none tabular-nums">
               #{getTokenNumber(order)}
             </span>
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ${typeConf.badge}`}>
               <typeConf.Icon className="w-2.5 h-2.5" />
-              {typeConf.label}
+              {typeLabel}
             </span>
           </div>
-          {/* Urgency timer */}
           <div className={`flex items-center gap-1 px-2 py-1 rounded-lg flex-shrink-0 ${ug.timerBg}`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ug.dot}`} />
             <Clock className={`w-3 h-3 ${ug.timerText}`} />
@@ -133,12 +151,10 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
           </div>
         </div>
 
-        {/* Sub-ID */}
         <p className="text-[10px] text-gray-400 dark:text-neutral-600 mb-2 font-mono">
           #{getDisplayOrderId(order)}
         </p>
 
-        {/* Meta info */}
         <div className="space-y-1">
           {order.customerName && (
             <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-neutral-400">
@@ -146,22 +162,22 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
               <span className="truncate">{order.customerName}</span>
             </div>
           )}
-          {order.orderTakerName && (
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-500">
-              <Headset className="w-3 h-3 text-gray-400 flex-shrink-0" />
-              <span className="truncate">{order.orderTakerName}</span>
+          {typeLabel === "Dine In" && order.tableName && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+              <MapPin className="w-3 h-3 flex-shrink-0" />
+              <span>{order.tableName}</span>
             </div>
           )}
-          {order.tableName && (
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-500">
-              <UtensilsCrossed className="w-3 h-3 text-gray-400 flex-shrink-0" />
-              <span className="font-medium">{order.tableName}</span>
-            </div>
-          )}
-          {order.deliveryAddress && (
-            <div className="flex items-start gap-1.5 text-xs text-blue-600 dark:text-blue-400">
-              <Car className="w-3 h-3 mt-0.5 text-blue-500 flex-shrink-0" />
+          {typeLabel === "Delivery" && order.deliveryAddress && (
+            <div className="flex items-start gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+              <Truck className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <span className="truncate font-medium">{order.deliveryAddress}</span>
+            </div>
+          )}
+          {order.orderTakerName && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-neutral-500">
+              <Headset className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{order.orderTakerName}</span>
             </div>
           )}
         </div>
@@ -171,9 +187,9 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
       <div className="mx-3 border-t border-gray-100 dark:border-neutral-800" />
       <div className="px-3 pt-2 pb-0.5 flex items-center justify-between gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">Items</span>
-        {order.items?.length > 0 && (
+        {totalQty > 0 && (
           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-[10px] font-bold text-gray-500 dark:text-neutral-400 tabular-nums">
-            {order.items.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0)} qty
+            {totalQty} qty
           </span>
         )}
       </div>
@@ -186,8 +202,8 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
         ))}
       </div>
 
-      {/* Advance button */}
-      {nextStatus && (
+      {/* Advance button — only for New and In Kitchen columns */}
+      {column.advanceLabel && AdvIcon && (
         <div className="px-3 pb-3 pt-1.5">
           <button
             type="button"
@@ -219,12 +235,9 @@ export default function KitchenPage() {
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [tick, setTick] = useState(0);
   const [typeFilter, setTypeFilter] = useState("all");
-  const [showSidebar, setShowSidebar] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState("delivered");
   const [lastRefreshed, setLastRefreshed] = useState(Date.now());
   const [refreshing, setRefreshing] = useState(false);
 
-  // Live timer tick every 30s to re-render urgency
   useEffect(() => {
     const iv = setInterval(() => setTick((t) => t + 1), 30000);
     return () => clearInterval(iv);
@@ -276,7 +289,7 @@ export default function KitchenPage() {
       setOrders((prev) =>
         prev.map((o) => (o._id === orderId || o.id === orderId ? { ...o, status: nextStatus } : o))
       );
-      const label = { PROCESSING: "Started cooking", READY: "Marked ready", DELIVERED: "Delivered" }[nextStatus] || nextStatus;
+      const label = { PROCESSING: "Started cooking", READY: "Marked ready" }[nextStatus] || nextStatus;
       toast.success(`#${getTokenNumber(order)} — ${label}`);
     } catch (err) {
       toast.error(err.message || "Failed to update");
@@ -285,36 +298,34 @@ export default function KitchenPage() {
     }
   }
 
-  // Derived data
-  const cutoff48h = Date.now() - 48 * 60 * 60 * 1000;
-  const activeOrders = orders.filter((o) => !["DELIVERED", "CANCELLED", "COMPLETED"].includes(o.status));
-  const deliveredOrders = orders
-    .filter((o) => ["DELIVERED", "COMPLETED"].includes(o.status) && new Date(o.createdAt).getTime() >= cutoff48h)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const cancelledOrders = orders
-    .filter((o) => o.status === "CANCELLED" && new Date(o.createdAt).getTime() >= cutoff48h)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  // Derived data — kitchen only cares about active orders (not delivered/cancelled)
+  const activeOrders = orders.filter((o) => !["DELIVERED", "CANCELLED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(o.status));
 
   const applyTypeFilter = (list) => {
     if (typeFilter === "all") return list;
-    return list.filter((o) => (o.orderType || o.type || "").toUpperCase() === typeFilter);
+    return list.filter((o) => {
+      const label = getOrderTypeLabel(o);
+      if (typeFilter === "DINE_IN") return label === "Dine In";
+      if (typeFilter === "TAKEAWAY") return label === "Takeaway";
+      if (typeFilter === "DELIVERY") return label === "Delivery";
+      return true;
+    });
   };
 
   const columnOrders = COLUMNS.map((col) =>
     applyTypeFilter(activeOrders.filter((o) => col.statuses.includes(o.status)))
   );
 
-  // Per-type counts for filter tabs (always unfiltered)
   const typeCounts = {
-    DINE_IN:  activeOrders.filter((o) => (o.orderType || o.type || "").toUpperCase() === "DINE_IN").length,
-    TAKEAWAY: activeOrders.filter((o) => (o.orderType || o.type || "").toUpperCase() === "TAKEAWAY").length,
-    DELIVERY: activeOrders.filter((o) => (o.orderType || o.type || "").toUpperCase() === "DELIVERY").length,
+    DINE_IN:  activeOrders.filter((o) => getOrderTypeLabel(o) === "Dine In").length,
+    TAKEAWAY: activeOrders.filter((o) => getOrderTypeLabel(o) === "Takeaway").length,
+    DELIVERY: activeOrders.filter((o) => getOrderTypeLabel(o) === "Delivery").length,
   };
 
+  const totalActive = activeOrders.length;
   const secondsSince = Math.round((Date.now() - lastRefreshed) / 1000);
   const refreshLabel = secondsSince < 5 ? "Just now" : secondsSince < 60 ? `${secondsSince}s ago` : `${Math.floor(secondsSince / 60)}m ago`;
 
-  // ─── Loading ────────────────────────────────────────────────────────────────
   if (pageLoading) {
     return (
       <AdminLayout title="Kitchen (KDS)">
@@ -331,18 +342,16 @@ export default function KitchenPage() {
     );
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <AdminLayout title="Kitchen (KDS)">
       <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 110px)" }}>
 
         {/* ── Top bar ────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 flex-shrink-0">
-          {/* Filter tabs */}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5">
               {[
-                { value: "all", label: "All", count: activeOrders.length },
+                { value: "all", label: "All", count: totalActive },
                 { value: "DINE_IN", label: "Dine In", count: typeCounts.DINE_IN },
                 { value: "TAKEAWAY", label: "Takeaway", count: typeCounts.TAKEAWAY },
                 { value: "DELIVERY", label: "Delivery", count: typeCounts.DELIVERY },
@@ -368,7 +377,6 @@ export default function KitchenPage() {
             </div>
           </div>
 
-          {/* Right: urgency legend + refresh */}
           <div className="flex items-center gap-3">
             <div className="hidden lg:flex items-center gap-3 text-[10px] text-gray-400 dark:text-neutral-500">
               {[
@@ -398,139 +406,49 @@ export default function KitchenPage() {
           </div>
         </div>
 
-        {/* ── Main content ────────────────────────────────────────────── */}
-        <div className="flex gap-3 flex-1 min-h-0">
+        {/* ── 3-column Kanban ────────────────────────────────────────── */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 min-h-0">
+          {COLUMNS.map((col, colIdx) => {
+            const colOrs = columnOrders[colIdx];
+            const { EmptyIcon } = col;
+            return (
+              <div
+                key={col.key}
+                className={`flex flex-col rounded-2xl border ${col.colBorder} ${col.colBg} overflow-hidden min-h-0`}
+              >
+                <div className={`flex items-center gap-2 px-4 py-2.5 flex-shrink-0 border-b ${col.colBorder}`}>
+                  <span className={`w-2.5 h-2.5 rounded-full ${col.header} flex-shrink-0`} />
+                  <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">{col.title}</span>
+                  <span className={`ml-auto text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${col.countBg}`}>
+                    {colOrs.length}
+                  </span>
+                </div>
 
-          {/* Kanban columns */}
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 min-w-0">
-            {COLUMNS.map((col, colIdx) => {
-              const colOrs = columnOrders[colIdx];
-              const { EmptyIcon } = col;
-              return (
-                <div
-                  key={col.key}
-                  className="flex flex-col bg-gray-50 dark:bg-neutral-900/60 rounded-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden min-h-0"
-                >
-                  {/* Column header */}
-                  <div className={`bg-gradient-to-r ${col.header} px-4 py-3 flex-shrink-0`}>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-white font-bold text-sm">{col.title}</div>
-                        <div className="text-white/60 text-[11px] mt-0.5">{col.subtitle}</div>
-                      </div>
-                      <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
-                        <span className="text-white font-black text-base">{colOrs.length}</span>
-                      </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+                  {colOrs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full min-h-[120px] opacity-40">
+                      <EmptyIcon className="w-10 h-10 text-gray-400 dark:text-neutral-600 mb-2" />
+                      <p className="text-xs text-gray-400 dark:text-neutral-600">{col.emptyLabel}</p>
                     </div>
-                  </div>
-
-                  {/* Cards scroll area */}
-                  <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-                    {colOrs.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-full min-h-[120px] opacity-40">
-                        <EmptyIcon className="w-10 h-10 text-gray-400 dark:text-neutral-600 mb-2" />
-                        <p className="text-xs text-gray-400 dark:text-neutral-600">{col.emptyLabel}</p>
-                      </div>
-                    ) : (
-                      colOrs.map((order) => {
-                        const orderId = order.id || order._id;
-                        return (
-                          <OrderCard
-                            key={orderId}
-                            order={order}
-                            column={col}
-                            isUpdating={updatingOrderId === orderId}
-                            onAdvance={handleStatusAdvance}
-                            tick={tick}
-                          />
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* ── Completed / Cancelled sidebar ──────────────────────────── */}
-          <div className="flex items-start gap-1 flex-shrink-0">
-            {/* Toggle button */}
-            <button
-              type="button"
-              onClick={() => setShowSidebar((v) => !v)}
-              className="mt-2 p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
-              title={showSidebar ? "Collapse" : "Expand completed panel"}
-            >
-              {showSidebar
-                ? <ChevronRight className="w-3.5 h-3.5" />
-                : <ChevronLeft className="w-3.5 h-3.5" />
-              }
-            </button>
-
-            {showSidebar && (
-              <div className="w-52 flex flex-col bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden" style={{ height: "100%" }}>
-                {/* Tab bar */}
-                <div className="flex border-b border-gray-100 dark:border-neutral-800 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setSidebarTab("delivered")}
-                    className={`flex-1 py-2.5 text-[11px] font-bold transition-colors ${
-                      sidebarTab === "delivered"
-                        ? "text-emerald-600 border-b-2 border-emerald-500 bg-emerald-50/40 dark:bg-emerald-500/5 dark:text-emerald-400"
-                        : "text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
-                    }`}
-                  >
-                    Done ({deliveredOrders.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSidebarTab("cancelled")}
-                    className={`flex-1 py-2.5 text-[11px] font-bold transition-colors ${
-                      sidebarTab === "cancelled"
-                        ? "text-red-600 border-b-2 border-red-500 bg-red-50/40 dark:bg-red-500/5 dark:text-red-400"
-                        : "text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
-                    }`}
-                  >
-                    Cancelled ({cancelledOrders.length})
-                  </button>
-                </div>
-
-                {/* List */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                  {(sidebarTab === "delivered" ? deliveredOrders : cancelledOrders).length === 0 ? (
-                    <p className="text-[11px] text-gray-400 dark:text-neutral-600 text-center py-8">None yet</p>
                   ) : (
-                    (sidebarTab === "delivered" ? deliveredOrders : cancelledOrders).map((order) => {
-                      const minutes = getElapsedMinutes(order.createdAt);
-                      const isDone = sidebarTab === "delivered";
+                    colOrs.map((order) => {
+                      const orderId = order.id || order._id;
                       return (
-                        <div
-                          key={order.id || order._id}
-                          className={`px-3 py-2 rounded-xl border text-xs ${
-                            isDone
-                              ? "bg-emerald-50 dark:bg-emerald-500/5 border-emerald-100 dark:border-emerald-500/20"
-                              : "bg-red-50 dark:bg-red-500/5 border-red-100 dark:border-red-500/20"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1 mb-0.5">
-                            <span className={`font-black text-sm ${isDone ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-                              #{getTokenNumber(order)}
-                            </span>
-                            <span className="text-[10px] text-gray-400 dark:text-neutral-500 tabular-nums">{formatElapsed(minutes)}</span>
-                          </div>
-                          {order.items?.length > 0 && (
-                            <p className="text-[10px] text-gray-500 dark:text-neutral-500 truncate leading-tight">
-                              {order.items.map((i) => `${i.qty ?? i.quantity}× ${i.name}`).join(", ")}
-                            </p>
-                          )}
-                        </div>
+                        <OrderCard
+                          key={orderId}
+                          order={order}
+                          column={col}
+                          isUpdating={updatingOrderId === orderId}
+                          onAdvance={handleStatusAdvance}
+                          tick={tick}
+                        />
                       );
                     })
                   )}
                 </div>
               </div>
-            )}
-          </div>
+            );
+          })}
         </div>
       </div>
     </AdminLayout>
