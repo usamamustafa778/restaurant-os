@@ -836,7 +836,11 @@ export default function HistoryPage() {
                           {o.source}
                         </span>
                       </td>
-                      <td className={TD_CLS}>{o.orderTakerName || "—"}</td>
+                      <td className={TD_CLS}>
+                        {o.orderTakerName
+                          ? (o.createdByRole === "delivery_rider" ? `Rider: ${o.orderTakerName}` : o.orderTakerName)
+                          : "—"}
+                      </td>
                       <td className={TD_CLS}>{o.assignedRiderName || "—"}</td>
                       <td className={`${TD_CLS} max-w-[200px] truncate`} title={o.deliveryAddress || ""}>{o.deliveryAddress || "—"}</td>
                       <td className={`${TD_CLS} text-right`}>{o.deliveryCharges > 0 ? fmtRs(o.deliveryCharges) : "—"}</td>

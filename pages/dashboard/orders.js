@@ -2144,9 +2144,18 @@ function OrderCard({
             </span>
           )}
           {order.orderTakerName && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400 dark:text-neutral-500">
-              <Headset className="w-3 h-3" />
-              {order.orderTakerName}
+            <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${order.createdByRole === "delivery_rider" ? "text-sky-600 dark:text-sky-400" : "text-gray-400 dark:text-neutral-500"}`}>
+              {order.createdByRole === "delivery_rider" ? (
+                <>
+                  <Bike className="w-3 h-3" />
+                  Placed by rider: {order.orderTakerName}
+                </>
+              ) : (
+                <>
+                  <Headset className="w-3 h-3" />
+                  {order.orderTakerName}
+                </>
+              )}
             </span>
           )}
         </div>

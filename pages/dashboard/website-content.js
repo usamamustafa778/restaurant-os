@@ -336,7 +336,7 @@ export default function WebsiteContentPage() {
     update("websiteSections", sections);
   }
 
-  const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "eatsdesk.app";
+  const rootDomain = "eatsdesk.app";
   const liveUrl = ws.subdomain ? `https://${ws.subdomain}.${rootDomain}` : null;
 
   const stagingRoot = process.env.NEXT_PUBLIC_STOREFRONT_STAGING_DOMAIN || "";
