@@ -73,9 +73,8 @@ const TEMPLATES = [
   {
     id: "modern",
     name: "Modern",
-    desc: "Clean, minimal design with large imagery and smooth animations. Coming soon.",
+    desc: "Sleek glass navbar, full-bleed hero, card grid menu, and modern typography.",
     color: "from-violet-500 to-indigo-500",
-    soon: true,
   },
   {
     id: "minimal",
