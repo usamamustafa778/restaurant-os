@@ -3,6 +3,8 @@ import {
   getRiderOrders,
   markOrderDeliveredByRider,
   getRiderMenu,
+  getRiderCustomers,
+  createRiderCustomer,
   createPosOrder,
   getStoredAuth,
   clearStoredAuth,
@@ -13,7 +15,7 @@ import { useBranch } from "../../contexts/BranchContext";
 import {
   Bike, MapPin, Phone, User, Clock, Loader2, CheckCircle2,
   Package, Truck, RefreshCw, LogOut, ChevronDown,
-  Plus, Minus, Trash2, ShoppingCart, Search, ChevronLeft, Utensils, Send, X,
+  Plus, Minus, Trash2, Search, ChevronLeft, Utensils, Send, X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -49,10 +51,36 @@ export default function RiderPortalPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
 
+  // Customer search (inline, POS-style by phone)
+  const [customersList, setCustomersList] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [customersError, setCustomersError] = useState("");
+  const [customersLoaded, setCustomersLoaded] = useState(false);
+  const [quickCustomerName, setQuickCustomerName] = useState("");
+  const [quickCustomerAddress, setQuickCustomerAddress] = useState("");
+  const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
+
   useEffect(() => {
     const auth = getStoredAuth();
     setUserName(auth?.user?.name || auth?.user?.email || "");
   }, []);
+
+  async function loadCustomers() {
+    if (customersLoaded) return;
+    setCustomersLoading(true);
+    setCustomersError("");
+    try {
+      const list = await getRiderCustomers();
+      setCustomersList(Array.isArray(list) ? list : []);
+      setCustomersLoaded(true);
+    } catch (err) {
+      setCustomersError(err.message || "Failed to load customers");
+      setCustomersList([]);
+    } finally {
+      setCustomersLoading(false);
+    }
+  }
 
   async function loadMenu() {
     setMenuLoading(true);
@@ -70,6 +98,10 @@ export default function RiderPortalPage() {
   useEffect(() => {
     if (tab === TABS.NEW_ORDER && menu.items.length === 0) loadMenu();
   }, [tab]);
+
+  useEffect(() => {
+    if (step === STEPS.CART) loadCustomers();
+  }, [step]);
 
   const filteredItems = menu.items.filter((item) => {
     const matchCat = selectedCategory === "all" || item.categoryId === selectedCategory;
@@ -133,6 +165,39 @@ export default function RiderPortalPage() {
       }
     } finally {
       setPlacing(false);
+    }
+  }
+
+  function selectCustomerForOrder(c) {
+    setCustomerName(c.name || "");
+    setCustomerPhone(c.phone || "");
+    setDeliveryAddress(c.address || "");
+    setCustomerSearch("");
+  }
+
+  async function handleQuickAddCustomer() {
+    const phone = customerSearch.trim();
+    const name = quickCustomerName.trim();
+    const address = quickCustomerAddress.trim();
+    if (!phone || !name) {
+      setCustomersError("Enter customer name and phone to add");
+      return;
+    }
+    if (!address) {
+      setCustomersError("Address is required for delivery orders");
+      return;
+    }
+    setAddingQuickCustomer(true);
+    setCustomersError("");
+    try {
+      const created = await createRiderCustomer({ name, phone, address: address || undefined });
+      setCustomersList((prev) => [created, ...prev]);
+      selectCustomerForOrder(created);
+      toast.success("Customer added");
+    } catch (err) {
+      setCustomersError(err.message || "Failed to add customer");
+    } finally {
+      setAddingQuickCustomer(false);
     }
   }
 
@@ -427,9 +492,113 @@ export default function RiderPortalPage() {
                         </div>
                         <div className="mt-6 space-y-3">
                           <p className="text-xs font-bold text-gray-500 dark:text-neutral-400 uppercase">Delivery details</p>
-                          <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name" className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
-                          <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Customer phone" className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
-                          <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Delivery address" rows={2} className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm outline-none focus:ring-2 focus:ring-primary/20 resize-none" />
+
+                          {customersError && (
+                            <p className="text-sm text-red-600 dark:text-red-400">{customersError}</p>
+                          )}
+
+                          {/* Selected customer summary */}
+                          {customerPhone && !customerSearch && (
+                            <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-primary/5 dark:bg-primary/10 border border-primary/20">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-gray-900 dark:text-white">{customerName}</p>
+                                <p className="text-xs text-gray-500 dark:text-neutral-400">{customerPhone}{deliveryAddress ? ` · ${deliveryAddress}` : ""}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => { setCustomerName(""); setCustomerPhone(""); setDeliveryAddress(""); }}
+                                className="text-xs font-bold text-primary ml-2 flex-shrink-0"
+                              >
+                                Change
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Phone search + results (shown when no customer selected) */}
+                          {(!customerPhone || customerSearch) && (
+                            <>
+                              <input
+                                type="text"
+                                placeholder="Search customer by phone..."
+                                value={customerSearch}
+                                onChange={(e) => { setCustomerSearch(e.target.value); setCustomersError(""); }}
+                                className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+
+                              {customersLoading ? (
+                                <div className="flex items-center justify-center py-4">
+                                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                                </div>
+                              ) : (
+                                (() => {
+                                  const term = customerSearch.trim();
+                                  const filtered = customersList.filter((c) =>
+                                    !term ? true : (c.phone || "").includes(term)
+                                  );
+
+                                  if (filtered.length > 0) {
+                                    return (
+                                      <ul className="space-y-1 max-h-48 overflow-y-auto">
+                                        {filtered.map((c) => (
+                                          <li key={c.id}>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (!c.address?.trim()) {
+                                                  selectCustomerForOrder(c);
+                                                  toast("No address on file — please enter one below", { icon: "📍" });
+                                                  return;
+                                                }
+                                                selectCustomerForOrder(c);
+                                              }}
+                                              className="w-full flex items-center px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800/50 text-left text-sm transition-colors"
+                                            >
+                                              <div className="flex-1 min-w-0">
+                                                <div>
+                                                  <span className="font-medium text-gray-900 dark:text-white">{c.name}</span>
+                                                  {c.phone && <span className="text-gray-500 dark:text-neutral-400 ml-2">{c.phone}</span>}
+                                                </div>
+                                                {c.address && <p className="text-xs text-gray-400 dark:text-neutral-500 truncate mt-0.5">{c.address}</p>}
+                                              </div>
+                                            </button>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    );
+                                  }
+
+                                  if (!term) {
+                                    return customersList.length === 0 ? (
+                                      <p className="text-xs text-gray-400 py-2">No customers yet. Type a phone number to add.</p>
+                                    ) : (
+                                      <p className="text-xs text-gray-400 py-2">Type a phone number to search.</p>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="space-y-2.5 bg-white dark:bg-neutral-950 rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+                                      <p className="text-xs text-gray-500 dark:text-neutral-400">No customer found. Add new:</p>
+                                      <div className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900 text-sm text-gray-900 dark:text-white font-medium">{term}</div>
+                                      <input type="text" value={quickCustomerName} onChange={(e) => setQuickCustomerName(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white" placeholder="Customer name *" />
+                                      <input type="text" value={quickCustomerAddress} onChange={(e) => setQuickCustomerAddress(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white" placeholder="Delivery address *" />
+                                      <button type="button" onClick={handleQuickAddCustomer} disabled={addingQuickCustomer} className="w-full px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50">
+                                        {addingQuickCustomer ? "Adding…" : "Add & Select Customer"}
+                                      </button>
+                                    </div>
+                                  );
+                                })()
+                              )}
+                            </>
+                          )}
+
+                          {/* Manual override fields (shown when customer selected but needs edits) */}
+                          {customerPhone && !customerSearch && (
+                            <div className="space-y-2.5">
+                              <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name" className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                              <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Customer phone" className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                              <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Delivery address" rows={2} className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm outline-none focus:ring-2 focus:ring-primary/20 resize-none" />
+                            </div>
+                          )}
                         </div>
                         <div className="fixed bottom-0 inset-x-0 z-20 p-4 bg-gray-50 dark:bg-black border-t border-gray-200 dark:border-neutral-800">
                           <div className="flex items-center justify-between mb-3">
