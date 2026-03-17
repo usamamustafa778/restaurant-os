@@ -282,19 +282,36 @@ export default function HistoryPage() {
     }
   }
 
-  async function loadOrders() {
+  async function loadOrders(dates) {
     try {
-      const data = await getOrders();
-      setAllOrders(Array.isArray(data) ? data : []);
+      const params = { limit: 2000 };
+      if (dates?.from) params.from = dates.from;
+      if (dates?.to) params.to = dates.to;
+
+      const data = await getOrders(params);
+
+      if (data && typeof data === "object" && Array.isArray(data.orders)) {
+        let all = data.orders;
+        let pg = 1;
+        while (all.length < data.total && pg < 20) {
+          pg += 1;
+          const next = await getOrders({ ...params, page: pg });
+          if (!next?.orders?.length) break;
+          all = all.concat(next.orders);
+        }
+        setAllOrders(all);
+      } else {
+        setAllOrders(Array.isArray(data) ? data : []);
+      }
     } catch {
-      // silently ignore — orders API might not be available
+      // silently ignore — orders API might not be available or running old version
     }
   }
 
   useEffect(() => {
     const dates = getPresetDates("yesterday");
     loadReport(dates);
-    loadOrders();
+    loadOrders(dates);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -305,6 +322,7 @@ export default function HistoryPage() {
     setLoading(true);
     setOrdersPage(0);
     loadReport(dates);
+    loadOrders(dates);
   }
 
   function applyCustom(e) {
@@ -314,6 +332,7 @@ export default function HistoryPage() {
     const from = customFrom ? new Date(customFrom + "T00:00:00").toISOString() : "";
     const to = customTo ? new Date(customTo + "T23:59:59.999").toISOString() : "";
     loadReport({ from, to });
+    loadOrders({ from, to });
   }
 
   function resetFilters() {
