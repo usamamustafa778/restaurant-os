@@ -2152,29 +2152,47 @@ function OrderCard({
         </div>
       </div>
 
-      {/* Time slots for closed / cancelled orders */}
-      {!isActive && (
-        <div className="mx-3 mb-2 flex items-center gap-3 text-[10px] text-gray-400 dark:text-neutral-500">
-          {order.createdAt && (
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              Created {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-          {status === "CANCELLED" && order.cancelledAt && (
-            <span className="flex items-center gap-1 text-red-400 dark:text-red-500">
-              <Clock className="w-3 h-3" />
-              Cancelled {new Date(order.cancelledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-          {status !== "CANCELLED" && order.updatedAt && (
-            <span className="flex items-center gap-1 text-emerald-500 dark:text-emerald-400">
-              <Clock className="w-3 h-3" />
-              Closed {new Date(order.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          )}
-        </div>
-      )}
+      {/* Timeline for closed / cancelled orders */}
+      {!isActive && (() => {
+        const fmtTime = (d) => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const STATUS_LABELS = {
+          NEW_ORDER: "Created",
+          PROCESSING: "Preparing",
+          READY: "Ready",
+          OUT_FOR_DELIVERY: "Out for Delivery",
+          DELIVERED: "Closed",
+          CANCELLED: "Cancelled",
+        };
+        const STATUS_COLORS = {
+          NEW_ORDER: "text-gray-400 dark:text-neutral-500",
+          PROCESSING: "text-blue-500 dark:text-blue-400",
+          READY: "text-emerald-500 dark:text-emerald-400",
+          OUT_FOR_DELIVERY: "text-violet-500 dark:text-violet-400",
+          DELIVERED: "text-emerald-600 dark:text-emerald-400",
+          CANCELLED: "text-red-400 dark:text-red-500",
+        };
+        const history = order.statusHistory?.length > 0
+          ? order.statusHistory
+          : [
+              { status: "NEW_ORDER", at: order.createdAt },
+              ...(order.cancelledAt ? [{ status: "CANCELLED", at: order.cancelledAt }]
+                : order.updatedAt ? [{ status: "DELIVERED", at: order.updatedAt }] : []),
+            ].filter(Boolean);
+
+        return (
+          <div className="mx-3 mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px]">
+            {history.map((h, i) => (
+              <span key={i} className="flex items-center gap-0.5">
+                {i > 0 && <span className="text-gray-300 dark:text-neutral-700 mr-0.5">→</span>}
+                <span className={`font-semibold ${STATUS_COLORS[h.status] || "text-gray-400"}`}>
+                  {STATUS_LABELS[h.status] || h.status}
+                </span>
+                <span className="text-gray-400 dark:text-neutral-600">{fmtTime(h.at)}</span>
+              </span>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Items list */}
       {items.length > 0 && !isActive && (
