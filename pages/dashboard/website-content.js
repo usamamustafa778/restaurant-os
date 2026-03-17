@@ -63,6 +63,9 @@ const btnSecondary =
 const cardCls =
   "bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm";
 
+// Unified gradient for all section icons so headings consistently use the brand primary
+const iconAccentPrimary = "from-primary to-secondary";
+
 const TEMPLATES = [
   {
     id: "classic",
@@ -84,7 +87,15 @@ const TEMPLATES = [
   },
 ];
 
-function SectionCard({ id, icon: Icon, title, subtitle, iconColor, children }) {
+function SectionCard({
+  id,
+  icon: Icon,
+  title,
+  subtitle,
+  iconColor,
+  bodyClassName = "",
+  children,
+}) {
   return (
     <div id={`section-${id}`} className={cardCls}>
       <div className="px-6 py-5 flex items-center gap-3 border-b border-gray-100 dark:border-neutral-800">
@@ -102,7 +113,7 @@ function SectionCard({ id, icon: Icon, title, subtitle, iconColor, children }) {
           </p>
         </div>
       </div>
-      <div className="p-6">{children}</div>
+      <div className={`p-6 ${bodyClassName}`}>{children}</div>
     </div>
   );
 }
@@ -182,11 +193,7 @@ function MediaField({ label, value, onChange }) {
       {value && (
         <div className="mt-2 relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-700">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={value}
-            alt=""
-            className="w-full h-full object-cover"
-          />
+          <img src={value} alt="" className="w-full h-full object-cover" />
           <button
             type="button"
             onClick={() => onChange("")}
@@ -283,7 +290,7 @@ export default function WebsiteContentPage() {
   function removeHeroSlide(idx) {
     update(
       "heroSlides",
-      (ws.heroSlides || []).filter((_, i) => i !== idx)
+      (ws.heroSlides || []).filter((_, i) => i !== idx),
     );
   }
 
@@ -307,7 +314,7 @@ export default function WebsiteContentPage() {
   function removeSection(idx) {
     update(
       "websiteSections",
-      (ws.websiteSections || []).filter((_, i) => i !== idx)
+      (ws.websiteSections || []).filter((_, i) => i !== idx),
     );
   }
 
@@ -316,11 +323,11 @@ export default function WebsiteContentPage() {
     const section = { ...sections[sectionIdx] };
     const items = [...(section.items || [])];
     const exists = items.some(
-      (id) => (id?._id || id?.toString?.() || id) === itemId
+      (id) => (id?._id || id?.toString?.() || id) === itemId,
     );
     if (exists) {
       section.items = items.filter(
-        (id) => (id?._id || id?.toString?.() || id) !== itemId
+        (id) => (id?._id || id?.toString?.() || id) !== itemId,
       );
     } else {
       section.items = [...items, itemId];
@@ -329,43 +336,104 @@ export default function WebsiteContentPage() {
     update("websiteSections", sections);
   }
 
-  const websiteUrl = ws.subdomain
-    ? `https://${ws.subdomain}.eatsdesk.app`
-    : null;
+  const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "eatsdesk.app";
+  const liveUrl = ws.subdomain ? `https://${ws.subdomain}.${rootDomain}` : null;
+
+  const stagingRoot = process.env.NEXT_PUBLIC_STOREFRONT_STAGING_DOMAIN || "";
+  const stagingUrl =
+    ws.subdomain && stagingRoot
+      ? `https://${ws.subdomain}.${stagingRoot}`
+      : null;
+
+  const [envView, setEnvView] = useState("live");
 
   return (
     <AdminLayout title="Website Settings">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Globe className="w-5 h-5 text-primary" />
-            Website Settings
-          </h1>
-          {websiteUrl && (
+      {/* URL + Save bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        {/* Left: URL + env toggle */}
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+              <Globe className="w-4 h-4 text-primary" />
+              <span>Website URL</span>
+            </div>
+            {stagingUrl && (
+              <div className="inline-flex rounded-full bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 overflow-hidden text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setEnvView("live")}
+                  className={`px-3 py-1 font-semibold transition-colors ${
+                    envView === "live"
+                      ? "bg-primary text-white"
+                      : "text-gray-600 dark:text-neutral-300"
+                  }`}
+                >
+                  Live
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEnvView("staging")}
+                  className={`px-3 py-1 font-semibold transition-colors ${
+                    envView === "staging"
+                      ? "bg-primary text-white"
+                      : "text-gray-600 dark:text-neutral-300"
+                  }`}
+                >
+                  Staging
+                </button>
+              </div>
+            )}
+          </div>
+          {(envView === "staging" ? stagingUrl : liveUrl) && (
             <a
-              href={websiteUrl}
+              href={envView === "staging" ? stagingUrl : liveUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-primary hover:underline flex items-center gap-1 mt-1"
+              className="text-sm text-primary hover:underline flex items-center gap-1"
             >
-              {websiteUrl}
+              {envView === "staging" ? stagingUrl : liveUrl}
               <ExternalLink className="w-3 h-3" />
             </a>
           )}
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving || loading}
-          className={btnPrimary}
-        >
-          {saving ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
-          {saving ? "Saving..." : "Save Changes"}
-        </button>
+
+        {/* Right: visibility pill + save */}
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center gap-2 rounded-full bg-gray-100 dark:bg-neutral-900 px-3 py-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+              Website visibility
+            </span>
+            <button
+              type="button"
+              onClick={() => update("isPublic", !ws.isPublic)}
+              className={`relative flex items-center gap-2 h-7 px-2 rounded-full text-xs font-semibold transition-colors ${
+                ws.isPublic !== false
+                  ? "bg-emerald-500 text-white"
+                  : "bg-gray-300 dark:bg-neutral-700 text-gray-800 dark:text-neutral-100"
+              }`}
+            >
+              <span
+                className={`inline-block w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+                  ws.isPublic !== false ? "translate-x-0" : "translate-x-0"
+                }`}
+              />
+              <span>{ws.isPublic !== false ? "Visible" : "Hidden"}</span>
+            </button>
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving || loading}
+            className={btnPrimary}
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -412,7 +480,7 @@ export default function WebsiteContentPage() {
               icon={Layout}
               title="Template"
               subtitle="Choose the design template for your restaurant website"
-              iconColor="from-violet-500 to-indigo-600"
+              iconColor={iconAccentPrimary}
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {TEMPLATES.map((t) => (
@@ -422,7 +490,8 @@ export default function WebsiteContentPage() {
                     disabled={t.soon}
                     onClick={() => update("template", t.id)}
                     className={`relative text-left p-4 rounded-xl border-2 transition-all ${
-                      ws.template === t.id || (!ws.template && t.id === "classic")
+                      ws.template === t.id ||
+                      (!ws.template && t.id === "classic")
                         ? "border-primary ring-4 ring-primary/10"
                         : "border-gray-200 dark:border-neutral-700 hover:border-gray-300"
                     } ${t.soon ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
@@ -458,7 +527,7 @@ export default function WebsiteContentPage() {
               icon={Palette}
               title="Branding"
               subtitle="Restaurant name, logo, and description"
-              iconColor="from-orange-500 to-orange-600"
+              iconColor={iconAccentPrimary}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -510,7 +579,7 @@ export default function WebsiteContentPage() {
               icon={Phone}
               title="Contact Information"
               subtitle="Phone, email, and address shown on your website"
-              iconColor="from-blue-500 to-blue-600"
+              iconColor={iconAccentPrimary}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -561,7 +630,7 @@ export default function WebsiteContentPage() {
               icon={ImageIcon}
               title="Hero Slides"
               subtitle="Carousel images at the top of your website"
-              iconColor="from-pink-500 to-rose-600"
+              iconColor={iconAccentPrimary}
             >
               <div className="space-y-4">
                 {(ws.heroSlides || []).map((slide, idx) => (
@@ -658,7 +727,11 @@ export default function WebsiteContentPage() {
                     )}
                   </div>
                 ))}
-                <button type="button" onClick={addHeroSlide} className={btnSecondary}>
+                <button
+                  type="button"
+                  onClick={addHeroSlide}
+                  className={btnSecondary}
+                >
                   <Plus className="w-4 h-4" />
                   Add Slide
                 </button>
@@ -671,7 +744,7 @@ export default function WebsiteContentPage() {
               icon={Sparkles}
               title="Theme Colors"
               subtitle="Primary and secondary colors for your website"
-              iconColor="from-amber-500 to-yellow-500"
+              iconColor={iconAccentPrimary}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -739,7 +812,8 @@ export default function WebsiteContentPage() {
               icon={Globe}
               title="Social Media"
               subtitle="Links shown in header and footer of your website"
-              iconColor="from-cyan-500 to-blue-500"
+              iconColor={iconAccentPrimary}
+              bodyClassName="bg-primary/3 dark:bg-neutral-950"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
@@ -775,13 +849,16 @@ export default function WebsiteContentPage() {
               icon={Clock}
               title="Opening Hours"
               subtitle="Shown in the footer of your website"
-              iconColor="from-green-500 to-emerald-600"
+              iconColor={iconAccentPrimary}
+              bodyClassName="bg-primary/3 dark:bg-neutral-950"
             >
               <label className={labelCls}>Opening Hours Text</label>
               <textarea
                 value={ws.openingHoursText || ""}
                 onChange={(e) => update("openingHoursText", e.target.value)}
-                placeholder={"Mon - Fri: 9:00 AM - 10:00 PM\nSat - Sun: 10:00 AM - 11:00 PM"}
+                placeholder={
+                  "Mon - Fri: 9:00 AM - 10:00 PM\nSat - Sun: 10:00 AM - 11:00 PM"
+                }
                 rows={4}
                 className={`${inp} h-auto py-2.5 resize-none`}
               />
@@ -796,7 +873,7 @@ export default function WebsiteContentPage() {
               icon={Layout}
               title="Website Sections"
               subtitle="Up to 3 custom sections showcasing menu items"
-              iconColor="from-purple-500 to-violet-600"
+              iconColor={iconAccentPrimary}
             >
               <div className="space-y-4">
                 {(ws.websiteSections || []).map((section, sIdx) => (
@@ -858,7 +935,8 @@ export default function WebsiteContentPage() {
                       </div>
                     </div>
                     <label className={labelCls}>
-                      Select Menu Items ({(section.items || []).length} selected)
+                      Select Menu Items ({(section.items || []).length}{" "}
+                      selected)
                     </label>
                     <div className="max-h-48 overflow-y-auto rounded-xl border-2 border-gray-100 dark:border-neutral-800">
                       {menuItems.length === 0 ? (
@@ -870,8 +948,8 @@ export default function WebsiteContentPage() {
                         menuItems.map((item) => {
                           const itemId =
                             item._id || item.id || item.id?.toString?.();
-                          const sectionItems = (section.items || []).map((id) =>
-                            id?._id || id?.toString?.() || id
+                          const sectionItems = (section.items || []).map(
+                            (id) => id?._id || id?.toString?.() || id,
                           );
                           const selected = sectionItems.includes(itemId);
                           return (
@@ -936,13 +1014,14 @@ export default function WebsiteContentPage() {
               icon={Eye}
               title="Settings"
               subtitle="Visibility and ordering controls"
-              iconColor="from-gray-600 to-gray-700"
+              iconColor={iconAccentPrimary}
+              bodyClassName="bg-primary/3 dark:bg-neutral-950"
             >
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-neutral-900">
                   <div className="flex items-center gap-3">
                     {ws.isPublic !== false ? (
-                      <Eye className="w-5 h-5 text-emerald-500" />
+                      <Eye className="w-5 h-5 text-primary" />
                     ) : (
                       <EyeOff className="w-5 h-5 text-gray-400" />
                     )}
@@ -961,12 +1040,16 @@ export default function WebsiteContentPage() {
                     type="button"
                     onClick={() => update("isPublic", !ws.isPublic)}
                     className={`relative w-12 h-7 rounded-full transition-colors ${
-                      ws.isPublic !== false ? "bg-emerald-500" : "bg-gray-300 dark:bg-neutral-700"
+                      ws.isPublic !== false
+                        ? "bg-emerald-500"
+                        : "bg-gray-300 dark:bg-neutral-700"
                     }`}
                   >
                     <span
                       className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                        ws.isPublic !== false ? "translate-x-6" : "translate-x-1"
+                        ws.isPublic !== false
+                          ? "translate-x-6"
+                          : "translate-x-1"
                       }`}
                     />
                   </button>
@@ -976,7 +1059,7 @@ export default function WebsiteContentPage() {
                     <ShoppingCart
                       className={`w-5 h-5 ${
                         ws.allowWebsiteOrders !== false
-                          ? "text-emerald-500"
+                          ? "text-primary"
                           : "text-gray-400"
                       }`}
                     />
