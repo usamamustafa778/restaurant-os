@@ -802,7 +802,7 @@ export default function RiderPortalPage() {
                             {collectingId === orderId ? (
                               <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Collecting...</>
                             ) : (
-                              <><Package className="w-3.5 h-3.5" /> Collect Order</>
+                              <><Package className="w-3.5 h-3.5" /> Collect from Kitchen</>
                             )}
                           </button>
                         </div>
