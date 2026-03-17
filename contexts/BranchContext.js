@@ -1,5 +1,5 @@
 import { createContext, useContext, useCallback, useEffect, useState } from "react";
-import { getStoredAuth, getBranches } from "../lib/apiClient";
+import { getStoredAuth, getBranches, getRiderBranches } from "../lib/apiClient";
 
 const BRANCH_STORAGE_KEY = "restaurantos_branch_id";
 
@@ -30,10 +30,10 @@ export function BranchProvider({ children }) {
     const role = auth?.user?.role;
     const tenantSlug = auth?.user?.tenantSlug || auth?.tenantSlug;
 
-    // No branch context when not logged in, super_admin not acting as a tenant, or limited roles
+    // No branch context when not logged in or super_admin not acting as a tenant
     const isSuperAdminWithoutTenant = role === "super_admin" && !tenantSlug;
-    const skipBranchLoad = role === "delivery_rider";
-    if (isSuperAdminWithoutTenant || !token || skipBranchLoad) {
+    const isRider = role === "delivery_rider";
+    if (isSuperAdminWithoutTenant || !token) {
       setBranches([]);
       setCurrentBranchState(null);
       return;
@@ -42,7 +42,7 @@ export function BranchProvider({ children }) {
     let cancelled = false;
     setLoading(true);
 
-    getBranches()
+    (isRider ? getRiderBranches() : getBranches())
       .then((data) => {
         if (cancelled) return;
         const list = data?.branches ?? (Array.isArray(data) ? data : []);
@@ -83,9 +83,9 @@ export function BranchProvider({ children }) {
         const auth = JSON.parse(e.newValue);
         const role = auth?.user?.role;
         const tenantSlug = auth?.user?.tenantSlug || auth?.tenantSlug;
-        const shouldLoad = auth?.token && (role !== "super_admin" || tenantSlug) && role !== "delivery_rider";
+        const shouldLoad = auth?.token && (role !== "super_admin" || tenantSlug);
         if (shouldLoad) {
-          getBranches()
+          (role === "delivery_rider" ? getRiderBranches() : getBranches())
             .then((data) => {
               const list = data?.branches ?? (Array.isArray(data) ? data : []);
               setBranches(list);
