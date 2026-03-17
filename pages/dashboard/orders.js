@@ -2301,9 +2301,10 @@ function OrderCard({
             <button
               type="button"
               onClick={() => onOpenRider(order)}
-              className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+              className={`w-full py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${order.assignedRiderName ? "bg-violet-600 hover:bg-violet-700 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}
             >
-              <Bike className="w-3.5 h-3.5" /> Assign Rider
+              <Bike className="w-3.5 h-3.5" />
+              {order.assignedRiderName ? `${order.assignedRiderName} · Change Rider` : "Assign Rider"}
             </button>
           ) : canAdvanceStatus ? (
             <button

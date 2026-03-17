@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   getRiderOrders,
+  collectOrderByRider,
   markOrderDeliveredByRider,
   getRiderMenu,
   getRiderCustomers,
@@ -242,6 +243,22 @@ export default function RiderPortalPage() {
     window.location.href = "/login";
   }
 
+  const [collectingId, setCollectingId] = useState(null);
+
+  async function handleCollectOrder(orderId) {
+    setCollectingId(orderId);
+    const toastId = toast.loading("Collecting order...");
+    try {
+      const updated = await collectOrderByRider(orderId);
+      setOrders(prev => prev.map(o => (o.id === orderId || o._id === orderId ? { ...o, ...updated } : o)));
+      toast.success("Order collected! Out for delivery.", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to collect order", { id: toastId });
+    } finally {
+      setCollectingId(null);
+    }
+  }
+
   async function handleMarkDelivered(orderId) {
     setDeliveringId(orderId);
     const toastId = toast.loading("Marking as delivered...");
@@ -256,7 +273,9 @@ export default function RiderPortalPage() {
     }
   }
 
-  const activeOrders = orders.filter(o => o.status === "OUT_FOR_DELIVERY");
+  const activeOrders = orders.filter(o =>
+    o.status === "NEW_ORDER" || o.status === "PREPARING" || o.status === "READY" || o.status === "OUT_FOR_DELIVERY"
+  );
   const historyOrders = orders
     .filter(o => o.status === "DELIVERED" || o.status === "COMPLETED" || o.status === "CANCELLED")
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -672,7 +691,10 @@ export default function RiderPortalPage() {
                             <span className="text-sm font-black text-gray-900 dark:text-white">#{getShortOrderId(order)}</span>
                             {isDone && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">Done</span>}
                             {isCancelled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400">Cancelled</span>}
-                            {!isDone && !isCancelled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">In Transit</span>}
+                            {order.status === "NEW_ORDER" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">New</span>}
+                            {order.status === "PREPARING" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">Preparing</span>}
+                            {order.status === "READY" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Ready</span>}
+                            {order.status === "OUT_FOR_DELIVERY" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">In Transit</span>}
                             {!isDone && !isCancelled && (
                               <span className={`text-[10px] font-bold tabular-nums ${minutes >= 20 ? "text-red-500" : minutes >= 10 ? "text-primary" : "text-gray-400"}`}>
                                 {formatElapsed(minutes)}
@@ -769,6 +791,22 @@ export default function RiderPortalPage() {
                       )}
 
                       {/* Action */}
+                      {order.status === "READY" && (
+                        <div className="px-3 pb-2.5 pt-1">
+                          <button
+                            type="button"
+                            disabled={collectingId === orderId}
+                            onClick={() => handleCollectOrder(orderId)}
+                            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-50 transition-colors active:scale-[0.98]"
+                          >
+                            {collectingId === orderId ? (
+                              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Collecting...</>
+                            ) : (
+                              <><Package className="w-3.5 h-3.5" /> Collect Order</>
+                            )}
+                          </button>
+                        </div>
+                      )}
                       {order.status === "OUT_FOR_DELIVERY" && (
                         <div className="px-3 pb-2.5 pt-1">
                           <button
