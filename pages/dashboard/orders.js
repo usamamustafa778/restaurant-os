@@ -143,6 +143,10 @@ function orderStatusForTab(status) {
   return status;
 }
 
+function getOrderId(order) {
+  return order.id || order._id;
+}
+
 function getDisplayOrderId(order) {
   const id = order.id || order.orderNumber || order._id || "";
   if (typeof id === "string" && id.startsWith("ORD-"))
@@ -287,6 +291,7 @@ export default function OrdersPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [showCancelled, setShowCancelled] = useState(false);
+  const [showClosed, setShowClosed] = useState(false);
   const [paymentPendingOnly, setPaymentPendingOnly] = useState(false);
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -323,7 +328,7 @@ export default function OrdersPage() {
   const [sessionHistory, setSessionHistory] = useState([]);
   const [loadingSessionHistory, setLoadingSessionHistory] = useState(false);
 
-  const role = getStoredAuth()?.user?.role;
+  const [role] = useState(() => getStoredAuth()?.user?.role);
   const isOrderTaker = role === "order_taker";
   const isCashier = role === "cashier";
 
@@ -338,7 +343,7 @@ export default function OrdersPage() {
   async function loadOrders() {
     try {
       const data = await getOrders();
-      setOrders(data);
+      setOrders(Array.isArray(data) ? data : (data?.orders ?? []));
       setPageLoading(false);
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) {
@@ -348,6 +353,16 @@ export default function OrdersPage() {
       }
       setPageLoading(false);
     }
+  }
+
+  function updateOrderInList(orderId, patch) {
+    setOrders((prev) =>
+      prev.map((o) => (getOrderId(o) === orderId ? { ...o, ...patch } : o)),
+    );
+  }
+
+  function removeOrderFromList(orderId) {
+    setOrders((prev) => prev.filter((o) => getOrderId(o) !== orderId));
   }
 
   useEffect(() => {
@@ -419,11 +434,7 @@ export default function OrdersPage() {
     const toastId = toast.loading(`Updating order to ${newStatus}...`);
     try {
       const updated = await updateOrderStatus(orderId, newStatus, extra);
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId || o._id === orderId ? { ...o, ...updated } : o,
-        ),
-      );
+      updateOrderInList(orderId, updated);
       toast.success(`Order updated to ${newStatus}!`, { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to update status", { id: toastId });
@@ -445,7 +456,7 @@ export default function OrdersPage() {
   }
 
   async function handleDeleteOrder(order) {
-    const orderId = order.id || order._id;
+    const orderId = getOrderId(order);
     const displayId = getDisplayOrderId(order);
     if (!window.confirm(`Delete order #${displayId}? This cannot be undone.`))
       return;
@@ -453,7 +464,7 @@ export default function OrdersPage() {
     const toastId = toast.loading("Deleting order...");
     try {
       await deleteOrder(orderId);
-      setOrders((prev) => prev.filter((o) => (o._id || o.id) !== orderId));
+      removeOrderFromList(orderId);
       toast.success(`Order #${displayId} deleted successfully!`, {
         id: toastId,
       });
@@ -505,17 +516,13 @@ export default function OrdersPage() {
 
   async function handleAssignRider() {
     if (!riderTargetOrder || !selectedRiderId) return;
-    const orderId = riderTargetOrder.id || riderTargetOrder._id;
+    const orderId = getOrderId(riderTargetOrder);
     setRiderAssigning(true);
     const toastId = toast.loading("Assigning rider...");
     try {
       const extra = { deliveryCharges: Number(deliveryCharges) || 0 };
       const updated = await assignRiderToOrder(orderId, selectedRiderId, extra);
-      setOrders((prev) =>
-        prev.map((o) =>
-          o._id === orderId || o.id === orderId ? { ...o, ...updated } : o,
-        ),
-      );
+      updateOrderInList(orderId, updated);
       toast.success("Rider assigned! Order is out for delivery.", {
         id: toastId,
       });
@@ -542,18 +549,14 @@ export default function OrdersPage() {
 
   async function handleCollectPayment() {
     if (!collectTargetOrder) return;
-    const orderId = collectTargetOrder.id || collectTargetOrder._id;
+    const orderId = getOrderId(collectTargetOrder);
     setCollectLoading(true);
     const toastId = toast.loading("Collecting payment...");
     try {
       const updated = await collectDeliveryPayment(orderId, {
         paymentMethod: "CASH",
       });
-      setOrders((prev) =>
-        prev.map((o) =>
-          o._id === orderId || o.id === orderId ? { ...o, ...updated } : o,
-        ),
-      );
+      updateOrderInList(orderId, updated);
       toast.success("Payment collected from rider!", { id: toastId });
       closeCollectPaymentModal();
     } catch (err) {
@@ -633,7 +636,7 @@ export default function OrdersPage() {
   async function handleRecordPayment(e) {
     e.preventDefault();
     if (!paymentOrder) return;
-    const orderId = paymentOrder.id || paymentOrder._id;
+    const orderId = getOrderId(paymentOrder);
     const billTotal = getOrderTotal(paymentOrder);
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
@@ -656,11 +659,7 @@ export default function OrdersPage() {
         payload.paymentProvider = onlineProvider;
       }
       const updated = await recordOrderPayment(orderId, payload);
-      setOrders((prev) =>
-        prev.map((o) =>
-          o._id === orderId || o.id === orderId ? { ...o, ...updated } : o,
-        ),
-      );
+      updateOrderInList(orderId, updated);
       toast.success("Payment recorded successfully!", { id: toastId });
       closePaymentModal();
     } catch (err) {
@@ -674,9 +673,10 @@ export default function OrdersPage() {
   // ── Computed values ────────────────────────────────────────────────────
 
   const cashierBaseOrders = useMemo(() => {
-    if (!isCashier) return orders;
+    const list = Array.isArray(orders) ? orders : [];
+    if (!isCashier) return list;
     const todayStr = new Date().toISOString().slice(0, 10);
-    return orders.filter((o) => {
+    return list.filter((o) => {
       const isToday = (o.createdAt || "").slice(0, 10) === todayStr;
       const st = (o.status || "").toUpperCase();
       const isActive = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(st);
@@ -736,41 +736,35 @@ export default function OrdersPage() {
   }, [datePreset, businessDateStr, cutoffHour, customFrom, customTo]);
 
   const baseFiltered = useMemo(() => {
-    return cashierBaseOrders
-      .filter((o) => {
-        if (!dateRange || (!dateRange.from && !dateRange.to)) return true;
+    const base = Array.isArray(cashierBaseOrders) ? cashierBaseOrders : [];
+    const term = search.trim().toLowerCase();
+    const hasDateRange = dateRange && (dateRange.from || dateRange.to);
+    const fromMs = hasDateRange && dateRange.from ? dateRange.from.getTime() : 0;
+    const toMs = hasDateRange && dateRange.to ? dateRange.to.getTime() : Infinity;
+    const filterSource = sourceFilter !== "All Sources";
+    const filterType = orderTypeFilter !== "All";
+
+    const filtered = base.filter((o) => {
+      if (hasDateRange) {
         const t = new Date(o.createdAt).getTime();
-        if (dateRange.from && t < dateRange.from.getTime()) return false;
-        if (dateRange.to && t > dateRange.to.getTime()) return false;
-        return true;
-      })
-      .filter((o) => {
-        const term = search.trim().toLowerCase();
-        if (!term) return true;
-        return (
-          (o.id || "").toLowerCase().includes(term) ||
-          (o.customerName || "").toLowerCase().includes(term) ||
-          (o.orderTakerName || "").toLowerCase().includes(term) ||
-          (o.externalOrderId || "").toLowerCase().includes(term) ||
-          (o.customerPhone || "").toLowerCase().includes(term)
-        );
-      })
-      .filter(
-        (o) => sourceFilter === "All Sources" || o.source === sourceFilter,
-      )
-      .filter((o) => {
-        if (orderTypeFilter === "All") return true;
-        return getOrderTypeLabel(o) === orderTypeFilter;
-      })
-      .filter((o) => {
-        if (!paymentPendingOnly) return true;
-        return isPaymentPending(o);
-      })
-      .sort((a, b) => {
-        const da = new Date(a.createdAt).getTime();
-        const db = new Date(b.createdAt).getTime();
-        return sortOrder === "Newest First" ? db - da : da - db;
-      });
+        if (t < fromMs || t > toMs) return false;
+      }
+      if (term && !(
+        (o.id || "").toLowerCase().includes(term) ||
+        (o.customerName || "").toLowerCase().includes(term) ||
+        (o.orderTakerName || "").toLowerCase().includes(term) ||
+        (o.externalOrderId || "").toLowerCase().includes(term) ||
+        (o.customerPhone || "").toLowerCase().includes(term)
+      )) return false;
+      if (filterSource && o.source !== sourceFilter) return false;
+      if (filterType && getOrderTypeLabel(o) !== orderTypeFilter) return false;
+      if (paymentPendingOnly && !isPaymentPending(o)) return false;
+      return true;
+    });
+
+    const dir = sortOrder === "Newest First" ? -1 : 1;
+    filtered.sort((a, b) => dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    return filtered;
   }, [
     cashierBaseOrders,
     search,
@@ -815,7 +809,6 @@ export default function OrdersPage() {
   );
   const closedCount = groupedOrders.DELIVERED?.length || 0;
   const cancelledCount = groupedOrders.CANCELLED?.length || 0;
-  const [showClosed, setShowClosed] = useState(false);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -1544,13 +1537,12 @@ export default function OrdersPage() {
                 <button
                   type="button"
                   disabled={
-                    updatingId ===
-                      (cancelTargetOrder.id || cancelTargetOrder._id) ||
+                    updatingId === getOrderId(cancelTargetOrder) ||
                     !cancelReason.trim()
                   }
                   onClick={() => {
                     handleUpdateStatus(
-                      cancelTargetOrder.id || cancelTargetOrder._id,
+                      getOrderId(cancelTargetOrder),
                       "CANCELLED",
                       { cancelReason: cancelReason.trim() },
                     );
@@ -1558,8 +1550,7 @@ export default function OrdersPage() {
                   }}
                   className="flex-1 px-3 py-2.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
                 >
-                  {updatingId ===
-                  (cancelTargetOrder.id || cancelTargetOrder._id)
+                  {updatingId === getOrderId(cancelTargetOrder)
                     ? "Cancelling..."
                     : "Yes, cancel order"}
                 </button>
