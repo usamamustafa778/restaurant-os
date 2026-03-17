@@ -2115,7 +2115,7 @@ function OrderCard({
           {order.customerName && (
             <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-600 dark:text-neutral-400">
               <User className="w-3 h-3" />
-              {order.customerName}
+              Customer: {order.customerName}
             </span>
           )}
           {order.source === "FOODPANDA" && (
@@ -2131,7 +2131,7 @@ function OrderCard({
           {isDeliveryOrder(order) && order.assignedRiderName && (
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded">
               <Bike className="w-3 h-3" />
-              {order.assignedRiderName}
+              Rider: {order.assignedRiderName}
             </span>
           )}
           {order.orderTakerName && (
@@ -2139,12 +2139,12 @@ function OrderCard({
               {order.createdByRole === "delivery_rider" ? (
                 <>
                   <Bike className="w-3 h-3" />
-                  Placed by rider: {order.orderTakerName}
+                  Placed by: {order.orderTakerName}
                 </>
               ) : (
                 <>
                   <Headset className="w-3 h-3" />
-                  {order.orderTakerName}
+                  Waiter: {order.orderTakerName}
                 </>
               )}
             </span>
@@ -2152,8 +2152,54 @@ function OrderCard({
         </div>
       </div>
 
+      {/* Time slots for closed / cancelled orders */}
+      {!isActive && (
+        <div className="mx-3 mb-2 flex items-center gap-3 text-[10px] text-gray-400 dark:text-neutral-500">
+          {order.createdAt && (
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              Created {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+          {status === "CANCELLED" && order.cancelledAt && (
+            <span className="flex items-center gap-1 text-red-400 dark:text-red-500">
+              <Clock className="w-3 h-3" />
+              Cancelled {new Date(order.cancelledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+          {status !== "CANCELLED" && order.updatedAt && (
+            <span className="flex items-center gap-1 text-emerald-500 dark:text-emerald-400">
+              <Clock className="w-3 h-3" />
+              Closed {new Date(order.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Items list */}
-      {items.length > 0 && (
+      {items.length > 0 && !isActive && (
+        <div className="mx-3 mb-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 dark:bg-neutral-900/80 text-[11px] font-bold text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+          >
+            <span>{items.reduce((s, i) => s + (i.qty || 1), 0)} items</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </button>
+          {expanded && (
+            <div className="px-2.5 py-2 mt-1 rounded-lg bg-gray-50 dark:bg-neutral-900/80 space-y-1">
+              {items.map((it, idx) => (
+                <div key={idx} className="flex items-center justify-between text-[11px]">
+                  <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">{it.name}</span>
+                  <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">×{it.qty}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {items.length > 0 && isActive && (
         <div className="mx-3 mb-2 px-2.5 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900/80">
           <div className="space-y-1">
             {visibleItems.map((it, idx) => (

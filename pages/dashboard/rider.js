@@ -423,11 +423,18 @@ export default function RiderPortalPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-2 overflow-x-auto pb-2">
-                        <button type="button" onClick={() => setSelectedCategory("all")} className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold ${selectedCategory === "all" ? "bg-primary text-white" : "bg-white dark:bg-neutral-900 text-gray-500 border border-gray-200 dark:border-neutral-800"}`}>All</button>
-                        {menu.categories.map((cat) => (
-                          <button key={cat.id || cat._id} type="button" onClick={() => setSelectedCategory(cat.id || cat._id)} className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold ${selectedCategory === (cat.id || cat._id) ? "bg-primary text-white" : "bg-white dark:bg-neutral-900 text-gray-500 border border-gray-200 dark:border-neutral-800"}`}>{cat.name}</button>
-                        ))}
+                      <div className="relative pb-2">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="w-full appearance-none px-3 py-2 pr-9 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm font-bold text-gray-700 dark:text-neutral-300 outline-none focus:ring-2 focus:ring-primary/20"
+                        >
+                          <option value="all">All Categories</option>
+                          {menu.categories.map((cat) => (
+                            <option key={cat.id || cat._id} value={cat.id || cat._id}>{cat.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                       </div>
                     </div>
                     {menuLoading ? (
