@@ -263,7 +263,7 @@ export default function KitchenPage() {
   async function fetchOrders() {
     try {
       const data = await getOrders();
-      setOrders(data);
+      setOrders(Array.isArray(data) ? data : (data?.orders ?? []));
       setLastRefreshed(Date.now());
     } catch (err) {
       toast.error(err.message || "Failed to load orders");

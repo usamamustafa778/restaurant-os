@@ -41,8 +41,9 @@ export default function MigratePendingPage() {
     setScanning(true);
     setStep("scanning");
     try {
-      const orders = await getOrders();
-      const pending = (Array.isArray(orders) ? orders : []).filter((o) => {
+      const raw = await getOrders();
+      const orders = Array.isArray(raw) ? raw : (raw?.orders ?? []);
+      const pending = orders.filter((o) => {
         const status = (o.status || "").toUpperCase();
         if (status !== "DELIVERED" && status !== "COMPLETED") return false;
         const pm = (o.paymentMethod || "").toUpperCase();

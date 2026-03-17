@@ -108,9 +108,8 @@ export default function OrderTakerPage() {
   const fetchActiveOrders = useCallback(async () => {
     try {
       const data = await getOrders({ mine: true });
-      setActiveOrders(
-        data.filter((o) => o.status !== "CANCELLED")
-      );
+      const list = Array.isArray(data) ? data : (data?.orders ?? []);
+      setActiveOrders(list.filter((o) => o.status !== "CANCELLED"));
     } catch (err) {
       console.error("Failed to load active orders:", err);
     }

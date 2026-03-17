@@ -1454,7 +1454,7 @@ export default function POSPage() {
   async function loadRecentOrders() {
     try {
       const data = await getOrders();
-      const list = Array.isArray(data) ? data : [];
+      const list = Array.isArray(data) ? data : (data?.orders ?? []);
       const unpaid = list
         .filter((o) => o.isPaid !== true && o.status !== "CANCELLED")
         .map((o) => ({
