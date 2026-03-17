@@ -9,6 +9,7 @@ import {
   SubscriptionInactiveError,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
+import { useBranch } from "../../contexts/BranchContext";
 import {
   Bike, MapPin, Phone, User, Clock, Loader2, CheckCircle2,
   Package, Truck, RefreshCw, LogOut, ChevronDown,
@@ -20,14 +21,20 @@ import SEO from "../../components/SEO";
 const TABS = { ACTIVE: "active", HISTORY: "history", NEW_ORDER: "new_order" };
 const STEPS = { MENU: "menu", CART: "cart" };
 
+function isBranchRequiredError(msg) {
+  return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
+}
+
 export default function RiderPortalPage() {
   const { socket } = useSocket() || {};
+  const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(TABS.ACTIVE);
   const [deliveringId, setDeliveringId] = useState(null);
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [userName, setUserName] = useState("");
+  const [showBranchModal, setShowBranchModal] = useState(false);
 
   // New order (rider-created delivery) state
   const [step, setStep] = useState(STEPS.MENU);
@@ -109,6 +116,7 @@ export default function RiderPortalPage() {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: deliveryAddress.trim(),
+        branchId: currentBranch?.id ?? undefined,
       });
       setOrderPlaced(result);
       setCart([]);
@@ -118,7 +126,11 @@ export default function RiderPortalPage() {
       loadOrders();
       toast.success("Order sent to kitchen!");
     } catch (err) {
-      toast.error(err.message || "Failed to place order");
+      if (isBranchRequiredError(err.message) && branches?.length > 0) {
+        setShowBranchModal(true);
+      } else {
+        toast.error(err.message || "Failed to place order");
+      }
     } finally {
       setPlacing(false);
     }
@@ -612,6 +624,42 @@ export default function RiderPortalPage() {
           </div>
         </main>
       </div>
+
+      {showBranchModal && branches?.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <MapPin className="w-4.5 h-4.5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">Select Branch</h2>
+                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5">Choose a branch to place delivery orders</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 max-h-[320px] overflow-y-auto space-y-1.5">
+              {branches.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => { setCurrentBranch(b); setShowBranchModal(false); }}
+                  className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all border-2 border-transparent hover:border-primary/30 hover:bg-primary/5 dark:hover:bg-primary/10 active:scale-[0.98]"
+                >
+                  <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{b.name}</p>
+                    {b.address && <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate">{b.address}</p>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
