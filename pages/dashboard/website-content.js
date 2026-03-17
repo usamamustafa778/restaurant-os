@@ -79,9 +79,8 @@ const TEMPLATES = [
   {
     id: "minimal",
     name: "Minimal",
-    desc: "Typography-focused, fast-loading design for small menus. Coming soon.",
+    desc: "Editorial typography, wine-list menu style, serif headings. Elegant and fast.",
     color: "from-emerald-500 to-teal-500",
-    soon: true,
   },
 ];
 
