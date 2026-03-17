@@ -1003,7 +1003,7 @@ export default function Home() {
                 />
                 <FAQItem
                   question="Do I get a website immediately?"
-                  answer="Yes! As soon as you sign up and create your restaurant, a professional website is automatically generated on your subdomain (e.g., yourrestaurant.eatsdesk.com). Your menu syncs in real-time and you can customize branding, colors, and content."
+                  answer="Yes! As soon as you sign up and create your restaurant, a professional website is automatically generated on your subdomain (e.g., yourrestaurant.eatsdesk.app). Your menu syncs in real-time and you can customize branding, colors, and content."
                 />
                 <FAQItem
                   question="Can staff access reports and analytics?"

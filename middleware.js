@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { verifyJwt } from "./lib/auth";
 
 // Root domain for subdomain-based tenant routing.
-// In production set NEXT_PUBLIC_ROOT_DOMAIN=eatsdesk.com so urbanspoon.eatsdesk.com → /r/urbanspoon
+// In production set NEXT_PUBLIC_ROOT_DOMAIN to your dashboard domain (e.g. eatsdesk.com)
+// Storefronts are served from eatsdesk.app (separate repo/deployment)
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "";
 
 const ALLOWED_ROLES = [
@@ -27,7 +28,7 @@ const PUBLIC_ONLY_ROUTES = new Set(["/signup"]);
 
 /**
  * Extract tenant subdomain from the Host header.
- * e.g. urbanspoon.eatsdesk.com → "urbanspoon"
+ * e.g. urbanspoon.eatsdesk.app → "urbanspoon"
  *      urbanspoon.localhost:3000 → "urbanspoon"
  */
 function getSubdomain(host) {
