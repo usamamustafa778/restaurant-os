@@ -56,6 +56,7 @@ function getStatusConfig(status) {
     case "READY":
       return { label: "Ready to Collect", bg: "bg-emerald-500", bgLight: "bg-emerald-50 dark:bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-500/20", icon: PackageCheck, pulse: true };
     case "PROCESSING":
+    case "PREPARING":
       return { label: "Processing", bg: "bg-amber-500", bgLight: "bg-amber-50 dark:bg-amber-500/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-200 dark:border-amber-500/20", icon: ChefHat, pulse: false };
     case "NEW_ORDER":
       return { label: "In Kitchen", bg: "bg-blue-500", bgLight: "bg-blue-50 dark:bg-blue-500/10", text: "text-blue-600 dark:text-blue-400", border: "border-blue-200 dark:border-blue-500/20", icon: Send, pulse: false };
@@ -87,6 +88,7 @@ export default function RiderPortalPage() {
 
   // Auth
   const [userName, setUserName] = useState("");
+  const [riderId, setRiderId] = useState(null);
 
   // Orders
   const [orders, setOrders] = useState([]);
@@ -94,6 +96,7 @@ export default function RiderPortalPage() {
   const [tab, setTab] = useState(TABS.ACTIVE);
   const [collectingId, setCollectingId] = useState(null);
   const [deliveringId, setDeliveringId] = useState(null);
+  const [activeFilter, setActiveFilter] = useState("all");
 
   // New order
   const [step, setStep] = useState(STEPS.MENU);
@@ -124,6 +127,7 @@ export default function RiderPortalPage() {
   useEffect(() => {
     const auth = getStoredAuth();
     setUserName(auth?.user?.name || auth?.user?.email || "");
+    setRiderId(auth?.user?.id || auth?.user?._id || null);
   }, []);
 
   async function loadOrders() {
@@ -188,14 +192,52 @@ export default function RiderPortalPage() {
   }, [step]);
 
   // ── Derived data ──────────────────────────────────────────────────────
-  const activeOrders = orders.filter(
-    (o) => o.status === "NEW_ORDER" || o.status === "PROCESSING" || o.status === "READY" || o.status === "OUT_FOR_DELIVERY"
-  );
+  const activeOrders = orders.filter((o) => {
+    return (
+      o.status === "NEW_ORDER" ||
+      o.status === "PROCESSING" ||
+      o.status === "PREPARING" ||
+      o.status === "READY" ||
+      o.status === "OUT_FOR_DELIVERY"
+    );
+  });
   const historyOrders = orders
     .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED" || o.status === "CANCELLED")
+    // History must belong to the delivery handler:
+    // - If an order has an assigned rider, only that rider should see it in History.
+    // - If no rider was assigned, the creator (who is also the only one who would see it via the API) should see it.
+    .filter((o) => !o.assignedRiderId || (riderId && o.assignedRiderId === riderId))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+  const historyRevenue = historyOrders
+    .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
+    .reduce((sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0), 0);
+
   const readyOrders = activeOrders.filter((o) => o.status === "READY");
+  const newOrders = activeOrders.filter((o) => o.status === "NEW_ORDER");
+  const preparingOrders = activeOrders.filter((o) => o.status === "PROCESSING" || o.status === "PREPARING");
+  const outForDeliveryOrders = activeOrders.filter((o) => o.status === "OUT_FOR_DELIVERY");
+
+  const filteredActiveOrders =
+    activeFilter === "all"
+      ? activeOrders
+      : activeFilter === "new"
+        ? newOrders
+        : activeFilter === "preparing"
+          ? preparingOrders
+          : activeFilter === "ready"
+            ? readyOrders
+            : outForDeliveryOrders;
+
+  const activeFilterLabel = activeFilter === "all"
+    ? "active"
+    : activeFilter === "new"
+      ? "new"
+      : activeFilter === "preparing"
+        ? "preparing"
+        : activeFilter === "ready"
+          ? "ready"
+          : "out for delivery";
 
   const filteredItems = menu.items.filter((item) => {
     const matchCat = selectedCategory === "all" || item.categoryId === selectedCategory;
@@ -389,7 +431,9 @@ export default function RiderPortalPage() {
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
                   {tab === TABS.ACTIVE
-                    ? `${readyOrders.length} ready · ${activeOrders.length} active`
+                    ? activeFilter === "all"
+                      ? `${readyOrders.length} ready · ${activeOrders.length} active`
+                      : `${filteredActiveOrders.length} ${activeFilterLabel} · ${activeOrders.length} active`
                     : tab === TABS.HISTORY
                       ? `${historyOrders.length} past delivery${historyOrders.length !== 1 ? "s" : ""}`
                       : step === STEPS.MENU
@@ -463,6 +507,39 @@ export default function RiderPortalPage() {
           {/* ══════ ACTIVE TAB ══════ */}
           {tab === TABS.ACTIVE && (
             <div className="p-4 pb-24">
+              {/* Filter pills */}
+              <div className="flex gap-2 mb-4 overflow-x-auto rider-no-scrollbar">
+                {[
+                  { key: "all", label: "All", count: activeOrders.length },
+                  { key: "new", label: "New", count: newOrders.length },
+                  { key: "preparing", label: "Preparing", count: preparingOrders.length },
+                  { key: "ready", label: "Ready", count: readyOrders.length },
+                  { key: "out", label: "Out", count: outForDeliveryOrders.length },
+                ].map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setActiveFilter(f.key)}
+                    className={`flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                      activeFilter === f.key
+                        ? "bg-primary text-white shadow-sm shadow-primary/20"
+                        : "bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 shadow-sm"
+                    }`}
+                  >
+                    {f.label}
+                    <span
+                      className={`min-w-[18px] h-[18px] rounded-full text-[10px] font-black flex items-center justify-center px-1 ${
+                        activeFilter === f.key
+                          ? "bg-white/20"
+                          : "bg-gray-100 dark:bg-neutral-800"
+                      }`}
+                    >
+                      {f.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
               {activeOrders.length === 0 ? (
                 <div className="flex flex-col items-center justify-center pt-16 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
@@ -471,10 +548,23 @@ export default function RiderPortalPage() {
                   <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No active deliveries</p>
                   <p className="text-xs text-gray-400 dark:text-neutral-600">Create a new order or wait for assignments</p>
                 </div>
+              ) : filteredActiveOrders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center pt-16 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+                    <ClipboardList className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
+                  </div>
+                  <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No orders in this filter</p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-600">Try another status</p>
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {activeOrders.map((order) => {
-                    const sc = getStatusConfig(order.status);
+                  {filteredActiveOrders.map((order) => {
+                    // Backend may still keep some "preparing" deliveries as NEW_ORDER.
+                    // In the UI we want them to look like order-taker "Processing" cards
+                    // when the user selects the Preparing filter.
+                    const effectiveStatus =
+                      activeFilter === "preparing" && order.status === "NEW_ORDER" ? "PROCESSING" : order.status;
+                    const sc = getStatusConfig(effectiveStatus);
                     const StatusIcon = sc.icon;
                     const orderId = order.id || order._id;
                     return (
@@ -537,7 +627,7 @@ export default function RiderPortalPage() {
                             </span>
                           </div>
 
-                          {order.status === "READY" && (
+                          {order.status === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
                             <button
                               onClick={() => handleCollectOrder(orderId)}
                               disabled={collectingId === orderId}
@@ -547,7 +637,7 @@ export default function RiderPortalPage() {
                               Collect from Kitchen
                             </button>
                           )}
-                          {order.status === "OUT_FOR_DELIVERY" && (
+                          {order.status === "OUT_FOR_DELIVERY" && order.assignedRiderId && riderId && order.assignedRiderId === riderId && (
                             <button
                               onClick={() => handleMarkDelivered(orderId)}
                               disabled={deliveringId === orderId}
@@ -579,6 +669,15 @@ export default function RiderPortalPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                    <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total Revenue (this session)</p>
+                    <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
+                      Rs. {Math.round(historyRevenue).toLocaleString()}
+                    </p>
+                    <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-1">
+                      From delivered orders (cancelled excluded)
+                    </p>
+                  </div>
                   {historyOrders.map((order) => {
                     const sc = getStatusConfig(order.status);
                     const StatusIcon = sc.icon;

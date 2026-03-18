@@ -39,7 +39,7 @@ import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
 
 const STEPS = { TABLE: "table", MENU: "menu", CART: "cart" };
-const TABS = { ORDER: "order", ACTIVE: "active" };
+const TABS = { ORDER: "order", ACTIVE: "active", HISTORY: "history" };
 
 function isBranchRequiredError(msg) {
   return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
@@ -68,7 +68,7 @@ export default function OrderTakerPage() {
   // Active orders state
   const [activeOrders, setActiveOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [activeFilter, setActiveFilter] = useState("new");
   const [showBranchModal, setShowBranchModal] = useState(false);
 
   useEffect(() => {
@@ -104,12 +104,12 @@ export default function OrderTakerPage() {
     load();
   }, [currentBranch]);
 
-  // Fetch active orders (only those created by this user)
+  // Fetch orders created by this user (active + history)
   const fetchActiveOrders = useCallback(async () => {
     try {
-      const data = await getOrders({ mine: true });
+      const data = await getOrders({ mine: true, openSession: true });
       const list = Array.isArray(data) ? data : (data?.orders ?? []);
-      setActiveOrders(list.filter((o) => o.status !== "CANCELLED"));
+      setActiveOrders(list);
     } catch (err) {
       console.error("Failed to load active orders:", err);
     }
@@ -225,22 +225,26 @@ export default function OrderTakerPage() {
     setActiveTab(TABS.ORDER);
   }
 
-  // Active orders derived data
-  const readyOrders = activeOrders.filter((o) => o.status === "READY");
-  const preparingOrders = activeOrders.filter(
-    (o) => o.status === "PROCESSING" || o.status === "NEW_ORDER"
-  );
-  const completedOrders = activeOrders.filter(
-    (o) => o.status === "DELIVERED" || o.status === "COMPLETED"
-  );
+  // Active & history derived data
+  const nonCancelledOrders = activeOrders.filter((o) => o.status !== "CANCELLED");
+  const newOrders = nonCancelledOrders.filter((o) => o.status === "NEW_ORDER");
+  const preparingOrders = nonCancelledOrders.filter((o) => o.status === "PROCESSING");
+  const readyOrders = nonCancelledOrders.filter((o) => o.status === "READY");
+  const historyOrders = activeOrders
+    .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED" || o.status === "CANCELLED")
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const historyRevenue = historyOrders
+    .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
+    .reduce((sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0), 0);
   const filteredActiveOrders =
     activeFilter === "ready"
       ? readyOrders
       : activeFilter === "preparing"
         ? preparingOrders
-        : activeFilter === "completed"
-          ? completedOrders
-          : activeOrders;
+        : activeFilter === "all"
+          ? nonCancelledOrders
+        : newOrders;
 
   function getTimeAgo(createdAt) {
     const diff = Date.now() - new Date(createdAt).getTime();
@@ -431,20 +435,24 @@ export default function OrderTakerPage() {
                 <h1 className="text-[15px] font-extrabold truncate leading-tight tracking-tight">
                   {activeTab === TABS.ACTIVE
                     ? "Active Orders"
-                    : step === STEPS.TABLE
-                      ? "Eats Desk"
-                      : step === STEPS.MENU
-                        ? selectedTable?.name || "Menu"
-                        : "Review Order"}
+                    : activeTab === TABS.HISTORY
+                      ? "Order History"
+                      : step === STEPS.TABLE
+                        ? "Eats Desk"
+                        : step === STEPS.MENU
+                          ? selectedTable?.name || "Menu"
+                          : "Review Order"}
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
                   {activeTab === TABS.ACTIVE
-                    ? `${readyOrders.length} ready · ${preparingOrders.length} preparing`
-                    : step === STEPS.TABLE
-                      ? userName || "Order Taker"
-                      : step === STEPS.MENU
-                        ? `${filteredItems.length} item${filteredItems.length !== 1 ? "s" : ""} available`
-                        : `${selectedTable?.name || "Walk-in"} · ${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
+                    ? `${newOrders.length} new · ${preparingOrders.length} preparing · ${readyOrders.length} ready`
+                    : activeTab === TABS.HISTORY
+                      ? `${historyOrders.length} past order${historyOrders.length !== 1 ? "s" : ""}`
+                      : step === STEPS.TABLE
+                        ? userName || "Order Taker"
+                        : step === STEPS.MENU
+                          ? `${filteredItems.length} item${filteredItems.length !== 1 ? "s" : ""} available`
+                          : `${selectedTable?.name || "Walk-in"} · ${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </div>
@@ -514,16 +522,94 @@ export default function OrderTakerPage() {
 
         {/* ── Content ────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
+          {/* ════════════════ HISTORY TAB ════════════════ */}
+          {activeTab === TABS.HISTORY && (
+            <div className="p-4 pb-24">
+              {historyOrders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center pt-16 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+                    <ClipboardList className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
+                  </div>
+                  <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">
+                    No past orders
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-600">
+                    Completed and cancelled orders will appear here
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                    <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total Revenue (this session)</p>
+                    <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
+                      Rs. {Math.round(historyRevenue).toLocaleString()}
+                    </p>
+                    <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-1">
+                      From completed orders (cancelled excluded)
+                    </p>
+                  </div>
+                  {historyOrders.map((order) => {
+                    const isCancelled = order.status === "CANCELLED";
+                    const sc = getStatusConfig(order.status);
+                    const StatusIcon = sc.icon;
+                    return (
+                      <div
+                        key={order.id || order._id}
+                        className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border border-gray-200 dark:border-neutral-800"
+                      >
+                        <div className={`px-4 py-2 flex items-center justify-between ${isCancelled ? "bg-red-400" : sc.bg}`}>
+                          <div className="flex items-center gap-2">
+                            <StatusIcon className="w-4 h-4 text-white" />
+                            <span className="text-xs font-bold text-white">
+                              {isCancelled ? "Cancelled" : sc.label}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[11px] text-white/70">
+                            <Clock className="w-3 h-3" />
+                            {getTimeAgo(order.createdAt)}
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <span className="text-base font-black text-gray-900 dark:text-white">
+                                #{order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}
+                              </span>
+                              {order.tableName && (
+                                <span className="ml-2 text-xs font-semibold text-gray-400 dark:text-neutral-500">
+                                  {order.tableName}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-sm font-black text-gray-900 dark:text-white">
+                              Rs. {(order.grandTotal ?? order.total)?.toLocaleString()}
+                            </span>
+                          </div>
+                          {order.customerName && (
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
+                              <User className="w-3 h-3" />
+                              {order.customerName}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ════════════════ ACTIVE ORDERS TAB ════════════════ */}
           {activeTab === TABS.ACTIVE && (
             <div className="p-4 pb-24">
               {/* Filter pills */}
               <div className="flex gap-2 mb-4 overflow-x-auto ot-no-scrollbar">
                 {[
-                  { key: "all", label: "All", count: activeOrders.length },
-                  { key: "ready", label: "Ready", count: readyOrders.length },
+                  { key: "all", label: "All", count: nonCancelledOrders.length },
+                  { key: "new", label: "New", count: newOrders.length },
                   { key: "preparing", label: "Preparing", count: preparingOrders.length },
-                  { key: "completed", label: "Completed", count: completedOrders.length },
+                  { key: "ready", label: "Ready", count: readyOrders.length },
                 ].map((f) => (
                   <button
                     key={f.key}
@@ -1090,6 +1176,20 @@ export default function OrderTakerPage() {
               )}
             </div>
             <span className="text-[10px] font-bold">Orders</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab(TABS.HISTORY);
+              fetchActiveOrders();
+            }}
+            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+              activeTab === TABS.HISTORY
+                ? "text-primary"
+                : "text-gray-400 dark:text-neutral-500"
+            }`}
+          >
+            <ClipboardList className="w-5 h-5" />
+            <span className="text-[10px] font-bold">History</span>
           </button>
         </nav>
       </div>

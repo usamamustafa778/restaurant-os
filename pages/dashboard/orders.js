@@ -318,6 +318,7 @@ export default function OrdersPage() {
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [collectTargetOrder, setCollectTargetOrder] = useState(null);
   const [collectLoading, setCollectLoading] = useState(false);
+  const [collectPaymentMethod, setCollectPaymentMethod] = useState("CASH");
 
   const [showEndDayModal, setShowEndDayModal] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
@@ -539,6 +540,7 @@ export default function OrdersPage() {
 
   function openCollectPaymentModal(order) {
     setCollectTargetOrder(order);
+    setCollectPaymentMethod("CASH");
     setShowCollectModal(true);
   }
 
@@ -554,7 +556,7 @@ export default function OrdersPage() {
     const toastId = toast.loading("Collecting payment...");
     try {
       const updated = await collectDeliveryPayment(orderId, {
-        paymentMethod: "CASH",
+        paymentMethod: collectPaymentMethod,
       });
       updateOrderInList(orderId, updated);
       toast.success("Payment collected from rider!", { id: toastId });
@@ -1741,6 +1743,50 @@ export default function OrdersPage() {
                     getOrderTotal(collectTargetOrder),
                   ).toLocaleString()}
                 </p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                  Payment method
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    {
+                      m: "CASH",
+                      Icon: Banknote,
+                      label: "Cash",
+                      active:
+                        "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                    },
+                    {
+                      m: "CARD",
+                      Icon: CreditCard,
+                      label: "Card",
+                      active:
+                        "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
+                    },
+                    {
+                      m: "ONLINE",
+                      Icon: Smartphone,
+                      label: "Online",
+                      active:
+                        "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
+                    },
+                  ].map(({ m, Icon, label, active }) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setCollectPaymentMethod(m)}
+                      className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${
+                        collectPaymentMethod === m
+                          ? active
+                          : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"
+                      }`}
+                    >
+                      <Icon className="w-5 h-5" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
               {collectTargetOrder.assignedRiderName && (
                 <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">

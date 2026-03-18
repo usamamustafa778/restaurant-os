@@ -515,9 +515,15 @@ export default function HistoryPage() {
       if (o.type !== "delivery" || !o.assignedRiderName) continue;
       const name = o.assignedRiderName;
       if (!map[name]) map[name] = { name, deliveries: 0, revenue: 0, cancelled: 0 };
-      map[name].deliveries += 1;
-      if (o.status === "CANCELLED") map[name].cancelled += 1;
-      else map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+      if (o.status === "CANCELLED") {
+        map[name].cancelled += 1;
+        continue;
+      }
+      // Count delivery only once it is actually completed.
+      if (o.status === "DELIVERED" || o.status === "COMPLETED") {
+        map[name].deliveries += 1;
+        map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+      }
     }
     return Object.values(map).sort((a, b) => b.deliveries - a.deliveries);
   }, [dateFilteredOrders]);
