@@ -1053,12 +1053,38 @@ export default function POSPage() {
       });
 
       toast.success("Order placed!", { id: toastId });
+
+      // Build a lightweight "order-like" object for printing the kitchen confirmation popup.
+      // This is necessary because we clear the cart immediately after placing the order.
+      const confirmationTypeLabel =
+        orderType === "DINE_IN"
+          ? tableName
+            ? `Dine In (${tableName})`
+            : "dine-in"
+          : orderType === "TAKEAWAY"
+            ? "takeaway"
+            : "delivery";
+      const confirmationItems = cart.map((it) => {
+        const qty = it.quantity ?? it.qty ?? 1;
+        const unit = it.price ?? it.unitPrice ?? 0;
+        return {
+          name: it.name || "",
+          qty,
+          unitPrice: unit,
+          lineTotal: unit * qty,
+        };
+      });
+
       setOrderConfirmation({
         orderId: result.id || result._id || "",
         orderNumber: result.orderNumber || result.id || "",
         total: result.total,
         orderType,
         customerName: cName,
+        customerPhone: cPhone,
+        deliveryAddress: cAddress,
+        type: confirmationTypeLabel,
+        items: confirmationItems,
         tableName: orderType === "DINE_IN" && tableName ? tableName : "",
       });
       setCart([]);
@@ -1140,6 +1166,8 @@ export default function POSPage() {
       orderNumber: overrides.orderNumber ?? `POS-${Date.now()}`,
       createdAt: overrides.createdAt ?? new Date().toISOString(),
       customerName: customerName.trim() || "Walk-in",
+      customerPhone: customerPhone.trim(),
+      deliveryAddress: customerAddress.trim(),
       type: typeLabel,
       paymentMethod: overrides.paymentMethod ?? "To be paid",
       paymentAmountReceived: overrides.paymentAmountReceived ?? null,
@@ -4174,9 +4202,13 @@ export default function POSPage() {
               <button
                 type="button"
                 onClick={() => {
-                  printBillReceipt(
-                    { orderNumber: orderConfirmation.orderNumber, id: orderConfirmation.orderNumber, total: orderConfirmation.total, items: [] },
-                    { mode: "bill", logoUrl: restaurantLogoUrl, branchAddress: currentBranch?.address || "", logoHeightPx: restaurantLogoHeight, footerMessage: restaurantBillFooter }
+                  openPrintBill(
+                    {
+                      ...orderConfirmation,
+                      // Ensure we always have an items array for the template.
+                      items: orderConfirmation.items || [],
+                    },
+                    "bill",
                   );
                 }}
                 className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex items-center justify-center gap-1.5"

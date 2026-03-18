@@ -333,6 +333,8 @@ export default function HistoryPage() {
   const [ordersPaidFilter, setOrdersPaidFilter] = useState(FILTER_ALL);
   const [ordersRiderFilter, setOrdersRiderFilter] = useState(FILTER_ALL);
   const [ordersWaiterFilter, setOrdersWaiterFilter] = useState(FILTER_ALL);
+  const [ordersCashierFilter, setOrdersCashierFilter] = useState(FILTER_ALL);
+  const [ordersAdminFilter, setOrdersAdminFilter] = useState(FILTER_ALL);
   const [ordersSearch, setOrdersSearch] = useState("");
   const [ordersPage, setOrdersPage] = useState(0);
   const [itemsDropdownId, setItemsDropdownId] = useState(null);
@@ -456,17 +458,21 @@ export default function HistoryPage() {
     setOrdersPaidFilter(FILTER_ALL);
     setOrdersRiderFilter(FILTER_ALL);
     setOrdersWaiterFilter(FILTER_ALL);
+    setOrdersCashierFilter(FILTER_ALL);
+    setOrdersAdminFilter(FILTER_ALL);
     setOrdersSearch("");
     setOrdersPage(0);
   }
 
-  function goToOrders({ type, payment, search, rider, waiter } = {}) {
+  function goToOrders({ type, payment, search, rider, waiter, cashier, admin } = {}) {
     resetFilters();
     if (type) setOrdersTypeFilter(type);
     if (payment) setOrdersPaymentFilter(payment);
     if (search) setOrdersSearch(search);
     if (rider) { setOrdersTypeFilter(TYPE_FILTERS.DELIVERY); setOrdersRiderFilter(rider); }
     if (waiter) setOrdersWaiterFilter(waiter);
+    if (cashier) setOrdersCashierFilter(cashier);
+    if (admin) setOrdersAdminFilter(admin);
     setActiveTab("orders");
   }
 
@@ -532,11 +538,71 @@ export default function HistoryPage() {
     const map = {};
     for (const o of dateFilteredOrders) {
       const name = o.orderTakerName;
-      if (!name || o.createdByRole === "delivery_rider") continue;
+      if (!name || o.createdByRole !== "order_taker") continue;
+      // Prevent overlap with Riders Overview:
+      // Order taker overview should focus on non-delivery orders only.
+      if (o.type === "delivery") continue;
       if (!map[name]) map[name] = { name, orders: 0, revenue: 0, cancelled: 0 };
-      map[name].orders += 1;
-      if (o.status === "CANCELLED") map[name].cancelled += 1;
-      else map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+
+      if (o.status === "CANCELLED") {
+        map[name].cancelled += 1;
+        continue;
+      }
+
+      // Count revenue/orders only once the order is actually closed.
+      if (o.status === "DELIVERED" || o.status === "COMPLETED") {
+        map[name].orders += 1;
+        map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+      }
+    }
+    return Object.values(map).sort((a, b) => b.orders - a.orders);
+  }, [dateFilteredOrders]);
+
+  const cashierStats = useMemo(() => {
+    const map = {};
+    for (const o of dateFilteredOrders) {
+      const name = o.orderTakerName;
+      if (!name || o.createdByRole !== "cashier") continue;
+      // Prevent overlap with Riders Overview:
+      // Cashier overview should focus on non-delivery orders only.
+      if (o.type === "delivery") continue;
+      if (!map[name]) map[name] = { name, orders: 0, revenue: 0, cancelled: 0 };
+
+      if (o.status === "CANCELLED") {
+        map[name].cancelled += 1;
+        continue;
+      }
+
+      // Count revenue/orders only once the order is actually closed.
+      if (o.status === "DELIVERED" || o.status === "COMPLETED") {
+        map[name].orders += 1;
+        map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+      }
+    }
+    return Object.values(map).sort((a, b) => b.orders - a.orders);
+  }, [dateFilteredOrders]);
+
+  const adminStats = useMemo(() => {
+    const map = {};
+    for (const o of dateFilteredOrders) {
+      const name = o.orderTakerName;
+      const isAdminCreator = ["restaurant_admin", "admin", "super_admin"].includes(o.createdByRole);
+      if (!name || !isAdminCreator) continue;
+      // Prevent overlap with Riders Overview:
+      // Admin overview should focus on non-delivery orders only.
+      if (o.type === "delivery") continue;
+      if (!map[name]) map[name] = { name, orders: 0, revenue: 0, cancelled: 0 };
+
+      if (o.status === "CANCELLED") {
+        map[name].cancelled += 1;
+        continue;
+      }
+
+      // Count revenue/orders only once the order is actually closed.
+      if (o.status === "DELIVERED" || o.status === "COMPLETED") {
+        map[name].orders += 1;
+        map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+      }
     }
     return Object.values(map).sort((a, b) => b.orders - a.orders);
   }, [dateFilteredOrders]);
@@ -709,10 +775,10 @@ export default function HistoryPage() {
           </Section>
         )}
 
-        {/* Waiters Overview */}
+        {/* Order Takers Overview */}
         {waiterStats.length > 0 && (
-          <Section title="Waiters Overview" subtitle="Order taker performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/25"
-            badge={`${waiterStats.length} waiter${waiterStats.length !== 1 ? "s" : ""} · ${waiterStats.reduce((s, w) => s + w.orders, 0)} orders`}
+          <Section title="Order Takers Overview" subtitle="Order taker performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/25"
+            badge={`${waiterStats.length} order taker${waiterStats.length !== 1 ? "s" : ""} · ${waiterStats.reduce((s, w) => s + w.orders, 0)} orders`}
             badgeValue={fmtRs(waiterStats.reduce((s, w) => s + w.revenue, 0))}>
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
               {waiterStats.map((waiter, idx) => {
@@ -743,6 +809,101 @@ export default function HistoryPage() {
                         </div>
                         <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
                           <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-purple-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
+        {/* Cashiers Overview */}
+        {cashierStats.length > 0 && (
+          <Section title="Cashiers Overview" subtitle="Cashier performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
+            badge={`${cashierStats.length} cashier${cashierStats.length !== 1 ? "s" : ""} · ${cashierStats.reduce((s, c) => s + c.orders, 0)} orders`}
+            badgeValue={fmtRs(cashierStats.reduce((s, c) => s + c.revenue, 0))}>
+            <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+              {cashierStats.map((cashier) => {
+                const topOrders = cashierStats[0]?.orders || 1;
+                const barPct = Math.round((cashier.orders / topOrders) * 100);
+                return (
+                  <button key={cashier.name} type="button"
+                    onClick={() => goToOrders({ cashier: cashier.name })}
+                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer">
+                    <div className="flex items-center gap-4">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-amber-700 dark:text-amber-300">{cashier.name.charAt(0).toUpperCase()}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">{cashier.name}</span>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
+                              <Headset className="w-3 h-3" />{cashier.orders} orders
+                            </span>
+                            {cashier.cancelled > 0 && (
+                              <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
+                                {cashier.cancelled} cancelled
+                              </span>
+                            )}
+                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(cashier.revenue)}</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
+        {/* Admins Overview */}
+        {adminStats.length > 0 && (
+          <Section title="Admins Overview" subtitle="Admin performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-red-500 to-rose-600 shadow-rose-500/25"
+            badge={`${adminStats.length} admin${adminStats.length !== 1 ? "s" : ""} · ${adminStats.reduce((s, a) => s + a.orders, 0)} orders`}
+            badgeValue={fmtRs(adminStats.reduce((s, a) => s + a.revenue, 0))}>
+            <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+              {adminStats.map((admin) => {
+                const topOrders = adminStats[0]?.orders || 1;
+                const barPct = Math.round((admin.orders / topOrders) * 100);
+                return (
+                  <button
+                    key={admin.name}
+                    type="button"
+                    onClick={() => goToOrders({ admin: admin.name })}
+                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-rose-500/10 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-red-700 dark:text-rose-300">
+                          {admin.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                            {admin.name}
+                          </span>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-rose-300 bg-red-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
+                              <Headset className="w-3 h-3" />{admin.orders} orders
+                            </span>
+                            {admin.cancelled > 0 && (
+                              <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
+                                {admin.cancelled} cancelled
+                              </span>
+                            )}
+                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(admin.revenue)}</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-red-400 to-rose-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
                         </div>
                       </div>
                     </div>
@@ -788,7 +949,20 @@ export default function HistoryPage() {
     }
 
     if (ordersWaiterFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => (o.orderTakerName || "") === ordersWaiterFilter && o.createdByRole !== "delivery_rider");
+      filtered = filtered.filter(o => (o.orderTakerName || "") === ordersWaiterFilter && o.createdByRole === "order_taker");
+    }
+
+    if (ordersCashierFilter !== FILTER_ALL) {
+      filtered = filtered.filter(o => (o.orderTakerName || "") === ordersCashierFilter && o.createdByRole === "cashier");
+    }
+
+    // Admins who create orders: restaurant_admin/admin/super_admin
+    if (ordersAdminFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        o =>
+          (o.orderTakerName || "") === ordersAdminFilter &&
+          ["restaurant_admin", "admin", "super_admin"].includes(o.createdByRole),
+      );
     }
 
     const availableRiders = [...new Set(
@@ -799,7 +973,23 @@ export default function HistoryPage() {
 
     const availableWaiters = [...new Set(
       dateFiltered
-        .filter(o => o.orderTakerName && o.createdByRole !== "delivery_rider")
+        .filter(o => o.orderTakerName && o.createdByRole === "order_taker")
+        .map(o => o.orderTakerName)
+    )].sort();
+
+    const availableCashiers = [...new Set(
+      dateFiltered
+        .filter(o => o.orderTakerName && o.createdByRole === "cashier")
+        .map(o => o.orderTakerName)
+    )].sort();
+
+    const availableAdmins = [...new Set(
+      dateFiltered
+        .filter(
+          o =>
+            o.orderTakerName &&
+            ["restaurant_admin", "admin", "super_admin"].includes(o.createdByRole),
+        )
         .map(o => o.orderTakerName)
     )].sort();
 
@@ -815,7 +1005,17 @@ export default function HistoryPage() {
       );
     }
 
-    const hasActiveFilters = ordersStatusFilter !== FILTER_ALL || ordersTypeFilter !== FILTER_ALL || ordersPaymentFilter !== FILTER_ALL || ordersSourceFilter !== FILTER_ALL || ordersPaidFilter !== FILTER_ALL || ordersRiderFilter !== FILTER_ALL || ordersWaiterFilter !== FILTER_ALL || ordersSearch.trim();
+    const hasActiveFilters =
+      ordersStatusFilter !== FILTER_ALL ||
+      ordersTypeFilter !== FILTER_ALL ||
+      ordersPaymentFilter !== FILTER_ALL ||
+      ordersSourceFilter !== FILTER_ALL ||
+      ordersPaidFilter !== FILTER_ALL ||
+      ordersRiderFilter !== FILTER_ALL ||
+      ordersWaiterFilter !== FILTER_ALL ||
+      ordersCashierFilter !== FILTER_ALL ||
+      ordersAdminFilter !== FILTER_ALL ||
+      ordersSearch.trim();
 
     const totalFiltered = filtered.length;
     const totalPages = Math.ceil(totalFiltered / ordersPerPage);
@@ -898,9 +1098,29 @@ export default function HistoryPage() {
 
           {availableWaiters.length > 0 && (
             <FilterSelect value={ordersWaiterFilter} active={ordersWaiterFilter !== FILTER_ALL}
-              onChange={e => { setOrdersWaiterFilter(e.target.value); setOrdersPage(0); }}>
-              <option value="ALL">All Waiters</option>
+              onChange={e => { setOrdersWaiterFilter(e.target.value); setOrdersCashierFilter(FILTER_ALL); setOrdersPage(0); }}>
+              <option value="ALL">All Order Takers</option>
               {availableWaiters.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </FilterSelect>
+          )}
+
+          {availableCashiers.length > 0 && (
+            <FilterSelect value={ordersCashierFilter} active={ordersCashierFilter !== FILTER_ALL}
+              onChange={e => { setOrdersCashierFilter(e.target.value); setOrdersWaiterFilter(FILTER_ALL); setOrdersPage(0); }}>
+              <option value="ALL">All Cashiers</option>
+              {availableCashiers.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </FilterSelect>
+          )}
+
+          {availableAdmins.length > 0 && (
+            <FilterSelect value={ordersAdminFilter} active={ordersAdminFilter !== FILTER_ALL}
+              onChange={e => { setOrdersAdminFilter(e.target.value); setOrdersWaiterFilter(FILTER_ALL); setOrdersCashierFilter(FILTER_ALL); setOrdersPage(0); }}>
+              <option value="ALL">All Admins</option>
+              {availableAdmins.map(name => (
                 <option key={name} value={name}>{name}</option>
               ))}
             </FilterSelect>

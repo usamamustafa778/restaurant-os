@@ -296,6 +296,9 @@ export default function OrdersPage() {
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState(null);
+  // "record" = Take Payment (customer payment)
+  // "riderCollect" = Collect from rider (deliveryPaymentCollected)
+  const [paymentModalMode, setPaymentModalMode] = useState("record");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [onlineProvider, setOnlineProvider] = useState(null);
   const [paymentAccounts, setPaymentAccounts] = useState([]);
@@ -314,11 +317,6 @@ export default function OrdersPage() {
   const [selectedRiderId, setSelectedRiderId] = useState("");
   const [deliveryCharges, setDeliveryCharges] = useState("0");
   const [riderAssigning, setRiderAssigning] = useState(false);
-
-  const [showCollectModal, setShowCollectModal] = useState(false);
-  const [collectTargetOrder, setCollectTargetOrder] = useState(null);
-  const [collectLoading, setCollectLoading] = useState(false);
-  const [collectPaymentMethod, setCollectPaymentMethod] = useState("CASH");
 
   const [showEndDayModal, setShowEndDayModal] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
@@ -477,6 +475,7 @@ export default function OrdersPage() {
   }
 
   function openPaymentModal(order) {
+    setPaymentModalMode("record");
     setPaymentOrder(order);
     setPaymentMethod("CASH");
     setOnlineProvider(null);
@@ -539,32 +538,33 @@ export default function OrdersPage() {
   }
 
   function openCollectPaymentModal(order) {
-    setCollectTargetOrder(order);
-    setCollectPaymentMethod("CASH");
-    setShowCollectModal(true);
+    setPaymentModalMode("riderCollect");
+    setPaymentOrder(order);
+    setPaymentMethod("CASH");
+    setOnlineProvider(null);
+    setAmountReceived("");
+    setPaymentError("");
+    setShowPaymentModal(true);
   }
 
-  function closeCollectPaymentModal() {
-    setShowCollectModal(false);
-    setCollectTargetOrder(null);
-  }
-
-  async function handleCollectPayment() {
-    if (!collectTargetOrder) return;
-    const orderId = getOrderId(collectTargetOrder);
-    setCollectLoading(true);
+  async function handleCollectPayment(e) {
+    if (e?.preventDefault) e.preventDefault();
+    if (!paymentOrder) return;
+    const orderId = getOrderId(paymentOrder);
+    setPaymentLoading(true);
+    setPaymentError("");
     const toastId = toast.loading("Collecting payment...");
     try {
-      const updated = await collectDeliveryPayment(orderId, {
-        paymentMethod: collectPaymentMethod,
-      });
+      const payload = { paymentMethod };
+      if (paymentMethod === "ONLINE") payload.paymentProvider = onlineProvider;
+      const updated = await collectDeliveryPayment(orderId, payload);
       updateOrderInList(orderId, updated);
       toast.success("Payment collected from rider!", { id: toastId });
-      closeCollectPaymentModal();
+      closePaymentModal();
     } catch (err) {
       toast.error(err.message || "Failed to collect payment", { id: toastId });
     } finally {
-      setCollectLoading(false);
+      setPaymentLoading(false);
     }
   }
 
@@ -1239,7 +1239,9 @@ export default function OrdersPage() {
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Take Payment
+                    {paymentModalMode === "riderCollect"
+                      ? "Collect Payment"
+                      : "Take Payment"}
                   </h2>
                   <p className="text-[11px] text-gray-400 dark:text-neutral-500">
                     Order #{getDisplayOrderId(paymentOrder)}
@@ -1257,7 +1259,9 @@ export default function OrdersPage() {
             <div className="px-5 pt-5">
               <div className="text-center py-4 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
                 <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">
-                  Bill Total
+                  {paymentModalMode === "riderCollect"
+                    ? "Amount to Collect"
+                    : "Bill Total"}
                 </p>
                 <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
                   Rs {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
@@ -1270,7 +1274,7 @@ export default function OrdersPage() {
               </div>
             </div>
             <form
-              onSubmit={handleRecordPayment}
+              onSubmit={paymentModalMode === "riderCollect" ? handleCollectPayment : handleRecordPayment}
               className="px-5 pt-4 pb-5 space-y-4"
             >
               {paymentError && (
@@ -1374,7 +1378,7 @@ export default function OrdersPage() {
                   )}
                 </div>
               )}
-              {paymentMethod === "CASH" &&
+              {paymentMethod === "CASH" && paymentModalMode === "record" &&
                 (() => {
                   const orderTotal = getOrderTotal(paymentOrder);
                   const exactAmt = Math.ceil(orderTotal);
@@ -1457,6 +1461,33 @@ export default function OrdersPage() {
                     </>
                   );
                 })()}
+              {paymentModalMode === "riderCollect" && (
+                <div className="space-y-3">
+                  {paymentOrder?.assignedRiderName && (
+                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
+                      <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <div>
+                        <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
+                          {paymentOrder.assignedRiderName}
+                        </p>
+                        {paymentOrder?.assignedRiderPhone && (
+                          <p className="text-[10px] text-indigo-500 dark:text-indigo-500">
+                            {paymentOrder.assignedRiderPhone}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 dark:text-neutral-400">
+                    Confirm that the rider has submitted{" "}
+                    <span className="font-semibold">
+                      Rs{" "}
+                      {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
+                    </span>{" "}
+                    for this delivery order.
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
@@ -1469,12 +1500,21 @@ export default function OrdersPage() {
                   type="submit"
                   disabled={
                     paymentLoading ||
-                    (paymentMethod === "CASH" &&
-                      (amountReceived === "" ||
-                        Number(amountReceived) < getOrderTotal(paymentOrder))) ||
-                    (paymentMethod === "ONLINE" && !onlineProvider)
+                    (paymentModalMode === "record"
+                      ? ((paymentMethod === "CASH" &&
+                          (amountReceived === "" ||
+                            Number(amountReceived) <
+                              getOrderTotal(paymentOrder))) ||
+                          (paymentMethod === "ONLINE" && !onlineProvider))
+                      : paymentModalMode === "riderCollect"
+                        ? paymentMethod === "ONLINE" && !onlineProvider
+                        : false)
                   }
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 transition-colors ${
+                    paymentModalMode === "riderCollect"
+                      ? "bg-amber-500 hover:bg-amber-600"
+                      : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
                 >
                   {paymentLoading ? (
                     <>
@@ -1482,7 +1522,8 @@ export default function OrdersPage() {
                     </>
                   ) : (
                     <>
-                      <CircleCheckBig className="w-4 h-4" /> Record Payment
+                      <CircleCheckBig className="w-4 h-4" />{" "}
+                     Record Payment
                     </>
                   )}
                 </button>
@@ -1706,139 +1747,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* ── Collect Payment modal (unchanged) ───────────────────────── */}
-      {showCollectModal && collectTargetOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                  <Banknote className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Collect Payment
-                  </h2>
-                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                    Order #{getDisplayOrderId(collectTargetOrder)}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeCollectPaymentModal}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-4">
-              <div className="text-center py-4 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">
-                  Amount to Collect
-                </p>
-                <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
-                  Rs{" "}
-                  {Math.round(
-                    getOrderTotal(collectTargetOrder),
-                  ).toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                  Payment method
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    {
-                      m: "CASH",
-                      Icon: Banknote,
-                      label: "Cash",
-                      active:
-                        "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-                    },
-                    {
-                      m: "CARD",
-                      Icon: CreditCard,
-                      label: "Card",
-                      active:
-                        "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
-                    },
-                    {
-                      m: "ONLINE",
-                      Icon: Smartphone,
-                      label: "Online",
-                      active:
-                        "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
-                    },
-                  ].map(({ m, Icon, label, active }) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setCollectPaymentMethod(m)}
-                      className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${
-                        collectPaymentMethod === m
-                          ? active
-                          : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {collectTargetOrder.assignedRiderName && (
-                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
-                  <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <div>
-                    <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
-                      {collectTargetOrder.assignedRiderName}
-                    </p>
-                    {collectTargetOrder.assignedRiderPhone && (
-                      <p className="text-[10px] text-indigo-500 dark:text-indigo-500">
-                        {collectTargetOrder.assignedRiderPhone}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-              <p className="text-xs text-gray-500 dark:text-neutral-400">
-                Confirm that the rider has submitted{" "}
-                <span className="font-semibold">
-                  Rs {Math.round(getOrderTotal(collectTargetOrder)).toLocaleString()}
-                </span>{" "}
-                for this delivery order.
-              </p>
-            </div>
-            <div className="flex gap-2 px-5 pb-5">
-              <button
-                type="button"
-                onClick={closeCollectPaymentModal}
-                className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={collectLoading}
-                onClick={handleCollectPayment}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-50 transition-colors"
-              >
-                {collectLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Processing...
-                  </>
-                ) : (
-                  <>
-                    <CircleCheckBig className="w-4 h-4" /> Payment Collected
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* ── Past Sessions modal ──────────────────────────────────── */}
       {showSessionHistoryModal && (
         <div

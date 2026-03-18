@@ -44,12 +44,17 @@ function buildEscPos(o) {
   ln(pad("Order Time:", o.createdAt || ""));
   ln(pad("Order Type:", o.type || "dine-in"));
   ln(pad("Payment:", o.paymentMethod || "To be paid"));
-  ln(pad("Customer:", o.customerName || "N/A"));
+  if (o.customerName) ln(pad("Customer:", o.customerName));
   if (o.deliveryAddress && o.deliveryAddress !== "-")
     ln(pad("Address:", o.deliveryAddress));
-  if (o.tableName && o.tableName !== "-")
+  if (
+    (o.type || "").toLowerCase() === "dine-in" &&
+    o.tableName &&
+    o.tableName !== "-"
+  ) {
     ln(pad("Table No:", o.tableName));
-  if (o.waiter && o.waiter !== "N/A") ln(pad("Waiter:", o.waiter));
+  }
+  if (o.waiter && o.waiter !== "N/A") ln(pad("Order Taker:", o.waiter));
 
   if (o.amountReceived) {
     ln(pad("Received:", "Rs " + Number(o.amountReceived).toFixed(2)));
