@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { getSalesReport, getOrders, getDaySessions, SubscriptionInactiveError } from "../../lib/apiClient";
+import { getSalesReport, getOrders, getDaySessions, getDaySessionOrders, SubscriptionInactiveError } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import {
   BarChart3, DollarSign, ShoppingBag, TrendingUp,
   HelpCircle, Loader2, Award, FileDown, Printer,
   ClipboardList, Search, ChevronLeft, ChevronRight,
   ChevronDown, Download, FileText, Calendar, Bike, Headset,
+  CalendarDays, RefreshCw, X, Banknote, CreditCard, Package, Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -21,8 +22,9 @@ const PRESETS = [
 ];
 
 const TABS = [
-  { id: "overview",     label: "Overview",      icon: BarChart3 },
-  { id: "orders",       label: "Orders List",   icon: ClipboardList },
+  { id: "overview",  label: "Overview",      icon: BarChart3 },
+  { id: "orders",    label: "Orders List",   icon: ClipboardList },
+  { id: "sessions",  label: "Sessions",      icon: CalendarDays },
 ];
 
 const FILTER_ALL = "ALL";
@@ -181,6 +183,13 @@ function buildPeriodLabel(preset, customFrom, customTo) {
 
 function fmtRs(v) { return `Rs ${Math.round(Number(v) || 0).toLocaleString()}`; }
 function fmtDate(d) { return new Date(d).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }); }
+function fmtDuration(start, end) {
+  if (!start || !end) return null;
+  const ms = new Date(end) - new Date(start);
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 function fmtShortDate(d) { return new Date(d).toLocaleDateString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }); }
 function fmtTime(d) { return d ? new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"; }
 function getStatusTime(order, status) {
@@ -305,6 +314,16 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState([]);
 
+  // Sessions tab state
+  const [sessionsList, setSessionsList] = useState([]);
+  const [sessionsTotal, setSessionsTotal] = useState(0);
+  const [sessionsPage, setSessionsPage] = useState(0);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [sessionDetail, setSessionDetail] = useState(null);
+  const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+  const SESSIONS_PER_PAGE = 20;
+
   // Orders tab state
   const [allOrders, setAllOrders] = useState([]);
   const [ordersStatusFilter, setOrdersStatusFilter] = useState(FILTER_ALL);
@@ -397,6 +416,36 @@ export default function HistoryPage() {
     const to = customTo ? new Date(customTo + "T23:59:59.999").toISOString() : "";
     loadReport({ from, to });
     loadOrders({ from, to });
+  }
+
+  async function loadSessions(pageNum = 0) {
+    setSessionsLoading(true);
+    try {
+      const res = await getDaySessions(currentBranch?.id, {
+        limit: SESSIONS_PER_PAGE,
+        offset: pageNum * SESSIONS_PER_PAGE,
+      });
+      setSessionsList(Array.isArray(res?.sessions) ? res.sessions : []);
+      setSessionsTotal(res?.total || 0);
+    } catch {
+      toast.error("Failed to load sessions");
+    } finally {
+      setSessionsLoading(false);
+    }
+  }
+
+  async function openSessionDetail(session) {
+    setSelectedSession(session);
+    setSessionDetail(null);
+    setSessionDetailLoading(true);
+    try {
+      const res = await getDaySessionOrders(session.id);
+      setSessionDetail(res);
+    } catch {
+      toast.error("Failed to load session orders");
+    } finally {
+      setSessionDetailLoading(false);
+    }
   }
 
   function resetFilters() {
@@ -1044,10 +1093,305 @@ export default function HistoryPage() {
     );
   }
 
+  function renderSessions() {
+    const sessionPages = Math.ceil(sessionsTotal / SESSIONS_PER_PAGE);
+    const summary = sessionDetail?.summary || {};
+    const sessionOrders = Array.isArray(sessionDetail?.orders)
+      ? [...sessionDetail.orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      : [];
+
+    // Order type breakdown from detail orders
+    const typeBreakdown = sessionOrders.reduce((map, o) => {
+      const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
+      if (!map[t]) map[t] = { count: 0, revenue: 0 };
+      map[t].count += 1;
+      map[t].revenue += o.total || 0;
+      return map;
+    }, {});
+
+    return (
+      <div className="space-y-4">
+        {/* Sessions table */}
+        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-md">
+                <CalendarDays className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Business Day Sessions</h2>
+                {currentBranch && <p className="text-[11px] text-gray-400 dark:text-neutral-500">{currentBranch.name}</p>}
+              </div>
+            </div>
+            <button type="button" onClick={() => loadSessions(sessionsPage)}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors" title="Refresh">
+              <RefreshCw className={`w-4 h-4 ${sessionsLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+
+          {sessionsLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            </div>
+          ) : sessionsList.length === 0 ? (
+            <div className="text-center py-16 text-sm text-gray-400 dark:text-neutral-600">No sessions found</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50 dark:bg-neutral-900/70 border-b border-gray-200 dark:border-neutral-800">
+                    <tr>
+                      {["Status","Start","End","Duration","Branch","Opened By","Closed By","Orders","Revenue",""].map(h => (
+                        <th key={h} className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide ${h === "Revenue" || h === "Orders" ? "text-right" : ""}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    {sessionsList.map((s) => (
+                      <tr key={s.id}
+                        className="hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer group"
+                        onClick={() => openSessionDetail(s)}>
+                        <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                            s.status === "OPEN"
+                              ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                              : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
+                            {s.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                            {s.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">{fmtDate(s.startAt)}</td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
+                          {s.endAt ? fmtDate(s.endAt) : <span className="text-emerald-500 font-medium text-xs">Ongoing</span>}
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-500 dark:text-neutral-400 whitespace-nowrap">
+                          {fmtDuration(s.startAt, s.endAt) || "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
+                          {s.branchName ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">{s.branchName}</span>
+                          ) : "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">{s.openedBy?.name || "—"}</td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">{s.closedBy?.name || "—"}</td>
+                        <td className="py-2.5 px-3 text-[12px] text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{(s.totalOrders || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-3 text-[12px] text-right font-bold text-gray-900 dark:text-white whitespace-nowrap">{fmtRs(s.totalSales)}</td>
+                        <td className="py-2.5 px-3"><ChevronRight className="w-4 h-4 text-gray-300 dark:text-neutral-600 group-hover:text-primary transition-colors" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {sessionPages > 1 && (
+                <div className="flex items-center justify-center gap-3 px-5 py-4 border-t border-gray-100 dark:border-neutral-800">
+                  <button type="button" disabled={sessionsPage === 0}
+                    onClick={() => { const p = sessionsPage - 1; setSessionsPage(p); loadSessions(p); }}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 disabled:opacity-40 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
+                    Previous
+                  </button>
+                  <span className="text-xs text-gray-500 dark:text-neutral-400">Page {sessionsPage + 1} of {sessionPages} · {sessionsTotal} total</span>
+                  <button type="button" disabled={sessionsPage >= sessionPages - 1}
+                    onClick={() => { const p = sessionsPage + 1; setSessionsPage(p); loadSessions(p); }}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 disabled:opacity-40 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Session detail slide-over */}
+        {selectedSession && (
+          <div className="fixed inset-0 z-50 flex items-stretch">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSelectedSession(null)} />
+            <div className="relative ml-auto w-full max-w-4xl bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800 flex-shrink-0">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white">Session Report</h2>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                      selectedSession.status === "OPEN"
+                        ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
+                      {selectedSession.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                      {selectedSession.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                    {fmtDate(selectedSession.startAt)}
+                    {selectedSession.endAt ? ` → ${fmtDate(selectedSession.endAt)}` : " · Ongoing"}
+                    {fmtDuration(selectedSession.startAt, selectedSession.endAt) && ` · ${fmtDuration(selectedSession.startAt, selectedSession.endAt)}`}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setSelectedSession(null)}
+                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {sessionDetailLoading ? (
+                  <div className="flex items-center justify-center py-24">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <>
+                    {/* KPI row */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                      <KpiCard icon={TrendingUp} gradient="from-primary to-secondary" shadow="shadow-primary/20" label="Total Revenue" value={fmtRs(summary.totalSales)} />
+                      <KpiCard icon={ShoppingBag} gradient="from-blue-500 to-blue-600" shadow="shadow-blue-500/20" label="Orders" value={(summary.totalOrders || sessionOrders.length).toString()} />
+                      <KpiCard icon={Banknote} gradient="from-emerald-500 to-emerald-600" shadow="shadow-emerald-500/20" label="Cash" value={fmtRs(summary.cashSales)} />
+                      <KpiCard icon={CreditCard} gradient="from-violet-500 to-violet-600" shadow="shadow-violet-500/20" label="Card" value={fmtRs(summary.cardSales)} />
+                      <KpiCard icon={Package} gradient="from-amber-500 to-orange-500" shadow="shadow-amber-500/20" label="Discount" value={fmtRs(summary.totalDiscount)} />
+                    </div>
+
+                    {/* Session meta */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: "Opened By", value: selectedSession.openedBy?.name || "—" },
+                        { label: "Closed By", value: selectedSession.closedBy?.name || (selectedSession.status === "OPEN" ? "Ongoing" : "—") },
+                        { label: "Branch", value: selectedSession.branchName || "—" },
+                        { label: "Duration", value: fmtDuration(selectedSession.startAt, selectedSession.endAt) || "—" },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3">
+                          <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-1">{label}</p>
+                          <p className="text-sm font-semibold text-gray-800 dark:text-neutral-200">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Order type breakdown */}
+                    {Object.keys(typeBreakdown).length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Order Type Breakdown</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {Object.entries(typeBreakdown).map(([type, d]) => (
+                            <div key={type} className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3 border border-gray-200 dark:border-neutral-800">
+                              <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 capitalize mb-1">{type.replace(/-/g, " ")}</p>
+                              <p className="text-base font-bold text-gray-900 dark:text-white">{fmtRs(d.revenue)}</p>
+                              <p className="text-[11px] text-gray-400 dark:text-neutral-500">{d.count} order{d.count !== 1 ? "s" : ""}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Orders table */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">Orders ({sessionOrders.length})</h3>
+                        <button type="button"
+                          onClick={() => {
+                            const rows = [
+                              ["Order #","Time","Type","Status","Customer","Staff","Total","Payment"].join(","),
+                              ...sessionOrders.map(o => [
+                                o.orderNumber || o.id,
+                                new Date(o.createdAt).toLocaleTimeString("en-PK",{hour:"2-digit",minute:"2-digit",hour12:true}),
+                                o.orderType || "",
+                                o.status || "",
+                                o.customerName || "",
+                                o.riderName || o.waiterName || o.orderTakerName || "",
+                                o.total || 0,
+                                o.isPaid ? (o.paymentMethod || "") : "Unpaid",
+                              ].join(","))
+                            ].join("\n");
+                            const b = new Blob([rows],{type:"text/csv"});
+                            const a = document.createElement("a"); a.href = URL.createObjectURL(b);
+                            a.download = `session-${selectedSession.id.slice(-6)}-orders.csv`; a.click();
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
+                          <Download className="w-3.5 h-3.5" />Export CSV
+                        </button>
+                      </div>
+                      {sessionOrders.length === 0 ? (
+                        <div className="text-center py-10 text-sm text-gray-400 dark:text-neutral-600">No orders in this session</div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-neutral-800">
+                          <table className="min-w-full">
+                            <thead className="bg-gray-50 dark:bg-neutral-900/70 border-b border-gray-200 dark:border-neutral-800">
+                              <tr>
+                                {["Order #","Time","Type","Status","Customer","Staff","Items","Total","Payment"].map(h => (
+                                  <th key={h} className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide ${h === "Total" ? "text-right" : ""}`}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
+                              {sessionOrders.map((o) => {
+                                const items = o.items || [];
+                                const itemCount = items.reduce((s, i) => s + (i.qty || 1), 0);
+                                const staff = o.riderName ? `Rider: ${o.riderName}` : o.waiterName ? `Waiter: ${o.waiterName}` : o.orderTakerName ? `Taker: ${o.orderTakerName}` : "—";
+                                return (
+                                  <tr key={o.id} className="hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors">
+                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap font-bold text-gray-900 dark:text-white">#{o.orderNumber || o.id?.slice(-4)}</td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
+                                      {o.createdAt ? new Date(o.createdAt).toLocaleTimeString("en-PK",{hour:"2-digit",minute:"2-digit",hour12:true}) : "—"}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap capitalize">{(o.orderType||"").replace(/_/g," ").toLowerCase()}</td>
+                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                        STATUS_COLORS[o.status] || "bg-gray-100 text-gray-500"}`}>
+                                        {STATUS_LABELS[o.status] || o.status}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">{o.customerName || "—"}</td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">{staff}</td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
+                                      {itemCount > 0 ? (
+                                        <button type="button"
+                                          onClick={(e) => { e.stopPropagation(); setItemsDropdownId(itemsDropdownId === o.id ? null : o.id); }}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
+                                          {itemCount} item{itemCount !== 1 ? "s" : ""}
+                                          <ChevronDown className={`w-3 h-3 transition-transform ${itemsDropdownId === o.id ? "rotate-180" : ""}`} />
+                                        </button>
+                                      ) : "—"}
+                                      {itemsDropdownId === o.id && (
+                                        <div className="absolute mt-1 z-10 min-w-[180px] bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl p-2 space-y-1">
+                                          {items.map((it, idx) => (
+                                            <div key={idx} className="flex items-center justify-between gap-3 text-[11px]">
+                                              <span className="text-gray-700 dark:text-neutral-300 truncate">{it.name}</span>
+                                              <span className="font-bold text-gray-500 dark:text-neutral-500 flex-shrink-0">×{it.qty}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-[12px] text-right font-bold text-gray-900 dark:text-white whitespace-nowrap">{fmtRs(o.total)}</td>
+                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
+                                      {o.paymentMethod ? (
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                          o.isPaid
+                                            ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                            : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"}`}>
+                                          {o.isPaid ? o.paymentMethod : "Unpaid"}
+                                        </span>
+                                      ) : "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderActiveTab() {
     switch (activeTab) {
-      case "orders": return renderOrders();
-      default: return renderOverview();
+      case "orders":   return renderOrders();
+      case "sessions": return renderSessions();
+      default:         return renderOverview();
     }
   }
 
@@ -1075,8 +1419,12 @@ export default function HistoryPage() {
                 const isActive = activeTab === tab.id;
                 let badge = null;
                 if (tab.id === "orders") badge = dateFilteredOrdersCount || null;
+                if (tab.id === "sessions") badge = sessionsTotal || null;
                 return (
-                  <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)}
+                  <button key={tab.id} type="button" onClick={() => {
+                    setActiveTab(tab.id);
+                    if (tab.id === "sessions" && sessionsList.length === 0) loadSessions(0);
+                  }}
                     className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                       isActive
                         ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
@@ -1094,8 +1442,8 @@ export default function HistoryPage() {
               })}
             </div>
 
-            {/* Right: Date + Export + Help */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Right: Date + Export + Help (hidden on Sessions tab) */}
+            <div className={`flex items-center gap-2 flex-shrink-0 ${activeTab === "sessions" ? "invisible pointer-events-none" : ""}`}>
               {/* Date dropdown */}
               <div className="relative">
                 <button type="button" onClick={() => { setShowDateDropdown(v => !v); setShowExportDropdown(false); }}
@@ -1197,8 +1545,9 @@ export default function HistoryPage() {
               <h3 className="text-base font-bold text-gray-900 dark:text-white">How date filtering works</h3>
             </div>
             <div className="space-y-3 text-sm text-gray-700 dark:text-neutral-300">
-              <p>All date presets use your <strong>local timezone</strong> so reports match what you see in Overview.</p>
-              <p><strong>Yesterday</strong> covers midnight to 11:59 PM of the previous day.</p>
+              <p>All date presets use your <strong>business day sessions</strong> so reports match your actual session boundaries.</p>
+              <p><strong>Yesterday</strong> covers the most recently closed session (e.g. 5 PM – 4 AM).</p>
+              <p><strong>Today</strong> covers the current open session from its start time to now.</p>
               <p><strong>Custom range</strong>: "From" includes from the start of that day, "To" includes up to the end of that day.</p>
               <p className="text-gray-500 dark:text-neutral-400">Only <strong>delivered</strong> orders count towards revenue. Cancelled orders are tracked separately.</p>
             </div>
