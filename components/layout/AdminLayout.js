@@ -455,10 +455,16 @@ export default function AdminLayout({
       const initials = parts.map((p) => p[0]?.toUpperCase() || "").join("");
       setUserInitials(initials || name[0]?.toUpperCase() || "");
     }
-    // Prefer data from stored auth (set on login); fall back to API fetch for existing sessions
+    // Immediate fallback: format the restaurant slug so something shows right away
+    // e.g. "my-restaurant" → "My Restaurant"
+    const slug = auth?.user?.restaurantSlug || auth?.tenantSlug || "";
+    const slugFallback = slug
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
     const storedName = auth?.user?.restaurantName || "";
     const storedLogo = auth?.user?.restaurantLogoUrl || "";
-    setRestaurantName(storedName);
+    setRestaurantName(storedName || slugFallback);
     setRestaurantLogoUrl(storedLogo);
 
     // Super admin "acting as" tenant: show tenant nav
@@ -466,15 +472,15 @@ export default function AdminLayout({
       setActingAsSlug(auth?.user?.tenantSlug || auth?.tenantSlug || null);
     } else {
       setActingAsSlug(null);
-      // Fetch fresh restaurant info if not already in stored auth
-      if (!storedName) {
-        getRestaurantInfo()
-          .then((info) => {
-            if (info?.name) setRestaurantName(info.name);
-            if (info?.logoUrl) setRestaurantLogoUrl(info.logoUrl);
-          })
-          .catch(() => {});
-      }
+      // Always fetch the real name from the API to get the accurate display name
+      getRestaurantInfo()
+        .then((info) => {
+          if (info?.name) setRestaurantName(info.name);
+          if (info?.logoUrl) setRestaurantLogoUrl(info.logoUrl);
+        })
+        .catch(() => {
+          // Slug fallback already displayed — no action needed
+        });
     }
   }, []);
 
