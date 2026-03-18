@@ -364,6 +364,8 @@ export default function AdminLayout({
   const [actingAsSlug, setActingAsSlug] = useState(null);
   const [userName, setUserName] = useState("");
   const [userInitials, setUserInitials] = useState("");
+  const [restaurantName, setRestaurantName] = useState("");
+  const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -453,6 +455,8 @@ export default function AdminLayout({
       const initials = parts.map((p) => p[0]?.toUpperCase() || "").join("");
       setUserInitials(initials || name[0]?.toUpperCase() || "");
     }
+    setRestaurantName(auth?.user?.restaurantName || "");
+    setRestaurantLogoUrl(auth?.user?.restaurantLogoUrl || "");
     // Super admin "acting as" tenant: show tenant nav
     if (r === "super_admin") {
       setActingAsSlug(auth?.user?.tenantSlug || auth?.tenantSlug || null);
@@ -573,16 +577,25 @@ export default function AdminLayout({
           {/* Logo Section */}
           <div className="px-4 py-3 border-b-2 border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="relative">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary via-primary to-secondary flex items-center justify-center text-white font-bold text-base shadow-lg shadow-primary/30">
-                  ED
-                </div>
+              <div className="relative flex-shrink-0">
+                {restaurantLogoUrl && role !== "super_admin" ? (
+                  <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 shadow-md bg-white dark:bg-neutral-900">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={restaurantLogoUrl} alt="logo" className="h-full w-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary via-primary to-secondary flex items-center justify-center text-white font-bold text-base shadow-lg shadow-primary/30">
+                    {restaurantName && role !== "super_admin"
+                      ? restaurantName.slice(0, 2).toUpperCase()
+                      : "ED"}
+                  </div>
+                )}
                 <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white dark:border-neutral-950"></div>
               </div>
               {(!collapsed || mobileSidebarOpen) && (
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-lg tracking-tight text-gray-900 dark:text-white truncate">
-                    Eats Desk
+                    {restaurantName && role !== "super_admin" ? restaurantName : "Eats Desk"}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-neutral-400 truncate font-medium">
                     {role === "super_admin" && !actingAsSlug
@@ -907,12 +920,21 @@ export default function AdminLayout({
               )}
               {!backHref && !(role === "super_admin" && actingAsSlug) && (
                 <>
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20">
-                    ED
-                  </div>
+                  {restaurantLogoUrl && role !== "super_admin" ? (
+                    <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 shadow-md bg-white dark:bg-neutral-900 flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={restaurantLogoUrl} alt="logo" className="h-full w-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20 flex-shrink-0">
+                      {restaurantName && role !== "super_admin"
+                        ? restaurantName.slice(0, 2).toUpperCase()
+                        : "ED"}
+                    </div>
+                  )}
                   <div>
                     <div className="text-sm font-bold text-gray-900 dark:text-white">
-                      Eats Desk
+                      {restaurantName && role !== "super_admin" ? restaurantName : "Eats Desk"}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
                       {role === "super_admin" && !actingAsSlug
