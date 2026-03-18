@@ -188,15 +188,6 @@ function isDeliveryPaymentPending(order) {
   return pm === "PENDING" || pm === "TO BE PAID" || !pm;
 }
 
-function isPaymentPending(order) {
-  if (order.status === "CANCELLED") return false;
-  if (order.source === "FOODPANDA") return false;
-  if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0)
-    return false;
-  const pm = (order.paymentMethod || "").toUpperCase();
-  return !pm || pm === "PENDING" || pm === "TO BE PAID";
-}
-
 function getOrderTotal(order) {
   return Number(order.grandTotal ?? order.total) || 0;
 }
@@ -285,19 +276,13 @@ export default function OrdersPage() {
   const [updatingId, setUpdatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [search, setSearch] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("All Sources");
   const [orderTypeFilter, setOrderTypeFilter] = useState("All");
-  const [sortOrder, setSortOrder] = useState("Newest First");
-  const [datePreset, setDatePreset] = useState("today");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [showCancelled, setShowCancelled] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
-  const [paymentPendingOnly, setPaymentPendingOnly] = useState(false);
+  // paymentPendingOnly removed; payment-pending filter UI no longer exists.
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState(null);
@@ -697,50 +682,11 @@ export default function OrdersPage() {
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDateStr = getBusinessDate(new Date(), cutoffHour);
 
-  const dateRange = useMemo(() => {
-    const nowDate = new Date();
-    if (datePreset === "today") {
-      return getBusinessDayRange(businessDateStr, cutoffHour);
-    }
-    if (datePreset === "yesterday") {
-      const bd = new Date(businessDateStr);
-      bd.setDate(bd.getDate() - 1);
-      const yStr = `${bd.getFullYear()}-${String(bd.getMonth() + 1).padStart(2, "0")}-${String(bd.getDate()).padStart(2, "0")}`;
-      return getBusinessDayRange(yStr, cutoffHour);
-    }
-    if (datePreset === "7days") {
-      const from = new Date(nowDate);
-      from.setDate(from.getDate() - 7);
-      from.setHours(0, 0, 0, 0);
-      return {
-        from,
-        to: new Date(
-          nowDate.getFullYear(),
-          nowDate.getMonth(),
-          nowDate.getDate() + 1,
-        ),
-      };
-    }
-    if (datePreset === "30days") {
-      const from = new Date(nowDate);
-      from.setDate(from.getDate() - 30);
-      from.setHours(0, 0, 0, 0);
-      return {
-        from,
-        to: new Date(
-          nowDate.getFullYear(),
-          nowDate.getMonth(),
-          nowDate.getDate() + 1,
-        ),
-      };
-    }
-    if (datePreset === "custom") {
-      const from = customFrom ? new Date(customFrom + "T00:00:00") : null;
-      const to = customTo ? new Date(customTo + "T23:59:59") : null;
-      return { from, to };
-    }
-    return null;
-  }, [datePreset, businessDateStr, cutoffHour, customFrom, customTo]);
+  // Date filtering UI removed; always use today's business day window.
+  const dateRange = useMemo(
+    () => getBusinessDayRange(businessDateStr, cutoffHour),
+    [businessDateStr, cutoffHour],
+  );
 
   const baseFiltered = useMemo(() => {
     const base = Array.isArray(cashierBaseOrders) ? cashierBaseOrders : [];
@@ -748,7 +694,6 @@ export default function OrdersPage() {
     const hasDateRange = dateRange && (dateRange.from || dateRange.to);
     const fromMs = hasDateRange && dateRange.from ? dateRange.from.getTime() : 0;
     const toMs = hasDateRange && dateRange.to ? dateRange.to.getTime() : Infinity;
-    const filterSource = sourceFilter !== "All Sources";
     const filterType = orderTypeFilter !== "All";
 
     const filtered = base.filter((o) => {
@@ -763,22 +708,17 @@ export default function OrdersPage() {
         (o.externalOrderId || "").toLowerCase().includes(term) ||
         (o.customerPhone || "").toLowerCase().includes(term)
       )) return false;
-      if (filterSource && o.source !== sourceFilter) return false;
       if (filterType && getOrderTypeLabel(o) !== orderTypeFilter) return false;
-      if (paymentPendingOnly && !isPaymentPending(o)) return false;
       return true;
     });
 
-    const dir = sortOrder === "Newest First" ? -1 : 1;
+    const dir = -1; // Newest First
     filtered.sort((a, b) => dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
     return filtered;
   }, [
     cashierBaseOrders,
     search,
-    sourceFilter,
     orderTypeFilter,
-    paymentPendingOnly,
-    sortOrder,
     dateRange,
   ]);
 
@@ -837,90 +777,10 @@ export default function OrdersPage() {
         <div className="flex flex-col h-[calc(100vh-120px)]">
           {/* ── Filter bar ─────────────────────────────────────────── */}
           <div className="flex flex-col gap-3 mb-4 flex-shrink-0">
-            {/* Row 1: Search + session info + refresh */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search order #, customer, phone..."
-                className="flex-1 h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-              />
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <div className="flex items-center gap-1.5 px-2.5 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    {formatBusinessDate(businessDateStr)}
-                  </span>
-                </div>
-                <div className="relative flex items-center gap-1.5 px-2.5 h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
-                  <Clock className="w-3 h-3 text-gray-400 dark:text-neutral-500 flex-shrink-0" />
-                  <span className="text-[11px] text-gray-500 dark:text-neutral-400 whitespace-nowrap">
-                    Resets at
-                  </span>
-                  <div className="relative flex items-center">
-                    <select
-                      value={cutoffHour}
-                      onChange={handleCutoffChange}
-                      disabled={savingCutoff || !currentBranch?.id}
-                      className="appearance-none pr-4 text-xs font-semibold text-gray-700 dark:text-neutral-200 bg-transparent border-none outline-none cursor-pointer disabled:opacity-50"
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={i}>
-                          {i === 0
-                            ? "12 AM"
-                            : i < 12
-                              ? `${i} AM`
-                              : i === 12
-                                ? "12 PM"
-                                : `${i - 12} PM`}
-                        </option>
-                      ))}
-                    </select>
-                    {savingCutoff ? (
-                      <Loader2 className="absolute right-0 w-2.5 h-2.5 animate-spin text-primary pointer-events-none" />
-                    ) : (
-                      <ChevronDown className="absolute right-0 w-2.5 h-2.5 text-gray-400 pointer-events-none" />
-                    )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={openEndDayModal}
-                  className="inline-flex items-center gap-1.5 px-2.5 h-9 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
-                >
-                  <Power className="w-3.5 h-3.5" />
-                  End Day
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    loadSessionHistory();
-                    setShowSessionHistoryModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-2.5 h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 text-xs font-medium hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  Past Sessions
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const toastId = toast.loading("Refreshing...");
-                  loadOrders()
-                    .then(() => toast.success("Refreshed!", { id: toastId }))
-                    .catch(() => toast.dismiss(toastId));
-                }}
-                className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
-            </div>
-
-            {/* Row 2: Order type pills (left) + Payment Pending, source, sort, date (right) */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-1.5 overflow-x-auto">
+            {/* Row 1: Filters (left) + Search (middle) + Refresh (right) */}
+            <div className="flex items-center gap-2">
+              {/* Left: order type filters */}
+              <div className="flex items-center gap-1.5 overflow-x-auto max-w-[45vw]">
                 {ORDER_TYPE_FILTERS.map((t) => (
                   <button
                     key={t}
@@ -937,133 +797,28 @@ export default function OrdersPage() {
                 ))}
               </div>
 
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setPaymentPendingOnly(!paymentPendingOnly)}
-                  className={`h-7 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all flex-shrink-0 inline-flex items-center gap-1 ${
-                    paymentPendingOnly
-                      ? "bg-amber-500 text-white"
-                      : "bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-amber-400 dark:hover:border-amber-500/50"
-                  }`}
-                >
-                  <Banknote className="w-3 h-3" />
-                  Payment Pending
-                </button>
-                <select
-                  value={sourceFilter}
-                  onChange={(e) => setSourceFilter(e.target.value)}
-                  className="h-7 px-2.5 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold text-gray-700 dark:text-white outline-none focus:border-primary transition-all flex-shrink-0"
-                >
-                  <option value="All Sources">All Sources</option>
-                  <option value="POS">POS</option>
-                  <option value="FOODPANDA">Foodpanda</option>
-                  <option value="WEBSITE">Website</option>
-                </select>
-                {!isCashier && (
-                  <select
-                    value={sortOrder}
-                    onChange={(e) => setSortOrder(e.target.value)}
-                    className="h-7 px-2.5 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold text-gray-700 dark:text-white outline-none focus:border-primary transition-all flex-shrink-0"
-                  >
-                    <option>Newest First</option>
-                    <option>Oldest First</option>
-                  </select>
-                )}
-                <div className="relative flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setShowDateDropdown(!showDateDropdown)}
-                    className="h-7 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] font-semibold text-gray-700 dark:text-neutral-300 hover:border-gray-400 dark:hover:border-neutral-500 transition-all inline-flex items-center gap-1.5"
-                  >
-                    <Clock className="w-3 h-3 text-gray-400 dark:text-neutral-500" />
-                    {
-                      {
-                        today: "Today",
-                        yesterday: "Yesterday",
-                        "7days": "Last 7 Days",
-                        "30days": "Last Month",
-                        custom: "Custom",
-                      }[datePreset]
-                    }
-                    <ChevronDown
-                      className={`w-3 h-3 text-gray-400 transition-transform ${showDateDropdown ? "rotate-180" : ""}`}
-                    />
-                  </button>
+              {/* Middle: search */}
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search order #, customer, phone..."
+                className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+              />
 
-                  {showDateDropdown && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setShowDateDropdown(false)}
-                      />
-                      <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden">
-                        {[
-                          { id: "today", label: "Today's Session" },
-                          { id: "yesterday", label: "Yesterday" },
-                          { id: "7days", label: "Last 7 Days" },
-                          { id: "30days", label: "Last Month" },
-                          { id: "custom", label: "Custom Range" },
-                        ].map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setDatePreset(p.id);
-                              if (p.id !== "custom") setShowDateDropdown(false);
-                            }}
-                            className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors flex items-center justify-between ${
-                              datePreset === p.id
-                                ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
-                            }`}
-                          >
-                            {p.label}
-                            {datePreset === p.id && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            )}
-                          </button>
-                        ))}
-
-                        {datePreset === "custom" && (
-                          <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 space-y-2">
-                            <div>
-                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
-                                From
-                              </label>
-                              <input
-                                type="date"
-                                value={customFrom}
-                                onChange={(e) => setCustomFrom(e.target.value)}
-                                className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
-                                To
-                              </label>
-                              <input
-                                type="date"
-                                value={customTo}
-                                onChange={(e) => setCustomTo(e.target.value)}
-                                className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setShowDateDropdown(false)}
-                              disabled={!customFrom && !customTo}
-                              className="w-full h-7 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition-colors disabled:opacity-40"
-                            >
-                              Apply
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
+              {/* Right: refresh */}
+              <button
+                type="button"
+                onClick={() => {
+                  const toastId = toast.loading("Refreshing...");
+                  loadOrders()
+                    .then(() => toast.success("Refreshed!", { id: toastId }))
+                    .catch(() => toast.dismiss(toastId));
+                }}
+                className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </button>
             </div>
           </div>
 
