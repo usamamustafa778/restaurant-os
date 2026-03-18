@@ -305,18 +305,41 @@ export default function OverviewPage() {
     (async () => {
       const now = new Date();
       let fromStr, toStr;
-      if (reportPeriod === "yesterday") {
-        const s = new Date(now); s.setDate(s.getDate() - 1); s.setHours(0, 0, 0, 0);
-        const e = new Date(s); e.setHours(23, 59, 59, 999);
-        fromStr = s.toISOString(); toStr = e.toISOString();
-      } else if (reportPeriod === "today") {
-        fromStr = now.toISOString().slice(0, 10);
-        const t = new Date(now); t.setDate(t.getDate() + 1);
-        toStr = t.toISOString().slice(0, 10);
-      } else {
-        fromStr = new Date(selectedYear, selectedMonth, 1).toISOString().slice(0, 10);
-        toStr = new Date(selectedYear, selectedMonth + 1, 1).toISOString().slice(0, 10);
+
+      if (reportPeriod === "today" || reportPeriod === "yesterday") {
+        // Use actual session boundaries so the report matches the business day,
+        // not the calendar midnight-to-midnight window.
+        try {
+          const res = await getDaySessions(currentBranch?.id, { limit: 5 });
+          const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
+          if (reportPeriod === "today") {
+            const openSess = sessions.find((s) => s.status === "OPEN");
+            if (openSess?.startAt) { fromStr = openSess.startAt; toStr = now.toISOString(); }
+          } else {
+            const lastClosed = sessions.find((s) => s.status === "CLOSED");
+            if (lastClosed?.startAt && lastClosed?.endAt) {
+              fromStr = lastClosed.startAt; toStr = lastClosed.endAt;
+            }
+          }
+        } catch { /* fall through to calendar dates */ }
       }
+
+      // Calendar fallback (also used for "monthly" period)
+      if (!fromStr) {
+        if (reportPeriod === "yesterday") {
+          const s = new Date(now); s.setDate(s.getDate() - 1); s.setHours(0, 0, 0, 0);
+          const e = new Date(s); e.setHours(23, 59, 59, 999);
+          fromStr = s.toISOString(); toStr = e.toISOString();
+        } else if (reportPeriod === "today") {
+          fromStr = now.toISOString().slice(0, 10);
+          const t = new Date(now); t.setDate(t.getDate() + 1);
+          toStr = t.toISOString().slice(0, 10);
+        } else {
+          fromStr = new Date(selectedYear, selectedMonth, 1).toISOString().slice(0, 10);
+          toStr = new Date(selectedYear, selectedMonth + 1, 1).toISOString().slice(0, 10);
+        }
+      }
+
       try {
         const report = await getSalesReport({ from: fromStr, to: toStr });
         if (!cancelled) setPeriodReport({
@@ -334,7 +357,7 @@ export default function OverviewPage() {
       finally { if (!cancelled) setPeriodLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [reportPeriod, selectedMonth, selectedYear]);
+  }, [reportPeriod, selectedMonth, selectedYear, currentBranch?.id]);
 
   // Computed values
   const hasOrders = (periodReport.totalOrders ?? 0) > 0;

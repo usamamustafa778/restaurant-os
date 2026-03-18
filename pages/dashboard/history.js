@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { getSalesReport, getOrders, SubscriptionInactiveError } from "../../lib/apiClient";
+import { getSalesReport, getOrders, getDaySessions, SubscriptionInactiveError } from "../../lib/apiClient";
+import { useBranch } from "../../contexts/BranchContext";
 import {
   BarChart3, DollarSign, ShoppingBag, TrendingUp,
   HelpCircle, Loader2, Award, FileDown, Printer,
   ClipboardList, Search, ChevronLeft, ChevronRight,
-  ChevronDown, Download, FileText, Calendar, Bike,
+  ChevronDown, Download, FileText, Calendar, Bike, Headset,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -86,8 +87,8 @@ const DEFAULT_REPORT = {
   completedSummary: { count: 0, amount: 0, orders: [] },
 };
 
-// Use local-timezone ISO strings so the backend receives correct date ranges
-function getPresetDates(preset) {
+// Calendar-based fallback dates (used when no session data is available)
+function getCalendarDates(preset) {
   const today = new Date();
   switch (preset) {
     case "today": {
@@ -127,6 +128,34 @@ function getPresetDates(preset) {
   }
 }
 
+// Session-aware date resolver: uses actual session start/end times for Today and Yesterday
+// so that reports match the business day rather than calendar midnight boundaries.
+function getSmartDates(preset, sessions) {
+  const now = new Date();
+  if (sessions && sessions.length > 0) {
+    if (preset === "today") {
+      // Prefer the current OPEN session
+      const openSess = sessions.find((s) => s.status === "OPEN");
+      if (openSess?.startAt) return { from: openSess.startAt, to: now.toISOString() };
+      // Fall back to most recent session that started today (local time)
+      const todayStr = now.toDateString();
+      const todaySess = sessions.find((s) => new Date(s.startAt).toDateString() === todayStr);
+      if (todaySess?.startAt)
+        return { from: todaySess.startAt, to: todaySess.endAt || now.toISOString() };
+    }
+    if (preset === "yesterday") {
+      // The most recently CLOSED session = the previous business day
+      const lastClosed = sessions.find((s) => s.status === "CLOSED");
+      if (lastClosed?.startAt && lastClosed?.endAt)
+        return { from: lastClosed.startAt, to: lastClosed.endAt };
+    }
+  }
+  return getCalendarDates(preset);
+}
+
+// Keep old name as alias so any remaining callers still work
+const getPresetDates = getCalendarDates;
+
 function toCSVRow(cells) {
   return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
 }
@@ -153,6 +182,11 @@ function buildPeriodLabel(preset, customFrom, customTo) {
 function fmtRs(v) { return `Rs ${Math.round(Number(v) || 0).toLocaleString()}`; }
 function fmtDate(d) { return new Date(d).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }); }
 function fmtShortDate(d) { return new Date(d).toLocaleDateString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }); }
+function fmtTime(d) { return d ? new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"; }
+function getStatusTime(order, status) {
+  const entry = (order.statusHistory || []).find((h) => h.status === status);
+  return entry?.at || null;
+}
 
 function KpiCard({ label, value, sub, icon: Icon, gradient, shadow }) {
   return (
@@ -167,6 +201,34 @@ function KpiCard({ label, value, sub, icon: Icon, gradient, shadow }) {
           <Icon className="w-5 h-5 text-white" />
         </div>
       </div>
+    </div>
+  );
+}
+
+function Section({ title, subtitle, icon: Icon, iconGradient, badge, badgeValue, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors">
+        <div className="flex items-center gap-3">
+          {Icon && (
+            <div className={`h-9 w-9 rounded-xl flex items-center justify-center shadow-md ${iconGradient || "bg-gray-200 dark:bg-neutral-800"}`}>
+              <Icon className="w-4 h-4 text-white" />
+            </div>
+          )}
+          <div className="text-left">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h3>
+            {subtitle && <p className="text-xs text-gray-500 dark:text-neutral-400">{subtitle}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {badge && <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">{badge}</span>}
+          {badgeValue && <span className="text-xs font-bold text-primary bg-primary/10 dark:bg-primary/20 px-2.5 py-1 rounded-lg">{badgeValue}</span>}
+          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        </div>
+      </button>
+      {open && <div className="border-t border-gray-100 dark:border-neutral-800">{children}</div>}
     </div>
   );
 }
@@ -189,21 +251,7 @@ function TopItemsList({ items, title, subtitle, onItemClick }) {
   const totalRevenue = items.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
   const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
   return (
-    <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
-      <div className="px-6 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-md">
-            <Award className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white">{title || "Top Selling Items"}</h3>
-            {subtitle && <p className="text-xs text-gray-500 dark:text-neutral-400">{subtitle}</p>}
-          </div>
-        </div>
-        <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">
-          {items.length} items
-        </span>
-      </div>
+    <Section title={title || "Top Selling Items"} subtitle={subtitle} icon={Award} iconGradient="bg-gradient-to-br from-primary to-secondary shadow-primary/25" badge={`${items.length} items`}>
       <div className="divide-y divide-gray-100 dark:divide-neutral-800">
         {items.map((item, index) => {
           const barPct = Math.round((item.revenue / topRevenue) * 100);
@@ -237,11 +285,13 @@ function TopItemsList({ items, title, subtitle, onItemClick }) {
           );
         })}
       </div>
-    </div>
+    </Section>
   );
 }
 
 export default function HistoryPage() {
+  const { currentBranch } = useBranch() || {};
+
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [preset, setPreset] = useState("yesterday");
@@ -253,6 +303,7 @@ export default function HistoryPage() {
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [sessions, setSessions] = useState([]);
 
   // Orders tab state
   const [allOrders, setAllOrders] = useState([]);
@@ -262,6 +313,7 @@ export default function HistoryPage() {
   const [ordersSourceFilter, setOrdersSourceFilter] = useState(FILTER_ALL);
   const [ordersPaidFilter, setOrdersPaidFilter] = useState(FILTER_ALL);
   const [ordersRiderFilter, setOrdersRiderFilter] = useState(FILTER_ALL);
+  const [ordersWaiterFilter, setOrdersWaiterFilter] = useState(FILTER_ALL);
   const [ordersSearch, setOrdersSearch] = useState("");
   const [ordersPage, setOrdersPage] = useState(0);
   const [itemsDropdownId, setItemsDropdownId] = useState(null);
@@ -309,16 +361,28 @@ export default function HistoryPage() {
   }
 
   useEffect(() => {
-    const dates = getPresetDates("yesterday");
-    loadReport(dates);
-    loadOrders(dates);
+    async function init() {
+      // Load sessions first so we can use actual business-day boundaries
+      let loadedSessions = [];
+      try {
+        const res = await getDaySessions(currentBranch?.id, { limit: 30 });
+        loadedSessions = Array.isArray(res?.sessions) ? res.sessions : [];
+        setSessions(loadedSessions);
+      } catch {
+        // Falls back to calendar dates
+      }
+      const dates = getSmartDates("yesterday", loadedSessions);
+      loadReport(dates);
+      loadOrders(dates);
+    }
+    init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function applyPreset(id) {
     setPreset(id);
     if (id === "custom") return;
-    const dates = getPresetDates(id);
+    const dates = getSmartDates(id, sessions);
     setLoading(true);
     setOrdersPage(0);
     loadReport(dates);
@@ -342,16 +406,18 @@ export default function HistoryPage() {
     setOrdersSourceFilter(FILTER_ALL);
     setOrdersPaidFilter(FILTER_ALL);
     setOrdersRiderFilter(FILTER_ALL);
+    setOrdersWaiterFilter(FILTER_ALL);
     setOrdersSearch("");
     setOrdersPage(0);
   }
 
-  function goToOrders({ type, payment, search, rider } = {}) {
+  function goToOrders({ type, payment, search, rider, waiter } = {}) {
     resetFilters();
     if (type) setOrdersTypeFilter(type);
     if (payment) setOrdersPaymentFilter(payment);
     if (search) setOrdersSearch(search);
     if (rider) { setOrdersTypeFilter(TYPE_FILTERS.DELIVERY); setOrdersRiderFilter(rider); }
+    if (waiter) setOrdersWaiterFilter(waiter);
     setActiveTab("orders");
   }
 
@@ -365,9 +431,9 @@ export default function HistoryPage() {
         to: customTo ? new Date(customTo + "T23:59:59.999") : null,
       };
     }
-    const d = getPresetDates(preset);
+    const d = getSmartDates(preset, sessions);
     return { from: d?.from ? new Date(d.from) : null, to: d?.to ? new Date(d.to) : null };
-  }, [preset, customFrom, customTo]);
+  }, [preset, customFrom, customTo, sessions]);
 
   const dateFilteredOrders = useMemo(() => {
     const { from, to } = activeDateRange;
@@ -407,6 +473,19 @@ export default function HistoryPage() {
     return Object.values(map).sort((a, b) => b.deliveries - a.deliveries);
   }, [dateFilteredOrders]);
 
+  const waiterStats = useMemo(() => {
+    const map = {};
+    for (const o of dateFilteredOrders) {
+      const name = o.orderTakerName;
+      if (!name || o.createdByRole === "delivery_rider") continue;
+      if (!map[name]) map[name] = { name, orders: 0, revenue: 0, cancelled: 0 };
+      map[name].orders += 1;
+      if (o.status === "CANCELLED") map[name].cancelled += 1;
+      else map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+    }
+    return Object.values(map).sort((a, b) => b.orders - a.orders);
+  }, [dateFilteredOrders]);
+
   // Export CSV for current tab
   function handleExportCSV() {
     const rows = [
@@ -422,8 +501,20 @@ export default function HistoryPage() {
         ["TOP SELLING ITEMS"], ["Rank", "Item", "Qty", "Revenue"],
         ...report.topItems.map((item, i) => [i + 1, item.name, item.quantity ?? 0, Math.round(item.revenue || 0)]));
     } else if (activeTab === "orders") {
-      rows.push(["ALL ORDERS"], ["Order #", "Status", "Amount", "Type", "Payment", "Customer", "Table", "Date"],
-        ...allOrders.map(o => [o.id, o.status, Math.round(o.grandTotal ?? o.total ?? 0), o.type, o.paymentMethod || "", o.customerName || "", o.tableName || "", new Date(o.createdAt).toLocaleString()]));
+      rows.push(["ALL ORDERS"], ["Order #", "Status", "Grand Total", "Subtotal", "Discount", "Items", "Type", "Payment", "Paid", "Customer", "Phone", "Table", "Source", "Order Taker", "Rider", "Delivery Address", "Del. Charges", "Cancel Reason", "Created", "Preparing", "Ready", "Out for Delivery", "Closed / Cancelled"],
+        ...allOrders.map(o => [
+          o.id, o.status, Math.round(o.grandTotal ?? o.total ?? 0), Math.round(o.subtotal ?? 0), Math.round(o.discountAmount ?? 0),
+          (o.items || []).map(i => `${i.name} x${i.qty}`).join(", "),
+          o.type, o.paymentMethod || "", o.isPaid ? "Paid" : "Unpaid",
+          o.customerName || "", o.customerPhone || "", o.tableName || "", o.source || "",
+          o.orderTakerName || "", o.assignedRiderName || "", o.deliveryAddress || "",
+          o.deliveryCharges > 0 ? Math.round(o.deliveryCharges) : "", o.cancelReason || "",
+          o.createdAt ? new Date(o.createdAt).toLocaleString() : "",
+          fmtTime(getStatusTime(o, "PROCESSING")),
+          fmtTime(getStatusTime(o, "READY")),
+          fmtTime(getStatusTime(o, "OUT_FOR_DELIVERY")),
+          o.status === "CANCELLED" ? fmtTime(o.cancelledAt || getStatusTime(o, "CANCELLED")) : fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt),
+        ]));
     }
     downloadCSV(`report-${activeTab}-${periodLabel.replace(/[\s/]/g, "-")}.csv`, rows);
     toast.success("CSV exported");
@@ -463,13 +554,8 @@ export default function HistoryPage() {
           <KpiCard label="Avg. Ticket Size" value={fmtRs(avgTicket)} sub="revenue per order" icon={TrendingUp} gradient="from-emerald-500 to-emerald-600" shadow="shadow-emerald-500/30" />
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          {/* Payment Summary */}
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 shadow-sm space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Payment Summary</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">How customers paid in this period</p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+          <Section title="Payment Summary" subtitle="How customers paid in this period" icon={DollarSign} iconGradient="bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/25">
+            <div className="p-5 grid gap-3 sm:grid-cols-3">
               {["CASH", "CARD", "ONLINE"].map(method => {
                 const d = paymentTotals[method] || { amount: 0, orders: 0 };
                 const label = method === "CASH" ? "Cash" : method === "CARD" ? "Card" : "Online";
@@ -484,35 +570,31 @@ export default function HistoryPage() {
                 );
               })}
             </div>
-          </div>
-          {/* Online Accounts */}
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 shadow-sm">
-            <div className="mb-3">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Online Payment Accounts</h3>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">Breakdown by JazzCash, bank, etc.</p>
-            </div>
-            {paymentAccountRows.length === 0 ? (
-              <div className="py-6 text-center text-xs text-gray-400 dark:text-neutral-500">No online payments in this period.</div>
-            ) : (
-              <div className="divide-y divide-gray-100 dark:divide-neutral-800 text-xs">
-                {paymentAccountRows.map(row => (
-                  <div key={row.accountName} className="flex items-center justify-between py-2.5">
-                    <p className="font-semibold text-gray-900 dark:text-white truncate">{row.accountName}</p>
-                    <div className="text-right">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-white">{fmtRs(row.amount)}</p>
-                      <p className="text-[11px] text-gray-400 dark:text-neutral-500">{row.orders} orders</p>
+          </Section>
+          <Section title="Online Payment Accounts" subtitle="Breakdown by JazzCash, bank, etc." icon={DollarSign} iconGradient="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/25">
+            <div className="p-5">
+              {paymentAccountRows.length === 0 ? (
+                <div className="py-6 text-center text-xs text-gray-400 dark:text-neutral-500">No online payments in this period.</div>
+              ) : (
+                <div className="divide-y divide-gray-100 dark:divide-neutral-800 text-xs">
+                  {paymentAccountRows.map(row => (
+                    <div key={row.accountName} className="flex items-center justify-between py-2.5">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">{row.accountName}</p>
+                      <div className="text-right">
+                        <p className="text-xs font-semibold text-gray-900 dark:text-white">{fmtRs(row.amount)}</p>
+                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">{row.orders} orders</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Section>
         </div>
         {/* Order Type Breakdown */}
         {orderTypeRows.length > 0 && (
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4">Order Type Breakdown</h3>
-            <div className="grid gap-3 sm:grid-cols-3">
+          <Section title="Order Type Breakdown" subtitle={`${orderTypeRows.length} types`} icon={ShoppingBag} iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25">
+            <div className="p-5 grid gap-3 sm:grid-cols-3">
               {orderTypeRows.map(row => (
                   <button key={row.type} type="button"
                     onClick={() => goToOrders({ type: ORDER_TYPE_FILTER_MAP[row.type] || FILTER_ALL })}
@@ -523,33 +605,16 @@ export default function HistoryPage() {
                   </button>
               ))}
             </div>
-          </div>
+          </Section>
         )}
         <TopItemsList items={report.topItems} title="Top Selling Items" subtitle="Best performers in selected period"
           onItemClick={(itemName) => goToOrders({ search: itemName })} />
 
         {/* Riders Overview */}
         {riderStats.length > 0 && (
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-md shadow-sky-500/25">
-                  <Bike className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Riders Overview</h3>
-                  <p className="text-xs text-gray-500 dark:text-neutral-400">Delivery performance in selected period</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">
-                  {riderStats.length} rider{riderStats.length !== 1 ? "s" : ""}
-                </span>
-                <span className="text-xs font-bold text-primary bg-primary/10 dark:bg-primary/20 px-2.5 py-1 rounded-lg">
-                  {fmtRs(riderStats.reduce((s, r) => s + r.revenue, 0))}
-                </span>
-              </div>
-            </div>
+          <Section title="Riders Overview" subtitle="Delivery performance in selected period" icon={Bike} iconGradient="bg-gradient-to-br from-sky-500 to-blue-600 shadow-sky-500/25"
+            badge={`${riderStats.length} rider${riderStats.length !== 1 ? "s" : ""} · ${riderStats.reduce((s, r) => s + r.deliveries, 0)} orders`}
+            badgeValue={fmtRs(riderStats.reduce((s, r) => s + r.revenue, 0))}>
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
               {riderStats.map((rider, idx) => {
                 const topDeliveries = riderStats[0]?.deliveries || 1;
@@ -586,7 +651,51 @@ export default function HistoryPage() {
                 );
               })}
             </div>
-          </div>
+          </Section>
+        )}
+
+        {/* Waiters Overview */}
+        {waiterStats.length > 0 && (
+          <Section title="Waiters Overview" subtitle="Order taker performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/25"
+            badge={`${waiterStats.length} waiter${waiterStats.length !== 1 ? "s" : ""} · ${waiterStats.reduce((s, w) => s + w.orders, 0)} orders`}
+            badgeValue={fmtRs(waiterStats.reduce((s, w) => s + w.revenue, 0))}>
+            <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+              {waiterStats.map((waiter, idx) => {
+                const topOrders = waiterStats[0]?.orders || 1;
+                const barPct = Math.round((waiter.orders / topOrders) * 100);
+                return (
+                  <button key={waiter.name} type="button"
+                    onClick={() => goToOrders({ waiter: waiter.name })}
+                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer">
+                    <div className="flex items-center gap-4">
+                      <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400">{waiter.name.charAt(0).toUpperCase()}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">{waiter.name}</span>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
+                              <Headset className="w-3 h-3" />{waiter.orders} orders
+                            </span>
+                            {waiter.cancelled > 0 && (
+                              <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
+                                {waiter.cancelled} cancelled
+                              </span>
+                            )}
+                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(waiter.revenue)}</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-purple-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
         )}
       </div>
     );
@@ -623,10 +732,20 @@ export default function HistoryPage() {
       filtered = filtered.filter(o => (o.assignedRiderName || "") === ordersRiderFilter);
     }
 
+    if (ordersWaiterFilter !== FILTER_ALL) {
+      filtered = filtered.filter(o => (o.orderTakerName || "") === ordersWaiterFilter && o.createdByRole !== "delivery_rider");
+    }
+
     const availableRiders = [...new Set(
       dateFiltered
         .filter(o => o.type === "delivery" && o.assignedRiderName)
         .map(o => o.assignedRiderName)
+    )].sort();
+
+    const availableWaiters = [...new Set(
+      dateFiltered
+        .filter(o => o.orderTakerName && o.createdByRole !== "delivery_rider")
+        .map(o => o.orderTakerName)
     )].sort();
 
     if (ordersSearch.trim()) {
@@ -641,7 +760,7 @@ export default function HistoryPage() {
       );
     }
 
-    const hasActiveFilters = ordersStatusFilter !== FILTER_ALL || ordersTypeFilter !== FILTER_ALL || ordersPaymentFilter !== FILTER_ALL || ordersSourceFilter !== FILTER_ALL || ordersPaidFilter !== FILTER_ALL || ordersRiderFilter !== FILTER_ALL || ordersSearch.trim();
+    const hasActiveFilters = ordersStatusFilter !== FILTER_ALL || ordersTypeFilter !== FILTER_ALL || ordersPaymentFilter !== FILTER_ALL || ordersSourceFilter !== FILTER_ALL || ordersPaidFilter !== FILTER_ALL || ordersRiderFilter !== FILTER_ALL || ordersWaiterFilter !== FILTER_ALL || ordersSearch.trim();
 
     const totalFiltered = filtered.length;
     const totalPages = Math.ceil(totalFiltered / ordersPerPage);
@@ -722,6 +841,16 @@ export default function HistoryPage() {
             </FilterSelect>
           )}
 
+          {availableWaiters.length > 0 && (
+            <FilterSelect value={ordersWaiterFilter} active={ordersWaiterFilter !== FILTER_ALL}
+              onChange={e => { setOrdersWaiterFilter(e.target.value); setOrdersPage(0); }}>
+              <option value="ALL">All Waiters</option>
+              {availableWaiters.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </FilterSelect>
+          )}
+
           <div className="flex-1" />
 
           <span className="text-[11px] font-medium text-gray-400 dark:text-neutral-500">{totalFiltered} result{totalFiltered !== 1 ? "s" : ""}</span>
@@ -743,7 +872,7 @@ export default function HistoryPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="text-xs min-w-[1600px]">
+              <table className="text-xs min-w-[2100px]">
                 <thead className="bg-gray-50 dark:bg-neutral-900/80 sticky top-0">
                   <tr>
                     <th className={TH_CLS}>Order #</th>
@@ -767,7 +896,11 @@ export default function HistoryPage() {
                     <th className={TH_CLS}>Delivery Address</th>
                     <th className={TH_CLS}>Del. Charges</th>
                     <th className={TH_CLS}>Cancel Reason</th>
-                    <th className={TH_CLS}>Date</th>
+                    <th className={TH_CLS}>Created</th>
+                    <th className={TH_CLS}>Preparing</th>
+                    <th className={TH_CLS}>Ready</th>
+                    <th className={TH_CLS}>Out for Delivery</th>
+                    <th className={TH_CLS}>Closed / Cancelled</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-neutral-800/60">
@@ -846,6 +979,14 @@ export default function HistoryPage() {
                       <td className={`${TD_CLS} text-right`}>{o.deliveryCharges > 0 ? fmtRs(o.deliveryCharges) : "—"}</td>
                       <td className={`${TD_CLS} max-w-[150px] truncate`} title={o.cancelReason || ""}>{o.cancelReason || "—"}</td>
                       <td className={TD_CLS}>{fmtShortDate(o.createdAt)}</td>
+                      <td className={TD_CLS}>{fmtTime(getStatusTime(o, "PROCESSING"))}</td>
+                      <td className={TD_CLS}>{fmtTime(getStatusTime(o, "READY"))}</td>
+                      <td className={TD_CLS}>{fmtTime(getStatusTime(o, "OUT_FOR_DELIVERY"))}</td>
+                      <td className={TD_CLS}>
+                        {o.status === "CANCELLED"
+                          ? <span className="text-red-500">{fmtTime(o.cancelledAt || getStatusTime(o, "CANCELLED"))}</span>
+                          : fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

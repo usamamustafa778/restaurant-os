@@ -16,6 +16,7 @@ import {
   Moon,
   ClipboardList,
   BarChart3,
+  CalendarDays,
   UserCog,
   UserCheck,
   ChefHat,
@@ -138,6 +139,12 @@ const tenantNav = [
     icon: BarChart3,
     roles: ["restaurant_admin", "admin", "manager"],
   },
+  {
+    path: "/sessions",
+    label: "Session Reports",
+    icon: CalendarDays,
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
+  },
 
   { type: "section", label: "SETTINGS" },
   {
@@ -184,6 +191,7 @@ const tenantNav = [
 const DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH = [
   "/overview",
   "/history",
+  "/sessions",
   "/subscription",
   "/profile",
 ];

@@ -2171,13 +2171,17 @@ function OrderCard({
           DELIVERED: "text-emerald-600 dark:text-emerald-400",
           CANCELLED: "text-red-400 dark:text-red-500",
         };
-        const history = order.statusHistory?.length > 0
+        const allHistory = order.statusHistory?.length > 0
           ? order.statusHistory
           : [
               { status: "NEW_ORDER", at: order.createdAt },
               ...(order.cancelledAt ? [{ status: "CANCELLED", at: order.cancelledAt }]
                 : order.updatedAt ? [{ status: "DELIVERED", at: order.updatedAt }] : []),
             ].filter(Boolean);
+
+        const createdEntry = allHistory.find((h) => h.status === "NEW_ORDER") || { status: "NEW_ORDER", at: order.createdAt };
+        const closedEntry = allHistory.find((h) => h.status === "CANCELLED") || allHistory.find((h) => h.status === "DELIVERED") || null;
+        const history = [createdEntry, closedEntry].filter(Boolean);
 
         return (
           <div className="mx-3 mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px]">
