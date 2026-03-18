@@ -303,7 +303,7 @@ export default function HistoryPage() {
 
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
-  const [preset, setPreset] = useState("yesterday");
+  const [preset, setPreset] = useState("today");
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [customFrom, setCustomFrom] = useState("");
@@ -392,7 +392,7 @@ export default function HistoryPage() {
       } catch {
         // Falls back to calendar dates
       }
-      const dates = getSmartDates("yesterday", loadedSessions);
+      const dates = getSmartDates(preset, loadedSessions);
       loadReport(dates);
       loadOrders(dates);
     }
@@ -518,18 +518,25 @@ export default function HistoryPage() {
   const riderStats = useMemo(() => {
     const map = {};
     for (const o of dateFilteredOrders) {
-      if (o.type !== "delivery" || !o.assignedRiderName) continue;
+      const type = String(o.type || "").toLowerCase();
+      if (type !== "delivery" || !o.assignedRiderName) continue;
       const name = o.assignedRiderName;
-      if (!map[name]) map[name] = { name, deliveries: 0, revenue: 0, cancelled: 0 };
+      if (!map[name]) map[name] = { name, deliveries: 0, revenue: 0, paidAmount: 0, unpaidAmount: 0, cancelled: 0 };
       if (o.status === "CANCELLED") {
         map[name].cancelled += 1;
         continue;
       }
+      const amount = Math.round(Number(o.grandTotal ?? o.total) || 0);
+
       // Count delivery only once it is actually completed.
       if (o.status === "DELIVERED" || o.status === "COMPLETED") {
         map[name].deliveries += 1;
-        map[name].revenue += Math.round(Number(o.grandTotal ?? o.total) || 0);
+        map[name].revenue += amount;
       }
+
+      // Paid/Unpaid totals must match the Orders tab filtering (which uses `o.isPaid`).
+      if (o.isPaid) map[name].paidAmount += amount;
+      else map[name].unpaidAmount += amount;
     }
     return Object.values(map).sort((a, b) => b.deliveries - a.deliveries);
   }, [dateFilteredOrders]);
@@ -735,7 +742,8 @@ export default function HistoryPage() {
         {riderStats.length > 0 && (
           <Section title="Riders Overview" subtitle="Delivery performance in selected period" icon={Bike} iconGradient="bg-gradient-to-br from-sky-500 to-blue-600 shadow-sky-500/25"
             badge={`${riderStats.length} rider${riderStats.length !== 1 ? "s" : ""} · ${riderStats.reduce((s, r) => s + r.deliveries, 0)} orders`}
-            badgeValue={fmtRs(riderStats.reduce((s, r) => s + r.revenue, 0))}>
+            badgeValue={fmtRs(riderStats.reduce((s, r) => s + r.revenue, 0))}
+            defaultOpen>
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
               {riderStats.map((rider, idx) => {
                 const topDeliveries = riderStats[0]?.deliveries || 1;
@@ -755,6 +763,12 @@ export default function HistoryPage() {
                             <span className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
                               <Bike className="w-3 h-3" />{rider.deliveries} deliveries
                             </span>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
+                                Paid: Rs {fmtRs(rider.paidAmount)}
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
+                                Unpaid: Rs {fmtRs(rider.unpaidAmount)}
+                              </span>
                             {rider.cancelled > 0 && (
                               <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
                                 {rider.cancelled} cancelled
