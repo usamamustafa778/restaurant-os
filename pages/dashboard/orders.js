@@ -95,13 +95,12 @@ const STATUS_THEME = {
     ctaBg: "bg-emerald-500 hover:bg-emerald-600 text-white",
   },
   OUT_FOR_DELIVERY: {
-    dot: "bg-violet-500",
-    headerBg: "bg-violet-500",
-    colBg: "bg-violet-50/60 dark:bg-violet-950/20",
-    colBorder: "border-violet-200/60 dark:border-violet-500/15",
-    countBg:
-      "bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-400",
-    ctaBg: "bg-violet-500 hover:bg-violet-600 text-white",
+    dot: "bg-[#25343F]",
+    headerBg: "bg-[#25343F]",
+    colBg: "bg-[#25343F]/10 dark:bg-[#25343F]/20",
+    colBorder: "border-[#25343F]/20 dark:border-[#25343F]/30",
+    countBg: "bg-[#25343F]/15 dark:bg-[#25343F]/25 text-[#25343F]",
+    ctaBg: "bg-[#25343F] hover:bg-[#25343F]/90 text-white",
   },
   DELIVERED: {
     dot: "bg-gray-400 dark:bg-neutral-500",
@@ -1316,7 +1315,7 @@ export default function OrdersPage() {
                       Icon: Smartphone,
                       label: "Online",
                       active:
-                        "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
+                        "border-primary bg-primary/10 dark:bg-primary/20 text-primary",
                     },
                   ].map(({ m, Icon, label, active }) => (
                     <button
@@ -1341,7 +1340,7 @@ export default function OrdersPage() {
                   </label>
                   {paymentAccountsLoading ? (
                     <div className="flex items-center justify-center gap-2 py-4">
-                      <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
                       <span className="text-xs text-gray-400 dark:text-neutral-500">
                         Loading accounts…
                       </span>
@@ -1361,10 +1360,10 @@ export default function OrdersPage() {
                           key={acc.id}
                           type="button"
                           onClick={() => setOnlineProvider(acc.name)}
-                          className={`px-3 py-2.5 rounded-xl border-2 text-left transition-all ${onlineProvider === acc.name ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10" : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"}`}
+                          className={`px-3 py-2.5 rounded-xl border-2 text-left transition-all ${onlineProvider === acc.name ? "border-primary bg-primary/10 dark:bg-primary/20" : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"}`}
                         >
                           <p
-                            className={`text-xs font-semibold truncate ${onlineProvider === acc.name ? "text-violet-700 dark:text-violet-400" : "text-gray-700 dark:text-neutral-300"}`}
+                            className={`text-xs font-semibold truncate ${onlineProvider === acc.name ? "text-primary" : "text-gray-700 dark:text-neutral-300"}`}
                           >
                             {acc.name}
                           </p>
@@ -1677,10 +1676,8 @@ export default function OrdersPage() {
               </label>
               {ridersLoading ? (
                 <div className="flex items-center justify-center gap-2 py-6">
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                  <span className="text-xs text-gray-400">
-                    Loading riders...
-                  </span>
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-xs text-gray-400">Loading riders...</span>
                 </div>
               ) : riders.length === 0 ? (
                 <div className="px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
@@ -1688,65 +1685,50 @@ export default function OrdersPage() {
                   <span className="font-semibold">Staff Management</span>.
                 </div>
               ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {riders.map((rider) => (
-                    <button
-                      key={rider.id}
-                      type="button"
-                      onClick={() => setSelectedRiderId(rider.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all ${selectedRiderId === rider.id ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10" : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"}`}
+                <>
+                  <div className="relative">
+                    <select
+                      value={selectedRiderId}
+                      onChange={(e) => setSelectedRiderId(e.target.value)}
+                      className="w-full h-10 px-3 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm font-semibold text-gray-900 dark:text-white outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/10 transition-all pr-9"
                     >
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
-                        <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className={`text-xs font-semibold truncate ${selectedRiderId === rider.id ? "text-indigo-700 dark:text-indigo-400" : "text-gray-900 dark:text-white"}`}
-                        >
+                      <option value="">Select a rider...</option>
+                      {riders.map((rider) => (
+                        <option key={rider.id} value={rider.id}>
                           {rider.name}
-                        </p>
-                        {rider.phone && (
-                          <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                            {rider.phone}
-                          </p>
-                        )}
-                      </div>
-                      {rider.vehicleType && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400 font-medium capitalize">
-                          {rider.vehicleType}
-                        </span>
-                      )}
-                      {selectedRiderId === rider.id && (
-                        <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-                      )}
-                    </button>
-                  ))}
-                </div>
+                          {rider.phone ? ` • ${rider.phone}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!selectedRiderId || riderAssigning}
+                    onClick={handleAssignRider}
+                    className="w-full flex items-center justify-center gap-2 mt-3 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-bold disabled:opacity-50 transition-colors"
+                  >
+                    {riderAssigning ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Bike className="w-4 h-4" /> Send Rider
+                      </>
+                    )}
+                  </button>
+                </>
               )}
             </div>
             <div className="flex gap-2 px-5 pb-5">
               <button
                 type="button"
                 onClick={closeRiderModal}
-                className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!selectedRiderId || riderAssigning}
-                onClick={handleAssignRider}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
-              >
-                {riderAssigning ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Assigning...
-                  </>
-                ) : (
-                  <>
-                    <Bike className="w-4 h-4" /> Assign &amp; Print
-                  </>
-                )}
               </button>
             </div>
           </div>
@@ -2009,7 +1991,11 @@ function OrderCard({
     !(isCashier && primaryNext === "DELIVERED" && isDeliveryOrder(order));
 
   const showAssignRider =
-    isDeliveryOrder(order) && status === "READY" && !isOrderTaker;
+    isDeliveryOrder(order) && status === "READY" && !isOrderTaker && !order.assignedRiderName;
+  const showChangeRider =
+    isDeliveryOrder(order) && status === "READY" && !isOrderTaker && !!order.assignedRiderName;
+  const showOutForDelivery =
+    isDeliveryOrder(order) && status === "READY" && !isOrderTaker && !!order.assignedRiderName;
   const isAwaitingPayment =
     (status === "DELIVERED" || status === "COMPLETED") &&
     paymentStatus === "unpaid";
@@ -2032,6 +2018,7 @@ function OrderCard({
     !isOrderTaker &&
     (showCollectFromRider ||
       showTakePayment ||
+      showOutForDelivery ||
       showAssignRider ||
       canAdvanceStatus);
 
@@ -2090,7 +2077,7 @@ function OrderCard({
             </span>
           )}
           {isDeliveryOrder(order) && order.assignedRiderName && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded">
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#25343F] bg-[#25343F]/10 dark:bg-[#25343F]/20 px-1.5 py-0.5 rounded">
               <Bike className="w-3 h-3" />
               Rider: {order.assignedRiderName}
             </span>
@@ -2128,7 +2115,7 @@ function OrderCard({
           NEW_ORDER: "text-gray-400 dark:text-neutral-500",
           PROCESSING: "text-blue-500 dark:text-blue-400",
           READY: "text-emerald-500 dark:text-emerald-400",
-          OUT_FOR_DELIVERY: "text-violet-500 dark:text-violet-400",
+          OUT_FOR_DELIVERY: "text-[#25343F] dark:text-[#25343F]",
           DELIVERED: "text-emerald-600 dark:text-emerald-400",
           CANCELLED: "text-red-400 dark:text-red-500",
         };
@@ -2266,7 +2253,6 @@ function OrderCard({
               </button>
             )}
             {paymentStatus === "unpaid" &&
-              !isDeliveryOrder(order) &&
               !["CANCELLED", "DELIVERED", "COMPLETED"].includes(status) && (
                 <button
                   type="button"
@@ -2330,11 +2316,33 @@ function OrderCard({
             <button
               type="button"
               onClick={() => onOpenRider(order)}
-              className={`w-full py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${order.assignedRiderName ? "bg-violet-600 hover:bg-violet-700 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}
+              className="w-full py-2 rounded-lg bg-[#25343F] hover:bg-[#25343F]/90 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
             >
               <Bike className="w-3.5 h-3.5" />
-              {order.assignedRiderName ? `${order.assignedRiderName} · Change Rider` : "Assign Rider"}
+              Assign Rider
             </button>
+          ) : showOutForDelivery ? (
+            <div className="space-y-2">
+              {showChangeRider && (
+                <button
+                  type="button"
+                  onClick={() => onOpenRider(order)}
+                  className="w-full py-2 rounded-lg border border-gray-300 hover:bg-gray-50 text-gray-900 dark:border-neutral-700 dark:hover:bg-neutral-900/40 dark:text-neutral-100 text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Bike className="w-3.5 h-3.5" />
+                  {order.assignedRiderName ? `${order.assignedRiderName} · Change Rider` : "Change Rider"}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={isUpdating}
+                onClick={() => onUpdateStatus(orderId, "OUT_FOR_DELIVERY")}
+                className="w-full py-2 rounded-lg bg-[#25343F] hover:bg-[#25343F]/90 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                <Truck className="w-3.5 h-3.5" />
+                Send Delivery
+              </button>
+            </div>
           ) : canAdvanceStatus ? (
             <button
               type="button"
