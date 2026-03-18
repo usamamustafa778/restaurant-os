@@ -19,6 +19,7 @@ import {
   Phone,
   User,
   Clock,
+  BarChart3,
   Loader2,
   CheckCircle2,
   Package,
@@ -26,6 +27,7 @@ import {
   RefreshCw,
   LogOut,
   ChevronLeft,
+  ChevronDown,
   Plus,
   Minus,
   Trash2,
@@ -44,7 +46,7 @@ import {
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
 
-const TABS = { NEW_ORDER: "new_order", ACTIVE: "active", HISTORY: "history" };
+const TABS = { NEW_ORDER: "new_order", HOME: "home", ACTIVE: "active", HISTORY: "history" };
 const STEPS = { MENU: "menu", CART: "cart" };
 
 function isBranchRequiredError(msg) {
@@ -61,7 +63,15 @@ function getStatusConfig(status) {
     case "NEW_ORDER":
       return { label: "In Kitchen", bg: "bg-blue-500", bgLight: "bg-blue-50 dark:bg-blue-500/10", text: "text-blue-600 dark:text-blue-400", border: "border-blue-200 dark:border-blue-500/20", icon: Send, pulse: false };
     case "OUT_FOR_DELIVERY":
-      return { label: "Out for Delivery", bg: "bg-violet-500", bgLight: "bg-violet-50 dark:bg-violet-500/10", text: "text-violet-600 dark:text-violet-400", border: "border-violet-200 dark:border-violet-500/20", icon: Truck, pulse: false };
+      return {
+        label: "Out for Delivery",
+        bg: "bg-primary",
+        bgLight: "bg-primary/10 dark:bg-primary/20",
+        text: "text-primary dark:text-primary",
+        border: "border-primary/20 dark:border-primary/30",
+        icon: Truck,
+        pulse: false
+      };
     case "DELIVERED":
     case "COMPLETED":
       return { label: "Delivered", bg: "bg-gray-400", bgLight: "bg-gray-50 dark:bg-neutral-900/50", text: "text-gray-500 dark:text-neutral-400", border: "border-gray-200 dark:border-neutral-800", icon: Check, pulse: false };
@@ -93,10 +103,19 @@ export default function RiderPortalPage() {
   // Orders
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
-  const [tab, setTab] = useState(TABS.ACTIVE);
+  const [tab, setTab] = useState(TABS.HOME);
   const [collectingId, setCollectingId] = useState(null);
   const [deliveringId, setDeliveringId] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [expandedOrderIds, setExpandedOrderIds] = useState([]);
+
+  function toggleOrderDetails(orderKey) {
+    setExpandedOrderIds((prev) =>
+      prev.includes(orderKey)
+        ? prev.filter((id) => id !== orderKey)
+        : prev.concat(orderKey),
+    );
+  }
 
   // New order
   const [step, setStep] = useState(STEPS.MENU);
@@ -212,6 +231,15 @@ export default function RiderPortalPage() {
   const historyRevenue = historyOrders
     .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
     .reduce((sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0), 0);
+
+  const deliveredCount = historyOrders.filter(
+    (o) => o.status === "DELIVERED" || o.status === "COMPLETED",
+  ).length;
+  const cancelledCount = historyOrders.filter((o) => o.status === "CANCELLED").length;
+  const activeRevenue = activeOrders.reduce(
+    (sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0),
+    0,
+  );
 
   const readyOrders = activeOrders.filter((o) => o.status === "READY");
   const newOrders = activeOrders.filter((o) => o.status === "NEW_ORDER");
@@ -421,24 +449,28 @@ export default function RiderPortalPage() {
               )}
               <div className="min-w-0">
                 <h1 className="text-[15px] font-extrabold truncate leading-tight tracking-tight">
-                  {tab === TABS.ACTIVE
-                    ? "Active Deliveries"
-                    : tab === TABS.HISTORY
-                      ? "Delivery History"
-                      : step === STEPS.MENU
-                        ? "New Order"
-                        : "Review Order"}
+                  {tab === TABS.HOME
+                    ? "Overview"
+                    : tab === TABS.ACTIVE
+                      ? "Active Deliveries"
+                      : tab === TABS.HISTORY
+                        ? "Delivery History"
+                        : step === STEPS.MENU
+                          ? "New Order"
+                          : "Review Order"}
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
-                  {tab === TABS.ACTIVE
-                    ? activeFilter === "all"
-                      ? `${readyOrders.length} ready · ${activeOrders.length} active`
-                      : `${filteredActiveOrders.length} ${activeFilterLabel} · ${activeOrders.length} active`
-                    : tab === TABS.HISTORY
-                      ? `${historyOrders.length} past delivery${historyOrders.length !== 1 ? "s" : ""}`
-                      : step === STEPS.MENU
-                        ? userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
-                        : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
+                  {tab === TABS.HOME
+                    ? `${historyOrders.filter(o => o.status === "DELIVERED" || o.status === "COMPLETED").length} delivered · Rs. ${Math.round(historyRevenue).toLocaleString()}`
+                    : tab === TABS.ACTIVE
+                      ? activeFilter === "all"
+                        ? `${readyOrders.length} ready · ${activeOrders.length} active`
+                        : `${filteredActiveOrders.length} ${activeFilterLabel} · ${activeOrders.length} active`
+                      : tab === TABS.HISTORY
+                        ? `${historyOrders.length} past delivery${historyOrders.length !== 1 ? "s" : ""}`
+                        : step === STEPS.MENU
+                          ? userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
+                          : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </div>
@@ -467,7 +499,7 @@ export default function RiderPortalPage() {
                   Clear
                 </button>
               )}
-              {(tab === TABS.ACTIVE || tab === TABS.HISTORY) && (
+              {(tab === TABS.HOME || tab === TABS.ACTIVE || tab === TABS.HISTORY) && (
                 <button
                   onClick={() => { setOrdersLoading(true); loadOrders(); }}
                   className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
@@ -503,6 +535,68 @@ export default function RiderPortalPage() {
 
         {/* ── Content ────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
+          {/* ══════ HOME TAB ══════ */}
+          {tab === TABS.HOME && (
+            <div className="p-4 pb-24 space-y-4">
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <BarChart3 className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Rider Summary</p>
+                    <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                      {userName ? `Hi, ${userName.split(" ")[0]}` : "Welcome"}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 truncate">
+                      Rs. {Math.round(historyRevenue).toLocaleString()} delivered amount
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Amount Submitted</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">Rs. {Math.round(historyRevenue).toLocaleString()}</p>
+                </div>
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Deliveries</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{deliveredCount}</p>
+                </div>
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Active Orders</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{activeOrders.length}</p>
+                </div>
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cancelled</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{cancelledCount}</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Live status</p>
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 dark:text-neutral-400">Ready to collect</span>
+                    <span className="text-sm font-bold text-primary">{readyOrders.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 dark:text-neutral-400">Out for delivery</span>
+                    <span className="text-sm font-bold text-primary">{outForDeliveryOrders.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 dark:text-neutral-400">Processing / Kitchen</span>
+                    <span className="text-sm font-bold text-primary">{preparingOrders.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-neutral-800">
+                    <span className="text-xs text-gray-500 dark:text-neutral-400">Active amount (sum)</span>
+                    <span className="text-sm font-bold text-gray-900 dark:text-white">Rs. {Math.round(activeRevenue).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ══════ ACTIVE TAB ══════ */}
           {tab === TABS.ACTIVE && (
@@ -567,14 +661,19 @@ export default function RiderPortalPage() {
                     const sc = getStatusConfig(effectiveStatus);
                     const StatusIcon = sc.icon;
                     const orderId = order.id || order._id;
+                    const orderKey = String(orderId);
+                    const isExpanded = expandedOrderIds.includes(orderKey);
+                    const totalWrapClass = isExpanded
+                      ? "flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-900 mb-3"
+                      : "flex items-center justify-between mb-3";
                     return (
-                      <div key={orderId} className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${sc.border} ${sc.pulse ? "rider-pulse-border" : ""}`}>
-                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bg}`}>
+                      <div key={orderKey} className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${sc.border} ${sc.pulse ? "rider-pulse-border" : ""}`}>
+                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
                           <div className="flex items-center gap-2">
-                            <StatusIcon className="w-4 h-4 text-white" />
-                            <span className="text-xs font-bold text-white">{sc.label}</span>
+                            <StatusIcon className={`w-4 h-4 ${sc.text}`} />
+                            <span className={`text-xs font-bold ${sc.text}`}>{sc.label}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-white/70">
+                          <div className={`flex items-center gap-1.5 text-[11px] ${sc.text} opacity-80`}>
                             <Clock className="w-3 h-3" />
                             {getTimeAgo(order.createdAt)}
                           </div>
@@ -590,37 +689,56 @@ export default function RiderPortalPage() {
                             </span>
                           </div>
 
-                          {order.customerName && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
-                              <User className="w-3 h-3" />
-                              {order.customerName}
-                            </div>
-                          )}
-                          {(order.customerPhone || order.phone) && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
-                              <Phone className="w-3 h-3" />
-                              {order.customerPhone || order.phone}
-                            </div>
-                          )}
-                          {order.deliveryAddress && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
-                              <MapPin className="w-3 h-3 flex-shrink-0" />
-                              <span className="line-clamp-2">{order.deliveryAddress}</span>
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleOrderDetails(orderKey)}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-colors border ${
+                              isExpanded
+                                ? "bg-primary/10 border-primary/20 text-primary"
+                                : "bg-gray-50 dark:bg-neutral-900 border-gray-200/70 dark:border-neutral-800 text-gray-600 dark:text-neutral-300"
+                            }`}
+                          >
+                            <span>{isExpanded ? "Hide Details" : "View Details"}</span>
+                            <ChevronDown
+                              className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                            />
+                          </button>
 
-                          <div className="space-y-1 mb-3">
-                            {order.items?.map((item, idx) => (
-                              <div key={idx} className="flex items-center justify-between text-xs">
-                                <span className="text-gray-700 dark:text-neutral-300 font-medium">
-                                  <span className="font-bold text-gray-900 dark:text-white">{item.quantity || item.qty}x</span>{" "}
-                                  {item.name}
-                                </span>
+                          {isExpanded && (
+                            <>
+                              {order.customerName && (
+                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
+                                  <User className="w-3 h-3" />
+                                  {order.customerName}
+                                </div>
+                              )}
+                              {(order.customerPhone || order.phone) && (
+                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
+                                  <Phone className="w-3 h-3" />
+                                  {order.customerPhone || order.phone}
+                                </div>
+                              )}
+                              {order.deliveryAddress && (
+                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
+                                  <MapPin className="w-3 h-3 flex-shrink-0" />
+                                  <span className="line-clamp-2">{order.deliveryAddress}</span>
+                                </div>
+                              )}
+
+                              <div className="space-y-1 mb-3">
+                                {order.items?.map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-700 dark:text-neutral-300 font-medium">
+                                      <span className="font-bold text-gray-900 dark:text-white">{item.quantity || item.qty}x</span>{" "}
+                                      {item.name}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
+                            </>
+                          )}
 
-                          <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-900 mb-3">
+                          <div className={totalWrapClass}>
                             <span className="text-xs text-gray-400 dark:text-neutral-500">Total</span>
                             <span className="text-sm font-black text-gray-900 dark:text-white">
                               Rs. {(order.grandTotal ?? order.total)?.toLocaleString()}
@@ -641,7 +759,7 @@ export default function RiderPortalPage() {
                             <button
                               onClick={() => handleMarkDelivered(orderId)}
                               disabled={deliveringId === orderId}
-                              className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-violet-600/20 active:scale-[0.98] transition-transform"
+                              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
                             >
                               {deliveringId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                               Mark as Delivered
@@ -684,12 +802,12 @@ export default function RiderPortalPage() {
                     const orderId = order.id || order._id;
                     return (
                       <div key={orderId} className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${sc.border}`}>
-                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bg}`}>
+                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
                           <div className="flex items-center gap-2">
-                            <StatusIcon className="w-4 h-4 text-white" />
-                            <span className="text-xs font-bold text-white">{sc.label}</span>
+                            <StatusIcon className={`w-4 h-4 ${sc.text}`} />
+                            <span className={`text-xs font-bold ${sc.text}`}>{sc.label}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-white/70">
+                          <div className={`flex items-center gap-1.5 text-[11px] ${sc.text} opacity-80`}>
                             <Clock className="w-3 h-3" />
                             {getTimeAgo(order.createdAt)}
                           </div>
@@ -1004,6 +1122,15 @@ export default function RiderPortalPage() {
 
         {/* ── Bottom Tab Bar ─────────────────────────────────────────── */}
         <nav className="flex-shrink-0 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex rider-safe-bottom">
+          <button
+            onClick={() => setTab(TABS.HOME)}
+            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+              tab === TABS.HOME ? "text-primary" : "text-gray-400 dark:text-neutral-500"
+            }`}
+          >
+            <BarChart3 className="w-5 h-5" />
+            <span className="text-[10px] font-bold">Overview</span>
+          </button>
           <button
             onClick={() => setTab(TABS.NEW_ORDER)}
             className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.NEW_ORDER ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
