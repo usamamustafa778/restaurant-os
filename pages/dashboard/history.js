@@ -1,65 +1,128 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { getSalesReport, getOrders, getDaySessions, getDaySessionOrders, SubscriptionInactiveError } from "../../lib/apiClient";
+import {
+  getSalesReport,
+  getOrders,
+  getDaySessions,
+  getDaySessionOrders,
+  SubscriptionInactiveError,
+} from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import {
-  BarChart3, DollarSign, ShoppingBag, TrendingUp,
-  HelpCircle, Loader2, Award, FileDown, Printer,
-  ClipboardList, Search, ChevronLeft, ChevronRight,
-  ChevronDown, Download, FileText, Calendar, Bike, Headset,
-  CalendarDays, RefreshCw, X, Banknote, CreditCard, Package, Clock,
+  BarChart3,
+  DollarSign,
+  ShoppingBag,
+  TrendingUp,
+  HelpCircle,
+  Loader2,
+  Award,
+  FileDown,
+  Printer,
+  ClipboardList,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Download,
+  FileText,
+  Calendar,
+  Bike,
+  Headset,
+  CalendarDays,
+  RefreshCw,
+  X,
+  Banknote,
+  CreditCard,
+  Package,
+  Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 const PRESETS = [
-  { id: "today",      label: "Today" },
-  { id: "yesterday",  label: "Yesterday" },
-  { id: "this_week",  label: "This Week" },
+  { id: "today", label: "Today" },
+  { id: "yesterday", label: "Yesterday" },
+  { id: "this_week", label: "This Week" },
   { id: "this_month", label: "This Month" },
   { id: "last_month", label: "Last Month" },
-  { id: "all",        label: "All Time" },
-  { id: "custom",     label: "Custom" },
+  { id: "all", label: "All Time" },
+  { id: "custom", label: "Custom" },
 ];
 
 const TABS = [
-  { id: "overview",  label: "Overview",      icon: BarChart3 },
-  { id: "orders",    label: "Orders List",   icon: ClipboardList },
-  { id: "sessions",  label: "Sessions",      icon: CalendarDays },
+  { id: "overview", label: "Overview", icon: BarChart3 },
+  { id: "orders", label: "Orders List", icon: ClipboardList },
+  { id: "sessions", label: "Sessions", icon: CalendarDays },
 ];
 
 const FILTER_ALL = "ALL";
 
-const STATUS_FILTERS = { ALL: "ALL", COMPLETED: "COMPLETED", CANCELLED: "CANCELLED" };
+const STATUS_FILTERS = {
+  ALL: "ALL",
+  COMPLETED: "COMPLETED",
+  CANCELLED: "CANCELLED",
+};
 
-const TYPE_FILTERS = { ALL: "ALL", DINE_IN: "DINE_IN", DELIVERY: "DELIVERY", TAKEAWAY: "TAKEAWAY" };
-const TYPE_API_MAP = { [TYPE_FILTERS.DINE_IN]: "dine-in", [TYPE_FILTERS.DELIVERY]: "delivery", [TYPE_FILTERS.TAKEAWAY]: "takeaway" };
-const TYPE_LABEL_MAP = { "dine-in": "Dine-in", delivery: "Delivery", takeaway: "Takeaway" };
+const TYPE_FILTERS = {
+  ALL: "ALL",
+  DINE_IN: "DINE_IN",
+  DELIVERY: "DELIVERY",
+  TAKEAWAY: "TAKEAWAY",
+};
+const TYPE_API_MAP = {
+  [TYPE_FILTERS.DINE_IN]: "dine-in",
+  [TYPE_FILTERS.DELIVERY]: "delivery",
+  [TYPE_FILTERS.TAKEAWAY]: "takeaway",
+};
+const TYPE_LABEL_MAP = {
+  "dine-in": "Dine-in",
+  delivery: "Delivery",
+  takeaway: "Takeaway",
+};
 
 const PAID_FILTERS = { ALL: "ALL", PAID: "PAID", UNPAID: "UNPAID" };
 
 const STATUS_LABELS = {
-  DELIVERED: "Delivered", COMPLETED: "Completed", CANCELLED: "Cancelled",
-  NEW_ORDER: "New", PROCESSING: "Processing", READY: "Ready", OUT_FOR_DELIVERY: "Out for Delivery",
+  DELIVERED: "Delivered",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+  NEW_ORDER: "New",
+  PROCESSING: "Processing",
+  READY: "Ready",
+  OUT_FOR_DELIVERY: "Out for Delivery",
 };
 const STATUS_COLORS = {
-  DELIVERED: "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  COMPLETED: "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  DELIVERED:
+    "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  COMPLETED:
+    "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   CANCELLED: "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400",
   NEW_ORDER: "bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
-  PROCESSING: "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  READY: "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
-  OUT_FOR_DELIVERY: "bg-sky-100 dark:bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  PROCESSING:
+    "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  READY:
+    "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
+  OUT_FOR_DELIVERY:
+    "bg-sky-100 dark:bg-sky-500/10 text-sky-700 dark:text-sky-400",
 };
 
 const ORDER_TYPE_CARD_COLORS = {
-  "Dine In": "border-orange-200 dark:border-orange-500/30 bg-orange-50/60 dark:bg-orange-500/10 hover:border-orange-400 dark:hover:border-orange-500/50",
-  Delivery: "border-blue-200 dark:border-blue-500/30 bg-blue-50/60 dark:bg-blue-500/10 hover:border-blue-400 dark:hover:border-blue-500/50",
-  Takeaway: "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10 hover:border-emerald-400 dark:hover:border-emerald-500/50",
+  "Dine In":
+    "border-orange-200 dark:border-orange-500/30 bg-orange-50/60 dark:bg-orange-500/10 hover:border-orange-400 dark:hover:border-orange-500/50",
+  Delivery:
+    "border-blue-200 dark:border-blue-500/30 bg-blue-50/60 dark:bg-blue-500/10 hover:border-blue-400 dark:hover:border-blue-500/50",
+  Takeaway:
+    "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10 hover:border-emerald-400 dark:hover:border-emerald-500/50",
 };
-const ORDER_TYPE_FILTER_MAP = { "Dine In": TYPE_FILTERS.DINE_IN, Delivery: TYPE_FILTERS.DELIVERY, Takeaway: TYPE_FILTERS.TAKEAWAY };
+const ORDER_TYPE_FILTER_MAP = {
+  "Dine In": TYPE_FILTERS.DINE_IN,
+  Delivery: TYPE_FILTERS.DELIVERY,
+  Takeaway: TYPE_FILTERS.TAKEAWAY,
+};
 
-const TH_CLS = "py-2.5 px-3 text-left font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap";
-const TD_CLS = "py-2.5 px-3 text-gray-600 dark:text-neutral-400 whitespace-nowrap";
+const TH_CLS =
+  "py-2.5 px-3 text-left font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap";
+const TD_CLS =
+  "py-2.5 px-3 text-gray-600 dark:text-neutral-400 whitespace-nowrap";
 
 function selectCls(active) {
   return `h-8 px-2.5 pr-7 rounded-lg text-[11px] font-semibold appearance-none cursor-pointer outline-none transition-all border hover:border-primary/40 ${
@@ -72,20 +135,36 @@ function selectCls(active) {
 function FilterSelect({ value, onChange, active, children, small }) {
   return (
     <div className="relative">
-      <select value={value} onChange={onChange}
-        className={`${selectCls(active)}${small ? " !h-7 !text-[10px] !px-2 !pr-6" : ""}`}>
+      <select
+        value={value}
+        onChange={onChange}
+        className={`${selectCls(active)}${small ? " !h-7 !text-[10px] !px-2 !pr-6" : ""}`}
+      >
         {children}
       </select>
-      <ChevronDown className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 ${small ? "w-3 h-3" : "w-3.5 h-3.5"} ${active ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`} />
+      <ChevronDown
+        className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 ${small ? "w-3 h-3" : "w-3.5 h-3.5"} ${active ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
+      />
     </div>
   );
 }
 
 const DEFAULT_REPORT = {
-  totalRevenue: 0, totalOrders: 0, topItems: [],
-  paymentRows: [], paymentAccountRows: [], orderTypeRows: [],
-  tableBreakdown: [], cancelledSummary: { count: 0, amount: 0, orders: [] },
-  typeDetails: {}, reservationSummary: { total: 0, totalGuests: 0, byStatus: {}, reservations: [] },
+  totalRevenue: 0,
+  totalOrders: 0,
+  topItems: [],
+  paymentRows: [],
+  paymentAccountRows: [],
+  orderTypeRows: [],
+  tableBreakdown: [],
+  cancelledSummary: { count: 0, amount: 0, orders: [] },
+  typeDetails: {},
+  reservationSummary: {
+    total: 0,
+    totalGuests: 0,
+    byStatus: {},
+    reservations: [],
+  },
   completedSummary: { count: 0, amount: 0, orders: [] },
 };
 
@@ -94,35 +173,53 @@ function getCalendarDates(preset) {
   const today = new Date();
   switch (preset) {
     case "today": {
-      const s = new Date(today); s.setHours(0, 0, 0, 0);
-      const e = new Date(today); e.setDate(e.getDate() + 1); e.setHours(0, 0, 0, 0);
+      const s = new Date(today);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      e.setHours(0, 0, 0, 0);
       return { from: s.toISOString(), to: e.toISOString() };
     }
     case "yesterday": {
-      const s = new Date(today); s.setDate(s.getDate() - 1); s.setHours(0, 0, 0, 0);
-      const e = new Date(s); e.setHours(23, 59, 59, 999);
+      const s = new Date(today);
+      s.setDate(s.getDate() - 1);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(s);
+      e.setHours(23, 59, 59, 999);
       return { from: s.toISOString(), to: e.toISOString() };
     }
     case "this_week": {
       const dow = today.getDay();
       const diff = dow === 0 ? -6 : 1 - dow;
-      const monday = new Date(today); monday.setDate(today.getDate() + diff); monday.setHours(0, 0, 0, 0);
-      const e = new Date(today); e.setDate(e.getDate() + 1); e.setHours(0, 0, 0, 0);
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      monday.setHours(0, 0, 0, 0);
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      e.setHours(0, 0, 0, 0);
       return { from: monday.toISOString(), to: e.toISOString() };
     }
     case "this_month": {
-      const first = new Date(today.getFullYear(), today.getMonth(), 1); first.setHours(0, 0, 0, 0);
-      const e = new Date(today); e.setDate(e.getDate() + 1); e.setHours(0, 0, 0, 0);
+      const first = new Date(today.getFullYear(), today.getMonth(), 1);
+      first.setHours(0, 0, 0, 0);
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      e.setHours(0, 0, 0, 0);
       return { from: first.toISOString(), to: e.toISOString() };
     }
     case "last_month": {
-      const firstThis = new Date(today.getFullYear(), today.getMonth(), 1); firstThis.setHours(0, 0, 0, 0);
-      const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1); firstLast.setHours(0, 0, 0, 0);
+      const firstThis = new Date(today.getFullYear(), today.getMonth(), 1);
+      firstThis.setHours(0, 0, 0, 0);
+      const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      firstLast.setHours(0, 0, 0, 0);
       return { from: firstLast.toISOString(), to: firstThis.toISOString() };
     }
     case "all": {
-      const s = new Date(2020, 0, 1); s.setHours(0, 0, 0, 0);
-      const e = new Date(today); e.setDate(e.getDate() + 1); e.setHours(0, 0, 0, 0);
+      const s = new Date(2020, 0, 1);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(today);
+      e.setDate(e.getDate() + 1);
+      e.setHours(0, 0, 0, 0);
       return { from: s.toISOString(), to: e.toISOString() };
     }
     default:
@@ -138,12 +235,18 @@ function getSmartDates(preset, sessions) {
     if (preset === "today") {
       // Prefer the current OPEN session
       const openSess = sessions.find((s) => s.status === "OPEN");
-      if (openSess?.startAt) return { from: openSess.startAt, to: now.toISOString() };
+      if (openSess?.startAt)
+        return { from: openSess.startAt, to: now.toISOString() };
       // Fall back to most recent session that started today (local time)
       const todayStr = now.toDateString();
-      const todaySess = sessions.find((s) => new Date(s.startAt).toDateString() === todayStr);
+      const todaySess = sessions.find(
+        (s) => new Date(s.startAt).toDateString() === todayStr,
+      );
       if (todaySess?.startAt)
-        return { from: todaySess.startAt, to: todaySess.endAt || now.toISOString() };
+        return {
+          from: todaySess.startAt,
+          to: todaySess.endAt || now.toISOString(),
+        };
     }
     if (preset === "yesterday") {
       // The most recently CLOSED session = the previous business day
@@ -164,9 +267,14 @@ function toCSVRow(cells) {
 
 function downloadCSV(filename, rows) {
   const content = rows.map(toCSVRow).join("\n");
-  const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["\uFEFF" + content], {
+    type: "text/csv;charset=utf-8;",
+  });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -174,15 +282,28 @@ function buildPeriodLabel(preset, customFrom, customTo) {
   if (preset === "custom") {
     if (customFrom && customTo)
       return `${new Date(customFrom).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} — ${new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
-    if (customFrom) return `From ${new Date(customFrom).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
-    if (customTo) return `Up to ${new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
+    if (customFrom)
+      return `From ${new Date(customFrom).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
+    if (customTo)
+      return `Up to ${new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
     return "Custom range";
   }
-  return PRESETS.find(p => p.id === preset)?.label || "All Time";
+  return PRESETS.find((p) => p.id === preset)?.label || "All Time";
 }
 
-function fmtRs(v) { return `Rs ${Math.round(Number(v) || 0).toLocaleString()}`; }
-function fmtDate(d) { return new Date(d).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }); }
+function fmtRs(v) {
+  return `Rs ${Math.round(Number(v) || 0).toLocaleString()}`;
+}
+function fmtDate(d) {
+  return new Date(d).toLocaleString("en-PK", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
 function fmtDuration(start, end) {
   if (!start || !end) return null;
   const ms = new Date(end) - new Date(start);
@@ -190,8 +311,20 @@ function fmtDuration(start, end) {
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
-function fmtShortDate(d) { return new Date(d).toLocaleDateString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }); }
-function fmtTime(d) { return d ? new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"; }
+function fmtShortDate(d) {
+  return new Date(d).toLocaleDateString("en-PK", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+function fmtTime(d) {
+  return d
+    ? new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "—";
+}
 function getStatusTime(order, status) {
   const entry = (order.statusHistory || []).find((h) => h.status === status);
   return entry?.at || null;
@@ -202,11 +335,21 @@ function KpiCard({ label, value, sub, icon: Icon, gradient, shadow }) {
     <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 hover:shadow-xl transition-all overflow-hidden">
       <div className="relative flex items-start justify-between">
         <div>
-          <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">{label}</p>
-          <p className="text-2xl font-extrabold text-gray-900 dark:text-white">{value}</p>
-          {sub && <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">{sub}</p>}
+          <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">
+            {label}
+          </p>
+          <p className="text-2xl font-extrabold text-gray-900 dark:text-white">
+            {value}
+          </p>
+          {sub && (
+            <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+              {sub}
+            </p>
+          )}
         </div>
-        <div className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg ${shadow} flex-shrink-0`}>
+        <div
+          className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg ${shadow} flex-shrink-0`}
+        >
           <Icon className="w-5 h-5 text-white" />
         </div>
       </div>
@@ -214,30 +357,64 @@ function KpiCard({ label, value, sub, icon: Icon, gradient, shadow }) {
   );
 }
 
-function Section({ title, subtitle, icon: Icon, iconGradient, badge, badgeValue, defaultOpen = false, children }) {
+function Section({
+  title,
+  subtitle,
+  icon: Icon,
+  iconGradient,
+  badge,
+  badgeValue,
+  defaultOpen = false,
+  children,
+}) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
-      <button type="button" onClick={() => setOpen(!open)}
-        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors"
+      >
         <div className="flex items-center gap-3">
           {Icon && (
-            <div className={`h-9 w-9 rounded-xl flex items-center justify-center shadow-md ${iconGradient || "bg-gray-200 dark:bg-neutral-800"}`}>
+            <div
+              className={`h-9 w-9 rounded-xl flex items-center justify-center shadow-md ${iconGradient || "bg-gray-200 dark:bg-neutral-800"}`}
+            >
               <Icon className="w-4 h-4 text-white" />
             </div>
           )}
           <div className="text-left">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h3>
-            {subtitle && <p className="text-xs text-gray-500 dark:text-neutral-400">{subtitle}</p>}
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+              {title}
+            </h3>
+            {subtitle && (
+              <p className="text-xs text-gray-500 dark:text-neutral-400">
+                {subtitle}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {badge && <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">{badge}</span>}
-          {badgeValue && <span className="text-xs font-bold text-primary bg-primary/10 dark:bg-primary/20 px-2.5 py-1 rounded-lg">{badgeValue}</span>}
-          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+          {badge && (
+            <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400 bg-gray-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">
+              {badge}
+            </span>
+          )}
+          {badgeValue && (
+            <span className="text-xs font-bold text-primary bg-primary/10 dark:bg-primary/20 px-2.5 py-1 rounded-lg">
+              {badgeValue}
+            </span>
+          )}
+          <ChevronDown
+            className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
+          />
         </div>
       </button>
-      {open && <div className="border-t border-gray-100 dark:border-neutral-800">{children}</div>}
+      {open && (
+        <div className="border-t border-gray-100 dark:border-neutral-800">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -248,45 +425,84 @@ function EmptyState({ icon: Icon, message, sub }) {
       <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
         <Icon className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
       </div>
-      <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">{message}</p>
-      {sub && <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">{sub}</p>}
+      <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">
+        {message}
+      </p>
+      {sub && (
+        <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+          {sub}
+        </p>
+      )}
     </div>
   );
 }
 
 function TopItemsList({ items, title, subtitle, onItemClick }) {
-  if (!items || items.length === 0) return <EmptyState icon={Award} message="No item data" sub="Try a different period" />;
+  if (!items || items.length === 0)
+    return (
+      <EmptyState
+        icon={Award}
+        message="No item data"
+        sub="Try a different period"
+      />
+    );
   const topRevenue = items[0]?.revenue || 1;
   const totalRevenue = items.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
   const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
   return (
-    <Section title={title || "Top Selling Items"} subtitle={subtitle} icon={Award} iconGradient="bg-gradient-to-br from-primary to-secondary shadow-primary/25" badge={`${items.length} items`}>
+    <Section
+      title={title || "Top Selling Items"}
+      subtitle={subtitle}
+      icon={Award}
+      iconGradient="bg-gradient-to-br from-primary to-secondary shadow-primary/25"
+      badge={`${items.length} items`}
+    >
       <div className="divide-y divide-gray-100 dark:divide-neutral-800">
         {items.map((item, index) => {
           const barPct = Math.round((item.revenue / topRevenue) * 100);
           const sharePct = Math.round((item.revenue / totalRevenue) * 100);
           return (
-            <button key={item.name + index} type="button"
+            <button
+              key={item.name + index}
+              type="button"
               onClick={() => onItemClick?.(item.name)}
-              className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer">
+              className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
+            >
               <div className="flex items-center gap-4">
                 <div className="w-7 text-center flex-shrink-0">
-                  {index < 3 ? <span className="text-lg leading-none">{medals[index]}</span>
-                    : <span className="text-xs font-bold text-gray-400 dark:text-neutral-500">#{index + 1}</span>}
+                  {index < 3 ? (
+                    <span className="text-lg leading-none">
+                      {medals[index]}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-gray-400 dark:text-neutral-500">
+                      #{index + 1}
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">{item.name}</span>
+                    <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                      {item.name}
+                    </span>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
-                        <ShoppingBag className="w-3 h-3" />{item.quantity} sold
+                        <ShoppingBag className="w-3 h-3" />
+                        {item.quantity} sold
                       </span>
-                      <span className="text-xs text-gray-400 dark:text-neutral-500 font-medium hidden sm:block">{sharePct}% share</span>
-                      <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(item.revenue)}</span>
+                      <span className="text-xs text-gray-400 dark:text-neutral-500 font-medium hidden sm:block">
+                        {sharePct}% share
+                      </span>
+                      <span className="text-sm font-bold text-primary min-w-[72px] text-right">
+                        {fmtRs(item.revenue)}
+                      </span>
                     </div>
                   </div>
                   <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-r from-primary to-secondary transition-all duration-700" style={{ width: `${barPct}%` }} />
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary to-secondary transition-all duration-700"
+                      style={{ width: `${barPct}%` }}
+                    />
                   </div>
                 </div>
               </div>
@@ -343,9 +559,14 @@ export default function HistoryPage() {
   async function loadReport(input) {
     try {
       const data = await getSalesReport(input);
-      setReport(Object.fromEntries(
-        Object.entries(DEFAULT_REPORT).map(([key, fallback]) => [key, data[key] ?? fallback])
-      ));
+      setReport(
+        Object.fromEntries(
+          Object.entries(DEFAULT_REPORT).map(([key, fallback]) => [
+            key,
+            data[key] ?? fallback,
+          ]),
+        ),
+      );
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) setSuspended(true);
       else toast.error(err.message || "Failed to load sales report");
@@ -414,8 +635,12 @@ export default function HistoryPage() {
     e.preventDefault();
     setLoading(true);
     setOrdersPage(0);
-    const from = customFrom ? new Date(customFrom + "T00:00:00").toISOString() : "";
-    const to = customTo ? new Date(customTo + "T23:59:59.999").toISOString() : "";
+    const from = customFrom
+      ? new Date(customFrom + "T00:00:00").toISOString()
+      : "";
+    const to = customTo
+      ? new Date(customTo + "T23:59:59.999").toISOString()
+      : "";
     loadReport({ from, to });
     loadOrders({ from, to });
   }
@@ -464,19 +689,32 @@ export default function HistoryPage() {
     setOrdersPage(0);
   }
 
-  function goToOrders({ type, payment, search, rider, waiter, cashier, admin } = {}) {
+  function goToOrders({
+    type,
+    payment,
+    search,
+    rider,
+    waiter,
+    cashier,
+    admin,
+  } = {}) {
     resetFilters();
     if (type) setOrdersTypeFilter(type);
     if (payment) setOrdersPaymentFilter(payment);
     if (search) setOrdersSearch(search);
-    if (rider) { setOrdersTypeFilter(TYPE_FILTERS.DELIVERY); setOrdersRiderFilter(rider); }
+    if (rider) {
+      setOrdersTypeFilter(TYPE_FILTERS.DELIVERY);
+      setOrdersRiderFilter(rider);
+    }
     if (waiter) setOrdersWaiterFilter(waiter);
     if (cashier) setOrdersCashierFilter(cashier);
     if (admin) setOrdersAdminFilter(admin);
     setActiveTab("orders");
   }
 
-  const avgTicket = report.totalOrders ? Math.round(report.totalRevenue / report.totalOrders) : 0;
+  const avgTicket = report.totalOrders
+    ? Math.round(report.totalRevenue / report.totalOrders)
+    : 0;
   const periodLabel = buildPeriodLabel(preset, customFrom, customTo);
 
   const activeDateRange = useMemo(() => {
@@ -487,12 +725,15 @@ export default function HistoryPage() {
       };
     }
     const d = getSmartDates(preset, sessions);
-    return { from: d?.from ? new Date(d.from) : null, to: d?.to ? new Date(d.to) : null };
+    return {
+      from: d?.from ? new Date(d.from) : null,
+      to: d?.to ? new Date(d.to) : null,
+    };
   }, [preset, customFrom, customTo, sessions]);
 
   const dateFilteredOrders = useMemo(() => {
     const { from, to } = activeDateRange;
-    return allOrders.filter(o => {
+    return allOrders.filter((o) => {
       const t = new Date(o.createdAt);
       if (from && t < from) return false;
       if (to && t > to) return false;
@@ -502,18 +743,24 @@ export default function HistoryPage() {
 
   const dateFilteredOrdersCount = dateFilteredOrders.length;
 
-  const paymentRows = (report.paymentRows || []).filter(r => r && r.method && r.method !== "Total");
+  const paymentRows = (report.paymentRows || []).filter(
+    (r) => r && r.method && r.method !== "Total",
+  );
   const paymentAccountRows = report.paymentAccountRows || [];
   const orderTypeRows = report.orderTypeRows || [];
 
-  const paymentTotals = useMemo(() => paymentRows.reduce((acc, row) => {
-    const key = (row.method || "").toUpperCase();
-    if (!key) return acc;
-    if (!acc[key]) acc[key] = { amount: 0, orders: 0 };
-    acc[key].amount += Number(row.amount || 0);
-    acc[key].orders += Number(row.orders || 0);
-    return acc;
-  }, {}), [paymentRows]);
+  const paymentTotals = useMemo(
+    () =>
+      paymentRows.reduce((acc, row) => {
+        const key = (row.method || "").toUpperCase();
+        if (!key) return acc;
+        if (!acc[key]) acc[key] = { amount: 0, orders: 0 };
+        acc[key].amount += Number(row.amount || 0);
+        acc[key].orders += Number(row.orders || 0);
+        return acc;
+      }, {}),
+    [paymentRows],
+  );
 
   const riderStats = useMemo(() => {
     const map = {};
@@ -521,22 +768,37 @@ export default function HistoryPage() {
       const type = String(o.type || "").toLowerCase();
       if (type !== "delivery" || !o.assignedRiderName) continue;
       const name = o.assignedRiderName;
-      if (!map[name]) map[name] = { name, deliveries: 0, revenue: 0, paidAmount: 0, unpaidAmount: 0, cancelled: 0 };
+      if (!map[name])
+        map[name] = {
+          name,
+          deliveries: 0,
+          revenue: 0,
+          paidDeliveries: 0,
+          unpaidDeliveries: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+          cancelled: 0,
+        };
       if (o.status === "CANCELLED") {
         map[name].cancelled += 1;
         continue;
       }
       const amount = Math.round(Number(o.grandTotal ?? o.total) || 0);
 
+      // Paid/Unpaid delivery orders (must match Orders tab filters).
+      if (o.isPaid) {
+        map[name].paidDeliveries += 1;
+        map[name].paidAmount += amount;
+      } else {
+        map[name].unpaidDeliveries += 1;
+        map[name].unpaidAmount += amount;
+      }
+
       // Count delivery only once it is actually completed.
       if (o.status === "DELIVERED" || o.status === "COMPLETED") {
         map[name].deliveries += 1;
         map[name].revenue += amount;
       }
-
-      // Paid/Unpaid totals must match the Orders tab filtering (which uses `o.isPaid`).
-      if (o.isPaid) map[name].paidAmount += amount;
-      else map[name].unpaidAmount += amount;
     }
     return Object.values(map).sort((a, b) => b.deliveries - a.deliveries);
   }, [dateFilteredOrders]);
@@ -593,7 +855,11 @@ export default function HistoryPage() {
     const map = {};
     for (const o of dateFilteredOrders) {
       const name = o.orderTakerName;
-      const isAdminCreator = ["restaurant_admin", "admin", "super_admin"].includes(o.createdByRole);
+      const isAdminCreator = [
+        "restaurant_admin",
+        "admin",
+        "super_admin",
+      ].includes(o.createdByRole);
       if (!name || !isAdminCreator) continue;
       // Prevent overlap with Riders Overview:
       // Admin overview should focus on non-delivery orders only.
@@ -617,52 +883,131 @@ export default function HistoryPage() {
   // Export CSV for current tab
   function handleExportCSV() {
     const rows = [
-      ["Eats Desk Reports — " + TABS.find(t => t.id === activeTab)?.label],
+      ["Eats Desk Reports — " + TABS.find((t) => t.id === activeTab)?.label],
       ["Period", periodLabel],
       ["Generated", new Date().toLocaleString("en-PK")],
       [],
     ];
     if (activeTab === "overview") {
-      rows.push(["SUMMARY"], ["Metric", "Value"],
-        ["Total Revenue", fmtRs(report.totalRevenue)], ["Total Orders", report.totalOrders], ["Avg Ticket Size", fmtRs(avgTicket)], [],
-        ...(paymentRows.length > 0 ? [["PAYMENT WISE SALES"], ["Method", "Orders", "Amount", "%"], ...paymentRows.map(r => [r.method, r.orders, r.amount, r.percent])] : []), [],
-        ["TOP SELLING ITEMS"], ["Rank", "Item", "Qty", "Revenue"],
-        ...report.topItems.map((item, i) => [i + 1, item.name, item.quantity ?? 0, Math.round(item.revenue || 0)]));
+      rows.push(
+        ["SUMMARY"],
+        ["Metric", "Value"],
+        ["Total Revenue", fmtRs(report.totalRevenue)],
+        ["Total Orders", report.totalOrders],
+        ["Avg Ticket Size", fmtRs(avgTicket)],
+        [],
+        ...(paymentRows.length > 0
+          ? [
+              ["PAYMENT WISE SALES"],
+              ["Method", "Orders", "Amount", "%"],
+              ...paymentRows.map((r) => [
+                r.method,
+                r.orders,
+                r.amount,
+                r.percent,
+              ]),
+            ]
+          : []),
+        [],
+        ["TOP SELLING ITEMS"],
+        ["Rank", "Item", "Qty", "Revenue"],
+        ...report.topItems.map((item, i) => [
+          i + 1,
+          item.name,
+          item.quantity ?? 0,
+          Math.round(item.revenue || 0),
+        ]),
+      );
     } else if (activeTab === "orders") {
-      rows.push(["ALL ORDERS"], ["Order #", "Status", "Grand Total", "Subtotal", "Discount", "Items", "Type", "Payment", "Paid", "Customer", "Phone", "Table", "Source", "Order Taker", "Rider", "Delivery Address", "Del. Charges", "Cancel Reason", "Created", "Preparing", "Ready", "Out for Delivery", "Closed / Cancelled"],
-        ...allOrders.map(o => [
-          o.id, o.status, Math.round(o.grandTotal ?? o.total ?? 0), Math.round(o.subtotal ?? 0), Math.round(o.discountAmount ?? 0),
-          (o.items || []).map(i => `${i.name} x${i.qty}`).join(", "),
-          o.type, o.paymentMethod || "", o.isPaid ? "Paid" : "Unpaid",
-          o.customerName || "", o.customerPhone || "", o.tableName || "", o.source || "",
-          o.orderTakerName || "", o.assignedRiderName || "", o.deliveryAddress || "",
-          o.deliveryCharges > 0 ? Math.round(o.deliveryCharges) : "", o.cancelReason || "",
+      rows.push(
+        ["ALL ORDERS"],
+        [
+          "Order #",
+          "Status",
+          "Grand Total",
+          "Subtotal",
+          "Discount",
+          "Items",
+          "Type",
+          "Payment",
+          "Paid",
+          "Customer",
+          "Phone",
+          "Table",
+          "Source",
+          "Order Taker",
+          "Rider",
+          "Delivery Address",
+          "Del. Charges",
+          "Cancel Reason",
+          "Created",
+          "Preparing",
+          "Ready",
+          "Out for Delivery",
+          "Closed / Cancelled",
+        ],
+        ...allOrders.map((o) => [
+          o.id,
+          o.status,
+          Math.round(o.grandTotal ?? o.total ?? 0),
+          Math.round(o.subtotal ?? 0),
+          Math.round(o.discountAmount ?? 0),
+          (o.items || []).map((i) => `${i.name} x${i.qty}`).join(", "),
+          o.type,
+          o.paymentMethod || "",
+          o.isPaid ? "Paid" : "Unpaid",
+          o.customerName || "",
+          o.customerPhone || "",
+          o.tableName || "",
+          o.source || "",
+          o.orderTakerName || "",
+          o.assignedRiderName || "",
+          o.deliveryAddress || "",
+          o.deliveryCharges > 0 ? Math.round(o.deliveryCharges) : "",
+          o.cancelReason || "",
           o.createdAt ? new Date(o.createdAt).toLocaleString() : "",
           fmtTime(getStatusTime(o, "PROCESSING")),
           fmtTime(getStatusTime(o, "READY")),
           fmtTime(getStatusTime(o, "OUT_FOR_DELIVERY")),
-          o.status === "CANCELLED" ? fmtTime(o.cancelledAt || getStatusTime(o, "CANCELLED")) : fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt),
-        ]));
+          o.status === "CANCELLED"
+            ? fmtTime(o.cancelledAt || getStatusTime(o, "CANCELLED"))
+            : fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt),
+        ]),
+      );
     }
-    downloadCSV(`report-${activeTab}-${periodLabel.replace(/[\s/]/g, "-")}.csv`, rows);
+    downloadCSV(
+      `report-${activeTab}-${periodLabel.replace(/[\s/]/g, "-")}.csv`,
+      rows,
+    );
     toast.success("CSV exported");
   }
 
   function handlePrint() {
     const win = window.open("", "_blank");
-    if (!win) { toast.error("Pop-up blocked"); return; }
+    if (!win) {
+      toast.error("Pop-up blocked");
+      return;
+    }
     const generated = new Date().toLocaleString("en-PK");
-    const tabLabel = TABS.find(t => t.id === activeTab)?.label || "Report";
+    const tabLabel = TABS.find((t) => t.id === activeTab)?.label || "Report";
     let bodyContent = `<div class="kpis">
       <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmtRs(report.totalRevenue)}</div></div>
       <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">${report.totalOrders}</div></div>
       <div class="kpi"><div class="kpi-label">Avg Ticket</div><div class="kpi-value">${fmtRs(avgTicket)}</div></div>
     </div>`;
     if (report.topItems.length > 0) {
-      bodyContent += `<h2>Top Selling Items</h2><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Revenue</th></tr></thead><tbody>` +
-        report.topItems.map((item, i) => `<tr><td>${i + 1}</td><td>${item.name}</td><td>${item.quantity ?? 0}</td><td>${fmtRs(item.revenue)}</td></tr>`).join("") + `</tbody></table>`;
+      bodyContent +=
+        `<h2>Top Selling Items</h2><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Revenue</th></tr></thead><tbody>` +
+        report.topItems
+          .map(
+            (item, i) =>
+              `<tr><td>${i + 1}</td><td>${item.name}</td><td>${item.quantity ?? 0}</td><td>${fmtRs(item.revenue)}</td></tr>`,
+          )
+          .join("") +
+        `</tbody></table>`;
     }
-    win.document.write(`<!DOCTYPE html><html><head><title>${tabLabel} — ${periodLabel}</title>
+    win.document
+      .write(`<!DOCTYPE html><html><head><title>${tabLabel} — ${periodLabel}</title>
     <style>body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}h1{font-size:22px;font-weight:800;margin-bottom:4px}.meta{font-size:12px;color:#6b7280;margin-bottom:28px}.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px}.kpi{border:1px solid #e5e7eb;border-radius:12px;padding:16px}.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:4px}.kpi-value{font-size:24px;font-weight:800;color:#111}h2{font-size:14px;font-weight:700;margin:20px 0 12px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11px;text-transform:uppercase;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}td{padding:10px 12px;border-bottom:1px solid #f3f4f6;font-size:13px}@media print{body{padding:0}}</style></head><body>
     <h1>Eats Desk — ${tabLabel}</h1>
     <p class="meta">Period: <strong>${periodLabel}</strong> · Generated: ${generated}</p>
@@ -677,40 +1022,98 @@ export default function HistoryPage() {
     return (
       <div className="space-y-5 max-w-7xl mx-auto">
         <div className="grid gap-4 sm:grid-cols-3">
-          <KpiCard label="Total Revenue" value={fmtRs(report.totalRevenue)} sub="from completed orders" icon={DollarSign} gradient="from-primary to-secondary" shadow="shadow-primary/30" />
-          <KpiCard label="Total Orders" value={report.totalOrders.toLocaleString()} sub="completed & delivered" icon={ShoppingBag} gradient="from-violet-500 to-violet-600" shadow="shadow-violet-500/30" />
-          <KpiCard label="Avg. Ticket Size" value={fmtRs(avgTicket)} sub="revenue per order" icon={TrendingUp} gradient="from-emerald-500 to-emerald-600" shadow="shadow-emerald-500/30" />
+          <KpiCard
+            label="Total Revenue"
+            value={fmtRs(report.totalRevenue)}
+            sub="from completed orders"
+            icon={DollarSign}
+            gradient="from-primary to-secondary"
+            shadow="shadow-primary/30"
+          />
+          <KpiCard
+            label="Total Orders"
+            value={report.totalOrders.toLocaleString()}
+            sub="completed & delivered"
+            icon={ShoppingBag}
+            gradient="from-violet-500 to-violet-600"
+            shadow="shadow-violet-500/30"
+          />
+          <KpiCard
+            label="Avg. Ticket Size"
+            value={fmtRs(avgTicket)}
+            sub="revenue per order"
+            icon={TrendingUp}
+            gradient="from-emerald-500 to-emerald-600"
+            shadow="shadow-emerald-500/30"
+          />
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <Section title="Payment Summary" subtitle="How customers paid in this period" icon={DollarSign} iconGradient="bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/25" defaultOpen>
+          <Section
+            title="Payment Summary"
+            subtitle="How customers paid in this period"
+            icon={DollarSign}
+            iconGradient="bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/25"
+            defaultOpen
+          >
             <div className="p-5 grid gap-3 sm:grid-cols-3">
-              {["CASH", "CARD", "ONLINE"].map(method => {
+              {["CASH", "CARD", "ONLINE"].map((method) => {
                 const d = paymentTotals[method] || { amount: 0, orders: 0 };
-                const label = method === "CASH" ? "Cash" : method === "CARD" ? "Card" : "Online";
+                const label =
+                  method === "CASH"
+                    ? "Cash"
+                    : method === "CARD"
+                      ? "Card"
+                      : "Online";
                 return (
-                  <button key={method} type="button"
+                  <button
+                    key={method}
+                    type="button"
                     onClick={() => goToOrders({ payment: label })}
-                    className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50/70 dark:bg-neutral-900/60 px-3 py-3 text-left cursor-pointer transition-all hover:border-primary/40 hover:shadow-sm">
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">{label}</p>
-                    <p className="mt-1 text-lg font-extrabold text-gray-900 dark:text-white">{fmtRs(d.amount)}</p>
-                    <p className="mt-0.5 text-[11px] text-gray-400 dark:text-neutral-500">{d.orders.toLocaleString()} orders</p>
+                    className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50/70 dark:bg-neutral-900/60 px-3 py-3 text-left cursor-pointer transition-all hover:border-primary/40 hover:shadow-sm"
+                  >
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+                      {label}
+                    </p>
+                    <p className="mt-1 text-lg font-extrabold text-gray-900 dark:text-white">
+                      {fmtRs(d.amount)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-gray-400 dark:text-neutral-500">
+                      {d.orders.toLocaleString()} orders
+                    </p>
                   </button>
                 );
               })}
             </div>
           </Section>
-          <Section title="Online Payment Accounts" subtitle="Breakdown by JazzCash, bank, etc." icon={DollarSign} iconGradient="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/25" defaultOpen>
+          <Section
+            title="Online Payment Accounts"
+            subtitle="Breakdown by JazzCash, bank, etc."
+            icon={DollarSign}
+            iconGradient="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/25"
+            defaultOpen
+          >
             <div className="p-5">
               {paymentAccountRows.length === 0 ? (
-                <div className="py-6 text-center text-xs text-gray-400 dark:text-neutral-500">No online payments in this period.</div>
+                <div className="py-6 text-center text-xs text-gray-400 dark:text-neutral-500">
+                  No online payments in this period.
+                </div>
               ) : (
                 <div className="divide-y divide-gray-100 dark:divide-neutral-800 text-xs">
-                  {paymentAccountRows.map(row => (
-                    <div key={row.accountName} className="flex items-center justify-between py-2.5">
-                      <p className="font-semibold text-gray-900 dark:text-white truncate">{row.accountName}</p>
+                  {paymentAccountRows.map((row) => (
+                    <div
+                      key={row.accountName}
+                      className="flex items-center justify-between py-2.5"
+                    >
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">
+                        {row.accountName}
+                      </p>
                       <div className="text-right">
-                        <p className="text-xs font-semibold text-gray-900 dark:text-white">{fmtRs(row.amount)}</p>
-                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">{row.orders} orders</p>
+                        <p className="text-xs font-semibold text-gray-900 dark:text-white">
+                          {fmtRs(row.amount)}
+                        </p>
+                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                          {row.orders} orders
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -721,64 +1124,102 @@ export default function HistoryPage() {
         </div>
         {/* Order Type Breakdown */}
         {orderTypeRows.length > 0 && (
-          <Section title="Order Type Breakdown" subtitle={`${orderTypeRows.length} types`} icon={ShoppingBag} iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25">
+          <Section
+            title="Order Type Breakdown"
+            subtitle={`${orderTypeRows.length} types`}
+            icon={ShoppingBag}
+            iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
+          >
             <div className="p-5 grid gap-3 sm:grid-cols-3">
-              {orderTypeRows.map(row => (
-                  <button key={row.type} type="button"
-                    onClick={() => goToOrders({ type: ORDER_TYPE_FILTER_MAP[row.type] || FILTER_ALL })}
-                    className={`rounded-xl border px-4 py-3 text-left cursor-pointer transition-all ${ORDER_TYPE_CARD_COLORS[row.type] || "border-gray-200 dark:border-neutral-800 bg-gray-50/60 hover:border-gray-400"}`}>
-                    <p className="text-xs font-semibold text-gray-600 dark:text-neutral-300">{row.type}</p>
-                    <p className="text-lg font-extrabold text-gray-900 dark:text-white mt-1">{fmtRs(row.amount)}</p>
-                    <p className="text-[11px] text-gray-400 dark:text-neutral-500">{row.orders} orders · {row.percent}</p>
-                  </button>
+              {orderTypeRows.map((row) => (
+                <button
+                  key={row.type}
+                  type="button"
+                  onClick={() =>
+                    goToOrders({
+                      type: ORDER_TYPE_FILTER_MAP[row.type] || FILTER_ALL,
+                    })
+                  }
+                  className={`rounded-xl border px-4 py-3 text-left cursor-pointer transition-all ${ORDER_TYPE_CARD_COLORS[row.type] || "border-gray-200 dark:border-neutral-800 bg-gray-50/60 hover:border-gray-400"}`}
+                >
+                  <p className="text-xs font-semibold text-gray-600 dark:text-neutral-300">
+                    {row.type}
+                  </p>
+                  <p className="text-lg font-extrabold text-gray-900 dark:text-white mt-1">
+                    {fmtRs(row.amount)}
+                  </p>
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                    {row.orders} orders · {row.percent}
+                  </p>
+                </button>
               ))}
             </div>
           </Section>
         )}
-        <TopItemsList items={report.topItems} title="Top Selling Items" subtitle="Best performers in selected period"
-          onItemClick={(itemName) => goToOrders({ search: itemName })} />
+        <TopItemsList
+          items={report.topItems}
+          title="Top Selling Items"
+          subtitle="Best performers in selected period"
+          onItemClick={(itemName) => goToOrders({ search: itemName })}
+        />
 
         {/* Riders Overview */}
         {riderStats.length > 0 && (
-          <Section title="Riders Overview" subtitle="Delivery performance in selected period" icon={Bike} iconGradient="bg-gradient-to-br from-sky-500 to-blue-600 shadow-sky-500/25"
+          <Section
+            title="Riders Overview"
+            subtitle="Delivery performance in selected period"
+            icon={Bike}
+            iconGradient="bg-gradient-to-br from-sky-500 to-blue-600 shadow-sky-500/25"
             badge={`${riderStats.length} rider${riderStats.length !== 1 ? "s" : ""} · ${riderStats.reduce((s, r) => s + r.deliveries, 0)} orders`}
-            badgeValue={fmtRs(riderStats.reduce((s, r) => s + r.revenue, 0))}
-            defaultOpen>
+            badgeValue={undefined}
+            defaultOpen
+          >
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
               {riderStats.map((rider, idx) => {
                 const topDeliveries = riderStats[0]?.deliveries || 1;
-                const barPct = Math.round((rider.deliveries / topDeliveries) * 100);
+                const barPct = Math.round(
+                  (rider.deliveries / topDeliveries) * 100,
+                );
                 return (
-                  <button key={rider.name} type="button"
+                  <button
+                    key={rider.name}
+                    type="button"
                     onClick={() => goToOrders({ rider: rider.name })}
-                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer">
+                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
+                  >
                     <div className="flex items-center gap-4">
                       <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-500/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-sky-600 dark:text-sky-400">{rider.name.charAt(0).toUpperCase()}</span>
+                        <span className="text-xs font-bold text-sky-600 dark:text-sky-400">
+                          {rider.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">{rider.name}</span>
+                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                            {rider.name}
+                          </span>
                           <div className="flex items-center gap-3 flex-shrink-0">
-                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
-                              <Bike className="w-3 h-3" />{rider.deliveries} deliveries
+                            <span className="inline-flex items-center gap-1 font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/10 px-1 py-0.5 rounded-md leading-tight">
+                              Paid: {fmtRs(rider.paidAmount)} -{" "}
+                              {rider.paidDeliveries} deliveries
                             </span>
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
-                                Paid: Rs {fmtRs(rider.paidAmount)}
-                              </span>
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
-                                Unpaid: Rs {fmtRs(rider.unpaidAmount)}
-                              </span>
+                            <span className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-1 py-0.5 rounded-md leading-tight">
+                              Unpaid: {fmtRs(rider.unpaidAmount)} -{" "}
+                              {rider.unpaidDeliveries} Orders
+                            </span>
                             {rider.cancelled > 0 && (
                               <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
                                 {rider.cancelled} cancelled
                               </span>
                             )}
-                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(rider.revenue)}</span>
+                            {/* <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(rider.revenue)}</span> */}
                           </div>
                         </div>
                         <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-blue-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-sky-400 to-blue-500 transition-all duration-700"
+                            style={{ width: `${barPct}%` }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -791,38 +1232,56 @@ export default function HistoryPage() {
 
         {/* Order Takers Overview */}
         {waiterStats.length > 0 && (
-          <Section title="Order Takers Overview" subtitle="Order taker performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/25"
+          <Section
+            title="Order Takers Overview"
+            subtitle="Order taker performance in selected period"
+            icon={Headset}
+            iconGradient="bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/25"
             badge={`${waiterStats.length} order taker${waiterStats.length !== 1 ? "s" : ""} · ${waiterStats.reduce((s, w) => s + w.orders, 0)} orders`}
-            badgeValue={fmtRs(waiterStats.reduce((s, w) => s + w.revenue, 0))}>
+            badgeValue={fmtRs(waiterStats.reduce((s, w) => s + w.revenue, 0))}
+          >
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
               {waiterStats.map((waiter, idx) => {
                 const topOrders = waiterStats[0]?.orders || 1;
                 const barPct = Math.round((waiter.orders / topOrders) * 100);
                 return (
-                  <button key={waiter.name} type="button"
+                  <button
+                    key={waiter.name}
+                    type="button"
                     onClick={() => goToOrders({ waiter: waiter.name })}
-                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer">
+                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
+                  >
                     <div className="flex items-center gap-4">
                       <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400">{waiter.name.charAt(0).toUpperCase()}</span>
+                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400">
+                          {waiter.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">{waiter.name}</span>
+                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                            {waiter.name}
+                          </span>
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <span className="inline-flex items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
-                              <Headset className="w-3 h-3" />{waiter.orders} orders
+                              <Headset className="w-3 h-3" />
+                              {waiter.orders} orders
                             </span>
                             {waiter.cancelled > 0 && (
                               <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
                                 {waiter.cancelled} cancelled
                               </span>
                             )}
-                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(waiter.revenue)}</span>
+                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">
+                              {fmtRs(waiter.revenue)}
+                            </span>
                           </div>
                         </div>
                         <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-purple-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-violet-400 to-purple-500 transition-all duration-700"
+                            style={{ width: `${barPct}%` }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -835,38 +1294,56 @@ export default function HistoryPage() {
 
         {/* Cashiers Overview */}
         {cashierStats.length > 0 && (
-          <Section title="Cashiers Overview" subtitle="Cashier performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
+          <Section
+            title="Cashiers Overview"
+            subtitle="Cashier performance in selected period"
+            icon={Headset}
+            iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
             badge={`${cashierStats.length} cashier${cashierStats.length !== 1 ? "s" : ""} · ${cashierStats.reduce((s, c) => s + c.orders, 0)} orders`}
-            badgeValue={fmtRs(cashierStats.reduce((s, c) => s + c.revenue, 0))}>
+            badgeValue={fmtRs(cashierStats.reduce((s, c) => s + c.revenue, 0))}
+          >
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
               {cashierStats.map((cashier) => {
                 const topOrders = cashierStats[0]?.orders || 1;
                 const barPct = Math.round((cashier.orders / topOrders) * 100);
                 return (
-                  <button key={cashier.name} type="button"
+                  <button
+                    key={cashier.name}
+                    type="button"
                     onClick={() => goToOrders({ cashier: cashier.name })}
-                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer">
+                    className="w-full text-left px-6 py-4 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
+                  >
                     <div className="flex items-center gap-4">
                       <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-amber-700 dark:text-amber-300">{cashier.name.charAt(0).toUpperCase()}</span>
+                        <span className="text-xs font-bold text-amber-700 dark:text-amber-300">
+                          {cashier.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">{cashier.name}</span>
+                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                            {cashier.name}
+                          </span>
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
-                              <Headset className="w-3 h-3" />{cashier.orders} orders
+                              <Headset className="w-3 h-3" />
+                              {cashier.orders} orders
                             </span>
                             {cashier.cancelled > 0 && (
                               <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
                                 {cashier.cancelled} cancelled
                               </span>
                             )}
-                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(cashier.revenue)}</span>
+                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">
+                              {fmtRs(cashier.revenue)}
+                            </span>
                           </div>
                         </div>
                         <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-700"
+                            style={{ width: `${barPct}%` }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -879,9 +1356,14 @@ export default function HistoryPage() {
 
         {/* Admins Overview */}
         {adminStats.length > 0 && (
-          <Section title="Admins Overview" subtitle="Admin performance in selected period" icon={Headset} iconGradient="bg-gradient-to-br from-red-500 to-rose-600 shadow-rose-500/25"
+          <Section
+            title="Admins Overview"
+            subtitle="Admin performance in selected period"
+            icon={Headset}
+            iconGradient="bg-gradient-to-br from-red-500 to-rose-600 shadow-rose-500/25"
             badge={`${adminStats.length} admin${adminStats.length !== 1 ? "s" : ""} · ${adminStats.reduce((s, a) => s + a.orders, 0)} orders`}
-            badgeValue={fmtRs(adminStats.reduce((s, a) => s + a.revenue, 0))}>
+            badgeValue={fmtRs(adminStats.reduce((s, a) => s + a.revenue, 0))}
+          >
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
               {adminStats.map((admin) => {
                 const topOrders = adminStats[0]?.orders || 1;
@@ -906,18 +1388,24 @@ export default function HistoryPage() {
                           </span>
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-rose-300 bg-red-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-md whitespace-nowrap">
-                              <Headset className="w-3 h-3" />{admin.orders} orders
+                              <Headset className="w-3 h-3" />
+                              {admin.orders} orders
                             </span>
                             {admin.cancelled > 0 && (
                               <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
                                 {admin.cancelled} cancelled
                               </span>
                             )}
-                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(admin.revenue)}</span>
+                            <span className="text-sm font-bold text-primary min-w-[72px] text-right">
+                              {fmtRs(admin.revenue)}
+                            </span>
                           </div>
                         </div>
                         <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-gradient-to-r from-red-400 to-rose-500 transition-all duration-700" style={{ width: `${barPct}%` }} />
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-red-400 to-rose-500 transition-all duration-700"
+                            style={{ width: `${barPct}%` }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -935,87 +1423,130 @@ export default function HistoryPage() {
     const dateFiltered = dateFilteredOrders;
 
     const totalAll = dateFiltered.length;
-    const totalCompleted = dateFiltered.filter(o => o.status !== STATUS_FILTERS.CANCELLED).length;
-    const totalCancelled = dateFiltered.filter(o => o.status === STATUS_FILTERS.CANCELLED).length;
+    const totalCompleted = dateFiltered.filter(
+      (o) => o.status !== STATUS_FILTERS.CANCELLED,
+    ).length;
+    const totalCancelled = dateFiltered.filter(
+      (o) => o.status === STATUS_FILTERS.CANCELLED,
+    ).length;
 
     let filtered = dateFiltered;
-    if (ordersStatusFilter === STATUS_FILTERS.COMPLETED) filtered = filtered.filter(o => o.status !== STATUS_FILTERS.CANCELLED);
-    else if (ordersStatusFilter === STATUS_FILTERS.CANCELLED) filtered = filtered.filter(o => o.status === STATUS_FILTERS.CANCELLED);
+    if (ordersStatusFilter === STATUS_FILTERS.COMPLETED)
+      filtered = filtered.filter((o) => o.status !== STATUS_FILTERS.CANCELLED);
+    else if (ordersStatusFilter === STATUS_FILTERS.CANCELLED)
+      filtered = filtered.filter((o) => o.status === STATUS_FILTERS.CANCELLED);
 
     if (ordersTypeFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => o.type === (TYPE_API_MAP[ordersTypeFilter] || ordersTypeFilter.toLowerCase()));
+      filtered = filtered.filter(
+        (o) =>
+          o.type ===
+          (TYPE_API_MAP[ordersTypeFilter] || ordersTypeFilter.toLowerCase()),
+      );
     }
 
     if (ordersPaymentFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => (o.paymentMethod || "").toLowerCase() === ordersPaymentFilter.toLowerCase());
+      filtered = filtered.filter(
+        (o) =>
+          (o.paymentMethod || "").toLowerCase() ===
+          ordersPaymentFilter.toLowerCase(),
+      );
     }
 
     if (ordersSourceFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => (o.source || "").toUpperCase() === ordersSourceFilter);
+      filtered = filtered.filter(
+        (o) => (o.source || "").toUpperCase() === ordersSourceFilter,
+      );
     }
 
     if (ordersPaidFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => ordersPaidFilter === PAID_FILTERS.PAID ? o.isPaid : !o.isPaid);
+      filtered = filtered.filter((o) =>
+        ordersPaidFilter === PAID_FILTERS.PAID ? o.isPaid : !o.isPaid,
+      );
     }
 
     if (ordersRiderFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => (o.assignedRiderName || "") === ordersRiderFilter);
+      filtered = filtered.filter(
+        (o) => (o.assignedRiderName || "") === ordersRiderFilter,
+      );
     }
 
     if (ordersWaiterFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => (o.orderTakerName || "") === ordersWaiterFilter && o.createdByRole === "order_taker");
+      filtered = filtered.filter(
+        (o) =>
+          (o.orderTakerName || "") === ordersWaiterFilter &&
+          o.createdByRole === "order_taker",
+      );
     }
 
     if (ordersCashierFilter !== FILTER_ALL) {
-      filtered = filtered.filter(o => (o.orderTakerName || "") === ordersCashierFilter && o.createdByRole === "cashier");
+      filtered = filtered.filter(
+        (o) =>
+          (o.orderTakerName || "") === ordersCashierFilter &&
+          o.createdByRole === "cashier",
+      );
     }
 
     // Admins who create orders: restaurant_admin/admin/super_admin
     if (ordersAdminFilter !== FILTER_ALL) {
       filtered = filtered.filter(
-        o =>
+        (o) =>
           (o.orderTakerName || "") === ordersAdminFilter &&
-          ["restaurant_admin", "admin", "super_admin"].includes(o.createdByRole),
+          ["restaurant_admin", "admin", "super_admin"].includes(
+            o.createdByRole,
+          ),
       );
     }
 
-    const availableRiders = [...new Set(
-      dateFiltered
-        .filter(o => o.type === "delivery" && o.assignedRiderName)
-        .map(o => o.assignedRiderName)
-    )].sort();
+    const availableRiders = [
+      ...new Set(
+        dateFiltered
+          .filter((o) => o.type === "delivery" && o.assignedRiderName)
+          .map((o) => o.assignedRiderName),
+      ),
+    ].sort();
 
-    const availableWaiters = [...new Set(
-      dateFiltered
-        .filter(o => o.orderTakerName && o.createdByRole === "order_taker")
-        .map(o => o.orderTakerName)
-    )].sort();
+    const availableWaiters = [
+      ...new Set(
+        dateFiltered
+          .filter((o) => o.orderTakerName && o.createdByRole === "order_taker")
+          .map((o) => o.orderTakerName),
+      ),
+    ].sort();
 
-    const availableCashiers = [...new Set(
-      dateFiltered
-        .filter(o => o.orderTakerName && o.createdByRole === "cashier")
-        .map(o => o.orderTakerName)
-    )].sort();
+    const availableCashiers = [
+      ...new Set(
+        dateFiltered
+          .filter((o) => o.orderTakerName && o.createdByRole === "cashier")
+          .map((o) => o.orderTakerName),
+      ),
+    ].sort();
 
-    const availableAdmins = [...new Set(
-      dateFiltered
-        .filter(
-          o =>
-            o.orderTakerName &&
-            ["restaurant_admin", "admin", "super_admin"].includes(o.createdByRole),
-        )
-        .map(o => o.orderTakerName)
-    )].sort();
+    const availableAdmins = [
+      ...new Set(
+        dateFiltered
+          .filter(
+            (o) =>
+              o.orderTakerName &&
+              ["restaurant_admin", "admin", "super_admin"].includes(
+                o.createdByRole,
+              ),
+          )
+          .map((o) => o.orderTakerName),
+      ),
+    ].sort();
 
     if (ordersSearch.trim()) {
       const q = ordersSearch.trim().toLowerCase();
-      filtered = filtered.filter(o =>
-        (o.id || "").toString().toLowerCase().includes(q) ||
-        (o.customerName || "").toLowerCase().includes(q) ||
-        (o.tableName || "").toLowerCase().includes(q) ||
-        (o.customerPhone || "").includes(q) ||
-        (o.assignedRiderName || "").toLowerCase().includes(q) ||
-        (o.items || []).some(item => (item.name || "").toLowerCase().includes(q))
+      filtered = filtered.filter(
+        (o) =>
+          (o.id || "").toString().toLowerCase().includes(q) ||
+          (o.customerName || "").toLowerCase().includes(q) ||
+          (o.tableName || "").toLowerCase().includes(q) ||
+          (o.customerPhone || "").includes(q) ||
+          (o.assignedRiderName || "").toLowerCase().includes(q) ||
+          (o.items || []).some((item) =>
+            (item.name || "").toLowerCase().includes(q),
+          ),
       );
     }
 
@@ -1034,8 +1565,10 @@ export default function HistoryPage() {
     const totalFiltered = filtered.length;
     const totalPages = Math.ceil(totalFiltered / ordersPerPage);
     const safePage = Math.min(ordersPage, Math.max(0, totalPages - 1));
-    const paged = filtered.slice(safePage * ordersPerPage, (safePage + 1) * ordersPerPage);
-
+    const paged = filtered.slice(
+      safePage * ordersPerPage,
+      (safePage + 1) * ordersPerPage,
+    );
 
     return (
       <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
@@ -1045,40 +1578,74 @@ export default function HistoryPage() {
             { value: "ALL", label: "All", count: totalAll },
             { value: "COMPLETED", label: "Completed", count: totalCompleted },
             { value: "CANCELLED", label: "Cancelled", count: totalCancelled },
-          ].map(f => (
-            <button key={f.value} type="button" onClick={() => { setOrdersStatusFilter(f.value); setOrdersPage(0); }}
+          ].map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => {
+                setOrdersStatusFilter(f.value);
+                setOrdersPage(0);
+              }}
               className={`inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg text-[11px] font-semibold transition-all ${
                 ordersStatusFilter === f.value
                   ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
                   : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
-              }`}>
+              }`}
+            >
               {f.label}
-              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${ordersStatusFilter === f.value ? "bg-white/20" : "bg-gray-200 dark:bg-neutral-700"}`}>{f.count}</span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${ordersStatusFilter === f.value ? "bg-white/20" : "bg-gray-200 dark:bg-neutral-700"}`}
+              >
+                {f.count}
+              </span>
             </button>
           ))}
 
           <div className="flex-1 min-w-[180px] ml-auto relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-neutral-500" />
-            <input type="text" value={ordersSearch} onChange={e => { setOrdersSearch(e.target.value); setOrdersPage(0); }}
+            <input
+              type="text"
+              value={ordersSearch}
+              onChange={(e) => {
+                setOrdersSearch(e.target.value);
+                setOrdersPage(0);
+              }}
               placeholder="Search order #, customer, table, phone, rider..."
-              className="w-full h-8 pl-8 pr-3 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all" />
+              className="w-full h-8 pl-8 pr-3 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+            />
           </div>
         </div>
 
         {/* Row 2: Dropdown filters */}
         <div className="px-5 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mr-1">Filters</span>
+          <span className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mr-1">
+            Filters
+          </span>
 
-          <FilterSelect value={ordersTypeFilter} active={ordersTypeFilter !== FILTER_ALL}
-            onChange={e => { setOrdersTypeFilter(e.target.value); if (e.target.value !== TYPE_FILTERS.DELIVERY) setOrdersRiderFilter(FILTER_ALL); setOrdersPage(0); }}>
+          <FilterSelect
+            value={ordersTypeFilter}
+            active={ordersTypeFilter !== FILTER_ALL}
+            onChange={(e) => {
+              setOrdersTypeFilter(e.target.value);
+              if (e.target.value !== TYPE_FILTERS.DELIVERY)
+                setOrdersRiderFilter(FILTER_ALL);
+              setOrdersPage(0);
+            }}
+          >
             <option value="ALL">All Types</option>
             <option value="DINE_IN">Dine-in</option>
             <option value="DELIVERY">Delivery</option>
             <option value="TAKEAWAY">Takeaway</option>
           </FilterSelect>
 
-          <FilterSelect value={ordersPaymentFilter} active={ordersPaymentFilter !== FILTER_ALL}
-            onChange={e => { setOrdersPaymentFilter(e.target.value); setOrdersPage(0); }}>
+          <FilterSelect
+            value={ordersPaymentFilter}
+            active={ordersPaymentFilter !== FILTER_ALL}
+            onChange={(e) => {
+              setOrdersPaymentFilter(e.target.value);
+              setOrdersPage(0);
+            }}
+          >
             <option value="ALL">All Payments</option>
             <option value="Cash">Cash</option>
             <option value="Card">Card</option>
@@ -1086,67 +1653,121 @@ export default function HistoryPage() {
             <option value="To be paid">Unpaid</option>
           </FilterSelect>
 
-          <FilterSelect value={ordersSourceFilter} active={ordersSourceFilter !== FILTER_ALL}
-            onChange={e => { setOrdersSourceFilter(e.target.value); setOrdersPage(0); }}>
+          <FilterSelect
+            value={ordersSourceFilter}
+            active={ordersSourceFilter !== FILTER_ALL}
+            onChange={(e) => {
+              setOrdersSourceFilter(e.target.value);
+              setOrdersPage(0);
+            }}
+          >
             <option value="ALL">All Sources</option>
             <option value="POS">POS</option>
             <option value="ONLINE">Online</option>
           </FilterSelect>
 
-          <FilterSelect value={ordersPaidFilter} active={ordersPaidFilter !== FILTER_ALL}
-            onChange={e => { setOrdersPaidFilter(e.target.value); setOrdersPage(0); }}>
+          <FilterSelect
+            value={ordersPaidFilter}
+            active={ordersPaidFilter !== FILTER_ALL}
+            onChange={(e) => {
+              setOrdersPaidFilter(e.target.value);
+              setOrdersPage(0);
+            }}
+          >
             <option value="ALL">Paid & Unpaid</option>
             <option value="PAID">Paid Only</option>
             <option value="UNPAID">Unpaid Only</option>
           </FilterSelect>
 
-          {ordersTypeFilter === TYPE_FILTERS.DELIVERY && availableRiders.length > 0 && (
-            <FilterSelect value={ordersRiderFilter} active={ordersRiderFilter !== FILTER_ALL}
-              onChange={e => { setOrdersRiderFilter(e.target.value); setOrdersPage(0); }}>
-              <option value="ALL">All Riders</option>
-              {availableRiders.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </FilterSelect>
-          )}
+          {ordersTypeFilter === TYPE_FILTERS.DELIVERY &&
+            availableRiders.length > 0 && (
+              <FilterSelect
+                value={ordersRiderFilter}
+                active={ordersRiderFilter !== FILTER_ALL}
+                onChange={(e) => {
+                  setOrdersRiderFilter(e.target.value);
+                  setOrdersPage(0);
+                }}
+              >
+                <option value="ALL">All Riders</option>
+                {availableRiders.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </FilterSelect>
+            )}
 
           {availableWaiters.length > 0 && (
-            <FilterSelect value={ordersWaiterFilter} active={ordersWaiterFilter !== FILTER_ALL}
-              onChange={e => { setOrdersWaiterFilter(e.target.value); setOrdersCashierFilter(FILTER_ALL); setOrdersPage(0); }}>
+            <FilterSelect
+              value={ordersWaiterFilter}
+              active={ordersWaiterFilter !== FILTER_ALL}
+              onChange={(e) => {
+                setOrdersWaiterFilter(e.target.value);
+                setOrdersCashierFilter(FILTER_ALL);
+                setOrdersPage(0);
+              }}
+            >
               <option value="ALL">All Order Takers</option>
-              {availableWaiters.map(name => (
-                <option key={name} value={name}>{name}</option>
+              {availableWaiters.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
             </FilterSelect>
           )}
 
           {availableCashiers.length > 0 && (
-            <FilterSelect value={ordersCashierFilter} active={ordersCashierFilter !== FILTER_ALL}
-              onChange={e => { setOrdersCashierFilter(e.target.value); setOrdersWaiterFilter(FILTER_ALL); setOrdersPage(0); }}>
+            <FilterSelect
+              value={ordersCashierFilter}
+              active={ordersCashierFilter !== FILTER_ALL}
+              onChange={(e) => {
+                setOrdersCashierFilter(e.target.value);
+                setOrdersWaiterFilter(FILTER_ALL);
+                setOrdersPage(0);
+              }}
+            >
               <option value="ALL">All Cashiers</option>
-              {availableCashiers.map(name => (
-                <option key={name} value={name}>{name}</option>
+              {availableCashiers.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
             </FilterSelect>
           )}
 
           {availableAdmins.length > 0 && (
-            <FilterSelect value={ordersAdminFilter} active={ordersAdminFilter !== FILTER_ALL}
-              onChange={e => { setOrdersAdminFilter(e.target.value); setOrdersWaiterFilter(FILTER_ALL); setOrdersCashierFilter(FILTER_ALL); setOrdersPage(0); }}>
+            <FilterSelect
+              value={ordersAdminFilter}
+              active={ordersAdminFilter !== FILTER_ALL}
+              onChange={(e) => {
+                setOrdersAdminFilter(e.target.value);
+                setOrdersWaiterFilter(FILTER_ALL);
+                setOrdersCashierFilter(FILTER_ALL);
+                setOrdersPage(0);
+              }}
+            >
               <option value="ALL">All Admins</option>
-              {availableAdmins.map(name => (
-                <option key={name} value={name}>{name}</option>
+              {availableAdmins.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
             </FilterSelect>
           )}
 
           <div className="flex-1" />
 
-          <span className="text-[11px] font-medium text-gray-400 dark:text-neutral-500">{totalFiltered} result{totalFiltered !== 1 ? "s" : ""}</span>
+          <span className="text-[11px] font-medium text-gray-400 dark:text-neutral-500">
+            {totalFiltered} result{totalFiltered !== 1 ? "s" : ""}
+          </span>
 
           {hasActiveFilters && (
-            <button type="button" onClick={resetFilters}
-              className="h-7 px-3 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all">
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="h-7 px-3 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+            >
               Reset All
             </button>
           )}
@@ -1155,8 +1776,12 @@ export default function HistoryPage() {
         {paged.length === 0 ? (
           <div className="py-16 text-center">
             <ClipboardList className="w-8 h-8 text-gray-300 dark:text-neutral-700 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">No orders found</p>
-            <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Try adjusting the filters or date range</p>
+            <p className="text-sm font-semibold text-gray-500 dark:text-neutral-400">
+              No orders found
+            </p>
+            <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+              Try adjusting the filters or date range
+            </p>
           </div>
         ) : (
           <>
@@ -1194,42 +1819,85 @@ export default function HistoryPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-neutral-800/60">
                   {paged.map((o, i) => (
-                    <tr key={o._id || i} className="hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors">
-                      <td className={`${TD_CLS} font-semibold text-gray-900 dark:text-white`}>#{o.id}</td>
+                    <tr
+                      key={o._id || i}
+                      className="hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors"
+                    >
+                      <td
+                        className={`${TD_CLS} font-semibold text-gray-900 dark:text-white`}
+                      >
+                        #{o.id}
+                      </td>
                       <td className={TD_CLS}>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${STATUS_COLORS[o.status] || "bg-gray-100 text-gray-600"}`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${STATUS_COLORS[o.status] || "bg-gray-100 text-gray-600"}`}
+                        >
                           {STATUS_LABELS[o.status] || o.status}
                         </span>
                       </td>
-                      <td className={`${TD_CLS} text-right font-bold text-gray-900 dark:text-white`}>{fmtRs(o.grandTotal ?? o.total)}</td>
-                      <td className={`${TD_CLS} text-right`}>{fmtRs(o.subtotal)}</td>
-                      <td className={`${TD_CLS} text-right`}>{o.discountAmount > 0 ? fmtRs(o.discountAmount) : "—"}</td>
+                      <td
+                        className={`${TD_CLS} text-right font-bold text-gray-900 dark:text-white`}
+                      >
+                        {fmtRs(o.grandTotal ?? o.total)}
+                      </td>
+                      <td className={`${TD_CLS} text-right`}>
+                        {fmtRs(o.subtotal)}
+                      </td>
+                      <td className={`${TD_CLS} text-right`}>
+                        {o.discountAmount > 0 ? fmtRs(o.discountAmount) : "—"}
+                      </td>
                       <td className={`${TD_CLS} relative`}>
                         {(o.items || []).length > 0 ? (
                           <div className="relative">
-                            <button type="button" onClick={(e) => { e.stopPropagation(); setItemsDropdownId(itemsDropdownId === o._id ? null : o._id); }}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all ${itemsDropdownId === o._id ? "bg-primary/10 text-primary" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"}`}>
-                              {o.items.length} item{o.items.length > 1 ? "s" : ""}
-                              <ChevronDown className={`w-3 h-3 transition-transform ${itemsDropdownId === o._id ? "rotate-180" : ""}`} />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setItemsDropdownId(
+                                  itemsDropdownId === o._id ? null : o._id,
+                                );
+                              }}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all ${itemsDropdownId === o._id ? "bg-primary/10 text-primary" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"}`}
+                            >
+                              {o.items.length} item
+                              {o.items.length > 1 ? "s" : ""}
+                              <ChevronDown
+                                className={`w-3 h-3 transition-transform ${itemsDropdownId === o._id ? "rotate-180" : ""}`}
+                              />
                             </button>
                             {itemsDropdownId === o._id && (
                               <>
-                                <div className="fixed inset-0 z-40" onClick={() => setItemsDropdownId(null)} />
+                                <div
+                                  className="fixed inset-0 z-40"
+                                  onClick={() => setItemsDropdownId(null)}
+                                />
                                 <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden">
                                   <table className="w-full text-[11px]">
                                     <thead>
                                       <tr className="bg-gray-50 dark:bg-neutral-900/80">
-                                        <th className="py-1.5 px-3 text-left font-semibold text-gray-500 dark:text-neutral-400">Item</th>
-                                        <th className="py-1.5 px-3 text-center font-semibold text-gray-500 dark:text-neutral-400">Qty</th>
-                                        <th className="py-1.5 px-3 text-right font-semibold text-gray-500 dark:text-neutral-400">Total</th>
+                                        <th className="py-1.5 px-3 text-left font-semibold text-gray-500 dark:text-neutral-400">
+                                          Item
+                                        </th>
+                                        <th className="py-1.5 px-3 text-center font-semibold text-gray-500 dark:text-neutral-400">
+                                          Qty
+                                        </th>
+                                        <th className="py-1.5 px-3 text-right font-semibold text-gray-500 dark:text-neutral-400">
+                                          Total
+                                        </th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
                                       {o.items.map((item, idx) => (
                                         <tr key={idx}>
-                                          <td className="py-1.5 px-3 font-medium text-gray-900 dark:text-white">{item.name}</td>
-                                          <td className="py-1.5 px-3 text-center text-gray-600 dark:text-neutral-400">x{item.qty}</td>
-                                          <td className="py-1.5 px-3 text-right font-semibold text-gray-900 dark:text-white">{fmtRs(item.lineTotal)}</td>
+                                          <td className="py-1.5 px-3 font-medium text-gray-900 dark:text-white">
+                                            {item.name}
+                                          </td>
+                                          <td className="py-1.5 px-3 text-center text-gray-600 dark:text-neutral-400">
+                                            x{item.qty}
+                                          </td>
+                                          <td className="py-1.5 px-3 text-right font-semibold text-gray-900 dark:text-white">
+                                            {fmtRs(item.lineTotal)}
+                                          </td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -1238,43 +1906,85 @@ export default function HistoryPage() {
                               </>
                             )}
                           </div>
-                        ) : "—"}
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                      <td className={TD_CLS}>{TYPE_LABEL_MAP[o.type] || o.type}</td>
+                      <td className={TD_CLS}>
+                        {TYPE_LABEL_MAP[o.type] || o.type}
+                      </td>
                       <td className={TD_CLS}>{o.paymentMethod || "—"}</td>
                       <td className={TD_CLS}>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${o.isPaid ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"}`}>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${o.isPaid ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"}`}
+                        >
                           {o.isPaid ? "Paid" : "Unpaid"}
                         </span>
                       </td>
-                      <td className={`${TD_CLS} text-right`}>{o.paymentAmountReceived != null ? fmtRs(o.paymentAmountReceived) : "—"}</td>
-                      <td className={`${TD_CLS} text-right`}>{o.paymentAmountReturned > 0 ? fmtRs(o.paymentAmountReturned) : "—"}</td>
+                      <td className={`${TD_CLS} text-right`}>
+                        {o.paymentAmountReceived != null
+                          ? fmtRs(o.paymentAmountReceived)
+                          : "—"}
+                      </td>
+                      <td className={`${TD_CLS} text-right`}>
+                        {o.paymentAmountReturned > 0
+                          ? fmtRs(o.paymentAmountReturned)
+                          : "—"}
+                      </td>
                       <td className={TD_CLS}>{o.paymentProvider || "—"}</td>
                       <td className={TD_CLS}>{o.customerName || "—"}</td>
                       <td className={TD_CLS}>{o.customerPhone || "—"}</td>
                       <td className={TD_CLS}>{o.tableName || "—"}</td>
                       <td className={TD_CLS}>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${o.source === "POS" ? "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400" : "bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400"}`}>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${o.source === "POS" ? "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400" : "bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400"}`}
+                        >
                           {o.source}
                         </span>
                       </td>
                       <td className={TD_CLS}>
                         {o.orderTakerName
-                          ? (o.createdByRole === "delivery_rider" ? `Rider: ${o.orderTakerName}` : o.orderTakerName)
+                          ? o.createdByRole === "delivery_rider"
+                            ? `Rider: ${o.orderTakerName}`
+                            : o.orderTakerName
                           : "—"}
                       </td>
                       <td className={TD_CLS}>{o.assignedRiderName || "—"}</td>
-                      <td className={`${TD_CLS} max-w-[200px] truncate`} title={o.deliveryAddress || ""}>{o.deliveryAddress || "—"}</td>
-                      <td className={`${TD_CLS} text-right`}>{o.deliveryCharges > 0 ? fmtRs(o.deliveryCharges) : "—"}</td>
-                      <td className={`${TD_CLS} max-w-[150px] truncate`} title={o.cancelReason || ""}>{o.cancelReason || "—"}</td>
+                      <td
+                        className={`${TD_CLS} max-w-[200px] truncate`}
+                        title={o.deliveryAddress || ""}
+                      >
+                        {o.deliveryAddress || "—"}
+                      </td>
+                      <td className={`${TD_CLS} text-right`}>
+                        {o.deliveryCharges > 0 ? fmtRs(o.deliveryCharges) : "—"}
+                      </td>
+                      <td
+                        className={`${TD_CLS} max-w-[150px] truncate`}
+                        title={o.cancelReason || ""}
+                      >
+                        {o.cancelReason || "—"}
+                      </td>
                       <td className={TD_CLS}>{fmtShortDate(o.createdAt)}</td>
-                      <td className={TD_CLS}>{fmtTime(getStatusTime(o, "PROCESSING"))}</td>
-                      <td className={TD_CLS}>{fmtTime(getStatusTime(o, "READY"))}</td>
-                      <td className={TD_CLS}>{fmtTime(getStatusTime(o, "OUT_FOR_DELIVERY"))}</td>
                       <td className={TD_CLS}>
-                        {o.status === "CANCELLED"
-                          ? <span className="text-red-500">{fmtTime(o.cancelledAt || getStatusTime(o, "CANCELLED"))}</span>
-                          : fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt)}
+                        {fmtTime(getStatusTime(o, "PROCESSING"))}
+                      </td>
+                      <td className={TD_CLS}>
+                        {fmtTime(getStatusTime(o, "READY"))}
+                      </td>
+                      <td className={TD_CLS}>
+                        {fmtTime(getStatusTime(o, "OUT_FOR_DELIVERY"))}
+                      </td>
+                      <td className={TD_CLS}>
+                        {o.status === "CANCELLED" ? (
+                          <span className="text-red-500">
+                            {fmtTime(
+                              o.cancelledAt || getStatusTime(o, "CANCELLED"),
+                            )}
+                          </span>
+                        ) : (
+                          fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt)
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1286,45 +1996,77 @@ export default function HistoryPage() {
               <div className="px-5 py-3 border-t border-gray-100 dark:border-neutral-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <p className="text-[11px] text-gray-500 dark:text-neutral-400">
-                    Showing {safePage * ordersPerPage + 1}–{Math.min((safePage + 1) * ordersPerPage, totalFiltered)} of {totalFiltered}
+                    Showing {safePage * ordersPerPage + 1}–
+                    {Math.min((safePage + 1) * ordersPerPage, totalFiltered)} of{" "}
+                    {totalFiltered}
                   </p>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-gray-400 dark:text-neutral-500">Per page</span>
-                    <FilterSelect value={ordersPerPage} active={ordersPerPage !== 25} small
-                      onChange={e => { setOrdersPerPage(Number(e.target.value)); setOrdersPage(0); }}>
-                      {[10, 25, 50, 100].map(n => (
-                        <option key={n} value={n}>{n}</option>
+                    <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                      Per page
+                    </span>
+                    <FilterSelect
+                      value={ordersPerPage}
+                      active={ordersPerPage !== 25}
+                      small
+                      onChange={(e) => {
+                        setOrdersPerPage(Number(e.target.value));
+                        setOrdersPage(0);
+                      }}
+                    >
+                      {[10, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
                       ))}
                     </FilterSelect>
                   </div>
                 </div>
-                {totalPages > 1 && <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => setOrdersPage(Math.max(0, safePage - 1))} disabled={safePage === 0}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let page = i;
-                    if (totalPages > 5) {
-                      const start = Math.max(0, Math.min(safePage - 2, totalPages - 5));
-                      page = start + i;
-                    }
-                    return (
-                      <button key={page} type="button" onClick={() => setOrdersPage(page)}
-                        className={`w-7 h-7 rounded-lg text-[11px] font-semibold transition-all ${
-                          page === safePage
-                            ? "bg-primary text-white"
-                            : "text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"
-                        }`}>
-                        {page + 1}
-                      </button>
-                    );
-                  })}
-                  <button type="button" onClick={() => setOrdersPage(Math.min(totalPages - 1, safePage + 1))} disabled={safePage >= totalPages - 1}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>}
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setOrdersPage(Math.max(0, safePage - 1))}
+                      disabled={safePage === 0}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                      let page = i;
+                      if (totalPages > 5) {
+                        const start = Math.max(
+                          0,
+                          Math.min(safePage - 2, totalPages - 5),
+                        );
+                        page = start + i;
+                      }
+                      return (
+                        <button
+                          key={page}
+                          type="button"
+                          onClick={() => setOrdersPage(page)}
+                          className={`w-7 h-7 rounded-lg text-[11px] font-semibold transition-all ${
+                            page === safePage
+                              ? "bg-primary text-white"
+                              : "text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                          }`}
+                        >
+                          {page + 1}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOrdersPage(Math.min(totalPages - 1, safePage + 1))
+                      }
+                      disabled={safePage >= totalPages - 1}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -1337,7 +2079,9 @@ export default function HistoryPage() {
     const sessionPages = Math.ceil(sessionsTotal / SESSIONS_PER_PAGE);
     const summary = sessionDetail?.summary || {};
     const sessionOrders = Array.isArray(sessionDetail?.orders)
-      ? [...sessionDetail.orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      ? [...sessionDetail.orders].sort(
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+        )
       : [];
 
     // Order type breakdown from detail orders
@@ -1359,13 +2103,25 @@ export default function HistoryPage() {
                 <CalendarDays className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Business Day Sessions</h2>
-                {currentBranch && <p className="text-[11px] text-gray-400 dark:text-neutral-500">{currentBranch.name}</p>}
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                  Business Day Sessions
+                </h2>
+                {currentBranch && (
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                    {currentBranch.name}
+                  </p>
+                )}
               </div>
             </div>
-            <button type="button" onClick={() => loadSessions(sessionsPage)}
-              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors" title="Refresh">
-              <RefreshCw className={`w-4 h-4 ${sessionsLoading ? "animate-spin" : ""}`} />
+            <button
+              type="button"
+              onClick={() => loadSessions(sessionsPage)}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${sessionsLoading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
 
@@ -1374,49 +2130,96 @@ export default function HistoryPage() {
               <Loader2 className="w-5 h-5 animate-spin text-primary" />
             </div>
           ) : sessionsList.length === 0 ? (
-            <div className="text-center py-16 text-sm text-gray-400 dark:text-neutral-600">No sessions found</div>
+            <div className="text-center py-16 text-sm text-gray-400 dark:text-neutral-600">
+              No sessions found
+            </div>
           ) : (
             <>
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead className="bg-gray-50 dark:bg-neutral-900/70 border-b border-gray-200 dark:border-neutral-800">
                     <tr>
-                      {["Status","Start","End","Duration","Branch","Opened By","Closed By","Orders","Revenue",""].map(h => (
-                        <th key={h} className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide ${h === "Revenue" || h === "Orders" ? "text-right" : ""}`}>{h}</th>
+                      {[
+                        "Status",
+                        "Start",
+                        "End",
+                        "Duration",
+                        "Branch",
+                        "Opened By",
+                        "Closed By",
+                        "Orders",
+                        "Revenue",
+                        "",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide ${h === "Revenue" || h === "Orders" ? "text-right" : ""}`}
+                        >
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
                     {sessionsList.map((s) => (
-                      <tr key={s.id}
+                      <tr
+                        key={s.id}
                         className="hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer group"
-                        onClick={() => openSessionDetail(s)}>
+                        onClick={() => openSessionDetail(s)}
+                      >
                         <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                            s.status === "OPEN"
-                              ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                              : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
-                            {s.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                              s.status === "OPEN"
+                                ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
+                            }`}
+                          >
+                            {s.status === "OPEN" && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            )}
                             {s.status}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">{fmtDate(s.startAt)}</td>
                         <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
-                          {s.endAt ? fmtDate(s.endAt) : <span className="text-emerald-500 font-medium text-xs">Ongoing</span>}
+                          {fmtDate(s.startAt)}
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
+                          {s.endAt ? (
+                            fmtDate(s.endAt)
+                          ) : (
+                            <span className="text-emerald-500 font-medium text-xs">
+                              Ongoing
+                            </span>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-[12px] text-gray-500 dark:text-neutral-400 whitespace-nowrap">
                           {fmtDuration(s.startAt, s.endAt) || "—"}
                         </td>
                         <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
                           {s.branchName ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">{s.branchName}</span>
-                          ) : "—"}
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+                              {s.branchName}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
                         </td>
-                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">{s.openedBy?.name || "—"}</td>
-                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">{s.closedBy?.name || "—"}</td>
-                        <td className="py-2.5 px-3 text-[12px] text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{(s.totalOrders || 0).toLocaleString()}</td>
-                        <td className="py-2.5 px-3 text-[12px] text-right font-bold text-gray-900 dark:text-white whitespace-nowrap">{fmtRs(s.totalSales)}</td>
-                        <td className="py-2.5 px-3"><ChevronRight className="w-4 h-4 text-gray-300 dark:text-neutral-600 group-hover:text-primary transition-colors" /></td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
+                          {s.openedBy?.name || "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
+                          {s.closedBy?.name || "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">
+                          {(s.totalOrders || 0).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-[12px] text-right font-bold text-gray-900 dark:text-white whitespace-nowrap">
+                          {fmtRs(s.totalSales)}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <ChevronRight className="w-4 h-4 text-gray-300 dark:text-neutral-600 group-hover:text-primary transition-colors" />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1424,15 +2227,32 @@ export default function HistoryPage() {
               </div>
               {sessionPages > 1 && (
                 <div className="flex items-center justify-center gap-3 px-5 py-4 border-t border-gray-100 dark:border-neutral-800">
-                  <button type="button" disabled={sessionsPage === 0}
-                    onClick={() => { const p = sessionsPage - 1; setSessionsPage(p); loadSessions(p); }}
-                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 disabled:opacity-40 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
+                  <button
+                    type="button"
+                    disabled={sessionsPage === 0}
+                    onClick={() => {
+                      const p = sessionsPage - 1;
+                      setSessionsPage(p);
+                      loadSessions(p);
+                    }}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 disabled:opacity-40 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors"
+                  >
                     Previous
                   </button>
-                  <span className="text-xs text-gray-500 dark:text-neutral-400">Page {sessionsPage + 1} of {sessionPages} · {sessionsTotal} total</span>
-                  <button type="button" disabled={sessionsPage >= sessionPages - 1}
-                    onClick={() => { const p = sessionsPage + 1; setSessionsPage(p); loadSessions(p); }}
-                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 disabled:opacity-40 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
+                  <span className="text-xs text-gray-500 dark:text-neutral-400">
+                    Page {sessionsPage + 1} of {sessionPages} · {sessionsTotal}{" "}
+                    total
+                  </span>
+                  <button
+                    type="button"
+                    disabled={sessionsPage >= sessionPages - 1}
+                    onClick={() => {
+                      const p = sessionsPage + 1;
+                      setSessionsPage(p);
+                      loadSessions(p);
+                    }}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 disabled:opacity-40 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors"
+                  >
                     Next
                   </button>
                 </div>
@@ -1444,29 +2264,48 @@ export default function HistoryPage() {
         {/* Session detail slide-over */}
         {selectedSession && (
           <div className="fixed inset-0 z-50 flex items-stretch">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSelectedSession(null)} />
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setSelectedSession(null)}
+            />
             <div className="relative ml-auto w-full max-w-4xl bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800 flex-shrink-0">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-gray-900 dark:text-white">Session Report</h2>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                      selectedSession.status === "OPEN"
-                        ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
-                      {selectedSession.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                      Session Report
+                    </h2>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                        selectedSession.status === "OPEN"
+                          ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                          : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
+                      }`}
+                    >
+                      {selectedSession.status === "OPEN" && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      )}
                       {selectedSession.status}
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
                     {fmtDate(selectedSession.startAt)}
-                    {selectedSession.endAt ? ` → ${fmtDate(selectedSession.endAt)}` : " · Ongoing"}
-                    {fmtDuration(selectedSession.startAt, selectedSession.endAt) && ` · ${fmtDuration(selectedSession.startAt, selectedSession.endAt)}`}
+                    {selectedSession.endAt
+                      ? ` → ${fmtDate(selectedSession.endAt)}`
+                      : " · Ongoing"}
+                    {fmtDuration(
+                      selectedSession.startAt,
+                      selectedSession.endAt,
+                    ) &&
+                      ` · ${fmtDuration(selectedSession.startAt, selectedSession.endAt)}`}
                   </p>
                 </div>
-                <button type="button" onClick={() => setSelectedSession(null)}
-                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSession(null)}
+                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1481,24 +2320,83 @@ export default function HistoryPage() {
                   <>
                     {/* KPI row */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                      <KpiCard icon={TrendingUp} gradient="from-primary to-secondary" shadow="shadow-primary/20" label="Total Revenue" value={fmtRs(summary.totalSales)} />
-                      <KpiCard icon={ShoppingBag} gradient="from-blue-500 to-blue-600" shadow="shadow-blue-500/20" label="Orders" value={(summary.totalOrders || sessionOrders.length).toString()} />
-                      <KpiCard icon={Banknote} gradient="from-emerald-500 to-emerald-600" shadow="shadow-emerald-500/20" label="Cash" value={fmtRs(summary.cashSales)} />
-                      <KpiCard icon={CreditCard} gradient="from-violet-500 to-violet-600" shadow="shadow-violet-500/20" label="Card" value={fmtRs(summary.cardSales)} />
-                      <KpiCard icon={Package} gradient="from-amber-500 to-orange-500" shadow="shadow-amber-500/20" label="Discount" value={fmtRs(summary.totalDiscount)} />
+                      <KpiCard
+                        icon={TrendingUp}
+                        gradient="from-primary to-secondary"
+                        shadow="shadow-primary/20"
+                        label="Total Revenue"
+                        value={fmtRs(summary.totalSales)}
+                      />
+                      <KpiCard
+                        icon={ShoppingBag}
+                        gradient="from-blue-500 to-blue-600"
+                        shadow="shadow-blue-500/20"
+                        label="Orders"
+                        value={(
+                          summary.totalOrders || sessionOrders.length
+                        ).toString()}
+                      />
+                      <KpiCard
+                        icon={Banknote}
+                        gradient="from-emerald-500 to-emerald-600"
+                        shadow="shadow-emerald-500/20"
+                        label="Cash"
+                        value={fmtRs(summary.cashSales)}
+                      />
+                      <KpiCard
+                        icon={CreditCard}
+                        gradient="from-violet-500 to-violet-600"
+                        shadow="shadow-violet-500/20"
+                        label="Card"
+                        value={fmtRs(summary.cardSales)}
+                      />
+                      <KpiCard
+                        icon={Package}
+                        gradient="from-amber-500 to-orange-500"
+                        shadow="shadow-amber-500/20"
+                        label="Discount"
+                        value={fmtRs(summary.totalDiscount)}
+                      />
                     </div>
 
                     {/* Session meta */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
-                        { label: "Opened By", value: selectedSession.openedBy?.name || "—" },
-                        { label: "Closed By", value: selectedSession.closedBy?.name || (selectedSession.status === "OPEN" ? "Ongoing" : "—") },
-                        { label: "Branch", value: selectedSession.branchName || "—" },
-                        { label: "Duration", value: fmtDuration(selectedSession.startAt, selectedSession.endAt) || "—" },
+                        {
+                          label: "Opened By",
+                          value: selectedSession.openedBy?.name || "—",
+                        },
+                        {
+                          label: "Closed By",
+                          value:
+                            selectedSession.closedBy?.name ||
+                            (selectedSession.status === "OPEN"
+                              ? "Ongoing"
+                              : "—"),
+                        },
+                        {
+                          label: "Branch",
+                          value: selectedSession.branchName || "—",
+                        },
+                        {
+                          label: "Duration",
+                          value:
+                            fmtDuration(
+                              selectedSession.startAt,
+                              selectedSession.endAt,
+                            ) || "—",
+                        },
                       ].map(({ label, value }) => (
-                        <div key={label} className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3">
-                          <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-1">{label}</p>
-                          <p className="text-sm font-semibold text-gray-800 dark:text-neutral-200">{value}</p>
+                        <div
+                          key={label}
+                          className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3"
+                        >
+                          <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-1">
+                            {label}
+                          </p>
+                          <p className="text-sm font-semibold text-gray-800 dark:text-neutral-200">
+                            {value}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -1506,13 +2404,24 @@ export default function HistoryPage() {
                     {/* Order type breakdown */}
                     {Object.keys(typeBreakdown).length > 0 && (
                       <div>
-                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Order Type Breakdown</h3>
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+                          Order Type Breakdown
+                        </h3>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {Object.entries(typeBreakdown).map(([type, d]) => (
-                            <div key={type} className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3 border border-gray-200 dark:border-neutral-800">
-                              <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 capitalize mb-1">{type.replace(/-/g, " ")}</p>
-                              <p className="text-base font-bold text-gray-900 dark:text-white">{fmtRs(d.revenue)}</p>
-                              <p className="text-[11px] text-gray-400 dark:text-neutral-500">{d.count} order{d.count !== 1 ? "s" : ""}</p>
+                            <div
+                              key={type}
+                              className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3 border border-gray-200 dark:border-neutral-800"
+                            >
+                              <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 capitalize mb-1">
+                                {type.replace(/-/g, " ")}
+                              </p>
+                              <p className="text-base font-bold text-gray-900 dark:text-white">
+                                {fmtRs(d.revenue)}
+                              </p>
+                              <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                                {d.count} order{d.count !== 1 ? "s" : ""}
+                              </p>
                             </div>
                           ))}
                         </div>
@@ -1522,92 +2431,201 @@ export default function HistoryPage() {
                     {/* Orders table */}
                     <div>
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">Orders ({sessionOrders.length})</h3>
-                        <button type="button"
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                          Orders ({sessionOrders.length})
+                        </h3>
+                        <button
+                          type="button"
                           onClick={() => {
                             const rows = [
-                              ["Order #","Time","Type","Status","Customer","Staff","Total","Payment"].join(","),
-                              ...sessionOrders.map(o => [
-                                o.orderNumber || o.id,
-                                new Date(o.createdAt).toLocaleTimeString("en-PK",{hour:"2-digit",minute:"2-digit",hour12:true}),
-                                o.orderType || "",
-                                o.status || "",
-                                o.customerName || "",
-                                o.riderName || o.waiterName || o.orderTakerName || "",
-                                o.total || 0,
-                                o.isPaid ? (o.paymentMethod || "") : "Unpaid",
-                              ].join(","))
+                              [
+                                "Order #",
+                                "Time",
+                                "Type",
+                                "Status",
+                                "Customer",
+                                "Staff",
+                                "Total",
+                                "Payment",
+                              ].join(","),
+                              ...sessionOrders.map((o) =>
+                                [
+                                  o.orderNumber || o.id,
+                                  new Date(o.createdAt).toLocaleTimeString(
+                                    "en-PK",
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      hour12: true,
+                                    },
+                                  ),
+                                  o.orderType || "",
+                                  o.status || "",
+                                  o.customerName || "",
+                                  o.riderName ||
+                                    o.waiterName ||
+                                    o.orderTakerName ||
+                                    "",
+                                  o.total || 0,
+                                  o.isPaid ? o.paymentMethod || "" : "Unpaid",
+                                ].join(","),
+                              ),
                             ].join("\n");
-                            const b = new Blob([rows],{type:"text/csv"});
-                            const a = document.createElement("a"); a.href = URL.createObjectURL(b);
-                            a.download = `session-${selectedSession.id.slice(-6)}-orders.csv`; a.click();
+                            const b = new Blob([rows], { type: "text/csv" });
+                            const a = document.createElement("a");
+                            a.href = URL.createObjectURL(b);
+                            a.download = `session-${selectedSession.id.slice(-6)}-orders.csv`;
+                            a.click();
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
-                          <Download className="w-3.5 h-3.5" />Export CSV
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          Export CSV
                         </button>
                       </div>
                       {sessionOrders.length === 0 ? (
-                        <div className="text-center py-10 text-sm text-gray-400 dark:text-neutral-600">No orders in this session</div>
+                        <div className="text-center py-10 text-sm text-gray-400 dark:text-neutral-600">
+                          No orders in this session
+                        </div>
                       ) : (
                         <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-neutral-800">
                           <table className="min-w-full">
                             <thead className="bg-gray-50 dark:bg-neutral-900/70 border-b border-gray-200 dark:border-neutral-800">
                               <tr>
-                                {["Order #","Time","Type","Status","Customer","Staff","Items","Total","Payment"].map(h => (
-                                  <th key={h} className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide ${h === "Total" ? "text-right" : ""}`}>{h}</th>
+                                {[
+                                  "Order #",
+                                  "Time",
+                                  "Type",
+                                  "Status",
+                                  "Customer",
+                                  "Staff",
+                                  "Items",
+                                  "Total",
+                                  "Payment",
+                                ].map((h) => (
+                                  <th
+                                    key={h}
+                                    className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide ${h === "Total" ? "text-right" : ""}`}
+                                  >
+                                    {h}
+                                  </th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
                               {sessionOrders.map((o) => {
                                 const items = o.items || [];
-                                const itemCount = items.reduce((s, i) => s + (i.qty || 1), 0);
-                                const staff = o.riderName ? `Rider: ${o.riderName}` : o.waiterName ? `Waiter: ${o.waiterName}` : o.orderTakerName ? `Taker: ${o.orderTakerName}` : "—";
+                                const itemCount = items.reduce(
+                                  (s, i) => s + (i.qty || 1),
+                                  0,
+                                );
+                                const staff = o.riderName
+                                  ? `Rider: ${o.riderName}`
+                                  : o.waiterName
+                                    ? `Waiter: ${o.waiterName}`
+                                    : o.orderTakerName
+                                      ? `Taker: ${o.orderTakerName}`
+                                      : "—";
                                 return (
-                                  <tr key={o.id} className="hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors">
-                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap font-bold text-gray-900 dark:text-white">#{o.orderNumber || o.id?.slice(-4)}</td>
-                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
-                                      {o.createdAt ? new Date(o.createdAt).toLocaleTimeString("en-PK",{hour:"2-digit",minute:"2-digit",hour12:true}) : "—"}
+                                  <tr
+                                    key={o.id}
+                                    className="hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors"
+                                  >
+                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap font-bold text-gray-900 dark:text-white">
+                                      #{o.orderNumber || o.id?.slice(-4)}
                                     </td>
-                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap capitalize">{(o.orderType||"").replace(/_/g," ").toLowerCase()}</td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
+                                      {o.createdAt
+                                        ? new Date(
+                                            o.createdAt,
+                                          ).toLocaleTimeString("en-PK", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                            hour12: true,
+                                          })
+                                        : "—"}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap capitalize">
+                                      {(o.orderType || "")
+                                        .replace(/_/g, " ")
+                                        .toLowerCase()}
+                                    </td>
                                     <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
-                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                        STATUS_COLORS[o.status] || "bg-gray-100 text-gray-500"}`}>
+                                      <span
+                                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                          STATUS_COLORS[o.status] ||
+                                          "bg-gray-100 text-gray-500"
+                                        }`}
+                                      >
                                         {STATUS_LABELS[o.status] || o.status}
                                       </span>
                                     </td>
-                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">{o.customerName || "—"}</td>
-                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">{staff}</td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
+                                      {o.customerName || "—"}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
+                                      {staff}
+                                    </td>
                                     <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
                                       {itemCount > 0 ? (
-                                        <button type="button"
-                                          onClick={(e) => { e.stopPropagation(); setItemsDropdownId(itemsDropdownId === o.id ? null : o.id); }}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors">
-                                          {itemCount} item{itemCount !== 1 ? "s" : ""}
-                                          <ChevronDown className={`w-3 h-3 transition-transform ${itemsDropdownId === o.id ? "rotate-180" : ""}`} />
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setItemsDropdownId(
+                                              itemsDropdownId === o.id
+                                                ? null
+                                                : o.id,
+                                            );
+                                          }}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors"
+                                        >
+                                          {itemCount} item
+                                          {itemCount !== 1 ? "s" : ""}
+                                          <ChevronDown
+                                            className={`w-3 h-3 transition-transform ${itemsDropdownId === o.id ? "rotate-180" : ""}`}
+                                          />
                                         </button>
-                                      ) : "—"}
+                                      ) : (
+                                        "—"
+                                      )}
                                       {itemsDropdownId === o.id && (
                                         <div className="absolute mt-1 z-10 min-w-[180px] bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl p-2 space-y-1">
                                           {items.map((it, idx) => (
-                                            <div key={idx} className="flex items-center justify-between gap-3 text-[11px]">
-                                              <span className="text-gray-700 dark:text-neutral-300 truncate">{it.name}</span>
-                                              <span className="font-bold text-gray-500 dark:text-neutral-500 flex-shrink-0">×{it.qty}</span>
+                                            <div
+                                              key={idx}
+                                              className="flex items-center justify-between gap-3 text-[11px]"
+                                            >
+                                              <span className="text-gray-700 dark:text-neutral-300 truncate">
+                                                {it.name}
+                                              </span>
+                                              <span className="font-bold text-gray-500 dark:text-neutral-500 flex-shrink-0">
+                                                ×{it.qty}
+                                              </span>
                                             </div>
                                           ))}
                                         </div>
                                       )}
                                     </td>
-                                    <td className="py-2.5 px-3 text-[12px] text-right font-bold text-gray-900 dark:text-white whitespace-nowrap">{fmtRs(o.total)}</td>
+                                    <td className="py-2.5 px-3 text-[12px] text-right font-bold text-gray-900 dark:text-white whitespace-nowrap">
+                                      {fmtRs(o.total)}
+                                    </td>
                                     <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
                                       {o.paymentMethod ? (
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                          o.isPaid
-                                            ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                            : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"}`}>
-                                          {o.isPaid ? o.paymentMethod : "Unpaid"}
+                                        <span
+                                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                            o.isPaid
+                                              ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                              : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                          }`}
+                                        >
+                                          {o.isPaid
+                                            ? o.paymentMethod
+                                            : "Unpaid"}
                                         </span>
-                                      ) : "—"}
+                                      ) : (
+                                        "—"
+                                      )}
                                     </td>
                                   </tr>
                                 );
@@ -1629,9 +2647,12 @@ export default function HistoryPage() {
 
   function renderActiveTab() {
     switch (activeTab) {
-      case "orders":   return renderOrders();
-      case "sessions": return renderSessions();
-      default:         return renderOverview();
+      case "orders":
+        return renderOrders();
+      case "sessions":
+        return renderSessions();
+      default:
+        return renderOverview();
     }
   }
 
@@ -1644,36 +2665,45 @@ export default function HistoryPage() {
           </div>
           <div className="flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">Loading sales report...</p>
+            <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">
+              Loading sales report...
+            </p>
           </div>
         </div>
       ) : (
         <div className="space-y-5">
-
           {/* ── Toolbar: Tabs (left) + Date & Export (right) ── */}
           <div className="flex items-center justify-between gap-3">
             {/* Tabs */}
             <div className="flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 p-1 gap-0.5">
-              {TABS.map(tab => {
+              {TABS.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 let badge = null;
-                if (tab.id === "orders") badge = dateFilteredOrdersCount || null;
+                if (tab.id === "orders")
+                  badge = dateFilteredOrdersCount || null;
                 if (tab.id === "sessions") badge = sessionsTotal || null;
                 return (
-                  <button key={tab.id} type="button" onClick={() => {
-                    setActiveTab(tab.id);
-                    if (tab.id === "sessions" && sessionsList.length === 0) loadSessions(0);
-                  }}
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      if (tab.id === "sessions" && sessionsList.length === 0)
+                        loadSessions(0);
+                    }}
                     className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                       isActive
                         ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
                         : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
-                    }`}>
+                    }`}
+                  >
                     <Icon className="w-3.5 h-3.5" />
                     {tab.label}
                     {badge != null && (
-                      <span className={`ml-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isActive ? "bg-white/20 text-white" : "bg-gray-200 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"}`}>
+                      <span
+                        className={`ml-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isActive ? "bg-white/20 text-white" : "bg-gray-200 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"}`}
+                      >
                         {badge}
                       </span>
                     )}
@@ -1683,44 +2713,90 @@ export default function HistoryPage() {
             </div>
 
             {/* Right: Date + Export + Help (hidden on Sessions tab) */}
-            <div className={`flex items-center gap-2 flex-shrink-0 ${activeTab === "sessions" ? "invisible pointer-events-none" : ""}`}>
+            <div
+              className={`flex items-center gap-2 flex-shrink-0 ${activeTab === "sessions" ? "invisible pointer-events-none" : ""}`}
+            >
               {/* Date dropdown */}
               <div className="relative">
-                <button type="button" onClick={() => { setShowDateDropdown(v => !v); setShowExportDropdown(false); }}
-                  className="inline-flex items-center gap-2 h-9 px-3.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-900 dark:text-white hover:border-primary/40 transition-all">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDateDropdown((v) => !v);
+                    setShowExportDropdown(false);
+                  }}
+                  className="inline-flex items-center gap-2 h-9 px-3.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-900 dark:text-white hover:border-primary/40 transition-all"
+                >
                   <Calendar className="w-3.5 h-3.5 text-primary" />
                   {periodLabel}
-                  {loading && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
-                  <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showDateDropdown ? "rotate-180" : ""}`} />
+                  {loading && (
+                    <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                  )}
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showDateDropdown ? "rotate-180" : ""}`}
+                  />
                 </button>
                 {showDateDropdown && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowDateDropdown(false)} />
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowDateDropdown(false)}
+                    />
                     <div className="absolute right-0 top-full mt-1.5 z-50 w-72 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-2xl shadow-xl overflow-hidden">
                       <div className="p-2 space-y-0.5">
-                        {PRESETS.filter(p => p.id !== "custom").map(p => (
-                          <button key={p.id} type="button"
-                            onClick={() => { applyPreset(p.id); setShowDateDropdown(false); }}
+                        {PRESETS.filter((p) => p.id !== "custom").map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              applyPreset(p.id);
+                              setShowDateDropdown(false);
+                            }}
                             className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                               preset === p.id
                                 ? "bg-gradient-to-r from-primary to-secondary text-white"
                                 : "text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
-                            }`}>
+                            }`}
+                          >
                             {p.label}
                           </button>
                         ))}
                       </div>
                       <div className="border-t border-gray-100 dark:border-neutral-800 p-3">
-                        <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 mb-2">Custom Range</p>
-                        <form onSubmit={(e) => { applyCustom(e); setShowDateDropdown(false); }} className="space-y-2">
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 mb-2">
+                          Custom Range
+                        </p>
+                        <form
+                          onSubmit={(e) => {
+                            applyCustom(e);
+                            setShowDateDropdown(false);
+                          }}
+                          className="space-y-2"
+                        >
                           <div className="grid grid-cols-2 gap-2">
-                            <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setPreset("custom"); }}
-                              className="h-8 px-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary transition-all" />
-                            <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setPreset("custom"); }}
-                              className="h-8 px-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary transition-all" />
+                            <input
+                              type="date"
+                              value={customFrom}
+                              onChange={(e) => {
+                                setCustomFrom(e.target.value);
+                                setPreset("custom");
+                              }}
+                              className="h-8 px-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary transition-all"
+                            />
+                            <input
+                              type="date"
+                              value={customTo}
+                              onChange={(e) => {
+                                setCustomTo(e.target.value);
+                                setPreset("custom");
+                              }}
+                              className="h-8 px-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary transition-all"
+                            />
                           </div>
-                          <button type="submit" disabled={loading || (!customFrom && !customTo)}
-                            className="w-full h-8 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-md hover:shadow-primary/25 transition-all disabled:opacity-50">
+                          <button
+                            type="submit"
+                            disabled={loading || (!customFrom && !customTo)}
+                            className="w-full h-8 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-md hover:shadow-primary/25 transition-all disabled:opacity-50"
+                          >
                             {loading ? "Loading..." : "Apply Range"}
                           </button>
                         </form>
@@ -1732,27 +2808,59 @@ export default function HistoryPage() {
 
               {/* Export dropdown */}
               <div className="relative">
-                <button type="button" onClick={() => { setShowExportDropdown(v => !v); setShowDateDropdown(false); }}
-                  className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:border-primary/40 transition-all">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowExportDropdown((v) => !v);
+                    setShowDateDropdown(false);
+                  }}
+                  className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:border-primary/40 transition-all"
+                >
                   <Download className="w-3.5 h-3.5" />
                   Export
-                  <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${showExportDropdown ? "rotate-180" : ""}`} />
+                  <ChevronDown
+                    className={`w-3 h-3 text-gray-400 transition-transform ${showExportDropdown ? "rotate-180" : ""}`}
+                  />
                 </button>
                 {showExportDropdown && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowExportDropdown(false)} />
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowExportDropdown(false)}
+                    />
                     <div className="absolute right-0 top-full mt-1.5 z-50 w-44 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden p-1.5">
-                      <button type="button" onClick={() => { handleExportCSV(); setShowExportDropdown(false); }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
-                        <FileDown className="w-3.5 h-3.5 text-emerald-600" />CSV
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleExportCSV();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                      >
+                        <FileDown className="w-3.5 h-3.5 text-emerald-600" />
+                        CSV
                       </button>
-                      <button type="button" onClick={() => { handlePrint(); setShowExportDropdown(false); }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
-                        <FileText className="w-3.5 h-3.5 text-blue-600" />PDF
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handlePrint();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-blue-600" />
+                        PDF
                       </button>
-                      <button type="button" onClick={() => { handlePrint(); setShowExportDropdown(false); }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
-                        <Printer className="w-3.5 h-3.5 text-violet-600" />Print
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handlePrint();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-violet-600" />
+                        Print
                       </button>
                     </div>
                   </>
@@ -1760,9 +2868,12 @@ export default function HistoryPage() {
               </div>
 
               {/* Help */}
-              <button type="button" onClick={() => setShowHelpModal(true)}
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(true)}
                 className="h-9 w-9 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 flex items-center justify-center text-gray-400 hover:text-primary hover:border-primary/40 transition-all"
-                title="How does date filtering work?">
+                title="How does date filtering work?"
+              >
                 <HelpCircle className="w-4 h-4" />
               </button>
             </div>
@@ -1770,30 +2881,55 @@ export default function HistoryPage() {
 
           {/* ── Active tab content ── */}
           {renderActiveTab()}
-
         </div>
       )}
 
       {/* ── Help modal ── */}
       {showHelpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowHelpModal(false)}>
-          <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-2xl shadow-xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setShowHelpModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-2xl shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
                 <HelpCircle className="w-5 h-5 text-primary" />
               </div>
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">How date filtering works</h3>
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                How date filtering works
+              </h3>
             </div>
             <div className="space-y-3 text-sm text-gray-700 dark:text-neutral-300">
-              <p>All date presets use your <strong>business day sessions</strong> so reports match your actual session boundaries.</p>
-              <p><strong>Yesterday</strong> covers the most recently closed session (e.g. 5 PM – 4 AM).</p>
-              <p><strong>Today</strong> covers the current open session from its start time to now.</p>
-              <p><strong>Custom range</strong>: "From" includes from the start of that day, "To" includes up to the end of that day.</p>
-              <p className="text-gray-500 dark:text-neutral-400">Only <strong>delivered</strong> orders count towards revenue. Cancelled orders are tracked separately.</p>
+              <p>
+                All date presets use your <strong>business day sessions</strong>{" "}
+                so reports match your actual session boundaries.
+              </p>
+              <p>
+                <strong>Yesterday</strong> covers the most recently closed
+                session (e.g. 5 PM – 4 AM).
+              </p>
+              <p>
+                <strong>Today</strong> covers the current open session from its
+                start time to now.
+              </p>
+              <p>
+                <strong>Custom range</strong>: "From" includes from the start of
+                that day, "To" includes up to the end of that day.
+              </p>
+              <p className="text-gray-500 dark:text-neutral-400">
+                Only <strong>delivered</strong> orders count towards revenue.
+                Cancelled orders are tracked separately.
+              </p>
             </div>
             <div className="mt-6 flex justify-end">
-              <button type="button" onClick={() => setShowHelpModal(false)}
-                className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity">
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(false)}
+                className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+              >
                 Got it
               </button>
             </div>
