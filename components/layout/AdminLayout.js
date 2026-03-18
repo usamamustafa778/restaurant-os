@@ -35,7 +35,7 @@ import {
   Mail,
   Bike,
 } from "lucide-react";
-import { getToken, getStoredAuth, clearActingAsRestaurant } from "../../lib/apiClient";
+import { getToken, getStoredAuth, clearActingAsRestaurant, getRestaurantInfo } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { getTenantRoute } from "../../lib/routes";
@@ -455,13 +455,26 @@ export default function AdminLayout({
       const initials = parts.map((p) => p[0]?.toUpperCase() || "").join("");
       setUserInitials(initials || name[0]?.toUpperCase() || "");
     }
-    setRestaurantName(auth?.user?.restaurantName || "");
-    setRestaurantLogoUrl(auth?.user?.restaurantLogoUrl || "");
+    // Prefer data from stored auth (set on login); fall back to API fetch for existing sessions
+    const storedName = auth?.user?.restaurantName || "";
+    const storedLogo = auth?.user?.restaurantLogoUrl || "";
+    setRestaurantName(storedName);
+    setRestaurantLogoUrl(storedLogo);
+
     // Super admin "acting as" tenant: show tenant nav
     if (r === "super_admin") {
       setActingAsSlug(auth?.user?.tenantSlug || auth?.tenantSlug || null);
     } else {
       setActingAsSlug(null);
+      // Fetch fresh restaurant info if not already in stored auth
+      if (!storedName) {
+        getRestaurantInfo()
+          .then((info) => {
+            if (info?.name) setRestaurantName(info.name);
+            if (info?.logoUrl) setRestaurantLogoUrl(info.logoUrl);
+          })
+          .catch(() => {});
+      }
     }
   }, []);
 
