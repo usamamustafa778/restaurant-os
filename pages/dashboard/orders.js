@@ -222,12 +222,18 @@ function isOrderFullyClosed(order) {
 }
 
 function getOrderTypeLabel(order) {
-  const type = (order.type || order.orderType || "").toUpperCase();
+  const rawType = order?.orderType ?? order?.type ?? "";
+  const type = String(rawType).toUpperCase();
+
   if (type.includes("DELIVERY")) return "Delivery";
-  if (type.includes("DINE") || type.includes("DINE_IN")) return "Dine In";
+  if (type.includes("DINE")) return "Dine In";
   if (type.includes("TAKE") || type.includes("PICKUP")) return "Takeaway";
-  if (order.deliveryAddress) return "Delivery";
-  if (order.tableName) return "Dine In";
+
+  // Fallbacks for inconsistent backend payloads
+  if (order?.deliveryAddress) return "Delivery";
+  const table = order?.tableName || order?.tableNumber;
+  if (table) return "Dine In";
+
   return "Walk-in";
 }
 
@@ -1986,6 +1992,7 @@ function OrderCard({
   const isUpdating = updatingId === orderId;
   const orderType = order.type || order.orderType || "";
   const typeLabel = getOrderTypeLabel(order);
+  const tableLabel = order.tableName || order.tableNumber;
   const TypeIcon = ORDER_TYPE_ICON[typeLabel] || ShoppingBag;
   const status = orderStatusForTab(order.status);
   const waitMin = getWaitingMinutes(order.createdAt, now);
@@ -2055,15 +2062,15 @@ function OrderCard({
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {typeLabel === "Dine In" && order.tableName && (
+          {typeLabel === "Dine In" && tableLabel && (
             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-500/20">
               <MapPin className="w-3 h-3" />
-              {order.tableName}
+              {tableLabel}
             </span>
           )}
-          {typeLabel !== "Dine In" && order.tableName && (
+          {typeLabel !== "Dine In" && tableLabel && (
             <span className="text-[10px] font-medium text-gray-500 dark:text-neutral-500 bg-gray-50 dark:bg-neutral-900 px-1.5 py-0.5 rounded">
-              {order.tableName}
+              {tableLabel}
             </span>
           )}
           {order.customerName && (

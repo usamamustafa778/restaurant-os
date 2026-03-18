@@ -214,7 +214,7 @@ function KpiCard({ label, value, sub, icon: Icon, gradient, shadow }) {
   );
 }
 
-function Section({ title, subtitle, icon: Icon, iconGradient, badge, badgeValue, defaultOpen = true, children }) {
+function Section({ title, subtitle, icon: Icon, iconGradient, badge, badgeValue, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
@@ -668,14 +668,14 @@ export default function HistoryPage() {
 
   function renderOverview() {
     return (
-      <div className="space-y-5">
+      <div className="space-y-5 max-w-7xl mx-auto">
         <div className="grid gap-4 sm:grid-cols-3">
           <KpiCard label="Total Revenue" value={fmtRs(report.totalRevenue)} sub="from completed orders" icon={DollarSign} gradient="from-primary to-secondary" shadow="shadow-primary/30" />
           <KpiCard label="Total Orders" value={report.totalOrders.toLocaleString()} sub="completed & delivered" icon={ShoppingBag} gradient="from-violet-500 to-violet-600" shadow="shadow-violet-500/30" />
           <KpiCard label="Avg. Ticket Size" value={fmtRs(avgTicket)} sub="revenue per order" icon={TrendingUp} gradient="from-emerald-500 to-emerald-600" shadow="shadow-emerald-500/30" />
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <Section title="Payment Summary" subtitle="How customers paid in this period" icon={DollarSign} iconGradient="bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/25">
+          <Section title="Payment Summary" subtitle="How customers paid in this period" icon={DollarSign} iconGradient="bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/25" defaultOpen>
             <div className="p-5 grid gap-3 sm:grid-cols-3">
               {["CASH", "CARD", "ONLINE"].map(method => {
                 const d = paymentTotals[method] || { amount: 0, orders: 0 };
@@ -692,7 +692,7 @@ export default function HistoryPage() {
               })}
             </div>
           </Section>
-          <Section title="Online Payment Accounts" subtitle="Breakdown by JazzCash, bank, etc." icon={DollarSign} iconGradient="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/25">
+          <Section title="Online Payment Accounts" subtitle="Breakdown by JazzCash, bank, etc." icon={DollarSign} iconGradient="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/25" defaultOpen>
             <div className="p-5">
               {paymentAccountRows.length === 0 ? (
                 <div className="py-6 text-center text-xs text-gray-400 dark:text-neutral-500">No online payments in this period.</div>
