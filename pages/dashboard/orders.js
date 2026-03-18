@@ -1977,6 +1977,7 @@ function OrderCard({
   const tableLabel = order.tableName || order.tableNumber;
   const TypeIcon = ORDER_TYPE_ICON[typeLabel] || ShoppingBag;
   const status = orderStatusForTab(order.status);
+  const cancelReasonText = (order.cancelReason || order.cancelledReason || "").trim();
   const waitMin = getWaitingMinutes(order.createdAt, now);
   const urgency = getUrgency(waitMin);
   const isActive = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(status);
@@ -2145,6 +2146,13 @@ function OrderCard({
           </div>
         );
       })()}
+
+      {/* Cancel reason (only for cancelled orders) */}
+      {!isActive && status === "CANCELLED" && cancelReasonText && (
+        <div className="mx-3 mb-2 text-[10px] text-red-700 dark:text-red-400">
+          <span className="font-bold">Reason</span>: {cancelReasonText}
+        </div>
+      )}
 
       {/* Items list */}
       {items.length > 0 && !isActive && (
