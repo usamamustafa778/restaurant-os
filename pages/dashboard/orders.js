@@ -282,6 +282,10 @@ export default function OrdersPage() {
   const [now, setNow] = useState(Date.now());
   const [showCancelled, setShowCancelled] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
+  const [datePreset, setDatePreset] = useState("today");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [showDateDropdown, setShowDateDropdown] = useState(false);
   // paymentPendingOnly removed; payment-pending filter UI no longer exists.
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -329,9 +333,13 @@ export default function OrdersPage() {
 
   // ── Data loading ────────────────────────────────────────────────────────
 
-  async function loadOrders() {
+  async function loadOrders(dates) {
     try {
-      const data = await getOrders();
+      const params = { limit: 2000 };
+      if (dates?.from) params.from = dates.from.toISOString();
+      if (dates?.to) params.to = dates.to.toISOString();
+
+      const data = await getOrders(params);
       setOrders(Array.isArray(data) ? data : (data?.orders ?? []));
       setPageLoading(false);
     } catch (err) {
@@ -353,10 +361,6 @@ export default function OrdersPage() {
   function removeOrderFromList(orderId) {
     setOrders((prev) => prev.filter((o) => getOrderId(o) !== orderId));
   }
-
-  useEffect(() => {
-    loadOrders();
-  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000);
@@ -407,7 +411,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (!socket) return;
-    const onOrderEvent = () => loadOrders();
+    const onOrderEvent = () => loadOrders(dateRange);
     socket.on("order:created", onOrderEvent);
     socket.on("order:updated", onOrderEvent);
     return () => {
@@ -667,6 +671,7 @@ export default function OrdersPage() {
   const cashierBaseOrders = useMemo(() => {
     const list = Array.isArray(orders) ? orders : [];
     if (!isCashier) return list;
+    if (datePreset !== "today") return list;
     const todayStr = new Date().toISOString().slice(0, 10);
     return list.filter((o) => {
       const isToday = (o.createdAt || "").slice(0, 10) === todayStr;
@@ -677,16 +682,57 @@ export default function OrdersPage() {
         getPaymentStatus(o) === "unpaid";
       return isToday || isActive || isAwaitingPayment;
     });
-  }, [orders, isCashier]);
+  }, [orders, isCashier, datePreset]);
 
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDateStr = getBusinessDate(new Date(), cutoffHour);
 
-  // Date filtering UI removed; always use today's business day window.
-  const dateRange = useMemo(
-    () => getBusinessDayRange(businessDateStr, cutoffHour),
-    [businessDateStr, cutoffHour],
-  );
+  function shiftBusinessDateStr(dateStr, deltaDays) {
+    const [y, m, d] = String(dateStr).split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + deltaDays);
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const dateRange = useMemo(() => {
+    if (datePreset === "today") return getBusinessDayRange(businessDateStr, cutoffHour);
+    if (datePreset === "yesterday") return getBusinessDayRange(shiftBusinessDateStr(businessDateStr, -1), cutoffHour);
+
+    if (datePreset === "7days") {
+      const fromStr = shiftBusinessDateStr(businessDateStr, -6);
+      return {
+        from: getBusinessDayRange(fromStr, cutoffHour).from,
+        to: getBusinessDayRange(businessDateStr, cutoffHour).to,
+      };
+    }
+    if (datePreset === "30days") {
+      const fromStr = shiftBusinessDateStr(businessDateStr, -29);
+      return {
+        from: getBusinessDayRange(fromStr, cutoffHour).from,
+        to: getBusinessDayRange(businessDateStr, cutoffHour).to,
+      };
+    }
+
+    // custom range: treat inputs as business-date strings.
+    if (datePreset === "custom") {
+      const fromRange = customFrom ? getBusinessDayRange(customFrom, cutoffHour) : null;
+      const toRange = customTo ? getBusinessDayRange(customTo, cutoffHour) : null;
+
+      if (fromRange && toRange) return { from: fromRange.from, to: toRange.to };
+      if (fromRange) return { from: fromRange.from, to: fromRange.to };
+      if (toRange) return { from: toRange.from, to: toRange.to };
+    }
+
+    return getBusinessDayRange(businessDateStr, cutoffHour);
+  }, [datePreset, customFrom, customTo, businessDateStr, cutoffHour]);
+
+  const dateRangeKey = `${dateRange?.from?.getTime() ?? ""}-${dateRange?.to?.getTime() ?? ""}`;
+  useEffect(() => {
+    loadOrders(dateRange);
+  }, [dateRangeKey]);
 
   const baseFiltered = useMemo(() => {
     const base = Array.isArray(cashierBaseOrders) ? cashierBaseOrders : [];
@@ -806,19 +852,118 @@ export default function OrdersPage() {
                 className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
               />
 
-              {/* Right: refresh */}
-              <button
-                type="button"
-                onClick={() => {
-                  const toastId = toast.loading("Refreshing...");
-                  loadOrders()
-                    .then(() => toast.success("Refreshed!", { id: toastId }))
-                    .catch(() => toast.dismiss(toastId));
-                }}
-                className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Date filter */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowDateDropdown((v) => !v)}
+                    className="h-9 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-[11px] font-semibold text-gray-700 dark:text-neutral-300 hover:border-gray-400 dark:hover:border-neutral-500 transition-all inline-flex items-center gap-1.5"
+                  >
+                    <Clock className="w-3 h-3 text-gray-400 dark:text-neutral-500" />
+                    {
+                      {
+                        today: "Today",
+                        yesterday: "Yesterday",
+                        "7days": "Last 7 Days",
+                        "30days": "Last Month",
+                        custom: "Custom",
+                      }[datePreset]
+                    }
+                    <ChevronDown
+                      className={`w-3 h-3 text-gray-400 transition-transform ${
+                        showDateDropdown ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {showDateDropdown && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowDateDropdown(false)}
+                      />
+                      <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden">
+                        {[ 
+                          { id: "today", label: "Today's Session" },
+                          { id: "yesterday", label: "Yesterday" },
+                          { id: "7days", label: "Last 7 Days" },
+                          { id: "30days", label: "Last Month" },
+                          { id: "custom", label: "Custom Range" },
+                        ].map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setDatePreset(p.id);
+                              if (p.id !== "custom") setShowDateDropdown(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors flex items-center justify-between ${
+                              datePreset === p.id
+                                ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                            }`}
+                          >
+                            {p.label}
+                            {datePreset === p.id && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            )}
+                          </button>
+                        ))}
+
+                        {datePreset === "custom" && (
+                          <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 space-y-2">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
+                                From
+                              </label>
+                              <input
+                                type="date"
+                                value={customFrom}
+                                onChange={(e) => setCustomFrom(e.target.value)}
+                                className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
+                                To
+                              </label>
+                              <input
+                                type="date"
+                                value={customTo}
+                                onChange={(e) => setCustomTo(e.target.value)}
+                                className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowDateDropdown(false)}
+                              disabled={!customFrom && !customTo}
+                              className="w-full h-7 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition-colors disabled:opacity-40"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Refresh */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const toastId = toast.loading("Refreshing...");
+                    loadOrders(dateRange)
+                      .then(() => toast.success("Refreshed!", { id: toastId }))
+                      .catch(() => toast.dismiss(toastId));
+                  }}
+                  className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                </button>
+              </div>
             </div>
           </div>
 
