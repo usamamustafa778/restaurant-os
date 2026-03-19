@@ -2174,7 +2174,9 @@ function OrderCard({
               </button>
             )}
             {paymentStatus === "unpaid" &&
-              !["CANCELLED", "DELIVERED", "COMPLETED"].includes(status) && (
+              status !== "CANCELLED" &&
+              (!["DELIVERED", "COMPLETED"].includes(status) ||
+                (isAdmin && ["DELIVERED", "COMPLETED"].includes(status))) && (
                 <button
                   type="button"
                   onClick={() => onEdit(order)}
