@@ -324,6 +324,7 @@ export default function OrdersPage() {
   const [role] = useState(() => getStoredAuth()?.user?.role);
   const isOrderTaker = role === "order_taker";
   const isCashier = role === "cashier";
+  const isAdmin = ["restaurant_admin", "admin", "super_admin", "manager"].includes(role);
 
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
@@ -1008,6 +1009,7 @@ export default function OrdersPage() {
                             theme={theme}
                             isOrderTaker={isOrderTaker}
                             isCashier={isCashier}
+                            isAdmin={isAdmin}
                             updatingId={updatingId}
                             onUpdateStatus={handleUpdateStatus}
                             onOpenCancel={openCancelModal}
@@ -1860,6 +1862,7 @@ function OrderCard({
   theme,
   isOrderTaker,
   isCashier,
+  isAdmin,
   updatingId,
   onUpdateStatus,
   onOpenCancel,
@@ -1882,6 +1885,16 @@ function OrderCard({
   const urgency = getUrgency(waitMin);
   const isActive = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(status);
   const paymentStatus = getPaymentStatus(order);
+  const canCancel =
+    // Always allow cancelling from active states.
+    status !== "CANCELLED" &&
+    (
+      // Keep existing rule: hide cancel for delivered/completed/out_for_delivery.
+      !["DELIVERED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(status) ||
+      // Admin override: allow cancelling unpaid delivered/completed orders
+      // (these are shown in the "Awaiting Payment" column).
+      (isAdmin && paymentStatus === "unpaid" && ["DELIVERED", "COMPLETED"].includes(status))
+    );
 
   const nextStatuses = getNextStatuses(order.status, orderType);
   const primaryNext = nextStatuses[0];
@@ -2171,12 +2184,7 @@ function OrderCard({
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
               )}
-            {![
-              "CANCELLED",
-              "DELIVERED",
-              "COMPLETED",
-              "OUT_FOR_DELIVERY",
-            ].includes(status) && (
+            {canCancel && (
               <button
                 type="button"
                 disabled={isUpdating}
