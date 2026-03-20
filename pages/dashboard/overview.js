@@ -10,6 +10,7 @@ import {
   getDaySessions,
   getCurrentDaySession,
   getDaySessionOrders,
+  reassignSessionOrdersToCurrent,
   endDaySession,
   updateBranch,
   getInventory,
@@ -442,6 +443,7 @@ export default function OverviewPage() {
   const [showSessionHistoryModal, setShowSessionHistoryModal] = useState(false);
   const [sessionHistory, setSessionHistory] = useState([]);
   const [loadingSessionHistory, setLoadingSessionHistory] = useState(false);
+  const [repairingSessionId, setRepairingSessionId] = useState(null);
 
   const [showEndDayModal, setShowEndDayModal] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
@@ -465,6 +467,26 @@ export default function OverviewPage() {
       setSessionHistory([]);
     } finally {
       setLoadingSessionHistory(false);
+    }
+  }
+
+  async function handleRepairSession(sessionId) {
+    if (!sessionId || !currentBranch?.id) return;
+    setRepairingSessionId(sessionId);
+    try {
+      const res = await reassignSessionOrdersToCurrent({
+        sourceSessionId: sessionId,
+        includeCancelled: true,
+        onlyAfterSourceEnd: true,
+      });
+      toast.success(
+        `Moved ${Number(res?.movedOrders || 0).toLocaleString()} orders to today's session`,
+      );
+      await loadSessionHistory();
+    } catch (err) {
+      toast.error(err.message || "Failed to repair session orders");
+    } finally {
+      setRepairingSessionId(null);
     }
   }
 
@@ -1866,6 +1888,23 @@ export default function OverviewPage() {
                         </div>
                       )}
                     </div>
+                    {s.status === "CLOSED" && currentBranch?.id && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-neutral-800">
+                        <button
+                          type="button"
+                          onClick={() => handleRepairSession(s.id)}
+                          disabled={repairingSessionId === s.id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                        >
+                          {repairingSessionId === s.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Clock className="w-3 h-3" />
+                          )}
+                          Move post-end orders to today
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
