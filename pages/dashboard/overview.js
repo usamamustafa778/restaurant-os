@@ -9,6 +9,7 @@ import {
   SubscriptionInactiveError,
   getDaySessions,
   getCurrentDaySession,
+  getDaySessionOrders,
   endDaySession,
   updateBranch,
   getInventory,
@@ -447,7 +448,13 @@ export default function OverviewPage() {
   const [loadingSession, setLoadingSession] = useState(false);
   const [endingDay, setEndingDay] = useState(false);
   const [savingCutoff, setSavingCutoff] = useState(false);
-  const [endMode, setEndMode] = useState("cutoff"); // 'cutoff' | 'lastOrder'
+  // Manual end-day: auto-close uses cutoff on the backend; this modal allows selecting an order boundary.
+  const [endMode, setEndMode] = useState("selectedOrder"); // 'cutoff' | 'selectedOrder'
+  const [loadingEndOrders, setLoadingEndOrders] = useState(false);
+  const [endOrderOptions, setEndOrderOptions] = useState([]); // {id, orderNumber, createdAt, status}
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [endOrderSearch, setEndOrderSearch] = useState("");
+  const [showEndOrderMenu, setShowEndOrderMenu] = useState(false);
 
   async function loadSessionHistory() {
     setLoadingSessionHistory(true);
@@ -467,14 +474,55 @@ export default function OverviewPage() {
       return;
     }
     setCurrentSession(null);
-    setEndMode("cutoff");
+    setEndMode("selectedOrder");
+    setEndOrderOptions([]);
+    setSelectedOrderId(null);
+    setEndOrderSearch("");
+    setShowEndOrderMenu(false);
     setShowEndDayModal(true);
     setLoadingSession(true);
     try {
       const session = await getCurrentDaySession(currentBranch?.id);
       setCurrentSession(session);
+
+      // Load orders for selecting the end boundary (manual closing only).
+      setLoadingEndOrders(true);
+      try {
+        if (session?.id) {
+          const res = await getDaySessionOrders(session.id);
+          const orders = Array.isArray(res?.orders) ? res.orders : [];
+          const eligible = orders
+            .filter((o) => o && o.status !== "CANCELLED")
+            .slice(0, 50);
+          setEndOrderOptions(eligible);
+          setSelectedOrderId(eligible[0]?.id || null);
+          if (eligible[0]) {
+            const dt = eligible[0]?.createdAt
+              ? new Date(eligible[0].createdAt).toLocaleString("en-PK", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                })
+              : "";
+            setEndOrderSearch(
+              `${(eligible[0].orderNumber || eligible[0].id || "").toString()} · ${dt}`,
+            );
+          }
+        }
+      } catch {
+        setEndOrderOptions([]);
+        setSelectedOrderId(null);
+        setEndOrderSearch("");
+      } finally {
+        setLoadingEndOrders(false);
+      }
     } catch {
       setCurrentSession(null);
+      setEndOrderOptions([]);
+      setSelectedOrderId(null);
+      setEndOrderSearch("");
     } finally {
       setLoadingSession(false);
     }
@@ -487,7 +535,10 @@ export default function OverviewPage() {
     }
     setEndingDay(true);
     try {
-      await endDaySession(currentBranch?.id, { endMode });
+      await endDaySession(currentBranch?.id, {
+        endMode,
+        selectedOrderId,
+      });
       toast.success("Business day ended");
       setShowEndDayModal(false);
     } catch (err) {
@@ -1912,7 +1963,7 @@ export default function OverviewPage() {
               )}
             </div>
 
-            {/* End mode selection */}
+            {/* Manual end boundary selection */}
             <div className="px-5 pb-3">
               <div className="text-xs font-semibold text-gray-700 dark:text-neutral-300 mb-2">
                 End day at
@@ -1924,11 +1975,88 @@ export default function OverviewPage() {
                 className="w-full h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-3 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               >
                 <option value="cutoff">Business cutoff time</option>
-                <option value="lastOrder">Last completed order time</option>
+                <option value="selectedOrder">Selected order</option>
               </select>
-              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1">
-                Use <b>Last completed order time</b> to include orders that were created after the cutoff but still belong to this session.
-              </p>
+
+              {endMode === "selectedOrder" && (
+                <div className="mt-3">
+                  <div className="text-[10px] font-semibold text-gray-600 dark:text-neutral-400 mb-1">
+                    Select the order where the day should end
+                  </div>
+                  {loadingEndOrders ? (
+                    <div className="flex items-center justify-center py-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    </div>
+                  ) : endOrderOptions.length === 0 ? (
+                    <p className="text-[10px] text-gray-500 dark:text-neutral-400 py-1">
+                      No orders found in this session. Falling back to cutoff.
+                    </p>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={endOrderSearch}
+                        onChange={(e) => {
+                          setEndOrderSearch(e.target.value);
+                          setShowEndOrderMenu(true);
+                          setSelectedOrderId(null);
+                        }}
+                        onFocus={() => setShowEndOrderMenu(true)}
+                        disabled={endingDay}
+                        placeholder="Search order number..."
+                        className="w-full h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-3 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                      />
+                      {showEndOrderMenu && (
+                        <div className="absolute z-20 mt-1 w-full max-h-40 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg">
+                          {endOrderOptions
+                            .filter((o) => {
+                              const dt = o?.createdAt
+                                ? new Date(o.createdAt).toLocaleString("en-PK", {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  })
+                                : "";
+                              const label = `${(o.orderNumber || o.id || "").toString()} ${dt}`.toLowerCase();
+                              return label.includes((endOrderSearch || "").toLowerCase());
+                            })
+                            .map((o) => {
+                              const dt = o?.createdAt
+                                ? new Date(o.createdAt).toLocaleString("en-PK", {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  })
+                                : "";
+                              const label = `${(o.orderNumber || o.id || "").toString()} · ${dt}`;
+                              return (
+                                <button
+                                  key={o.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedOrderId(o.id);
+                                    setEndOrderSearch(label);
+                                    setShowEndOrderMenu(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1">
+                    This affects <b>manual</b> closing only. Orders after the selected time will be moved to a new OPEN session so today counts correctly.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -1946,7 +2074,7 @@ export default function OverviewPage() {
               <button
                 type="button"
                 onClick={handleEndDay}
-                disabled={endingDay}
+                disabled={endingDay || (endMode === "selectedOrder" && !selectedOrderId)}
                 className="flex-1 h-9 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
               >
                 {endingDay ? (
