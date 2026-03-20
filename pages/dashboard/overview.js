@@ -10,7 +10,6 @@ import {
   getDaySessions,
   getCurrentDaySession,
   getDaySessionOrders,
-  reassignSessionOrdersToCurrent,
   endDaySession,
   updateBranch,
   getInventory,
@@ -440,11 +439,6 @@ export default function OverviewPage() {
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDate = getBusinessDate(new Date(), cutoffHour);
 
-  const [showSessionHistoryModal, setShowSessionHistoryModal] = useState(false);
-  const [sessionHistory, setSessionHistory] = useState([]);
-  const [loadingSessionHistory, setLoadingSessionHistory] = useState(false);
-  const [repairingSessionId, setRepairingSessionId] = useState(null);
-
   const [showEndDayModal, setShowEndDayModal] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -457,38 +451,6 @@ export default function OverviewPage() {
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [endOrderSearch, setEndOrderSearch] = useState("");
   const [showEndOrderMenu, setShowEndOrderMenu] = useState(false);
-
-  async function loadSessionHistory() {
-    setLoadingSessionHistory(true);
-    try {
-      const res = await getDaySessions(currentBranch?.id);
-      setSessionHistory(Array.isArray(res?.sessions) ? res.sessions : []);
-    } catch {
-      setSessionHistory([]);
-    } finally {
-      setLoadingSessionHistory(false);
-    }
-  }
-
-  async function handleRepairSession(sessionId) {
-    if (!sessionId || !currentBranch?.id) return;
-    setRepairingSessionId(sessionId);
-    try {
-      const res = await reassignSessionOrdersToCurrent({
-        sourceSessionId: sessionId,
-        includeCancelled: true,
-        onlyAfterSourceEnd: true,
-      });
-      toast.success(
-        `Moved ${Number(res?.movedOrders || 0).toLocaleString()} orders to today's session`,
-      );
-      await loadSessionHistory();
-    } catch (err) {
-      toast.error(err.message || "Failed to repair session orders");
-    } finally {
-      setRepairingSessionId(null);
-    }
-  }
 
   async function openEndDayModal() {
     if (!currentBranch?.id) {
@@ -1055,18 +1017,6 @@ export default function OverviewPage() {
                 End Day
               </button>
 
-              {/* Past Sessions */}
-              <button
-                type="button"
-                onClick={() => {
-                  loadSessionHistory();
-                  setShowSessionHistoryModal(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 text-xs font-medium hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Clock className="w-3.5 h-3.5" />
-                Past Sessions
-              </button>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -1795,123 +1745,6 @@ export default function OverviewPage() {
         </>
       )}
 
-      {/* Past Sessions Modal */}
-      {showSessionHistoryModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowSessionHistoryModal(false);
-          }}
-        >
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <div>
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Past Sessions
-                </h2>
-                <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
-                  {currentBranch
-                    ? `History for ${currentBranch.name}`
-                    : "All branches"}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowSessionHistoryModal(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {loadingSessionHistory ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                </div>
-              ) : sessionHistory.length === 0 ? (
-                <div className="text-center py-12 text-sm text-gray-400 dark:text-neutral-600">
-                  No past sessions found
-                </div>
-              ) : (
-                sessionHistory.map((s) => (
-                  <div
-                    key={s.id}
-                    className="p-4 rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/50 hover:bg-white dark:hover:bg-neutral-900 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.status === "OPEN" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}
-                        >
-                          {s.status === "OPEN" && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          )}
-                          {s.status}
-                        </span>
-                        {!currentBranch && s.branchName && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
-                            {s.branchName}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-sm font-bold text-gray-900 dark:text-white">
-                          Rs {(s.totalSales || 0).toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-gray-500 dark:text-neutral-400">
-                          {s.totalOrders || 0} orders
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-4 text-xs text-gray-500 dark:text-neutral-500">
-                      <div>
-                        <span className="font-medium">Started: </span>
-                        {new Date(s.startAt).toLocaleString("en-PK", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: true,
-                        })}
-                      </div>
-                      {s.endAt && (
-                        <div>
-                          <span className="font-medium">Ended: </span>
-                          {new Date(s.endAt).toLocaleString("en-PK", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    {s.status === "CLOSED" && currentBranch?.id && (
-                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-neutral-800">
-                        <button
-                          type="button"
-                          onClick={() => handleRepairSession(s.id)}
-                          disabled={repairingSessionId === s.id}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors disabled:opacity-50"
-                        >
-                          {repairingSessionId === s.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Clock className="w-3 h-3" />
-                          )}
-                          Move post-end orders to today
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       {/* End Day Confirmation Modal */}
       {showEndDayModal && (
         <div

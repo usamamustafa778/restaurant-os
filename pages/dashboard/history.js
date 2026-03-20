@@ -5,6 +5,7 @@ import {
   getOrders,
   getDaySessions,
   getDaySessionOrders,
+  reassignOrdersToSession,
   SubscriptionInactiveError,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
@@ -330,27 +331,55 @@ function getStatusTime(order, status) {
   return entry?.at || null;
 }
 
-function KpiCard({ label, value, sub, icon: Icon, gradient, shadow }) {
+function KpiCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  gradient,
+  shadow,
+  compact = false,
+}) {
   return (
-    <div className="group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl p-5 hover:shadow-xl transition-all overflow-hidden">
+    <div
+      className={`group relative bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 transition-all overflow-hidden ${
+        compact
+          ? "rounded-xl p-3 hover:shadow-md"
+          : "rounded-2xl p-5 hover:shadow-xl"
+      }`}
+    >
       <div className="relative flex items-start justify-between">
         <div>
-          <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">
+          <p
+            className={`font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider ${
+              compact ? "text-[10px] mb-1.5" : "text-xs mb-3"
+            }`}
+          >
             {label}
           </p>
-          <p className="text-2xl font-extrabold text-gray-900 dark:text-white">
+          <p
+            className={`font-extrabold text-gray-900 dark:text-white ${
+              compact ? "text-[18px] leading-tight" : "text-2xl"
+            }`}
+          >
             {value}
           </p>
           {sub && (
-            <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+            <p
+              className={`text-gray-400 dark:text-neutral-500 ${
+                compact ? "text-[10px] mt-0.5" : "text-xs mt-1"
+              }`}
+            >
               {sub}
             </p>
           )}
         </div>
         <div
-          className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg ${shadow} flex-shrink-0`}
+          className={`bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg ${shadow} flex-shrink-0 ${
+            compact ? "h-9 w-9 rounded-xl" : "h-11 w-11 rounded-2xl"
+          }`}
         >
-          <Icon className="w-5 h-5 text-white" />
+          <Icon className={`${compact ? "w-4 h-4" : "w-5 h-5"} text-white`} />
         </div>
       </div>
     </div>
@@ -522,6 +551,16 @@ export default function HistoryPage() {
   const [preset, setPreset] = useState("today");
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [ordersExportColumns, setOrdersExportColumns] = useState([
+    "orderNumber",
+    "status",
+    "grandTotal",
+    "type",
+    "payment",
+    "paid",
+    "customer",
+    "created",
+  ]);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [report, setReport] = useState(DEFAULT_REPORT);
@@ -538,6 +577,20 @@ export default function HistoryPage() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [sessionDetail, setSessionDetail] = useState(null);
   const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+  const [selectedSessionOrderIds, setSelectedSessionOrderIds] = useState([]);
+  const [moveTargetSessionId, setMoveTargetSessionId] = useState("");
+  const [movingOrders, setMovingOrders] = useState(false);
+  const [showExportColumns, setShowExportColumns] = useState(false);
+  const [exportColumns, setExportColumns] = useState([
+    "orderNumber",
+    "time",
+    "type",
+    "status",
+    "customer",
+    "staff",
+    "total",
+    "payment",
+  ]);
   const SESSIONS_PER_PAGE = 20;
 
   // Orders tab state
@@ -555,6 +608,86 @@ export default function HistoryPage() {
   const [ordersPage, setOrdersPage] = useState(0);
   const [itemsDropdownId, setItemsDropdownId] = useState(null);
   const [ordersPerPage, setOrdersPerPage] = useState(25);
+  const ORDER_EXPORT_COLUMN_OPTIONS = [
+    { key: "orderNumber", label: "Order #" },
+    { key: "status", label: "Status" },
+    { key: "grandTotal", label: "Grand Total" },
+    { key: "subtotal", label: "Subtotal" },
+    { key: "discount", label: "Discount" },
+    { key: "items", label: "Items" },
+    { key: "type", label: "Type" },
+    { key: "payment", label: "Payment" },
+    { key: "paid", label: "Paid" },
+    { key: "customer", label: "Customer" },
+    { key: "phone", label: "Phone" },
+    { key: "table", label: "Table" },
+    { key: "source", label: "Source" },
+    { key: "orderTaker", label: "Order Taker" },
+    { key: "rider", label: "Rider" },
+    { key: "deliveryAddress", label: "Delivery Address" },
+    { key: "deliveryCharges", label: "Del. Charges" },
+    { key: "cancelReason", label: "Cancel Reason" },
+    { key: "created", label: "Created" },
+    { key: "preparing", label: "Preparing" },
+    { key: "ready", label: "Ready" },
+    { key: "outForDelivery", label: "Out for Delivery" },
+    { key: "closed", label: "Closed / Cancelled" },
+  ];
+
+  function orderExportValueByKey(o, key) {
+    switch (key) {
+      case "orderNumber":
+        return o.id;
+      case "status":
+        return o.status;
+      case "grandTotal":
+        return Math.round(o.grandTotal ?? o.total ?? 0);
+      case "subtotal":
+        return Math.round(o.subtotal ?? 0);
+      case "discount":
+        return Math.round(o.discountAmount ?? 0);
+      case "items":
+        return (o.items || []).map((i) => `${i.name} x${i.qty}`).join(", ");
+      case "type":
+        return o.type;
+      case "payment":
+        return o.paymentMethod || "";
+      case "paid":
+        return o.isPaid ? "Paid" : "Unpaid";
+      case "customer":
+        return o.customerName || "";
+      case "phone":
+        return o.customerPhone || "";
+      case "table":
+        return o.tableName || "";
+      case "source":
+        return o.source || "";
+      case "orderTaker":
+        return o.orderTakerName || "";
+      case "rider":
+        return o.assignedRiderName || "";
+      case "deliveryAddress":
+        return o.deliveryAddress || "";
+      case "deliveryCharges":
+        return o.deliveryCharges > 0 ? Math.round(o.deliveryCharges) : "";
+      case "cancelReason":
+        return o.cancelReason || "";
+      case "created":
+        return o.createdAt ? new Date(o.createdAt).toLocaleString() : "";
+      case "preparing":
+        return fmtTime(getStatusTime(o, "PROCESSING"));
+      case "ready":
+        return fmtTime(getStatusTime(o, "READY"));
+      case "outForDelivery":
+        return fmtTime(getStatusTime(o, "OUT_FOR_DELIVERY"));
+      case "closed":
+        return o.status === "CANCELLED"
+          ? fmtTime(o.cancelledAt || getStatusTime(o, "CANCELLED"))
+          : fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt);
+      default:
+        return "";
+    }
+  }
 
   async function loadReport(input) {
     try {
@@ -664,6 +797,9 @@ export default function HistoryPage() {
   async function openSessionDetail(session) {
     setSelectedSession(session);
     setSessionDetail(null);
+    setSelectedSessionOrderIds([]);
+    setMoveTargetSessionId("");
+    setShowExportColumns(false);
     setSessionDetailLoading(true);
     try {
       const res = await getDaySessionOrders(session.id);
@@ -919,60 +1055,18 @@ export default function HistoryPage() {
         ]),
       );
     } else if (activeTab === "orders") {
+      const selectedCols = ordersExportColumns.length
+        ? ordersExportColumns
+        : ORDER_EXPORT_COLUMN_OPTIONS.map((c) => c.key);
+      const headers = selectedCols.map(
+        (k) => ORDER_EXPORT_COLUMN_OPTIONS.find((c) => c.key === k)?.label || k,
+      );
       rows.push(
         ["ALL ORDERS"],
-        [
-          "Order #",
-          "Status",
-          "Grand Total",
-          "Subtotal",
-          "Discount",
-          "Items",
-          "Type",
-          "Payment",
-          "Paid",
-          "Customer",
-          "Phone",
-          "Table",
-          "Source",
-          "Order Taker",
-          "Rider",
-          "Delivery Address",
-          "Del. Charges",
-          "Cancel Reason",
-          "Created",
-          "Preparing",
-          "Ready",
-          "Out for Delivery",
-          "Closed / Cancelled",
-        ],
-        ...allOrders.map((o) => [
-          o.id,
-          o.status,
-          Math.round(o.grandTotal ?? o.total ?? 0),
-          Math.round(o.subtotal ?? 0),
-          Math.round(o.discountAmount ?? 0),
-          (o.items || []).map((i) => `${i.name} x${i.qty}`).join(", "),
-          o.type,
-          o.paymentMethod || "",
-          o.isPaid ? "Paid" : "Unpaid",
-          o.customerName || "",
-          o.customerPhone || "",
-          o.tableName || "",
-          o.source || "",
-          o.orderTakerName || "",
-          o.assignedRiderName || "",
-          o.deliveryAddress || "",
-          o.deliveryCharges > 0 ? Math.round(o.deliveryCharges) : "",
-          o.cancelReason || "",
-          o.createdAt ? new Date(o.createdAt).toLocaleString() : "",
-          fmtTime(getStatusTime(o, "PROCESSING")),
-          fmtTime(getStatusTime(o, "READY")),
-          fmtTime(getStatusTime(o, "OUT_FOR_DELIVERY")),
-          o.status === "CANCELLED"
-            ? fmtTime(o.cancelledAt || getStatusTime(o, "CANCELLED"))
-            : fmtTime(getStatusTime(o, "DELIVERED") || o.updatedAt),
-        ]),
+        headers,
+        ...allOrders.map((o) =>
+          selectedCols.map((k) => orderExportValueByKey(o, k)),
+        ),
       );
     }
     downloadCSV(
@@ -995,7 +1089,27 @@ export default function HistoryPage() {
       <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">${report.totalOrders}</div></div>
       <div class="kpi"><div class="kpi-label">Avg Ticket</div><div class="kpi-value">${fmtRs(avgTicket)}</div></div>
     </div>`;
-    if (report.topItems.length > 0) {
+    if (activeTab === "orders") {
+      const selectedCols = ordersExportColumns.length
+        ? ordersExportColumns
+        : ORDER_EXPORT_COLUMN_OPTIONS.map((c) => c.key);
+      const headers = selectedCols.map(
+        (k) => ORDER_EXPORT_COLUMN_OPTIONS.find((c) => c.key === k)?.label || k,
+      );
+      bodyContent =
+        `<h2>Orders (${allOrders.length})</h2><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>` +
+        allOrders
+          .map((o) => {
+            const cols = selectedCols
+              .map(
+                (k) => `<td>${String(orderExportValueByKey(o, k) ?? "")}</td>`,
+              )
+              .join("");
+            return `<tr>${cols}</tr>`;
+          })
+          .join("") +
+        `</tbody></table>`;
+    } else if (report.topItems.length > 0) {
       bodyContent +=
         `<h2>Top Selling Items</h2><table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Revenue</th></tr></thead><tbody>` +
         report.topItems
@@ -1171,7 +1285,12 @@ export default function HistoryPage() {
             icon={Bike}
             iconGradient="bg-gradient-to-br from-sky-500 to-blue-600 shadow-sky-500/25"
             badge={`${riderStats.length} rider${riderStats.length !== 1 ? "s" : ""} · ${riderStats.reduce((s, r) => s + r.deliveries, 0)} orders`}
-            badgeValue={undefined}
+            badgeValue={fmtRs(
+              riderStats.reduce(
+                (s, r) => s + Number(r.paidAmount || 0) + Number(r.unpaidAmount || 0),
+                0,
+              ),
+            )}
             defaultOpen
           >
             <div className="divide-y divide-gray-100 dark:divide-neutral-800">
@@ -2083,15 +2202,56 @@ export default function HistoryPage() {
           (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
         )
       : [];
+    const allOrdersSelected =
+      sessionOrders.length > 0 &&
+      selectedSessionOrderIds.length === sessionOrders.length;
+    const movableTargetSessions = sessionsList.filter(
+      (s) => s.id !== selectedSession?.id,
+    );
+    const exportColumnOptions = [
+      { key: "orderNumber", label: "Order #" },
+      { key: "time", label: "Time" },
+      { key: "type", label: "Type" },
+      { key: "status", label: "Status" },
+      { key: "customer", label: "Customer" },
+      { key: "staff", label: "Staff" },
+      { key: "items", label: "Items" },
+      { key: "total", label: "Total" },
+      { key: "payment", label: "Payment" },
+    ];
+    const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
     // Order type breakdown from detail orders
-    const typeBreakdown = sessionOrders.reduce((map, o) => {
-      const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
-      if (!map[t]) map[t] = { count: 0, revenue: 0 };
-      map[t].count += 1;
-      map[t].revenue += o.total || 0;
-      return map;
-    }, {});
+    const typeBreakdown = sessionOrders
+      .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
+      .reduce((map, o) => {
+        const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
+        if (!map[t]) map[t] = { count: 0, revenue: 0 };
+        map[t].count += 1;
+        map[t].revenue += o.total || 0;
+        return map;
+      }, {});
+
+    async function handleMoveSelectedOrders() {
+      if (!moveTargetSessionId || selectedSessionOrderIds.length === 0) return;
+      setMovingOrders(true);
+      try {
+        const res = await reassignOrdersToSession({
+          orderIds: selectedSessionOrderIds,
+          targetSessionId: moveTargetSessionId,
+          branchId: currentBranch?.id,
+        });
+        toast.success(
+          `Moved ${Number(res?.movedOrders || 0).toLocaleString()} orders`,
+        );
+        if (selectedSession?.id) await openSessionDetail(selectedSession);
+        await loadSessions(sessionsPage);
+      } catch (err) {
+        toast.error(err.message || "Failed to move orders");
+      } finally {
+        setMovingOrders(false);
+      }
+    }
 
     return (
       <div className="space-y-4">
@@ -2263,21 +2423,21 @@ export default function HistoryPage() {
 
         {/* Session detail slide-over */}
         {selectedSession && (
-          <div className="fixed inset-0 z-50 flex items-stretch">
+          <div className="fixed inset-0 z-50 flex items-stretch p-0">
             <div
-              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/50 top-0 backdrop-blur-sm"
               onClick={() => setSelectedSession(null)}
             />
-            <div className="relative ml-auto w-full max-w-4xl bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
+            <div className="fixed top-0 inset-y-0 right-0 w-full max-w-3xl bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800 flex-shrink-0">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-neutral-800 flex-shrink-0">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">
                       Session Report
                     </h2>
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
                         selectedSession.status === "OPEN"
                           ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                           : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
@@ -2289,7 +2449,7 @@ export default function HistoryPage() {
                       {selectedSession.status}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">
                     {fmtDate(selectedSession.startAt)}
                     {selectedSession.endAt
                       ? ` → ${fmtDate(selectedSession.endAt)}`
@@ -2304,63 +2464,54 @@ export default function HistoryPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedSession(null)}
-                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 {sessionDetailLoading ? (
                   <div className="flex items-center justify-center py-24">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
                 ) : (
                   <>
-                    {/* KPI row */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                      <KpiCard
-                        icon={TrendingUp}
-                        gradient="from-primary to-secondary"
-                        shadow="shadow-primary/20"
-                        label="Total Revenue"
-                        value={fmtRs(summary.totalSales)}
-                      />
-                      <KpiCard
-                        icon={ShoppingBag}
-                        gradient="from-blue-500 to-blue-600"
-                        shadow="shadow-blue-500/20"
-                        label="Orders"
-                        value={(
-                          summary.totalOrders || sessionOrders.length
-                        ).toString()}
-                      />
-                      <KpiCard
-                        icon={Banknote}
-                        gradient="from-emerald-500 to-emerald-600"
-                        shadow="shadow-emerald-500/20"
-                        label="Cash"
-                        value={fmtRs(summary.cashSales)}
-                      />
-                      <KpiCard
-                        icon={CreditCard}
-                        gradient="from-violet-500 to-violet-600"
-                        shadow="shadow-violet-500/20"
-                        label="Card"
-                        value={fmtRs(summary.cardSales)}
-                      />
-                      <KpiCard
-                        icon={Package}
-                        gradient="from-amber-500 to-orange-500"
-                        shadow="shadow-amber-500/20"
-                        label="Discount"
-                        value={fmtRs(summary.totalDiscount)}
-                      />
+                    {/* Compact stats row */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
+                      {[
+                        {
+                          label: "Total Revenue",
+                          value: fmtRs(summary.totalSales),
+                        },
+                        {
+                          label: "Orders",
+                          value: sessionOrders.length.toString(),
+                        },
+                        { label: "Cash", value: fmtRs(summary.cashSales) },
+                        { label: "Card", value: fmtRs(summary.cardSales) },
+                        {
+                          label: "Discount",
+                          value: fmtRs(summary.totalDiscount),
+                        },
+                      ].map((kpi) => (
+                        <div
+                          key={kpi.label}
+                          className="rounded-md border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-2"
+                        >
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none">
+                            {kpi.label}
+                          </p>
+                          <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                            {kpi.value}
+                          </p>
+                        </div>
+                      ))}
                     </div>
 
                     {/* Session meta */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
                         {
                           label: "Opened By",
@@ -2389,12 +2540,12 @@ export default function HistoryPage() {
                       ].map(({ label, value }) => (
                         <div
                           key={label}
-                          className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3"
+                          className="rounded-lg p-2 border border-gray-200 dark:border-neutral-800 bg-gradient-to-b from-white to-gray-50 dark:from-neutral-900 dark:to-neutral-950 min-h-[58px]"
                         >
-                          <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-1">
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-0.5">
                             {label}
                           </p>
-                          <p className="text-sm font-semibold text-gray-800 dark:text-neutral-200">
+                          <p className="text-[13px] font-semibold text-gray-800 dark:text-neutral-200">
                             {value}
                           </p>
                         </div>
@@ -2404,22 +2555,22 @@ export default function HistoryPage() {
                     {/* Order type breakdown */}
                     {Object.keys(typeBreakdown).length > 0 && (
                       <div>
-                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+                        <h3 className="text-[13px] font-bold text-gray-900 dark:text-white mb-1.5">
                           Order Type Breakdown
                         </h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                           {Object.entries(typeBreakdown).map(([type, d]) => (
                             <div
                               key={type}
-                              className="bg-gray-50 dark:bg-neutral-900 rounded-xl p-3 border border-gray-200 dark:border-neutral-800"
+                              className="rounded-md border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-2 min-h-[62px]"
                             >
-                              <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 capitalize mb-1">
+                              <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 capitalize leading-none mb-1">
                                 {type.replace(/-/g, " ")}
                               </p>
-                              <p className="text-base font-bold text-gray-900 dark:text-white">
+                              <p className="text-[20px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                                 {fmtRs(d.revenue)}
                               </p>
-                              <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                              <p className="mt-0.5 text-[9px] text-gray-400 dark:text-neutral-500">
                                 {d.count} order{d.count !== 1 ? "s" : ""}
                               </p>
                             </div>
@@ -2430,58 +2581,172 @@ export default function HistoryPage() {
 
                     {/* Orders table */}
                     <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                          Orders ({sessionOrders.length})
-                        </h3>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const rows = [
-                              [
-                                "Order #",
-                                "Time",
-                                "Type",
-                                "Status",
-                                "Customer",
-                                "Staff",
-                                "Total",
-                                "Payment",
-                              ].join(","),
-                              ...sessionOrders.map((o) =>
-                                [
-                                  o.orderNumber || o.id,
-                                  new Date(o.createdAt).toLocaleTimeString(
-                                    "en-PK",
-                                    {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                      hour12: true,
-                                    },
-                                  ),
-                                  o.orderType || "",
-                                  o.status || "",
-                                  o.customerName || "",
-                                  o.riderName ||
-                                    o.waiterName ||
-                                    o.orderTakerName ||
-                                    "",
-                                  o.total || 0,
-                                  o.isPaid ? o.paymentMethod || "" : "Unpaid",
-                                ].join(","),
-                              ),
-                            ].join("\n");
-                            const b = new Blob([rows], { type: "text/csv" });
-                            const a = document.createElement("a");
-                            a.href = URL.createObjectURL(b);
-                            a.download = `session-${selectedSession.id.slice(-6)}-orders.csv`;
-                            a.click();
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          Export CSV
-                        </button>
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2 rounded-lg border border-gray-200 dark:border-neutral-800 bg-gray-50/70 dark:bg-neutral-900/60 p-1.5">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                            Orders ({sessionOrders.length})
+                          </h3>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                            {selectedSessionOrderIds.length} selected
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedSessionOrderIds(
+                                allOrdersSelected
+                                  ? []
+                                  : sessionOrders.map((o) => o.id),
+                              )
+                            }
+                            className="h-8 inline-flex items-center gap-1.5 px-2.5 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                          >
+                            {allOrdersSelected ? "Clear all" : "Select all"}
+                          </button>
+                          {selectedSessionOrderIds.length > 0 && (
+                            <>
+                              <select
+                                value={moveTargetSessionId}
+                                onChange={(e) =>
+                                  setMoveTargetSessionId(e.target.value)
+                                }
+                                className="h-8 min-w-[260px] max-w-[360px] px-2.5 rounded-lg text-[11px] font-semibold bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700"
+                              >
+                                <option value="">
+                                  Move selected to session...
+                                </option>
+                                {movableTargetSessions.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {`${s.status} · ${fmtDate(s.startAt)}${s.endAt ? ` → ${fmtDate(s.endAt)}` : ""}`}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={handleMoveSelectedOrders}
+                                disabled={movingOrders || !moveTargetSessionId}
+                                className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                              >
+                                {movingOrders ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Package className="w-3.5 h-3.5" />
+                                )}
+                                Move Selected ({selectedSessionOrderIds.length})
+                              </button>
+                            </>
+                          )}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setShowExportColumns((v) => !v)}
+                              className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Export CSV
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                            {showExportColumns && (
+                              <div className="absolute right-0 mt-1 z-30 w-56 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-2">
+                                <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 mb-1.5">
+                                  Select columns
+                                </p>
+                                <div className="max-h-48 overflow-auto space-y-1">
+                                  {exportColumnOptions.map((col) => (
+                                    <label
+                                      key={col.key}
+                                      className="flex items-center gap-2 text-[11px] text-gray-700 dark:text-neutral-300"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="h-3.5 w-3.5 accent-primary"
+                                        checked={exportColumns.includes(
+                                          col.key,
+                                        )}
+                                        onChange={(e) => {
+                                          setExportColumns((prev) =>
+                                            e.target.checked
+                                              ? [...prev, col.key]
+                                              : prev.filter(
+                                                  (k) => k !== col.key,
+                                                ),
+                                          );
+                                        }}
+                                      />
+                                      {col.label}
+                                    </label>
+                                  ))}
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={exportColumns.length === 0}
+                                  onClick={() => {
+                                    const labelsByKey = Object.fromEntries(
+                                      exportColumnOptions.map((c) => [
+                                        c.key,
+                                        c.label,
+                                      ]),
+                                    );
+                                    const header = exportColumns
+                                      .map((k) =>
+                                        csvEscape(labelsByKey[k] || k),
+                                      )
+                                      .join(",");
+                                    const body = sessionOrders.map((o) => {
+                                      const staff =
+                                        o.riderName ||
+                                        o.waiterName ||
+                                        o.orderTakerName ||
+                                        "";
+                                      const items = (o.items || [])
+                                        .map(
+                                          (it) => `${it.name} x${it.qty || 1}`,
+                                        )
+                                        .join(" | ");
+                                      const valuesByKey = {
+                                        orderNumber: o.orderNumber || o.id,
+                                        time: o.createdAt
+                                          ? new Date(
+                                              o.createdAt,
+                                            ).toLocaleTimeString("en-PK", {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                              hour12: true,
+                                            })
+                                          : "",
+                                        type: o.orderType || "",
+                                        status: o.status || "",
+                                        customer: o.customerName || "",
+                                        staff,
+                                        items,
+                                        total: o.total || 0,
+                                        payment: o.isPaid
+                                          ? o.paymentMethod || ""
+                                          : "Unpaid",
+                                      };
+                                      return exportColumns
+                                        .map((k) => csvEscape(valuesByKey[k]))
+                                        .join(",");
+                                    });
+                                    const rows = [header, ...body].join("\n");
+                                    const b = new Blob([rows], {
+                                      type: "text/csv",
+                                    });
+                                    const a = document.createElement("a");
+                                    a.href = URL.createObjectURL(b);
+                                    a.download = `session-${selectedSession.id.slice(-6)}-orders.csv`;
+                                    a.click();
+                                    setShowExportColumns(false);
+                                  }}
+                                  className="mt-2 h-8 w-full rounded-lg text-[11px] font-semibold bg-gray-900 text-white dark:bg-white dark:text-black disabled:opacity-50"
+                                >
+                                  Download CSV
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       {sessionOrders.length === 0 ? (
                         <div className="text-center py-10 text-sm text-gray-400 dark:text-neutral-600">
@@ -2490,8 +2755,24 @@ export default function HistoryPage() {
                       ) : (
                         <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-neutral-800">
                           <table className="min-w-full">
-                            <thead className="bg-gray-50 dark:bg-neutral-900/70 border-b border-gray-200 dark:border-neutral-800">
+                            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-neutral-900/90 border-b border-gray-200 dark:border-neutral-800 backdrop-blur">
                               <tr>
+                                <th className="py-2.5 px-3 text-center text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide align-middle">
+                                  <input
+                                    type="checkbox"
+                                    className="h-3.5 w-3.5 accent-primary align-middle"
+                                    checked={allOrdersSelected}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedSessionOrderIds(
+                                          sessionOrders.map((o) => o.id),
+                                        );
+                                      } else {
+                                        setSelectedSessionOrderIds([]);
+                                      }
+                                    }}
+                                  />
+                                </th>
                                 {[
                                   "Order #",
                                   "Time",
@@ -2505,7 +2786,7 @@ export default function HistoryPage() {
                                 ].map((h) => (
                                   <th
                                     key={h}
-                                    className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide ${h === "Total" ? "text-right" : ""}`}
+                                    className={`py-2.5 px-3 text-left text-[11px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap uppercase tracking-wide align-middle ${h === "Total" ? "text-right" : ""}`}
                                   >
                                     {h}
                                   </th>
@@ -2529,8 +2810,30 @@ export default function HistoryPage() {
                                 return (
                                   <tr
                                     key={o.id}
-                                    className="hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors"
+                                    className={`transition-colors ${
+                                      selectedSessionOrderIds.includes(o.id)
+                                        ? "bg-amber-50/60 dark:bg-amber-500/5"
+                                        : "hover:bg-gray-50/50 dark:hover:bg-neutral-900/30"
+                                    }`}
                                   >
+                                    <td className="py-2.5 px-3 text-center text-[12px] whitespace-nowrap align-middle">
+                                      <input
+                                        type="checkbox"
+                                        className="h-3.5 w-3.5 accent-primary align-middle"
+                                        checked={selectedSessionOrderIds.includes(
+                                          o.id,
+                                        )}
+                                        onChange={(e) => {
+                                          setSelectedSessionOrderIds((prev) =>
+                                            e.target.checked
+                                              ? [...prev, o.id]
+                                              : prev.filter(
+                                                  (id) => id !== o.id,
+                                                ),
+                                          );
+                                        }}
+                                      />
+                                    </td>
                                     <td className="py-2.5 px-3 text-[12px] whitespace-nowrap font-bold text-gray-900 dark:text-white">
                                       #{o.orderNumber || o.id?.slice(-4)}
                                     </td>
@@ -2828,7 +3131,71 @@ export default function HistoryPage() {
                       className="fixed inset-0 z-40"
                       onClick={() => setShowExportDropdown(false)}
                     />
-                    <div className="absolute right-0 top-full mt-1.5 z-50 w-44 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden p-1.5">
+                    <div className="absolute right-0 top-full mt-1.5 z-50 w-80 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden p-1.5">
+                      {activeTab === "orders" && (
+                        <div className="mb-1 border-b border-gray-100 dark:border-neutral-800 pb-1.5">
+                          <div className="px-2 py-1 flex items-center justify-between gap-2">
+                            <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400">
+                              Select columns
+                            </p>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOrdersExportColumns(
+                                    ORDER_EXPORT_COLUMN_OPTIONS.map((c) => c.key),
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-primary hover:bg-primary/10 transition-colors"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOrdersExportColumns([
+                                    "orderNumber",
+                                    "status",
+                                    "grandTotal",
+                                    "type",
+                                    "payment",
+                                    "paid",
+                                    "customer",
+                                    "created",
+                                  ])
+                                }
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                              >
+                                Default
+                              </button>
+                            </div>
+                          </div>
+                          <div className="max-h-72 overflow-auto px-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                            {ORDER_EXPORT_COLUMN_OPTIONS.map((col) => (
+                              <label
+                                key={col.key}
+                                className="flex items-center gap-2 text-[11px] text-gray-700 dark:text-neutral-300"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="h-3.5 w-3.5 accent-primary"
+                                  checked={ordersExportColumns.includes(
+                                    col.key,
+                                  )}
+                                  onChange={(e) => {
+                                    setOrdersExportColumns((prev) =>
+                                      e.target.checked
+                                        ? [...prev, col.key]
+                                        : prev.filter((k) => k !== col.key),
+                                    );
+                                  }}
+                                />
+                                {col.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
