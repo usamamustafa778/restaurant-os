@@ -447,6 +447,7 @@ export default function OverviewPage() {
   const [loadingSession, setLoadingSession] = useState(false);
   const [endingDay, setEndingDay] = useState(false);
   const [savingCutoff, setSavingCutoff] = useState(false);
+  const [endMode, setEndMode] = useState("cutoff"); // 'cutoff' | 'lastOrder'
 
   async function loadSessionHistory() {
     setLoadingSessionHistory(true);
@@ -461,7 +462,12 @@ export default function OverviewPage() {
   }
 
   async function openEndDayModal() {
+    if (!currentBranch?.id) {
+      toast.error("Select a branch first to end the business day");
+      return;
+    }
     setCurrentSession(null);
+    setEndMode("cutoff");
     setShowEndDayModal(true);
     setLoadingSession(true);
     try {
@@ -475,9 +481,13 @@ export default function OverviewPage() {
   }
 
   async function handleEndDay() {
+    if (!currentBranch?.id) {
+      toast.error("Select a branch first to end the business day");
+      return;
+    }
     setEndingDay(true);
     try {
-      await endDaySession(currentBranch?.id);
+      await endDaySession(currentBranch?.id, { endMode });
       toast.success("Business day ended");
       setShowEndDayModal(false);
     } catch (err) {
@@ -960,7 +970,13 @@ export default function OverviewPage() {
               <button
                 type="button"
                 onClick={openEndDayModal}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                disabled={!currentBranch?.id}
+                title={
+                  currentBranch?.id
+                    ? "End current branch business day"
+                    : "Select a branch to end day"
+                }
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Power className="w-3.5 h-3.5" />
                 End Day
@@ -1894,6 +1910,25 @@ export default function OverviewPage() {
                   session.
                 </p>
               )}
+            </div>
+
+            {/* End mode selection */}
+            <div className="px-5 pb-3">
+              <div className="text-xs font-semibold text-gray-700 dark:text-neutral-300 mb-2">
+                End day at
+              </div>
+              <select
+                value={endMode}
+                onChange={(e) => setEndMode(e.target.value)}
+                disabled={endingDay}
+                className="w-full h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-3 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+              >
+                <option value="cutoff">Business cutoff time</option>
+                <option value="lastOrder">Last completed order time</option>
+              </select>
+              <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1">
+                Use <b>Last completed order time</b> to include orders that were created after the cutoff but still belong to this session.
+              </p>
             </div>
 
             {/* Actions */}
