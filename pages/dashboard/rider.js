@@ -21,7 +21,6 @@ import {
   Clock,
   BarChart3,
   Loader2,
-  CheckCircle2,
   Package,
   Truck,
   RefreshCw,
@@ -116,13 +115,6 @@ function isDeliveryPaymentNotSubmitted(order) {
   return order.deliveryPaymentCollected !== true;
 }
 
-/** Rider must collect from customer before delivery is complete (COD / not prepaid). */
-function isRiderMustCollectFromCustomer(order) {
-  if (isDeliveryPrepaid(order)) return false;
-  const pm = String(order.paymentMethod || "").toUpperCase();
-  return pm === "PENDING" || pm === "" || pm === "CASH";
-}
-
 export default function RiderPortalPage() {
   const { socket } = useSocket() || {};
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
@@ -139,8 +131,8 @@ export default function RiderPortalPage() {
   const [collectingId, setCollectingId] = useState(null);
   const [deliveringId, setDeliveringId] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
-  /** History: all | pending_payment | cleared */
-  const [historyFilter, setHistoryFilter] = useState("all");
+  /** History: all | pending_payment | cleared — default to pending so riders see what to submit first */
+  const [historyFilter, setHistoryFilter] = useState("pending_payment");
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
 
   function toggleOrderDetails(orderKey) {
@@ -309,6 +301,12 @@ export default function RiderPortalPage() {
             if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
             return !isDeliveryPaymentNotSubmitted(o);
           });
+
+  const clearedHistoryCount = historyOrders.filter((o) => {
+    if (o.status === "CANCELLED") return true;
+    if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
+    return !isDeliveryPaymentNotSubmitted(o);
+  }).length;
 
   const activeFilterLabel = activeFilter === "all"
     ? "active"
@@ -524,11 +522,15 @@ export default function RiderPortalPage() {
                         ? `${readyOrders.length} ready · ${activeOrders.length} active`
                         : `${filteredActiveOrders.length} ${activeFilterLabel} · ${activeOrders.length} active`
                       : tab === TABS.HISTORY
-                        ? `${filteredHistoryOrders.length} shown · ${historyOrders.length} total${
-                            riderPendingPaymentOrders.length > 0
-                              ? ` · ${riderPendingPaymentOrders.length} payment pending`
-                              : ""
-                          }`
+                        ? (() => {
+                            const label =
+                              historyFilter === "pending_payment"
+                                ? "Pending payment"
+                                : historyFilter === "cleared"
+                                  ? "Cleared"
+                                  : "All orders";
+                            return `${label} · ${filteredHistoryOrders.length} of ${historyOrders.length}`;
+                          })()
                         : step === STEPS.MENU
                           ? userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
                           : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
@@ -605,18 +607,18 @@ export default function RiderPortalPage() {
                     <BarChart3 className="w-5 h-5 text-primary" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Rider Summary</p>
-                    <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
-                      {userName ? `Hi, ${userName.split(" ")[0]}` : "Welcome"}
+                    <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
+                      Your shift
                     </p>
-                    <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 truncate">
-                      Rs. {Math.round(riderClearedRevenue).toLocaleString()} cleared (prepaid + cash submitted)
-                      {riderPendingPaymentTotal > 0 && (
-                        <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                          {" "}
-                          · Rs. {Math.round(riderPendingPaymentTotal).toLocaleString()} to submit
-                        </span>
-                      )}
+                    <p className="text-lg font-extrabold text-gray-900 dark:text-white truncate tracking-tight">
+                      {userName
+                        ? `Welcome back, ${userName.split(" ")[0]}`
+                        : "Welcome"}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                      {userName
+                        ? "Thanks for being on the road with us today."
+                        : "Sign in to see your route and deliveries."}
                     </p>
                   </div>
                 </div>
@@ -775,30 +777,6 @@ export default function RiderPortalPage() {
                             </span>
                           </div>
 
-                          {isDeliveryPrepaid(order) ? (
-                            <div className="mb-3 flex items-start gap-2 rounded-xl bg-emerald-50/80 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/25 px-3 py-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300">Prepaid</p>
-                                <p className="text-[10px] text-emerald-700/90 dark:text-emerald-400/90 leading-snug">
-                                  Online/card — no cash to collect from customer
-                                </p>
-                              </div>
-                            </div>
-                          ) : isRiderMustCollectFromCustomer(order) ? (
-                            <div className="mb-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-3 py-2.5">
-                              <p className="text-[10px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wide">
-                                Payment not cleared — collect COD
-                              </p>
-                              <p className="text-lg font-black text-amber-950 dark:text-amber-100 mt-1 tabular-nums">
-                                Rs. {orderGrandTotal(order).toLocaleString()}
-                              </p>
-                              <p className="text-[9px] text-amber-800/90 dark:text-amber-400/85 mt-1 leading-snug">
-                                Take cash from customer, then submit at shop. Matches POS &quot;Awaiting payment&quot;.
-                              </p>
-                            </div>
-                          ) : null}
-
                           <button
                             type="button"
                             onClick={() => toggleOrderDetails(orderKey)}
@@ -888,7 +866,7 @@ export default function RiderPortalPage() {
           {tab === TABS.HISTORY && (
             <div className="p-4 pb-24">
               {historyOrders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center pt-16 text-center">
+                <div className="flex flex-col items-center justify-center pt-16 text-center px-2">
                   <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
                     <History className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
                   </div>
@@ -897,100 +875,136 @@ export default function RiderPortalPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="flex gap-2 overflow-x-auto rider-no-scrollbar pb-0.5">
-                    {[
-                      { key: "all", label: "All", count: historyOrders.length },
-                      {
-                        key: "pending_payment",
-                        label: "Pending payment",
-                        count: riderPendingPaymentOrders.length,
-                      },
-                      {
-                        key: "cleared",
-                        label: "Cleared",
-                        count: historyOrders.filter((o) => {
-                          if (o.status === "CANCELLED") return true;
-                          if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
-                          return !isDeliveryPaymentNotSubmitted(o);
-                        }).length,
-                      },
-                    ].map((f) => (
-                      <button
-                        key={f.key}
-                        type="button"
-                        onClick={() => setHistoryFilter(f.key)}
-                        className={`flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                          historyFilter === f.key
-                            ? f.key === "pending_payment"
-                              ? "bg-amber-500 text-white shadow-sm shadow-amber-500/25"
-                              : "bg-primary text-white shadow-sm shadow-primary/20"
-                            : "bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 shadow-sm"
+                  {/* Summary strip — single card, two columns */}
+                  <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden shadow-sm">
+                    <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-neutral-800">
+                      <div className="p-3.5 sm:p-4">
+                        <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
+                          Cleared
+                        </p>
+                        <p className="text-base sm:text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight mt-1">
+                          Rs. {Math.round(riderClearedRevenue).toLocaleString()}
+                        </p>
+                        <p className="text-[9px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">
+                          Prepaid + submitted
+                        </p>
+                      </div>
+                      <div
+                        className={`p-3.5 sm:p-4 ${
+                          riderPendingPaymentTotal > 0 ? "bg-amber-50/90 dark:bg-amber-500/10" : ""
                         }`}
                       >
-                        {f.label}
-                        <span
-                          className={`min-w-[18px] h-[18px] rounded-full text-[10px] font-black flex items-center justify-center px-1 ${
-                            historyFilter === f.key
-                              ? "bg-white/20"
-                              : "bg-gray-100 dark:bg-neutral-800"
+                        <p
+                          className={`text-[9px] font-bold uppercase tracking-wider ${
+                            riderPendingPaymentTotal > 0
+                              ? "text-amber-800 dark:text-amber-300"
+                              : "text-gray-400 dark:text-neutral-500"
                           }`}
                         >
-                          {f.count}
-                        </span>
-                      </button>
-                    ))}
+                          To submit
+                        </p>
+                        <p
+                          className={`text-base sm:text-lg font-black tabular-nums leading-tight mt-1 ${
+                            riderPendingPaymentTotal > 0
+                              ? "text-amber-950 dark:text-amber-100"
+                              : "text-gray-900 dark:text-white"
+                          }`}
+                        >
+                          Rs. {Math.round(riderPendingPaymentTotal).toLocaleString()}
+                        </p>
+                        <p className="text-[9px] text-gray-500 dark:text-neutral-500 mt-1">
+                          {riderPendingPaymentOrders.length} order
+                          {riderPendingPaymentOrders.length !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                      <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cleared revenue</p>
-                      <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">
-                        Rs. {Math.round(riderClearedRevenue).toLocaleString()}
-                      </p>
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">
-                        Prepaid + cash submitted at shop
-                      </p>
-                    </div>
-                    <div
-                      className={`rounded-2xl border p-4 ${
-                        riderPendingPaymentTotal > 0
-                          ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25"
-                          : "bg-white dark:bg-neutral-950 border-gray-200 dark:border-neutral-800"
-                      }`}
-                    >
-                      <p
-                        className={`text-[10px] font-bold uppercase tracking-wider ${
-                          riderPendingPaymentTotal > 0
-                            ? "text-amber-800 dark:text-amber-300"
-                            : "text-gray-400 dark:text-neutral-500"
-                        }`}
-                      >
-                        To submit at shop
-                      </p>
-                      <p
-                        className={`text-lg font-black tracking-tight mt-0.5 ${
-                          riderPendingPaymentTotal > 0
-                            ? "text-amber-950 dark:text-amber-100"
-                            : "text-gray-900 dark:text-white"
-                        }`}
-                      >
-                        Rs. {Math.round(riderPendingPaymentTotal).toLocaleString()}
-                      </p>
-                      <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-1">
-                        {riderPendingPaymentOrders.length} order
-                        {riderPendingPaymentOrders.length !== 1 ? "s" : ""} · COD / not recorded
-                      </p>
+                  {/* Segmented filter — pending first (default) */}
+                  <div className="rounded-2xl p-1 bg-gray-100/90 dark:bg-neutral-900 border border-gray-200/80 dark:border-neutral-800">
+                    <div className="flex gap-0.5">
+                      {[
+                        {
+                          key: "pending_payment",
+                          label: "Pending",
+                          count: riderPendingPaymentOrders.length,
+                          activeClass: "bg-amber-500 text-white shadow-sm shadow-amber-500/20",
+                          inactiveClass: "text-gray-600 dark:text-neutral-400",
+                        },
+                        {
+                          key: "all",
+                          label: "All",
+                          count: historyOrders.length,
+                          activeClass: "bg-primary text-white shadow-sm shadow-primary/20",
+                          inactiveClass: "text-gray-600 dark:text-neutral-400",
+                        },
+                        {
+                          key: "cleared",
+                          label: "Cleared",
+                          count: clearedHistoryCount,
+                          activeClass: "bg-primary text-white shadow-sm shadow-primary/20",
+                          inactiveClass: "text-gray-600 dark:text-neutral-400",
+                        },
+                      ].map((f) => {
+                        const active = historyFilter === f.key;
+                        return (
+                          <button
+                            key={f.key}
+                            type="button"
+                            onClick={() => setHistoryFilter(f.key)}
+                            className={`flex-1 min-w-0 py-2 px-1.5 rounded-xl text-[11px] font-extrabold transition-all flex flex-col items-center justify-center gap-0.5 sm:flex-row sm:gap-1.5 ${
+                              active ? f.activeClass : `bg-transparent ${f.inactiveClass} hover:bg-white/60 dark:hover:bg-neutral-800/80`
+                            }`}
+                          >
+                            <span className="truncate">{f.label}</span>
+                            <span
+                              className={`text-[10px] font-black tabular-nums min-w-[1.25rem] ${
+                                active ? "opacity-95" : "opacity-70"
+                              }`}
+                            >
+                              {f.count}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
+
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 px-0.5 -mt-1">
+                    {historyFilter === "pending_payment"
+                      ? "Delivered orders still marked “To be paid” — hand in cash at the shop."
+                      : historyFilter === "cleared"
+                        ? "Paid at order, cancelled, or cash already submitted at the shop."
+                        : "Every delivery in your history for this session."}
+                  </p>
 
                   {filteredHistoryOrders.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center pt-12 text-center">
-                      <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
-                        <ClipboardList className="w-6 h-6 text-gray-300 dark:text-neutral-700" />
+                    historyFilter === "pending_payment" && riderPendingPaymentOrders.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center pt-10 pb-6 text-center px-3 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-500/5">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center mb-3">
+                          <Check className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <p className="text-sm font-extrabold text-gray-900 dark:text-white mb-1">All caught up</p>
+                        <p className="text-xs text-gray-500 dark:text-neutral-400 max-w-[260px] leading-relaxed">
+                          Nothing waiting to be submitted. Switch to <span className="font-semibold text-gray-700 dark:text-neutral-300">All</span> to browse past deliveries.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setHistoryFilter("all")}
+                          className="mt-4 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-extrabold shadow-sm shadow-primary/25 active:scale-[0.98] transition-transform"
+                        >
+                          View all deliveries
+                        </button>
                       </div>
-                      <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No orders in this filter</p>
-                      <p className="text-xs text-gray-400 dark:text-neutral-600">Try another tab above</p>
-                    </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center pt-12 text-center px-2">
+                        <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                          <ClipboardList className="w-6 h-6 text-gray-300 dark:text-neutral-700" />
+                        </div>
+                        <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No orders here</p>
+                        <p className="text-xs text-gray-400 dark:text-neutral-600">Try a different filter above</p>
+                      </div>
+                    )
                   ) : (
                     filteredHistoryOrders.map((order) => {
                       const paymentPending = isDeliveryPaymentNotSubmitted(order);
