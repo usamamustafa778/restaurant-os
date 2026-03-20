@@ -358,12 +358,16 @@ function isDeliveryOrder(order) {
 }
 
 function isOrderPaid(order) {
+  // Prefer API flag — mapOrder sets isPaid from raw paymentMethod; list uses friendly labels ("Cash", "To be paid")
+  // so parsing paymentMethod strings alone can wrongly mark paid orders as unpaid.
+  if (typeof order?.isPaid === "boolean") return order.isPaid;
   if (order?.source === "FOODPANDA") return true;
   if (order?.paymentAmountReceived != null && order.paymentAmountReceived > 0)
     return true;
   const pm = String(order?.paymentMethod || "").toUpperCase();
   if (pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA")
     return true;
+  if (pm === "TO BE PAID" || pm.includes("TO BE PAID")) return false;
   if (isDeliveryOrder(order) && order?.deliveryPaymentCollected === true)
     return true;
   return false;
@@ -390,6 +394,20 @@ function computeUpcomingPayments(orders) {
     totalCount: list.reduce((s, r) => s + r.count, 0),
     totalAmount: list.reduce((s, r) => s + r.amount, 0),
   };
+}
+
+/** Delivered/completed but payment not recorded (excluded from "Upcoming" above) */
+function computeDeliveredUnpaid(orders) {
+  let count = 0;
+  let amount = 0;
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const status = normalizeOrderStatus(order?.status);
+    if (status !== "DELIVERED") continue;
+    if (isOrderPaid(order)) continue;
+    count += 1;
+    amount += Number(order?.grandTotal ?? order?.total) || 0;
+  }
+  return { count, amount };
 }
 
 export default function OverviewPage() {
@@ -426,6 +444,7 @@ export default function OverviewPage() {
     paymentRows: [],
     paymentAccountRows: [],
     upcomingPayments: { rows: [], totalCount: 0, totalAmount: 0 },
+    deliveredUnpaid: { count: 0, amount: 0 },
   });
   const [reportPeriod, setReportPeriod] = useState("today");
   const [periodLoading, setPeriodLoading] = useState(false);
@@ -669,22 +688,27 @@ export default function OverviewPage() {
     (async () => {
       const now = new Date();
       let fromStr, toStr;
+      /** Same scope as Business Day Report — filter by daySession, not createdAt. */
+      let daySessionId;
 
       if (reportPeriod === "today" || reportPeriod === "yesterday") {
-        // Use actual session boundaries so the report matches the business day,
-        // not the calendar midnight-to-midnight window.
         try {
-          const res = await getDaySessions(currentBranch?.id, { limit: 5 });
+          // Prefer /current — same OPEN session as POS & Business Day Report (reliable x-branch-id).
+          if (reportPeriod === "today" && currentBranch?.id) {
+            const cur = await getCurrentDaySession(currentBranch.id);
+            if (cur?.id) daySessionId = cur.id;
+          }
+          const res = await getDaySessions(currentBranch?.id, { limit: 10 });
           const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
-          if (reportPeriod === "today") {
+          if (reportPeriod === "today" && !daySessionId) {
             const openSess = sessions.find((s) => s.status === "OPEN");
-            if (openSess?.startAt) {
-              fromStr = openSess.startAt;
-              toStr = now.toISOString();
-            }
-          } else {
+            if (openSess?.id) daySessionId = openSess.id;
+          }
+          if (reportPeriod === "yesterday") {
             const lastClosed = sessions.find((s) => s.status === "CLOSED");
-            if (lastClosed?.startAt && lastClosed?.endAt) {
+            if (lastClosed?.id) {
+              daySessionId = lastClosed.id;
+            } else if (lastClosed?.startAt && lastClosed?.endAt) {
               fromStr = lastClosed.startAt;
               toStr = lastClosed.endAt;
             }
@@ -695,7 +719,7 @@ export default function OverviewPage() {
       }
 
       // Calendar fallback (also used for "monthly" period)
-      if (!fromStr) {
+      if (!daySessionId && !fromStr) {
         if (reportPeriod === "yesterday") {
           const s = new Date(now);
           s.setDate(s.getDate() - 1);
@@ -721,8 +745,12 @@ export default function OverviewPage() {
 
       try {
         const [report, ordersResp] = await Promise.all([
-          getSalesReport({ from: fromStr, to: toStr }),
-          getOrders({ from: fromStr, to: toStr, limit: 2000 }),
+          daySessionId
+            ? getSalesReport({ daySessionId })
+            : getSalesReport({ from: fromStr, to: toStr }),
+          daySessionId
+            ? getOrders({ daySessionId, limit: 2000 })
+            : getOrders({ from: fromStr, to: toStr, limit: 2000 }),
         ]);
 
         const parsedOrders =
@@ -734,14 +762,27 @@ export default function OverviewPage() {
               ? ordersResp
               : [];
 
+        const sessionIdForMetrics =
+          report.daySessionId || daySessionId;
+        const ordersForMetrics =
+          report.scope === "daySession" && sessionIdForMetrics
+            ? parsedOrders.filter(
+                (o) =>
+                  !o.daySessionId ||
+                  String(o.daySessionId) === String(sessionIdForMetrics),
+              )
+            : parsedOrders;
+
         const apiHourlySales = normalizeHourlySales(report.hourlySales);
         const hasHourlyPoints = apiHourlySales.some((v) => Number(v) > 0);
         const shouldFallbackHourly =
           !hasHourlyPoints && Number(report.totalRevenue || 0) > 0;
+        const hourlyFrom = report.from ?? fromStr;
+        const hourlyTo = report.to ?? toStr;
         const resolvedHourlySales = shouldFallbackHourly
-          ? buildHourlySalesFromOrders(parsedOrders, {
-              from: fromStr,
-              to: toStr,
+          ? buildHourlySalesFromOrders(ordersForMetrics, {
+              from: hourlyFrom,
+              to: hourlyTo,
             })
           : apiHourlySales;
 
@@ -756,7 +797,8 @@ export default function OverviewPage() {
             paymentDistribution: report.paymentDistribution ?? {},
             paymentRows: report.paymentRows ?? [],
             paymentAccountRows: report.paymentAccountRows ?? [],
-            upcomingPayments: computeUpcomingPayments(parsedOrders),
+            upcomingPayments: computeUpcomingPayments(ordersForMetrics),
+            deliveredUnpaid: computeDeliveredUnpaid(ordersForMetrics),
           });
       } catch (err) {
         if (!cancelled) console.error("Failed to load period report:", err);
@@ -838,6 +880,13 @@ export default function OverviewPage() {
     totalCount: 0,
     totalAmount: 0,
   };
+  const deliveredUnpaid = periodReport.deliveredUnpaid || {
+    count: 0,
+    amount: 0,
+  };
+  const totalUnpaidExposure =
+    Number(upcomingPayments.totalAmount || 0) +
+    Number(deliveredUnpaid.amount || 0);
 
   const receivedRows = [
     { key: "CASH", label: "Cash", color: "#0ea5e9" },
@@ -1416,8 +1465,7 @@ export default function OverviewPage() {
                           Upcoming Payments
                         </h3>
                         <p className="text-[11px] text-gray-500 dark:text-neutral-400">
-                          How money is expected to be received in{" "}
-                          {periodLabel.toLowerCase()}
+                          Unpaid orders still in progress (new → out for delivery)
                         </p>
                       </div>
                       <h2 className="font-bold text-base text-gray-900 dark:text-white">
@@ -1442,6 +1490,33 @@ export default function OverviewPage() {
                       </p>
                     </div>
                   ))}
+
+                  <div className="border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="text-[11px] text-gray-600 dark:text-neutral-400">
+                        Delivered · payment not recorded yet ·{" "}
+                        {deliveredUnpaid.count.toLocaleString()} orders
+                      </span>
+                      <p className="text-[11px] font-semibold text-gray-900 dark:text-white">
+                        Rs{" "}
+                        {Math.round(deliveredUnpaid.amount || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-gray-500 dark:text-neutral-500 leading-snug">
+                      Same as POS: status is Delivered/Completed but payment is still
+                      &quot;To be paid&quot; (not Cash/Card/Online). Use this to collect
+                      cash/card at the counter.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-dashed border-gray-200 dark:border-neutral-700">
+                    <span className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
+                      Total unpaid (in progress + delivered above)
+                    </span>
+                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400">
+                      Rs {Math.round(totalUnpaidExposure).toLocaleString()}
+                    </p>
+                  </div>
 
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">

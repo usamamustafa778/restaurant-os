@@ -52,7 +52,7 @@ const PRESETS = [
 const TABS = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "orders", label: "Orders List", icon: ClipboardList },
-  { id: "sessions", label: "Sessions", icon: CalendarDays },
+  { id: "sessions", label: "Business Day Report", icon: CalendarDays },
 ];
 
 const FILTER_ALL = "ALL";
@@ -105,6 +105,85 @@ const STATUS_COLORS = {
   OUT_FOR_DELIVERY:
     "bg-sky-100 dark:bg-sky-500/10 text-sky-700 dark:text-sky-400",
 };
+
+/** Match dashboard/overview.js — same rules as backend `isOrderPaid` */
+function normalizeOrderStatusForPayment(status) {
+  if (!status) return "NEW_ORDER";
+  if (status === "UNPROCESSED") return "NEW_ORDER";
+  if (status === "PENDING") return "PROCESSING";
+  if (status === "COMPLETED") return "DELIVERED";
+  return status;
+}
+
+function isDeliveryOrderForPayment(order) {
+  const type = String(order?.type || order?.orderType || "").toUpperCase();
+  return type.includes("DELIVERY");
+}
+
+function isOrderPaidForReport(order) {
+  if (!order) return false;
+  if (typeof order.isPaid === "boolean") return order.isPaid;
+  if (order.source === "FOODPANDA") return true;
+  if (
+    order.paymentAmountReceived != null &&
+    Number(order.paymentAmountReceived) > 0
+  )
+    return true;
+  const pm = String(order?.paymentMethod || "").toUpperCase();
+  if (pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA")
+    return true;
+  if (pm === "TO BE PAID" || pm.includes("TO BE PAID")) return false;
+  if (isDeliveryOrderForPayment(order) && order?.deliveryPaymentCollected === true)
+    return true;
+  return false;
+}
+
+const UNPAID_PIPELINE_STATUSES = [
+  "NEW_ORDER",
+  "PROCESSING",
+  "READY",
+  "OUT_FOR_DELIVERY",
+];
+
+/** Split unpaid amounts so session report matches dashboard semantics */
+function getSessionUnpaidBreakdown(sessionOrders) {
+  const list = Array.isArray(sessionOrders) ? sessionOrders : [];
+  const unpaid = list.filter(
+    (o) => o.status !== "CANCELLED" && !isOrderPaidForReport(o),
+  );
+  const amt = (o) => Number((o.grandTotal ?? o.total) || 0);
+  let pipelineAmt = 0;
+  let pipelineCount = 0;
+  let deliveredAmt = 0;
+  let deliveredCount = 0;
+  let otherAmt = 0;
+  let otherCount = 0;
+  for (const o of unpaid) {
+    const s = normalizeOrderStatusForPayment(o.status);
+    if (UNPAID_PIPELINE_STATUSES.includes(s)) {
+      pipelineAmt += amt(o);
+      pipelineCount += 1;
+    } else if (s === "DELIVERED") {
+      deliveredAmt += amt(o);
+      deliveredCount += 1;
+    } else {
+      otherAmt += amt(o);
+      otherCount += 1;
+    }
+  }
+  const totalAmt = unpaid.reduce((sum, o) => sum + amt(o), 0);
+  return {
+    unpaid,
+    totalAmt,
+    totalCount: unpaid.length,
+    pipelineAmt,
+    pipelineCount,
+    deliveredAmt,
+    deliveredCount,
+    otherAmt,
+    otherCount,
+  };
+}
 
 const ORDER_TYPE_CARD_COLORS = {
   "Dine In":
@@ -226,6 +305,15 @@ function getCalendarDates(preset) {
     default:
       return null;
   }
+}
+
+/** When an OPEN session exists, reports must use daySessionId (same source as Business Day Report). */
+function getSalesReportQuery(preset, sessions) {
+  if (preset === "today" && sessions && sessions.length > 0) {
+    const open = sessions.find((s) => s.status === "OPEN");
+    if (open?.id) return { daySessionId: open.id };
+  }
+  return getSmartDates(preset, sessions);
 }
 
 // Session-aware date resolver: uses actual session start/end times for Today and Yesterday
@@ -580,6 +668,11 @@ export default function HistoryPage() {
   const [selectedSessionOrderIds, setSelectedSessionOrderIds] = useState([]);
   const [moveTargetSessionId, setMoveTargetSessionId] = useState("");
   const [movingOrders, setMovingOrders] = useState(false);
+  const [sessionOrderSearch, setSessionOrderSearch] = useState("");
+  const [sessionOrderStatusFilter, setSessionOrderStatusFilter] = useState("");
+  const [sessionOrderTypeFilter, setSessionOrderTypeFilter] = useState("");
+  const [sessionOrderPositionFilter, setSessionOrderPositionFilter] =
+    useState("all");
   const [showExportColumns, setShowExportColumns] = useState(false);
   const [exportColumns, setExportColumns] = useState([
     "orderNumber",
@@ -737,7 +830,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     async function init() {
-      // Load sessions first so we can use actual business-day boundaries
+      // Load sessions first so we can use OPEN day session (same scope as Business Day Report)
       let loadedSessions = [];
       try {
         const res = await getDaySessions(currentBranch?.id, { limit: 30 });
@@ -746,22 +839,22 @@ export default function HistoryPage() {
       } catch {
         // Falls back to calendar dates
       }
-      const dates = getSmartDates(preset, loadedSessions);
-      loadReport(dates);
-      loadOrders(dates);
+      const q = getSalesReportQuery(preset, loadedSessions);
+      loadReport(q);
+      loadOrders(q);
     }
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentBranch?.id, preset]);
 
   function applyPreset(id) {
     setPreset(id);
     if (id === "custom") return;
-    const dates = getSmartDates(id, sessions);
+    const q = getSalesReportQuery(id, sessions);
     setLoading(true);
     setOrdersPage(0);
-    loadReport(dates);
-    loadOrders(dates);
+    loadReport(q);
+    loadOrders(q);
   }
 
   function applyCustom(e) {
@@ -799,6 +892,10 @@ export default function HistoryPage() {
     setSessionDetail(null);
     setSelectedSessionOrderIds([]);
     setMoveTargetSessionId("");
+    setSessionOrderSearch("");
+    setSessionOrderStatusFilter("");
+    setSessionOrderTypeFilter("");
+    setSessionOrderPositionFilter("all");
     setShowExportColumns(false);
     setSessionDetailLoading(true);
     try {
@@ -859,6 +956,16 @@ export default function HistoryPage() {
         from: customFrom ? new Date(customFrom + "T00:00:00") : null,
         to: customTo ? new Date(customTo + "T23:59:59.999") : null,
       };
+    }
+    // Today with OPEN session: match daySession report (session start → now), not calendar midnight.
+    if (preset === "today" && sessions?.length) {
+      const open = sessions.find((s) => s.status === "OPEN");
+      if (open?.startAt) {
+        return {
+          from: new Date(open.startAt),
+          to: new Date(),
+        };
+      }
     }
     const d = getSmartDates(preset, sessions);
     return {
@@ -2202,9 +2309,56 @@ export default function HistoryPage() {
           (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
         )
       : [];
+    const filteredSessionOrders = (() => {
+      const q = String(sessionOrderSearch || "").trim().toLowerCase();
+      const base = sessionOrders.filter((o) => {
+        if (sessionOrderStatusFilter && o.status !== sessionOrderStatusFilter) {
+          return false;
+        }
+        if (sessionOrderTypeFilter && o.orderType !== sessionOrderTypeFilter) {
+          return false;
+        }
+        if (!q) return true;
+        const staff = o.riderName || o.waiterName || o.orderTakerName || "";
+        const payment = o.isPaid ? o.paymentMethod || "" : "Unpaid";
+        const haystack = [
+          o.orderNumber || o.id,
+          o.customerName || "",
+          staff,
+          o.orderType || "",
+          o.status || "",
+          payment,
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+      if (sessionOrderPositionFilter === "first" && base.length > 0) {
+        return [
+          [...base].sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+          )[0],
+        ];
+      }
+      if (sessionOrderPositionFilter === "last" && base.length > 0) {
+        return [
+          [...base].sort(
+            (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+          )[0],
+        ];
+      }
+      return base;
+    })();
+    const sessionStatusOptions = Array.from(
+      new Set(sessionOrders.map((o) => o.status).filter(Boolean)),
+    );
+    const sessionTypeOptions = Array.from(
+      new Set(sessionOrders.map((o) => o.orderType).filter(Boolean)),
+    );
+    const sessionUnpaid = getSessionUnpaidBreakdown(sessionOrders);
     const allOrdersSelected =
-      sessionOrders.length > 0 &&
-      selectedSessionOrderIds.length === sessionOrders.length;
+      filteredSessionOrders.length > 0 &&
+      filteredSessionOrders.every((o) => selectedSessionOrderIds.includes(o.id));
     const movableTargetSessions = sessionsList.filter(
       (s) => s.id !== selectedSession?.id,
     );
@@ -2220,6 +2374,87 @@ export default function HistoryPage() {
       { key: "payment", label: "Payment" },
     ];
     const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const sessionOnlineSales = Math.max(
+      0,
+      Number(summary.totalSales || 0) -
+        Number(summary.cashSales || 0) -
+        Number(summary.cardSales || 0),
+    );
+
+    const getSessionExportRows = () => {
+      const labelsByKey = Object.fromEntries(
+        exportColumnOptions.map((c) => [c.key, c.label]),
+      );
+      const header = exportColumns.map((k) => csvEscape(labelsByKey[k] || k));
+      const rows = filteredSessionOrders.map((o) => {
+        const staff = o.riderName || o.waiterName || o.orderTakerName || "";
+        const items = (o.items || [])
+          .map((it) => `${it.name} x${it.qty || 1}`)
+          .join(" | ");
+        const valuesByKey = {
+          orderNumber: o.orderNumber || o.id,
+          time: o.createdAt
+            ? new Date(o.createdAt).toLocaleTimeString("en-PK", {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+              })
+            : "",
+          type: o.orderType || "",
+          status: o.status || "",
+          customer: o.customerName || "",
+          staff,
+          items,
+          total: o.total || 0,
+          payment: o.isPaid ? o.paymentMethod || "" : "Unpaid",
+        };
+        return exportColumns.map((k) => csvEscape(valuesByKey[k]));
+      });
+      return { labelsByKey, header, rows };
+    };
+
+    const printSessionOrders = (pdfMode = false) => {
+      const win = window.open("", "_blank");
+      if (!win) return;
+      const selectedCols = exportColumns.length
+        ? exportColumns
+        : exportColumnOptions.map((c) => c.key);
+      const headers = selectedCols.map(
+        (k) => exportColumnOptions.find((c) => c.key === k)?.label || k,
+      );
+      const body = filteredSessionOrders
+        .map((o) => {
+          const staff = o.riderName || o.waiterName || o.orderTakerName || "";
+          const items = (o.items || [])
+            .map((it) => `${it.name} x${it.qty || 1}`)
+            .join(" | ");
+          const valuesByKey = {
+            orderNumber: o.orderNumber || o.id,
+            time: o.createdAt
+              ? new Date(o.createdAt).toLocaleTimeString("en-PK", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                })
+              : "",
+            type: o.orderType || "",
+            status: o.status || "",
+            customer: o.customerName || "",
+            staff,
+            items,
+            total: o.total || 0,
+            payment: o.isPaid ? o.paymentMethod || "" : "Unpaid",
+          };
+          return `<tr>${selectedCols.map((k) => `<td>${String(valuesByKey[k] ?? "")}</td>`).join("")}</tr>`;
+        })
+        .join("");
+      win.document.write(`<!DOCTYPE html><html><head><title>Business Day Orders</title><style>body{font-family:system-ui,sans-serif;padding:24px;color:#111}h2{margin:0 0 12px}table{width:100%;border-collapse:collapse}th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;text-align:left}th{font-size:11px;text-transform:uppercase;color:#6b7280}@media print{body{padding:0}}</style></head><body><h2>Business Day Orders (${filteredSessionOrders.length})</h2><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></body></html>`);
+      win.document.close();
+      setTimeout(() => win.print(), 250);
+      if (pdfMode) {
+        toast.success("Choose 'Save as PDF' in print dialog");
+      }
+    };
 
     // Order type breakdown from detail orders
     const typeBreakdown = sessionOrders
@@ -2434,7 +2669,7 @@ export default function HistoryPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                      Session Report
+                      Business Day Report
                     </h2>
                     <span
                       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -2478,78 +2713,72 @@ export default function HistoryPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Compact stats row */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
-                      {[
-                        {
-                          label: "Total Revenue",
-                          value: fmtRs(summary.totalSales),
-                        },
-                        {
-                          label: "Orders",
-                          value: sessionOrders.length.toString(),
-                        },
-                        { label: "Cash", value: fmtRs(summary.cashSales) },
-                        { label: "Card", value: fmtRs(summary.cardSales) },
-                        {
-                          label: "Discount",
-                          value: fmtRs(summary.totalDiscount),
-                        },
-                      ].map((kpi) => (
-                        <div
-                          key={kpi.label}
-                          className="rounded-md border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-2"
-                        >
+                    {/* Compact stats rows */}
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div className="rounded-md border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-2">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none">
-                            {kpi.label}
+                            Total Revenue
                           </p>
                           <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
-                            {kpi.value}
+                            {fmtRs(summary.totalSales)}
+                          </p>
+                          {sessionUnpaid.totalCount > 0 ? (
+                            <div className="mt-1 space-y-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                              <p className="font-semibold">
+                                Unpaid total: {fmtRs(sessionUnpaid.totalAmt)} ·{" "}
+                                {sessionUnpaid.totalCount} orders
+                              </p>
+                              <p className="text-[9px] leading-snug opacity-95">
+                                In progress: {fmtRs(sessionUnpaid.pipelineAmt)} (
+                                {sessionUnpaid.pipelineCount}) · Delivered, payment
+                                pending: {fmtRs(sessionUnpaid.deliveredAmt)} (
+                                {sessionUnpaid.deliveredCount})
+                                {sessionUnpaid.otherCount > 0
+                                  ? ` · Other unpaid: ${fmtRs(sessionUnpaid.otherAmt)} (${sessionUnpaid.otherCount})`
+                                  : ""}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                              All recorded orders paid
+                            </p>
+                          )}
+                        </div>
+                        <div className="rounded-md border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-2">
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none">
+                            Orders
+                          </p>
+                          <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                            {(summary.totalOrders || 0).toString()}
+                          </p>
+                          <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400">
+                            Paid (closed) orders in revenue
                           </p>
                         </div>
-                      ))}
-                    </div>
-
-                    {/* Session meta */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {[
-                        {
-                          label: "Opened By",
-                          value: selectedSession.openedBy?.name || "—",
-                        },
-                        {
-                          label: "Closed By",
-                          value:
-                            selectedSession.closedBy?.name ||
-                            (selectedSession.status === "OPEN"
-                              ? "Ongoing"
-                              : "—"),
-                        },
-                        {
-                          label: "Branch",
-                          value: selectedSession.branchName || "—",
-                        },
-                        {
-                          label: "Duration",
-                          value:
-                            fmtDuration(
-                              selectedSession.startAt,
-                              selectedSession.endAt,
-                            ) || "—",
-                        },
-                      ].map(({ label, value }) => (
-                        <div
-                          key={label}
-                          className="rounded-lg p-2 border border-gray-200 dark:border-neutral-800 bg-gradient-to-b from-white to-gray-50 dark:from-neutral-900 dark:to-neutral-950 min-h-[58px]"
-                        >
-                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-0.5">
-                            {label}
-                          </p>
-                          <p className="text-[13px] font-semibold text-gray-800 dark:text-neutral-200">
-                            {value}
-                          </p>
-                        </div>
-                      ))}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { label: "Cash", value: fmtRs(summary.cashSales) },
+                          { label: "Card", value: fmtRs(summary.cardSales) },
+                          {
+                            label: "Online",
+                            value: fmtRs(sessionOnlineSales),
+                          },
+                        ].map((kpi) => (
+                          <div
+                            key={kpi.label}
+                            className="rounded-md border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-1.5"
+                          >
+                            <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none">
+                              {kpi.label}
+                            </p>
+                            <p className="mt-1 text-[18px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                              {kpi.value}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Order type breakdown */}
@@ -2581,156 +2810,128 @@ export default function HistoryPage() {
 
                     {/* Orders table */}
                     <div>
-                      <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2 rounded-lg border border-gray-200 dark:border-neutral-800 bg-gray-50/70 dark:bg-neutral-900/60 p-1.5">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                            Orders ({sessionOrders.length})
-                          </h3>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                            {selectedSessionOrderIds.length} selected
-                          </span>
+                      <div className="mb-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2">
+                        <div className="relative sm:col-span-2 lg:col-span-4">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                          <input
+                            type="text"
+                            value={sessionOrderSearch}
+                            onChange={(e) =>
+                              setSessionOrderSearch(e.target.value)
+                            }
+                            placeholder="Search orders in this session..."
+                            className="w-full h-8 pl-8 pr-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
+                          />
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={sessionOrderStatusFilter}
+                          onChange={(e) =>
+                            setSessionOrderStatusFilter(e.target.value)
+                          }
+                          className="h-8 w-full lg:col-span-2 px-2.5 rounded-lg text-[11px] font-semibold bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700"
+                        >
+                          <option value="">All status</option>
+                          {sessionStatusOptions.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={sessionOrderTypeFilter}
+                          onChange={(e) =>
+                            setSessionOrderTypeFilter(e.target.value)
+                          }
+                          className="h-8 w-full lg:col-span-2 px-2.5 rounded-lg text-[11px] font-semibold bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700"
+                        >
+                          <option value="">All type</option>
+                          {sessionTypeOptions.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={sessionOrderPositionFilter}
+                          onChange={(e) =>
+                            setSessionOrderPositionFilter(e.target.value)
+                          }
+                          className="h-8 w-full lg:col-span-2 px-2.5 rounded-lg text-[11px] font-semibold bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700"
+                        >
+                          <option value="all">All orders</option>
+                          <option value="first">First order</option>
+                          <option value="last">Last order</option>
+                        </select>
+                        <div className="relative lg:col-span-2">
                           <button
                             type="button"
-                            onClick={() =>
-                              setSelectedSessionOrderIds(
-                                allOrdersSelected
-                                  ? []
-                                  : sessionOrders.map((o) => o.id),
-                              )
-                            }
-                            className="h-8 inline-flex items-center gap-1.5 px-2.5 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                            onClick={() => setShowExportColumns((v) => !v)}
+                            className="h-8 w-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
                           >
-                            {allOrdersSelected ? "Clear all" : "Select all"}
+                            <Download className="w-3.5 h-3.5" />
+                            Export
+                            <ChevronDown className="w-3.5 h-3.5" />
                           </button>
-                          {selectedSessionOrderIds.length > 0 && (
-                            <>
-                              <select
-                                value={moveTargetSessionId}
-                                onChange={(e) =>
-                                  setMoveTargetSessionId(e.target.value)
-                                }
-                                className="h-8 min-w-[260px] max-w-[360px] px-2.5 rounded-lg text-[11px] font-semibold bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700"
-                              >
-                                <option value="">
-                                  Move selected to session...
-                                </option>
-                                {movableTargetSessions.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {`${s.status} · ${fmtDate(s.startAt)}${s.endAt ? ` → ${fmtDate(s.endAt)}` : ""}`}
-                                  </option>
+                          {showExportColumns && (
+                            <div className="absolute right-0 mt-1 z-30 w-[320px] max-w-[90vw] rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-2">
+                              <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 mb-1.5">
+                                Select columns
+                              </p>
+                              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                                {exportColumnOptions.map((col) => (
+                                  <label
+                                    key={col.key}
+                                    className="flex items-center gap-2 text-[11px] text-gray-700 dark:text-neutral-300"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="h-3.5 w-3.5 accent-primary"
+                                      checked={exportColumns.includes(col.key)}
+                                      onChange={(e) => {
+                                        setExportColumns((prev) =>
+                                          e.target.checked
+                                            ? [...prev, col.key]
+                                            : prev.filter(
+                                                (k) => k !== col.key,
+                                              ),
+                                        );
+                                      }}
+                                    />
+                                    {col.label}
+                                  </label>
                                 ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={handleMoveSelectedOrders}
-                                disabled={movingOrders || !moveTargetSessionId}
-                                className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-colors disabled:opacity-50"
-                              >
-                                {movingOrders ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Package className="w-3.5 h-3.5" />
-                                )}
-                                Move Selected ({selectedSessionOrderIds.length})
-                              </button>
-                            </>
-                          )}
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setShowExportColumns((v) => !v)}
-                              className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              Export CSV
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            </button>
-                            {showExportColumns && (
-                              <div className="absolute right-0 mt-1 z-30 w-56 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-2">
-                                <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 mb-1.5">
-                                  Select columns
-                                </p>
-                                <div className="max-h-48 overflow-auto space-y-1">
-                                  {exportColumnOptions.map((col) => (
-                                    <label
-                                      key={col.key}
-                                      className="flex items-center gap-2 text-[11px] text-gray-700 dark:text-neutral-300"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        className="h-3.5 w-3.5 accent-primary"
-                                        checked={exportColumns.includes(
-                                          col.key,
-                                        )}
-                                        onChange={(e) => {
-                                          setExportColumns((prev) =>
-                                            e.target.checked
-                                              ? [...prev, col.key]
-                                              : prev.filter(
-                                                  (k) => k !== col.key,
-                                                ),
-                                          );
-                                        }}
-                                      />
-                                      {col.label}
-                                    </label>
-                                  ))}
-                                </div>
+                              </div>
+                              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    printSessionOrders(true);
+                                    setShowExportColumns(false);
+                                  }}
+                                  className="h-8 rounded-lg text-[11px] font-semibold border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-700 dark:text-neutral-200"
+                                >
+                                  PDF
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    printSessionOrders(false);
+                                    setShowExportColumns(false);
+                                  }}
+                                  className="h-8 rounded-lg text-[11px] font-semibold border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-700 dark:text-neutral-200"
+                                >
+                                  Print
+                                </button>
                                 <button
                                   type="button"
                                   disabled={exportColumns.length === 0}
                                   onClick={() => {
-                                    const labelsByKey = Object.fromEntries(
-                                      exportColumnOptions.map((c) => [
-                                        c.key,
-                                        c.label,
-                                      ]),
-                                    );
-                                    const header = exportColumns
-                                      .map((k) =>
-                                        csvEscape(labelsByKey[k] || k),
-                                      )
-                                      .join(",");
-                                    const body = sessionOrders.map((o) => {
-                                      const staff =
-                                        o.riderName ||
-                                        o.waiterName ||
-                                        o.orderTakerName ||
-                                        "";
-                                      const items = (o.items || [])
-                                        .map(
-                                          (it) => `${it.name} x${it.qty || 1}`,
-                                        )
-                                        .join(" | ");
-                                      const valuesByKey = {
-                                        orderNumber: o.orderNumber || o.id,
-                                        time: o.createdAt
-                                          ? new Date(
-                                              o.createdAt,
-                                            ).toLocaleTimeString("en-PK", {
-                                              hour: "2-digit",
-                                              minute: "2-digit",
-                                              hour12: true,
-                                            })
-                                          : "",
-                                        type: o.orderType || "",
-                                        status: o.status || "",
-                                        customer: o.customerName || "",
-                                        staff,
-                                        items,
-                                        total: o.total || 0,
-                                        payment: o.isPaid
-                                          ? o.paymentMethod || ""
-                                          : "Unpaid",
-                                      };
-                                      return exportColumns
-                                        .map((k) => csvEscape(valuesByKey[k]))
-                                        .join(",");
-                                    });
-                                    const rows = [header, ...body].join("\n");
-                                    const b = new Blob([rows], {
+                                    const { header, rows } = getSessionExportRows();
+                                    const csvRows = [
+                                      header.join(","),
+                                      ...rows.map((r) => r.join(",")),
+                                    ].join("\n");
+                                    const b = new Blob([csvRows], {
                                       type: "text/csv",
                                     });
                                     const a = document.createElement("a");
@@ -2739,16 +2940,50 @@ export default function HistoryPage() {
                                     a.click();
                                     setShowExportColumns(false);
                                   }}
-                                  className="mt-2 h-8 w-full rounded-lg text-[11px] font-semibold bg-gray-900 text-white dark:bg-white dark:text-black disabled:opacity-50"
+                                  className="h-8 rounded-lg text-[11px] font-semibold bg-gray-900 text-white dark:bg-white dark:text-black disabled:opacity-50"
                                 >
-                                  Download CSV
+                                  CSV
                                 </button>
                               </div>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      {sessionOrders.length === 0 ? (
+                      {selectedSessionOrderIds.length > 0 && (
+                        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/5 p-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                            {selectedSessionOrderIds.length} selected
+                          </span>
+                          <select
+                            value={moveTargetSessionId}
+                            onChange={(e) =>
+                              setMoveTargetSessionId(e.target.value)
+                            }
+                            className="h-8 min-w-[260px] max-w-[360px] px-2.5 rounded-lg text-[11px] font-semibold bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 border border-gray-200 dark:border-neutral-700"
+                          >
+                            <option value="">Move selected to session...</option>
+                            {movableTargetSessions.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {`${s.status} · ${fmtDate(s.startAt)}${s.endAt ? ` → ${fmtDate(s.endAt)}` : ""}`}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleMoveSelectedOrders}
+                            disabled={movingOrders || !moveTargetSessionId}
+                            className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                          >
+                            {movingOrders ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Package className="w-3.5 h-3.5" />
+                            )}
+                            Move Selected
+                          </button>
+                        </div>
+                      )}
+                      {filteredSessionOrders.length === 0 ? (
                         <div className="text-center py-10 text-sm text-gray-400 dark:text-neutral-600">
                           No orders in this session
                         </div>
@@ -2765,7 +3000,7 @@ export default function HistoryPage() {
                                     onChange={(e) => {
                                       if (e.target.checked) {
                                         setSelectedSessionOrderIds(
-                                          sessionOrders.map((o) => o.id),
+                                          filteredSessionOrders.map((o) => o.id),
                                         );
                                       } else {
                                         setSelectedSessionOrderIds([]);
@@ -2794,7 +3029,7 @@ export default function HistoryPage() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
-                              {sessionOrders.map((o) => {
+                              {filteredSessionOrders.map((o) => {
                                 const items = o.items || [];
                                 const itemCount = items.reduce(
                                   (s, i) => s + (i.qty || 1),
