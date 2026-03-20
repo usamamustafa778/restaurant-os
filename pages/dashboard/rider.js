@@ -42,6 +42,7 @@ import {
   ChefHat,
   Check,
   Bell,
+  Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -91,6 +92,37 @@ function getTimeAgo(createdAt) {
   return `${h}h ago`;
 }
 
+/** Grand total for an order (rider-facing). */
+function orderGrandTotal(order) {
+  return Number(order.grandTotal ?? order.total) || 0;
+}
+
+/** Paid online/at POS — nothing for rider to hand in at the shop. */
+function isDeliveryPrepaid(order) {
+  const pm = String(order.paymentMethod || "").toUpperCase();
+  return pm === "ONLINE" || pm === "CARD" || pm === "FOODPANDA";
+}
+
+/**
+ * Delivered delivery where cash/COD was not yet marked collected at the shop.
+ * Matches API: paymentMethod PENDING + deliveryPaymentCollected false, etc.
+ * Rider API historically omitted orderType — treat missing as DELIVERY (rider app is delivery-only).
+ */
+function isDeliveryPaymentNotSubmitted(order) {
+  if (order.status !== "DELIVERED" && order.status !== "COMPLETED") return false;
+  const ot = String(order.orderType || "DELIVERY").toUpperCase();
+  if (ot !== "DELIVERY") return false;
+  if (isDeliveryPrepaid(order)) return false;
+  return order.deliveryPaymentCollected !== true;
+}
+
+/** Rider must collect from customer before delivery is complete (COD / not prepaid). */
+function isRiderMustCollectFromCustomer(order) {
+  if (isDeliveryPrepaid(order)) return false;
+  const pm = String(order.paymentMethod || "").toUpperCase();
+  return pm === "PENDING" || pm === "" || pm === "CASH";
+}
+
 export default function RiderPortalPage() {
   const { socket } = useSocket() || {};
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
@@ -107,6 +139,8 @@ export default function RiderPortalPage() {
   const [collectingId, setCollectingId] = useState(null);
   const [deliveringId, setDeliveringId] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
+  /** History: all | pending_payment | cleared */
+  const [historyFilter, setHistoryFilter] = useState("all");
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
 
   function toggleOrderDetails(orderKey) {
@@ -228,13 +262,21 @@ export default function RiderPortalPage() {
     .filter((o) => !o.assignedRiderId || (riderId && o.assignedRiderId === riderId))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  const historyRevenue = historyOrders
-    .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
-    .reduce((sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0), 0);
-
-  const deliveredCount = historyOrders.filter(
+  const deliveredHistory = historyOrders.filter(
     (o) => o.status === "DELIVERED" || o.status === "COMPLETED",
-  ).length;
+  );
+  /** Revenue already accounted for (prepaid online/card or cash marked collected). */
+  const riderClearedRevenue = deliveredHistory
+    .filter((o) => !isDeliveryPaymentNotSubmitted(o))
+    .reduce((sum, o) => sum + orderGrandTotal(o), 0);
+  /** COD / PENDING still to be submitted at the shop. */
+  const riderPendingPaymentOrders = deliveredHistory.filter(isDeliveryPaymentNotSubmitted);
+  const riderPendingPaymentTotal = riderPendingPaymentOrders.reduce(
+    (sum, o) => sum + orderGrandTotal(o),
+    0,
+  );
+
+  const deliveredCount = deliveredHistory.length;
   const cancelledCount = historyOrders.filter((o) => o.status === "CANCELLED").length;
   const activeRevenue = activeOrders.reduce(
     (sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0),
@@ -256,6 +298,17 @@ export default function RiderPortalPage() {
           : activeFilter === "ready"
             ? readyOrders
             : outForDeliveryOrders;
+
+  const filteredHistoryOrders =
+    historyFilter === "all"
+      ? historyOrders
+      : historyFilter === "pending_payment"
+        ? historyOrders.filter(isDeliveryPaymentNotSubmitted)
+        : historyOrders.filter((o) => {
+            if (o.status === "CANCELLED") return true;
+            if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
+            return !isDeliveryPaymentNotSubmitted(o);
+          });
 
   const activeFilterLabel = activeFilter === "all"
     ? "active"
@@ -461,13 +514,21 @@ export default function RiderPortalPage() {
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
                   {tab === TABS.HOME
-                    ? `${historyOrders.filter(o => o.status === "DELIVERED" || o.status === "COMPLETED").length} delivered · Rs. ${Math.round(historyRevenue).toLocaleString()}`
+                    ? `${deliveredCount} delivered · Rs. ${Math.round(riderClearedRevenue).toLocaleString()} cleared${
+                        riderPendingPaymentTotal > 0
+                          ? ` · Rs. ${Math.round(riderPendingPaymentTotal).toLocaleString()} pending`
+                          : ""
+                      }`
                     : tab === TABS.ACTIVE
                       ? activeFilter === "all"
                         ? `${readyOrders.length} ready · ${activeOrders.length} active`
                         : `${filteredActiveOrders.length} ${activeFilterLabel} · ${activeOrders.length} active`
                       : tab === TABS.HISTORY
-                        ? `${historyOrders.length} past delivery${historyOrders.length !== 1 ? "s" : ""}`
+                        ? `${filteredHistoryOrders.length} shown · ${historyOrders.length} total${
+                            riderPendingPaymentOrders.length > 0
+                              ? ` · ${riderPendingPaymentOrders.length} payment pending`
+                              : ""
+                          }`
                         : step === STEPS.MENU
                           ? userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
                           : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
@@ -549,16 +610,41 @@ export default function RiderPortalPage() {
                       {userName ? `Hi, ${userName.split(" ")[0]}` : "Welcome"}
                     </p>
                     <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 truncate">
-                      Rs. {Math.round(historyRevenue).toLocaleString()} delivered amount
+                      Rs. {Math.round(riderClearedRevenue).toLocaleString()} cleared (prepaid + cash submitted)
+                      {riderPendingPaymentTotal > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                          {" "}
+                          · Rs. {Math.round(riderPendingPaymentTotal).toLocaleString()} to submit
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
               </div>
 
+              {riderPendingPaymentTotal > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-500/10 rounded-2xl border border-amber-200 dark:border-amber-500/25 p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="w-5 h-5 text-amber-700 dark:text-amber-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">Submit at shop</p>
+                    <p className="text-base font-black text-amber-950 dark:text-amber-100 mt-0.5">
+                      Rs. {Math.round(riderPendingPaymentTotal).toLocaleString()}
+                      <span className="text-xs font-bold text-amber-700/90 dark:text-amber-400/90 ml-1.5">
+                        · {riderPendingPaymentOrders.length} order{riderPendingPaymentOrders.length !== 1 ? "s" : ""}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-amber-800/80 dark:text-amber-400/80 mt-1">Cash / COD not recorded yet — use History → Pending payment</p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Amount Submitted</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">Rs. {Math.round(historyRevenue).toLocaleString()}</p>
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cleared revenue</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">Rs. {Math.round(riderClearedRevenue).toLocaleString()}</p>
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">Prepaid + cash marked collected</p>
                 </div>
                 <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
                   <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Deliveries</p>
@@ -689,6 +775,30 @@ export default function RiderPortalPage() {
                             </span>
                           </div>
 
+                          {isDeliveryPrepaid(order) ? (
+                            <div className="mb-3 flex items-start gap-2 rounded-xl bg-emerald-50/80 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/25 px-3 py-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300">Prepaid</p>
+                                <p className="text-[10px] text-emerald-700/90 dark:text-emerald-400/90 leading-snug">
+                                  Online/card — no cash to collect from customer
+                                </p>
+                              </div>
+                            </div>
+                          ) : isRiderMustCollectFromCustomer(order) ? (
+                            <div className="mb-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-3 py-2.5">
+                              <p className="text-[10px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wide">
+                                Payment not cleared — collect COD
+                              </p>
+                              <p className="text-lg font-black text-amber-950 dark:text-amber-100 mt-1 tabular-nums">
+                                Rs. {orderGrandTotal(order).toLocaleString()}
+                              </p>
+                              <p className="text-[9px] text-amber-800/90 dark:text-amber-400/85 mt-1 leading-snug">
+                                Take cash from customer, then submit at shop. Matches POS &quot;Awaiting payment&quot;.
+                              </p>
+                            </div>
+                          ) : null}
+
                           <button
                             type="button"
                             onClick={() => toggleOrderDetails(orderKey)}
@@ -787,50 +897,165 @@ export default function RiderPortalPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                    <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total Revenue (this session)</p>
-                    <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                      Rs. {Math.round(historyRevenue).toLocaleString()}
-                    </p>
-                    <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-1">
-                      From delivered orders (cancelled excluded)
-                    </p>
+                  <div className="flex gap-2 overflow-x-auto rider-no-scrollbar pb-0.5">
+                    {[
+                      { key: "all", label: "All", count: historyOrders.length },
+                      {
+                        key: "pending_payment",
+                        label: "Pending payment",
+                        count: riderPendingPaymentOrders.length,
+                      },
+                      {
+                        key: "cleared",
+                        label: "Cleared",
+                        count: historyOrders.filter((o) => {
+                          if (o.status === "CANCELLED") return true;
+                          if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
+                          return !isDeliveryPaymentNotSubmitted(o);
+                        }).length,
+                      },
+                    ].map((f) => (
+                      <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => setHistoryFilter(f.key)}
+                        className={`flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                          historyFilter === f.key
+                            ? f.key === "pending_payment"
+                              ? "bg-amber-500 text-white shadow-sm shadow-amber-500/25"
+                              : "bg-primary text-white shadow-sm shadow-primary/20"
+                            : "bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 shadow-sm"
+                        }`}
+                      >
+                        {f.label}
+                        <span
+                          className={`min-w-[18px] h-[18px] rounded-full text-[10px] font-black flex items-center justify-center px-1 ${
+                            historyFilter === f.key
+                              ? "bg-white/20"
+                              : "bg-gray-100 dark:bg-neutral-800"
+                          }`}
+                        >
+                          {f.count}
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                  {historyOrders.map((order) => {
-                    const sc = getStatusConfig(order.status);
-                    const StatusIcon = sc.icon;
-                    const orderId = order.id || order._id;
-                    return (
-                      <div key={orderId} className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${sc.border}`}>
-                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
-                          <div className="flex items-center gap-2">
-                            <StatusIcon className={`w-4 h-4 ${sc.text}`} />
-                            <span className={`text-xs font-bold ${sc.text}`}>{sc.label}</span>
-                          </div>
-                          <div className={`flex items-center gap-1.5 text-[11px] ${sc.text} opacity-80`}>
-                            <Clock className="w-3 h-3" />
-                            {getTimeAgo(order.createdAt)}
-                          </div>
-                        </div>
-                        <div className="p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-base font-black text-gray-900 dark:text-white">
-                              #{order.tokenNumber || getOrderId(order).toString().slice(-4)}
-                            </span>
-                            <span className="text-sm font-black text-gray-900 dark:text-white">
-                              Rs. {(order.grandTotal ?? order.total)?.toLocaleString()}
-                            </span>
-                          </div>
-                          {order.customerName && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400">
-                              <User className="w-3 h-3" />
-                              {order.customerName}
-                            </div>
-                          )}
-                        </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                      <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cleared revenue</p>
+                      <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">
+                        Rs. {Math.round(riderClearedRevenue).toLocaleString()}
+                      </p>
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">
+                        Prepaid + cash submitted at shop
+                      </p>
+                    </div>
+                    <div
+                      className={`rounded-2xl border p-4 ${
+                        riderPendingPaymentTotal > 0
+                          ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25"
+                          : "bg-white dark:bg-neutral-950 border-gray-200 dark:border-neutral-800"
+                      }`}
+                    >
+                      <p
+                        className={`text-[10px] font-bold uppercase tracking-wider ${
+                          riderPendingPaymentTotal > 0
+                            ? "text-amber-800 dark:text-amber-300"
+                            : "text-gray-400 dark:text-neutral-500"
+                        }`}
+                      >
+                        To submit at shop
+                      </p>
+                      <p
+                        className={`text-lg font-black tracking-tight mt-0.5 ${
+                          riderPendingPaymentTotal > 0
+                            ? "text-amber-950 dark:text-amber-100"
+                            : "text-gray-900 dark:text-white"
+                        }`}
+                      >
+                        Rs. {Math.round(riderPendingPaymentTotal).toLocaleString()}
+                      </p>
+                      <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-1">
+                        {riderPendingPaymentOrders.length} order
+                        {riderPendingPaymentOrders.length !== 1 ? "s" : ""} · COD / not recorded
+                      </p>
+                    </div>
+                  </div>
+
+                  {filteredHistoryOrders.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center pt-12 text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                        <ClipboardList className="w-6 h-6 text-gray-300 dark:text-neutral-700" />
                       </div>
-                    );
-                  })}
+                      <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No orders in this filter</p>
+                      <p className="text-xs text-gray-400 dark:text-neutral-600">Try another tab above</p>
+                    </div>
+                  ) : (
+                    filteredHistoryOrders.map((order) => {
+                      const paymentPending = isDeliveryPaymentNotSubmitted(order);
+                      const sc = getStatusConfig(order.status);
+                      const StatusIcon = paymentPending ? Wallet : sc.icon;
+                      const orderId = order.id || order._id;
+                      const headerBg = paymentPending
+                        ? "bg-amber-50 dark:bg-amber-500/10"
+                        : sc.bgLight;
+                      const headerText = paymentPending
+                        ? "text-amber-800 dark:text-amber-300"
+                        : sc.text;
+                      const borderClass = paymentPending
+                        ? "border-amber-200 dark:border-amber-500/30"
+                        : sc.border;
+                      return (
+                        <div
+                          key={orderId}
+                          className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${borderClass}`}
+                        >
+                          <div className={`px-4 py-2 flex items-center justify-between ${headerBg}`}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <StatusIcon className={`w-4 h-4 shrink-0 ${headerText}`} />
+                              <span className={`text-xs font-bold ${headerText} truncate`}>
+                                {paymentPending
+                                  ? "Delivered · payment not submitted"
+                                  : sc.label}
+                              </span>
+                            </div>
+                            <div className={`flex items-center gap-1.5 text-[11px] ${headerText} opacity-80 shrink-0`}>
+                              <Clock className="w-3 h-3" />
+                              {getTimeAgo(order.createdAt)}
+                            </div>
+                          </div>
+                          <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-base font-black text-gray-900 dark:text-white">
+                                #{order.tokenNumber || getOrderId(order).toString().slice(-4)}
+                              </span>
+                              <span
+                                className={`text-sm font-black ${
+                                  paymentPending
+                                    ? "text-amber-800 dark:text-amber-200"
+                                    : "text-gray-900 dark:text-white"
+                                }`}
+                              >
+                                Rs. {orderGrandTotal(order).toLocaleString()}
+                              </span>
+                            </div>
+                            {paymentPending && (
+                              <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 mb-2">
+                                Hand in cash at the shop — still marked &quot;To be paid&quot; in POS
+                              </p>
+                            )}
+                            {order.customerName && (
+                              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400">
+                                <User className="w-3 h-3" />
+                                {order.customerName}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>
@@ -1154,9 +1379,16 @@ export default function RiderPortalPage() {
           </button>
           <button
             onClick={() => setTab(TABS.HISTORY)}
-            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.HISTORY ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
+            className={`relative flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.HISTORY ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
           >
-            <ClipboardList className="w-5 h-5" />
+            <span className="relative inline-flex">
+              <ClipboardList className="w-5 h-5" />
+              {riderPendingPaymentOrders.length > 0 && (
+                <span className="absolute -right-1 -top-0.5 min-w-[14px] h-[14px] px-[3px] rounded-full bg-amber-500 text-[8px] font-black text-white flex items-center justify-center border border-white dark:border-black">
+                  {riderPendingPaymentOrders.length > 9 ? "9+" : riderPendingPaymentOrders.length}
+                </span>
+              )}
+            </span>
             <span className="text-[10px] font-bold">History</span>
           </button>
         </nav>
