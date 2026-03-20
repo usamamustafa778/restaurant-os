@@ -1452,23 +1452,23 @@ export default function OverviewPage() {
             </div>
 
             {/* Upcoming Payments */}
-            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-3">
               {hasOrders ? (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2.5 mb-4">
-                    <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center">
-                      <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 mb-2 pb-1.5 border-b border-gray-100 dark:border-neutral-800">
+                    <div className="w-7 h-7 rounded-md bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center shrink-0">
+                      <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                     </div>
-                    <div className="flex items-center justify-between w-full flex-1">
-                      <div>
-                        <h3 className="font-bold text-gray-900 dark:text-white">
+                    <div className="flex items-center justify-between w-full min-w-0 gap-2">
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-sm text-gray-900 dark:text-white leading-tight">
                           Upcoming Payments
                         </h3>
-                        <p className="text-[11px] text-gray-500 dark:text-neutral-400">
-                          Unpaid orders still in progress (new → out for delivery)
+                        <p className="text-[10px] text-gray-500 dark:text-neutral-400 leading-tight mt-0.5">
+                          Unpaid in progress (new → out for delivery)
                         </p>
                       </div>
-                      <h2 className="font-bold text-base text-gray-900 dark:text-white">
+                      <h2 className="font-bold text-sm text-gray-900 dark:text-white shrink-0">
                         Rs{" "}
                         {Math.round(
                           upcomingPayments.totalAmount,
@@ -1480,50 +1480,43 @@ export default function OverviewPage() {
                   {(upcomingPayments.rows || []).map((row) => (
                     <div
                       key={row.label}
-                      className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-neutral-800"
+                      className="flex items-center justify-between py-0.5 border-b border-gray-100/80 dark:border-neutral-800/80"
                     >
-                      <span className="text-[11px] text-gray-600 dark:text-neutral-400">
+                      <span className="text-[10px] text-gray-600 dark:text-neutral-400 leading-tight">
                         {row.label} · {row.count.toLocaleString()} orders
                       </span>
-                      <p className="text-[11px] font-semibold text-gray-900 dark:text-white">
+                      <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
                         Rs {Math.round(row.amount || 0).toLocaleString()}
                       </p>
                     </div>
                   ))}
 
-                  <div className="border-b border-gray-100 dark:border-neutral-800 pb-2">
-                    <div className="flex items-center justify-between py-1.5">
-                      <span className="text-[11px] text-gray-600 dark:text-neutral-400">
-                        Delivered · payment not recorded yet ·{" "}
-                        {deliveredUnpaid.count.toLocaleString()} orders
-                      </span>
-                      <p className="text-[11px] font-semibold text-gray-900 dark:text-white">
-                        Rs{" "}
-                        {Math.round(deliveredUnpaid.amount || 0).toLocaleString()}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-gray-500 dark:text-neutral-500 leading-snug">
-                      Same as POS: status is Delivered/Completed but payment is still
-                      &quot;To be paid&quot; (not Cash/Card/Online). Use this to collect
-                      cash/card at the counter.
+                  <div className="flex items-center justify-between py-0.5 border-b border-gray-100/80 dark:border-neutral-800/80">
+                    <span className="text-[10px] text-gray-600 dark:text-neutral-400 leading-tight">
+                      Delivered · payment not recorded yet ·{" "}
+                      {deliveredUnpaid.count.toLocaleString()} orders
+                    </span>
+                    <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
+                      Rs{" "}
+                      {Math.round(deliveredUnpaid.amount || 0).toLocaleString()}
                     </p>
                   </div>
 
                   <div className="flex items-center justify-between pt-1 border-t border-dashed border-gray-200 dark:border-neutral-700">
-                    <span className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
+                    <span className="text-[10px] font-semibold text-gray-700 dark:text-neutral-300 leading-tight">
                       Total unpaid (in progress + delivered above)
                     </span>
-                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400">
+                    <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 tabular-nums">
                       Rs {Math.round(totalUnpaidExposure).toLocaleString()}
                     </p>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-[10px] font-semibold text-gray-700 dark:text-neutral-300 leading-tight">
                       Pending collection ·{" "}
                       {pendingCollection.orders.toLocaleString()} orders
                     </span>
-                    <p className="text-[11px] font-semibold text-gray-900 dark:text-white">
+                    <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
                       Rs {Math.round(pendingCollection.amount).toLocaleString()}
                     </p>
                   </div>
