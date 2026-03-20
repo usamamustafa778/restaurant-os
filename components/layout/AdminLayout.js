@@ -34,6 +34,7 @@ import {
   Globe,
   Mail,
   Bike,
+  Bot,
 } from "lucide-react";
 import { getToken, getStoredAuth, clearActingAsRestaurant, getRestaurantInfo } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -75,16 +76,16 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
   },
   {
+    path: "/ai-agents",
+    label: "AI Agents",
+    icon: Bot,
+    roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
+  },
+  {
     path: "/rider",
     label: "Rider Portal",
     icon: Bike,
     roles: ["delivery_rider"],
-  },
-  {
-    path: "/reservations",
-    label: "Reservations",
-    icon: History,
-    roles: ["restaurant_admin", "admin", "manager"],
   },
 
   { type: "section", label: "MENU MANAGEMENT" },
@@ -130,6 +131,12 @@ const tenantNav = [
     path: "/tables",
     label: "Tables",
     icon: UtensilsCrossed,
+    roles: ["restaurant_admin", "admin", "manager"],
+  },
+  {
+    path: "/reservations",
+    label: "Reservations",
+    icon: History,
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
@@ -702,6 +709,28 @@ export default function AdminLayout({
                       <Icon className="w-4 h-4" />
                       {(!collapsed || mobileSidebarOpen) && (
                         <span>{item.label}</span>
+                      )}
+                    </div>
+                  </NavItemWrapper>
+                );
+              }
+
+              if (item.comingSoon) {
+                return (
+                  <NavItemWrapper
+                    key={`soon-${basePath || idx}`}
+                    collapsed={effectivelyCollapsed}
+                    label={`${item.label} (Coming soon)`}
+                  >
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 dark:text-neutral-500 bg-gray-50/90 dark:bg-neutral-900/50 cursor-not-allowed border border-dashed border-gray-200 dark:border-neutral-700">
+                      <Icon className="w-4 h-4 shrink-0 opacity-70" />
+                      {(!collapsed || mobileSidebarOpen) && (
+                        <>
+                          <span className="flex-1 truncate">{item.label}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 bg-amber-100/90 dark:bg-amber-950/60 px-2 py-0.5 rounded-md shrink-0">
+                            Soon
+                          </span>
+                        </>
                       )}
                     </div>
                   </NavItemWrapper>

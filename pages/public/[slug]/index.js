@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { getPublicMenu, getPublicTenantInfo, getImageUrl, formatPrice } from "../../../lib/api";
+import StorefrontChatWidget from "../../../components/public/StorefrontChatWidget";
 
 const FEATURED_COUNT = 6;
 
@@ -251,6 +252,7 @@ export default function RestaurantPage() {
   const web = tenant.website ?? tenant.websiteConfig ?? {};
   const primaryColor = web.themeColors?.primary || "#EF4444";
   const secondaryColor = web.themeColors?.secondary || "#FFA500";
+  const aiAgents = web.aiAgents || {};
   
   const description =
     web.description ||
@@ -430,10 +432,10 @@ export default function RestaurantPage() {
           <div className="text-center">
             <h3 className="text-2xl font-bold mb-2">{tenant.name}</h3>
             <p className="text-slate-400 mb-6">{description}</p>
-            {(web.contactPhone || web.contactEmail) && (
+            {(web.contactPhone || web.contactEmail || aiAgents.callAgentEnabled) && (
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm">
                 {web.contactPhone && (
-                  <a href={`tel:${web.contactPhone}`} className="hover:text-red-400 transition-colors">
+                  <a href={`tel:${String(web.contactPhone).replace(/\s+/g, "")}`} className="hover:text-red-400 transition-colors">
                     📱 {web.contactPhone}
                   </a>
                 )}
@@ -442,12 +444,31 @@ export default function RestaurantPage() {
                     📧 {web.contactEmail}
                   </a>
                 )}
+                {aiAgents.callAgentEnabled && aiAgents.callAgentPhone && (
+                  <a
+                    href={`tel:${String(aiAgents.callAgentPhone).replace(/\s+/g, "")}`}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 font-semibold text-amber-300 hover:bg-white/10 transition-colors"
+                  >
+                    📞 AI phone line: {aiAgents.callAgentPhone}
+                  </a>
+                )}
               </div>
+            )}
+            {aiAgents.callAgentEnabled && aiAgents.callAgentNote && (
+              <p className="text-slate-500 text-xs mt-4 max-w-lg mx-auto">{aiAgents.callAgentNote}</p>
             )}
             <p className="text-slate-500 text-xs mt-8">© 2024 {tenant.name}. All rights reserved.</p>
           </div>
         </div>
       </footer>
+
+      <StorefrontChatWidget
+        slug={slug}
+        primaryColor={primaryColor}
+        assistantName={aiAgents.chatAssistantName || "Assistant"}
+        welcomeMessage={aiAgents.chatWelcomeMessage || "Hi! How can we help you today?"}
+        enabled={aiAgents.chatEnabled === true}
+      />
     </div>
   );
 }
