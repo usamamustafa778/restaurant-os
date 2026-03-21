@@ -204,6 +204,12 @@ export default function Home() {
                 >
                   Contact
                 </a>
+                <Link
+                  href="/food"
+                  className="hover:text-primary transition-colors font-semibold text-primary"
+                >
+                  Order food
+                </Link>
               </nav>
 
               <div className="flex items-center gap-3">
@@ -265,6 +271,13 @@ export default function Home() {
                     {id.replace(/-/g, " ")}
                   </a>
                 ))}
+                <Link
+                  href="/food"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block text-sm font-semibold text-primary"
+                >
+                  Order food
+                </Link>
                 <Link
                   href="/login"
                   onClick={() => setMobileMenuOpen(false)}

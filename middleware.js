@@ -5,6 +5,9 @@ import { verifyJwt } from "./lib/auth";
 // In production set NEXT_PUBLIC_ROOT_DOMAIN to your dashboard domain (e.g. eatsdesk.com)
 // Storefronts are served from eatsdesk.app (separate repo/deployment)
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "";
+// Subdomain for Food Hub (e.g. food.eatsdesk.com → /food). Do not use "food" as a restaurant slug.
+const FOOD_HUB_SUBDOMAIN =
+  (process.env.NEXT_PUBLIC_FOOD_HUB_SUBDOMAIN || "food").toLowerCase();
 
 const ALLOWED_ROLES = [
   "super_admin", "restaurant_admin", "staff", "admin",
@@ -85,6 +88,14 @@ export async function middleware(request) {
   const tenantSubdomain = getSubdomain(host);
 
   if (tenantSubdomain) {
+    // Food discovery hub (Foodpanda-style) — not a restaurant tenant
+    if (tenantSubdomain === FOOD_HUB_SUBDOMAIN) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/food";
+      url.search = request.nextUrl.search;
+      return NextResponse.rewrite(url);
+    }
+
     // Dashboard / auth pages on a subdomain → redirect to main domain
     const dashPage = getDashboardPage(pathname);
     if (
@@ -233,6 +244,7 @@ export async function middleware(request) {
     "favicon.ico", "images", "static", "super",
     "st-images", "fonts", "icons", "assets",
     "privacy-policy", "terms-and-conditions", "read-more",
+    "food",
     ...DASHBOARD_PAGES,
   ]);
   const pathMatch = pathname.match(/^\/([^/]+)(\/.*)?$/);
