@@ -327,9 +327,13 @@ export default function ReadMore() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <Link href="/" className="flex items-center gap-2.5">
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white font-bold text-sm">
-                  ED
-                </span>
+                <img
+                  src="/favicon.png"
+                  alt="Eats Desk"
+                  className="h-9 w-9 shrink-0 rounded-xl object-cover"
+                  width={36}
+                  height={36}
+                />
                 <div>
                   <div className="text-sm font-bold tracking-tight text-gray-900">
                     Eats Desk
@@ -1228,9 +1232,13 @@ export default function ReadMore() {
         <footer className="bg-gray-950 border-t border-white/5 py-8">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-white font-bold text-xs">
-                ED
-              </span>
+              <img
+                src="/favicon.png"
+                alt="Eats Desk"
+                className="h-8 w-8 shrink-0 rounded-xl object-cover"
+                width={32}
+                height={32}
+              />
               <div>
                 <div className="text-xs font-bold tracking-tight text-white">Eats Desk</div>
                 <div className="text-[10px] text-gray-500 -mt-0.5">Restaurant Operations Platform</div>

@@ -609,11 +609,18 @@ export default function AdminLayout({
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={restaurantLogoUrl} alt="logo" className="h-full w-full object-cover" />
                   </div>
-                ) : (
+                ) : restaurantName && role !== "super_admin" ? (
                   <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary via-primary to-secondary flex items-center justify-center text-white font-bold text-base shadow-lg shadow-primary/30">
-                    {restaurantName && role !== "super_admin"
-                      ? restaurantName.slice(0, 2).toUpperCase()
-                      : "ED"}
+                    {restaurantName.slice(0, 2).toUpperCase()}
+                  </div>
+                ) : (
+                  <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 shadow-md bg-white dark:bg-neutral-900">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/favicon.png"
+                      alt="Eats Desk"
+                      className="h-full w-full object-cover"
+                    />
                   </div>
                 )}
                 <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white dark:border-neutral-950"></div>
@@ -973,11 +980,18 @@ export default function AdminLayout({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={restaurantLogoUrl} alt="logo" className="h-full w-full object-cover" />
                     </div>
-                  ) : (
+                  ) : restaurantName && role !== "super_admin" ? (
                     <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20 flex-shrink-0">
-                      {restaurantName && role !== "super_admin"
-                        ? restaurantName.slice(0, 2).toUpperCase()
-                        : "ED"}
+                      {restaurantName.slice(0, 2).toUpperCase()}
+                    </div>
+                  ) : (
+                    <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 shadow-md bg-white dark:bg-neutral-900 flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src="/favicon.png"
+                        alt="Eats Desk"
+                        className="h-full w-full object-cover"
+                      />
                     </div>
                   )}
                   <div>

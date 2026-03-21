@@ -181,9 +181,13 @@ export default function SignupPage() {
             <div className="relative w-full max-w-md mx-auto flex flex-col">
               {/* Logo */}
               <div className="flex items-center justify-center gap-2 mb-5">
-                <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-black text-lg shadow-lg shadow-primary/30">
-                  ED
-                </div>
+                <img
+                  src="/favicon.png"
+                  alt="Eats Desk"
+                  className="h-11 w-11 shrink-0 rounded-xl object-cover"
+                  width={44}
+                  height={44}
+                />
                 <div>
                   <div className="text-base font-bold text-gray-900">Eats Desk</div>
                   <div className="text-[11px] text-gray-600">Restaurant Operations Platform</div>

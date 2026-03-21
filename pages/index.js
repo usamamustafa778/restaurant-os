@@ -159,10 +159,14 @@ export default function Home() {
         <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-gray-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-2.5">
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white font-bold text-sm">
-                  ED
-                </span>
+              <Link href="/" className="flex items-center gap-2.5">
+                <img
+                  src="/favicon.png"
+                  alt="Eats Desk"
+                  className="h-9 w-9 shrink-0 rounded-xl object-cover"
+                  width={36}
+                  height={36}
+                />
                 <div>
                   <div className="text-sm font-bold tracking-tight text-gray-900">
                     Eats Desk
@@ -171,7 +175,7 @@ export default function Home() {
                     Restaurant & Cafe Operations Desk
                   </div>
                 </div>
-              </div>
+              </Link>
 
               <nav className="hidden md:flex items-center gap-8 text-sm text-gray-600">
                 <a
@@ -1259,9 +1263,13 @@ export default function Home() {
             <div className="grid gap-8 md:grid-cols-5 mb-12">
               <div>
                 <div className="flex items-center gap-2.5 mb-4">
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white font-bold text-sm">
-                    ED
-                  </span>
+                  <img
+                    src="/favicon.png"
+                    alt="Eats Desk"
+                    className="h-9 w-9 shrink-0 rounded-xl object-cover"
+                    width={36}
+                    height={36}
+                  />
                   <div className="text-sm font-bold">Eats Desk</div>
                 </div>
                 <p className="text-sm text-gray-400 leading-relaxed">
