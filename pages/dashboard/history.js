@@ -2460,12 +2460,12 @@ export default function HistoryPage() {
     const typeBreakdown = sessionOrders
       .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
       .reduce((map, o) => {
-        const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
-        if (!map[t]) map[t] = { count: 0, revenue: 0 };
-        map[t].count += 1;
-        map[t].revenue += o.total || 0;
-        return map;
-      }, {});
+      const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
+      if (!map[t]) map[t] = { count: 0, revenue: 0 };
+      map[t].count += 1;
+      map[t].revenue += o.total || 0;
+      return map;
+    }, {});
 
     async function handleMoveSelectedOrders() {
       if (!moveTargetSessionId || selectedSessionOrderIds.length === 0) return;
@@ -2738,7 +2738,7 @@ export default function HistoryPage() {
                                   ? ` · Other unpaid: ${fmtRs(sessionUnpaid.otherAmt)} (${sessionUnpaid.otherCount})`
                                   : ""}
                               </p>
-                            </div>
+                    </div>
                           ) : (
                             <p className="mt-1 text-[10px] text-emerald-600 dark:text-emerald-400">
                               All recorded orders paid
@@ -2775,9 +2775,9 @@ export default function HistoryPage() {
                             </p>
                             <p className="mt-1 text-[18px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                               {kpi.value}
-                            </p>
-                          </div>
-                        ))}
+                          </p>
+                        </div>
+                      ))}
                       </div>
                     </div>
 
@@ -2863,8 +2863,8 @@ export default function HistoryPage() {
                           <option value="last">Last order</option>
                         </select>
                         <div className="relative lg:col-span-2">
-                          <button
-                            type="button"
+                        <button
+                          type="button"
                             onClick={() => setShowExportColumns((v) => !v)}
                             className="h-8 w-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold whitespace-nowrap border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
                           >
@@ -2930,21 +2930,21 @@ export default function HistoryPage() {
                                     const csvRows = [
                                       header.join(","),
                                       ...rows.map((r) => r.join(",")),
-                                    ].join("\n");
+                            ].join("\n");
                                     const b = new Blob([csvRows], {
                                       type: "text/csv",
                                     });
-                                    const a = document.createElement("a");
-                                    a.href = URL.createObjectURL(b);
-                                    a.download = `session-${selectedSession.id.slice(-6)}-orders.csv`;
-                                    a.click();
+                            const a = document.createElement("a");
+                            a.href = URL.createObjectURL(b);
+                            a.download = `session-${selectedSession.id.slice(-6)}-orders.csv`;
+                            a.click();
                                     setShowExportColumns(false);
-                                  }}
+                          }}
                                   className="h-8 rounded-lg text-[11px] font-semibold bg-gray-900 text-white dark:bg-white dark:text-black disabled:opacity-50"
-                                >
+                        >
                                   CSV
-                                </button>
-                              </div>
+                        </button>
+                      </div>
                             </div>
                           )}
                         </div>

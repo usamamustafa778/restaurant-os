@@ -63,7 +63,12 @@ function getDashboardPage(pathname) {
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
-  const host = request.headers.get("host") || "";
+  // Prefer x-forwarded-host when behind a proxy (Vercel, Cloudflare, etc.)
+  const host =
+    request.headers.get("x-forwarded-host") ||
+    request.headers.get("x-vercel-forwarded-host") ||
+    request.headers.get("host") ||
+    "";
 
   // Skip static/internal paths early (including public folder assets)
   if (
@@ -85,7 +90,12 @@ export async function middleware(request) {
   }
 
   // ─── Subdomain-based routing (production) ──────────────────────────────
-  const tenantSubdomain = getSubdomain(host);
+  let tenantSubdomain = getSubdomain(host);
+  // Fallback when ROOT_DOMAIN isn't set at build: detect food.eatsdesk.com explicitly
+  if (!tenantSubdomain && host) {
+    const h = host.split(":")[0].toLowerCase();
+    if (h === "food.eatsdesk.com") tenantSubdomain = "food";
+  }
 
   if (tenantSubdomain) {
     // Food discovery hub (Foodpanda-style) — not a restaurant tenant

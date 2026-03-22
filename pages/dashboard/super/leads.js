@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import Card from "../../../components/ui/Card";
-import SuperAdminTable from "../../../components/ui/SuperAdminTable";
+import DataTable from "../../../components/ui/DataTable";
 import { getLeadsForSuperAdmin } from "../../../lib/apiClient";
 import { Search, FileDown } from "lucide-react";
 import toast from "react-hot-toast";
@@ -98,7 +98,7 @@ export default function SuperLeadsPage() {
               Download Excel
             </button>
           </div>
-          <SuperAdminTable
+          <DataTable
             showSno
             data={filteredLeads}
             loading={loading}

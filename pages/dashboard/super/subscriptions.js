@@ -11,7 +11,7 @@ import {
   deletePaymentMethod,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
-import SuperAdminTable from "../../../components/ui/SuperAdminTable";
+import DataTable from "../../../components/ui/DataTable";
 import {
   CheckCircle2,
   XCircle,
@@ -375,7 +375,7 @@ export default function SuperSubscriptionsPage() {
             </div>
 
             <div className="p-4">
-            <SuperAdminTable
+            <DataTable
               data={filteredRequests}
               loading={loading}
               emptyMessage={`No ${statusFilter === "all" ? "" : statusFilter} requests found.`}
@@ -531,7 +531,7 @@ export default function SuperSubscriptionsPage() {
               </button>
             </div>
             <div className="p-4">
-            <SuperAdminTable
+            <DataTable
               data={filteredHistory}
               loading={loading}
               emptyMessage="No restaurants found."

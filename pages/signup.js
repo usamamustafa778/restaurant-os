@@ -2,17 +2,73 @@ import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { registerRestaurant, verifyEmail } from "../lib/apiClient";
-import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, X, MapPin } from "lucide-react";
+import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import SEO from "../components/SEO";
+
+function getFlagEmoji(iso2) {
+  if (!iso2 || iso2.length !== 2) return "";
+  return iso2
+    .toUpperCase()
+    .split("")
+    .map((c) => String.fromCodePoint(0x1f1e6 - 65 + c.charCodeAt(0)))
+    .join("");
+}
+
+const COUNTRY_CODES = [
+  { code: "+1", country: "US/Canada", dial: "1", iso2: "US" },
+  { code: "+44", country: "UK", dial: "44", iso2: "GB" },
+  { code: "+92", country: "Pakistan", dial: "92", iso2: "PK" },
+  { code: "+91", country: "India", dial: "91", iso2: "IN" },
+  { code: "+971", country: "UAE", dial: "971", iso2: "AE" },
+  { code: "+966", country: "Saudi Arabia", dial: "966", iso2: "SA" },
+  { code: "+49", country: "Germany", dial: "49", iso2: "DE" },
+  { code: "+33", country: "France", dial: "33", iso2: "FR" },
+  { code: "+61", country: "Australia", dial: "61", iso2: "AU" },
+  { code: "+81", country: "Japan", dial: "81", iso2: "JP" },
+  { code: "+86", country: "China", dial: "86", iso2: "CN" },
+  { code: "+90", country: "Turkey", dial: "90", iso2: "TR" },
+  { code: "+27", country: "South Africa", dial: "27", iso2: "ZA" },
+  { code: "+65", country: "Singapore", dial: "65", iso2: "SG" },
+  { code: "+60", country: "Malaysia", dial: "60", iso2: "MY" },
+  { code: "+62", country: "Indonesia", dial: "62", iso2: "ID" },
+  { code: "+234", country: "Nigeria", dial: "234", iso2: "NG" },
+  { code: "+20", country: "Egypt", dial: "20", iso2: "EG" },
+  { code: "+55", country: "Brazil", dial: "55", iso2: "BR" },
+  { code: "+52", country: "Mexico", dial: "52", iso2: "MX" },
+];
+
+function formatPhoneDisplay(value) {
+  const digits = (value || "").replace(/\D/g, "");
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+  if (digits.length <= 10) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 10)} ${digits.slice(10, 15)}`;
+}
+
+function slugifyForSubdomain(name) {
+  if (!name || !name.trim()) return "";
+  return name
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[''"`]/g, "")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s+/g, "-");
+}
 
 export default function SignupPage() {
   const [step, setStep] = useState(1);
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [countryCode, setCountryCode] = useState("+92");
   const [phone, setPhone] = useState("");
   const [restaurantName, setRestaurantName] = useState("");
-  const [branches, setBranches] = useState([{ name: "", address: "" }]);
+  const [subdomain, setSubdomain] = useState("");
+  const [branches, setBranches] = useState([{ name: "" }]);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,16 +79,30 @@ export default function SignupPage() {
   const [verifyError, setVerifyError] = useState("");
   const router = useRouter();
 
+  // --- Subdomain validation ---
+  function validateSubdomain(value) {
+    const s = (value || "").trim().toLowerCase();
+    if (!s) return "Please choose a subdomain for your restaurant URL";
+    if (s.length < 2) return "Subdomain must be at least 2 characters";
+    if (s.length > 50) return "Subdomain must be 50 characters or less";
+    if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]{2}$/.test(s)) {
+      return "Subdomain can only contain letters, numbers and hyphens (no leading/trailing hyphens)";
+    }
+    return null;
+  }
+
   // --- Step navigation ---
   function goToStep2(e) {
     e.preventDefault();
     setError("");
-    if (!ownerName.trim()) { setError("Name is required"); return; }
-    if (!email.trim()) { setError("Email is required"); return; }
+    if (!restaurantName.trim()) { setError("Restaurant name is required"); return; }
+    const subErr = validateSubdomain(subdomain);
+    if (subErr) { setError(subErr); return; }
+    const validBranches = branches.filter((b) => b.name.trim());
+    if (validBranches.length === 0) { setError("At least one branch is required"); return; }
     const phoneDigits = (phone || "").replace(/\D/g, "");
     if (phoneDigits.length === 0) { setError("Phone number is required"); return; }
-    if (phoneDigits.length !== 11) { setError("Phone number must be exactly 11 digits"); return; }
-    if (!password || password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) { setError("Phone number must be 7–15 digits"); return; }
     setStep(2);
   }
 
@@ -47,7 +117,7 @@ export default function SignupPage() {
   }
 
   function addBranch() {
-    setBranches(prev => [...prev, { name: "", address: "" }]);
+    setBranches(prev => [...prev, { name: "" }]);
   }
 
   function removeBranch(index) {
@@ -60,9 +130,16 @@ export default function SignupPage() {
     e.preventDefault();
     setError("");
 
-    if (!restaurantName.trim()) { setError("Restaurant name is required"); return; }
+    if (!ownerName.trim()) { setError("Name is required"); return; }
+    if (!email.trim()) { setError("Email is required"); return; }
+    const phoneDigits = (phone || "").replace(/\D/g, "");
+    if (phoneDigits.length === 0) { setError("Phone number is required"); return; }
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) { setError("Phone number must be 7–15 digits"); return; }
+    if (!password || password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    const subErr = validateSubdomain(subdomain);
+    if (subErr) { setError(subErr); return; }
 
-    const validBranches = branches.filter(b => b.name.trim());
+    const validBranches = branches.filter((b) => b.name.trim());
     if (validBranches.length === 0) { setError("At least one branch is required"); return; }
 
     setLoading(true);
@@ -70,14 +147,16 @@ export default function SignupPage() {
     try {
       const payload = {
         restaurantName: restaurantName.trim(),
+        subdomain: subdomain.trim().toLowerCase(),
         ownerName: ownerName.trim(),
         email: email.trim(),
         password,
-        phone: (phone || "").replace(/\D/g, "").slice(0, 11) || undefined,
-        branches: validBranches.map(b => ({
-          name: b.name.trim(),
-          address: b.address.trim() || undefined,
-        })),
+        phone: (() => {
+          const digits = (phone || "").replace(/\D/g, "");
+          const dial = COUNTRY_CODES.find((c) => c.code === countryCode)?.dial || countryCode.replace(/\D/g, "");
+          return digits ? `${dial}${digits}` : undefined;
+        })(),
+        branches: validBranches.map((b) => ({ name: b.name.trim() })),
       };
 
       const data = await registerRestaurant(payload);
@@ -196,31 +275,135 @@ export default function SignupPage() {
 
               {/* Card */}
               <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/50 px-6 py-6">
-                {/* Step indicator */}
-                <div className="flex items-center justify-center gap-2 mb-5">
-                  <div
-                    className={`flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold transition-all shadow ${
-                      step === 1
-                        ? "bg-gradient-to-br from-primary to-secondary text-white scale-105"
-                        : "bg-primary/10 text-primary"
-                    }`}
-                  >
-                    1
-                  </div>
-                  <div className="w-12 h-0.5 rounded-full bg-gradient-to-r from-primary to-secondary opacity-30" />
-                  <div
-                    className={`flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold transition-all shadow ${
-                      step === 2
-                        ? "bg-gradient-to-br from-primary to-secondary text-white scale-105"
-                        : "bg-gray-100 text-gray-400"
-                    }`}
-                  >
-                    2
-                  </div>
-                </div>
-
-                {/* Step 1: Owner Info */}
+                {/* Step 1: Restaurant Info */}
                 {step === 1 && (
+                  <>
+                    <div className="text-center mb-4">
+                      <h1 className="text-xl font-bold tracking-tight text-gray-900 mb-1">Set up your restaurant</h1>
+                      <p className="text-xs text-gray-600">Restaurant name, URL and branch locations</p>
+                    </div>
+
+                    {error && (
+                      <div className="mb-3 text-xs text-red-600 bg-red-50/80 border border-red-200 rounded-lg px-3 py-2 backdrop-blur-sm">
+                        {error}
+                      </div>
+                    )}
+
+                    <form onSubmit={goToStep2} className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-700 font-semibold">Restaurant Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={restaurantName}
+                          onChange={(e) => {
+                            const name = e.target.value;
+                            setRestaurantName(name);
+                            const sugg = slugifyForSubdomain(name);
+                            setSubdomain(sugg);
+                          }}
+                          placeholder="e.g., Burger Palace"
+                          className={inputClass}
+                        />
+                        <p className="text-[11px] text-gray-500 mt-1.5 flex items-baseline gap-0.5">
+                          <span className="text-gray-400">URL:</span>
+                          <input
+                            type="text"
+                            autoComplete="off"
+                            value={subdomain}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/[^a-z0-9-]/gi, "").toLowerCase();
+                              setSubdomain(v);
+                            }}
+                            placeholder="myrestaurant"
+                            className="min-w-[8ch] max-w-[24ch] px-0.5 py-0 text-[11px] font-mono text-gray-600 bg-transparent border-none border-b border-gray-300/60 hover:border-gray-400 focus:border-gray-500 focus:outline-none focus:ring-0"
+                          />
+                          <span className="text-gray-400 font-mono">.eatsdesk.app</span>
+                        </p>
+                      </div>
+
+                      {/* Branches */}
+                      <div className="space-y-2">
+                        <label className="text-xs text-gray-700 font-semibold block">Branch</label>
+                        {branches.map((branch, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={branch.name}
+                              onChange={(e) => updateBranch(index, "name", e.target.value)}
+                              placeholder="e.g., DHA Phase 5, Gulberg Main"
+                              className={inputClass}
+                              required={index === 0}
+                            />
+                            {branches.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeBranch(index)}
+                                className="flex-shrink-0 p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                aria-label="Remove branch"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={addBranch}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-primary text-xs font-semibold text-primary hover:bg-primary/5 transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Branch
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs text-gray-700 font-semibold">
+                          Phone Number <span className="text-red-500">*</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            value={countryCode}
+                            onChange={(e) => setCountryCode(e.target.value)}
+                            className="w-28 px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-900 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all"
+                          >
+                            {COUNTRY_CODES.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {getFlagEmoji(c.iso2)} {c.code}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="tel"
+                            required
+                            value={formatPhoneDisplay(phone)}
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(/\D/g, "");
+                              setPhone(digits);
+                            }}
+                            placeholder="300 123 4567"
+                            maxLength={18}
+                            className={`${inputClass} flex-1`}
+                          />
+                        </div>
+                        <p className="text-[11px] text-gray-500">Enter number without country code (7–15 digits)</p>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-bold hover:shadow-lg hover:shadow-primary/30 transition-all mt-4"
+                      >
+                        Continue
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </form>
+                  </>
+                )}
+
+                {/* Step 2: Owner/Account Info */}
+                {step === 2 && (
                   <>
                     <div className="text-center mb-4">
                       <h1 className="text-xl font-bold tracking-tight text-gray-900 mb-1">Create your account</h1>
@@ -233,7 +416,7 @@ export default function SignupPage() {
                       </div>
                     )}
 
-                    <form onSubmit={goToStep2} className="space-y-3">
+                    <form onSubmit={handleSubmit} className="space-y-3">
                       <div className="space-y-1">
                         <label className="text-xs text-gray-700 font-semibold">Your Name</label>
                         <input
@@ -259,22 +442,6 @@ export default function SignupPage() {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs text-gray-700 font-semibold">
-                          Phone Number <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="tel"
-                          required
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          placeholder="03XXXXXXXXX (11 digits)"
-                          maxLength={14}
-                          className={inputClass}
-                        />
-                        <p className="text-[11px] text-gray-500">Must be exactly 11 digits</p>
-                      </div>
-
-                      <div className="space-y-1">
                         <label className="text-xs text-gray-700 font-semibold">Create Password</label>
                         <div className="relative">
                           <input
@@ -294,107 +461,6 @@ export default function SignupPage() {
                           >
                             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-bold hover:shadow-lg hover:shadow-primary/30 transition-all mt-4"
-                      >
-                        Continue to Step 2
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </form>
-                  </>
-                )}
-
-                {/* Step 2: Restaurant Info */}
-                {step === 2 && (
-                  <>
-                    <div className="text-center mb-4">
-                      <h1 className="text-xl font-bold tracking-tight text-gray-900 mb-1">Set up your restaurant</h1>
-                      <p className="text-xs text-gray-600">Restaurant name and branch locations</p>
-                    </div>
-
-                    {error && (
-                      <div className="mb-3 text-xs text-red-600 bg-red-50/80 border border-red-200 rounded-lg px-3 py-2 backdrop-blur-sm">
-                        {error}
-                      </div>
-                    )}
-
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="text-xs text-gray-700 font-semibold">Restaurant Name</label>
-                        <input
-                          type="text"
-                          required
-                          value={restaurantName}
-                          onChange={(e) => setRestaurantName(e.target.value)}
-                          placeholder="e.g., Burger Palace"
-                          className={inputClass}
-                        />
-                      </div>
-
-                      {/* Branches */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs text-gray-700 font-semibold flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-primary" />
-                            Branch Locations
-                          </label>
-                          <button
-                            type="button"
-                            onClick={addBranch}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-secondary transition-colors"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add Branch
-                          </button>
-                        </div>
-
-                        <div className="space-y-2">
-                          {branches.map((branch, index) => (
-                            <div
-                              key={index}
-                              className="relative rounded-lg border border-gray-200 bg-gray-50/50 p-3 space-y-2"
-                            >
-                              {branches.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removeBranch(index)}
-                                  className="absolute top-2 right-2 p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                  aria-label="Remove branch"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              <div className="space-y-1">
-                                <label className="text-[11px] text-gray-600 font-semibold">
-                                  Branch {index + 1} Name
-                                </label>
-                                <input
-                                  type="text"
-                                  value={branch.name}
-                                  onChange={(e) => updateBranch(index, "name", e.target.value)}
-                                  placeholder="e.g., DHA Phase 5, Gulberg Main"
-                                  className={inputClass}
-                                  required={index === 0}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-[11px] text-gray-600 font-semibold">
-                                  Address <span className="text-gray-400 font-normal">(optional)</span>
-                                </label>
-                                <input
-                                  type="text"
-                                  value={branch.address}
-                                  onChange={(e) => updateBranch(index, "address", e.target.value)}
-                                  placeholder="Full address"
-                                  className={inputClass}
-                                />
-                              </div>
-                            </div>
-                          ))}
                         </div>
                       </div>
 

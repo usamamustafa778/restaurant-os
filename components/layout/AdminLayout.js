@@ -202,7 +202,6 @@ const superNav = [
     icon: LayoutDashboard,
   },
   { href: "/super/restaurants", label: "Restaurants", icon: Factory },
-  { href: "/super/branches", label: "All Branches", icon: MapPin },
   {
     href: "/super/subscriptions",
     label: "Subscriptions",
