@@ -59,7 +59,7 @@ const tenantNav = [
   },
   {
     path: "/orders",
-    label: "Orders",
+    label: "POS",
     icon: ClipboardList,
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
   },

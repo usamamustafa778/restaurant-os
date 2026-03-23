@@ -2051,17 +2051,19 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           {/* Order Header */}
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-bold text-gray-900 dark:text-white">
-              Order #
-              </h3>
               <button
                 type="button"
                 onClick={onClose}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors"
+                className="flex items-center gap-1.5 text-base font-bold text-gray-900 dark:text-white hover:text-primary dark:hover:text-primary transition-colors"
               >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                Orders
+                <ChevronLeft className="w-4 h-4" />
+                View Orders
               </button>
+              {editingOrderId && (
+                <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                  #{editingOrder?.orderNumber || editingOrderId}
+                </span>
+              )}
           </div>
 
             {/* Order Type Buttons + Settings (beside Delivery) */}
