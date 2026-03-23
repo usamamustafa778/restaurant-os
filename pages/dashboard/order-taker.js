@@ -34,12 +34,16 @@ import {
   Bell,
   PackageCheck,
   MapPin,
+  BarChart3,
+  Package,
+  History,
+  RefreshCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
 
 const STEPS = { TABLE: "table", MENU: "menu", CART: "cart" };
-const TABS = { ORDER: "order", ACTIVE: "active", HISTORY: "history" };
+const TABS = { HOME: "home", NEW_ORDER: "new_order", ACTIVE: "active", HISTORY: "history" };
 
 function isBranchRequiredError(msg) {
   return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
@@ -49,7 +53,7 @@ export default function OrderTakerPage() {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
 
-  const [activeTab, setActiveTab] = useState(TABS.ORDER);
+  const [activeTab, setActiveTab] = useState(TABS.HOME);
   const [step, setStep] = useState(STEPS.TABLE);
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [tables, setTables] = useState([]);
@@ -222,7 +226,7 @@ export default function OrderTakerPage() {
     setSearchQuery("");
     setSelectedCategory("all");
     setStep(STEPS.TABLE);
-    setActiveTab(TABS.ORDER);
+    setActiveTab(TABS.NEW_ORDER);
   }
 
   // Active & history derived data
@@ -245,6 +249,19 @@ export default function OrderTakerPage() {
         : activeFilter === "all"
           ? nonCancelledOrders
         : newOrders;
+  const activeFilterLabel =
+    activeFilter === "all"
+      ? "active"
+      : activeFilter === "preparing"
+        ? "preparing"
+        : activeFilter === "ready"
+          ? "ready"
+          : "new";
+  const activeRevenue = nonCancelledOrders.reduce(
+    (sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0),
+    0,
+  );
+  const cancelledCount = activeOrders.filter((o) => o.status === "CANCELLED").length;
 
   function getTimeAgo(createdAt) {
     const diff = Date.now() - new Date(createdAt).getTime();
@@ -433,7 +450,9 @@ export default function OrderTakerPage() {
               )}
               <div className="min-w-0">
                 <h1 className="text-[15px] font-extrabold truncate leading-tight tracking-tight">
-                  {activeTab === TABS.ACTIVE
+                  {activeTab === TABS.HOME
+                    ? "Overview"
+                    : activeTab === TABS.ACTIVE
                     ? "Active Orders"
                     : activeTab === TABS.HISTORY
                       ? "Order History"
@@ -444,7 +463,9 @@ export default function OrderTakerPage() {
                           : "Review Order"}
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
-                  {activeTab === TABS.ACTIVE
+                  {activeTab === TABS.HOME
+                    ? `${newOrders.length} new · ${preparingOrders.length} preparing · ${readyOrders.length} ready`
+                    : activeTab === TABS.ACTIVE
                     ? `${newOrders.length} new · ${preparingOrders.length} preparing · ${readyOrders.length} ready`
                     : activeTab === TABS.HISTORY
                       ? `${historyOrders.length} past order${historyOrders.length !== 1 ? "s" : ""}`
@@ -458,7 +479,7 @@ export default function OrderTakerPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {activeTab === TABS.ORDER && step === STEPS.MENU && cartBadge > 0 && (
+              {activeTab === TABS.NEW_ORDER && step === STEPS.MENU && cartBadge > 0 && (
                 <button
                   onClick={() => setStep(STEPS.CART)}
                   className="relative h-9 pl-3 pr-3.5 rounded-full bg-primary text-white flex items-center gap-1.5 active:scale-95 transition-transform shadow-md shadow-primary/20"
@@ -467,12 +488,12 @@ export default function OrderTakerPage() {
                   <span className="text-xs font-extrabold">{cartBadge}</span>
                 </button>
               )}
-              {activeTab === TABS.ORDER && step === STEPS.MENU && cartBadge === 0 && (
+              {activeTab === TABS.NEW_ORDER && step === STEPS.MENU && cartBadge === 0 && (
                 <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center">
                   <ShoppingCart className="w-4 h-4 text-gray-400 dark:text-neutral-600" />
                 </div>
               )}
-              {activeTab === TABS.ORDER && step === STEPS.TABLE && (
+              {activeTab === TABS.NEW_ORDER && step === STEPS.TABLE && (
                 <button
                   onClick={handleLogout}
                   className="h-9 pl-3 pr-3.5 rounded-full flex items-center gap-1.5 text-gray-500 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors text-xs font-semibold"
@@ -482,7 +503,7 @@ export default function OrderTakerPage() {
                   <span className="hidden sm:inline">Logout</span>
                 </button>
               )}
-              {activeTab === TABS.ORDER && step === STEPS.CART && cart.length > 0 && (
+              {activeTab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
                 <button
                   onClick={() => setCart([])}
                   className="h-9 px-3 rounded-full flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs font-semibold"
@@ -491,7 +512,19 @@ export default function OrderTakerPage() {
                   Clear
                 </button>
               )}
-              {activeTab === TABS.ACTIVE && (
+              {(activeTab === TABS.HOME || activeTab === TABS.ACTIVE || activeTab === TABS.HISTORY) && (
+                <button
+                  onClick={() => {
+                    setOrdersLoading(true);
+                    fetchActiveOrders().finally(() => setOrdersLoading(false));
+                  }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
+                  title="Refresh"
+                >
+                  <RefreshCw className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
+                </button>
+              )}
+              {(activeTab === TABS.HOME || activeTab === TABS.ACTIVE || activeTab === TABS.HISTORY) && (
                 <button
                   onClick={handleLogout}
                   className="w-9 h-9 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
@@ -504,7 +537,7 @@ export default function OrderTakerPage() {
           </div>
 
           {/* Step indicator — only on ORDER tab */}
-          {activeTab === TABS.ORDER && (
+          {activeTab === TABS.NEW_ORDER && (
             <div className="flex gap-1 px-4 pb-2.5">
               {[STEPS.TABLE, STEPS.MENU, STEPS.CART].map((s, i) => (
                 <div
@@ -522,6 +555,64 @@ export default function OrderTakerPage() {
 
         {/* ── Content ────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
+          {/* ════════════════ HOME TAB ════════════════ */}
+          {activeTab === TABS.HOME && (
+            <div className="p-4 pb-24 space-y-4">
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <BarChart3 className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
+                      Your station
+                    </p>
+                    <p className="text-lg font-extrabold text-gray-900 dark:text-white truncate tracking-tight">
+                      {userName ? `Welcome, ${userName.split(" ")[0]}` : "Welcome"}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                      Track your floor orders and keep service moving.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">New</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{newOrders.length}</p>
+                </div>
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Preparing</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{preparingOrders.length}</p>
+                </div>
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Ready</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{readyOrders.length}</p>
+                </div>
+                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cancelled</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{cancelledCount}</p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
+                <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Active value</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white mt-1">
+                  Rs. {Math.round(activeRevenue).toLocaleString()}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(TABS.NEW_ORDER)}
+                  className="mt-4 w-full h-10 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 transition-colors inline-flex items-center justify-center gap-1.5"
+                >
+                  <Utensils className="w-4 h-4" />
+                  Take New Order
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ════════════════ HISTORY TAB ════════════════ */}
           {activeTab === TABS.HISTORY && (
             <div className="p-4 pb-24">
@@ -741,8 +832,8 @@ export default function OrderTakerPage() {
             </div>
           )}
 
-          {/* ════════════════ ORDER TAB ════════════════ */}
-          {activeTab === TABS.ORDER && (
+          {/* ════════════════ NEW ORDER TAB ════════════════ */}
+          {activeTab === TABS.NEW_ORDER && (
             <>
               {/* TABLE SELECTION */}
               {step === STEPS.TABLE && (
@@ -1071,7 +1162,7 @@ export default function OrderTakerPage() {
 
         {/* ── Floating Action Bars ───────────────────────────────────── */}
 
-        {activeTab === TABS.ORDER && step === STEPS.MENU && cartBadge > 0 && (
+        {activeTab === TABS.NEW_ORDER && step === STEPS.MENU && cartBadge > 0 && (
           <div className="fixed bottom-16 inset-x-0 z-20">
             <div className="px-4 pb-3 pt-2">
               <button
@@ -1092,7 +1183,7 @@ export default function OrderTakerPage() {
           </div>
         )}
 
-        {activeTab === TABS.ORDER && step === STEPS.CART && cart.length > 0 && (
+        {activeTab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
           <div className="fixed bottom-16 inset-x-0 z-20">
             <div className="bg-white dark:bg-neutral-950 border-t border-gray-100 dark:border-neutral-900 px-4 pt-3 pb-3">
               <div className="flex items-center justify-between mb-3">
@@ -1146,9 +1237,20 @@ export default function OrderTakerPage() {
         {/* ── Bottom Tab Bar ─────────────────────────────────────────── */}
         <nav className="flex-shrink-0 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex ot-safe-bottom">
           <button
-            onClick={() => setActiveTab(TABS.ORDER)}
+            onClick={() => setActiveTab(TABS.HOME)}
             className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
-              activeTab === TABS.ORDER
+              activeTab === TABS.HOME
+                ? "text-primary"
+                : "text-gray-400 dark:text-neutral-500"
+            }`}
+          >
+            <BarChart3 className="w-5 h-5" />
+            <span className="text-[10px] font-bold">Overview</span>
+          </button>
+          <button
+            onClick={() => setActiveTab(TABS.NEW_ORDER)}
+            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+              activeTab === TABS.NEW_ORDER
                 ? "text-primary"
                 : "text-gray-400 dark:text-neutral-500"
             }`}
@@ -1175,20 +1277,27 @@ export default function OrderTakerPage() {
                 </span>
               )}
             </div>
-            <span className="text-[10px] font-bold">Orders</span>
+            <span className="text-[10px] font-bold">Active</span>
           </button>
           <button
             onClick={() => {
               setActiveTab(TABS.HISTORY);
               fetchActiveOrders();
             }}
-            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+            className={`relative flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
               activeTab === TABS.HISTORY
                 ? "text-primary"
                 : "text-gray-400 dark:text-neutral-500"
             }`}
           >
-            <ClipboardList className="w-5 h-5" />
+            <span className="relative inline-flex">
+              <History className="w-5 h-5" />
+              {historyOrders.length > 0 && (
+                <span className="absolute -right-1 -top-0.5 min-w-[14px] h-[14px] px-[3px] rounded-full bg-gray-500 text-[8px] font-black text-white flex items-center justify-center border border-white dark:border-black">
+                  {historyOrders.length > 9 ? "9+" : historyOrders.length}
+                </span>
+              )}
+            </span>
             <span className="text-[10px] font-bold">History</span>
           </button>
         </nav>
