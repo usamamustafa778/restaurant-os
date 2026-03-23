@@ -17,7 +17,7 @@ const ALLOWED_ROLES = [
 
 // Dashboard pages that live under pages/dashboard/ and are now served at /<page>
 const DASHBOARD_PAGES = new Set([
-  "overview", "pos", "orders", "kitchen", "reservations",
+  "overview", "orders", "kitchen", "reservations",
   "categories", "menu-items", "menu",
   "customers", "inventory", "deals",
   "users", "branches", "tables", "history",
@@ -190,7 +190,14 @@ export async function middleware(request) {
     return NextResponse.rewrite(url);
   }
 
-  // ─── Dashboard pages: /overview, /orders, /pos, etc. ──────────────────
+  // ─── Legacy /pos redirect → merged into /orders ───────────────────────
+  if (pathname === "/pos") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/orders";
+    return NextResponse.redirect(url);
+  }
+
+  // ─── Dashboard pages: /overview, /orders, etc. ────────────────────────
   if (getDashboardPage(pathname)) {
     const payload = await checkAuth(request);
     if (!payload) {

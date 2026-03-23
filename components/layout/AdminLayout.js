@@ -58,12 +58,6 @@ const tenantNav = [
     ],
   },
   {
-    path: "/pos",
-    label: "POS",
-    icon: Receipt,
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
-  },
-  {
     path: "/orders",
     label: "Orders",
     icon: ClipboardList,
@@ -415,7 +409,7 @@ export default function AdminLayout({
     const path =
       (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
     if (path === "/overview") {
-      router.replace("/pos");
+      router.replace("/orders");
     }
   }, [role, router]);
 
@@ -424,7 +418,7 @@ export default function AdminLayout({
     if (role !== "delivery_rider") return;
     const path =
       (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
-    if (path === "/overview" || path === "/pos" || path === "/orders" || path === "/kitchen") {
+    if (path === "/overview" || path === "/orders" || path === "/kitchen") {
       router.replace("/rider");
     }
   }, [role, router]);
@@ -500,10 +494,7 @@ export default function AdminLayout({
         router.asPath.includes("/menu-items")
       )
         toExpand.push("/menu");
-      if (
-        router.asPath.includes("/orders") ||
-        router.asPath.includes("/pos")
-      )
+      if (router.asPath.includes("/orders"))
         toExpand.push("/orders");
       if (toExpand.length > 0) {
         setExpandedGroups(toExpand);
@@ -701,7 +692,7 @@ export default function AdminLayout({
                       router.asPath.startsWith(cHref + "/")
                     );
                   })
-                : router.asPath.startsWith(href);
+                : router.asPath === href || router.asPath.startsWith(href + "?") || router.asPath.startsWith(href + "/");
 
               const effectivelyCollapsed = collapsed && !mobileSidebarOpen;
               if (suspended && role !== "super_admin") {

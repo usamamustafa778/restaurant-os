@@ -1,6 +1,4 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { useRouter } from "next/router";
-import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getMenu,
   getBranchMenu,
@@ -78,8 +76,7 @@ function isBranchRequiredError(msg) {
   return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
 }
 
-export default function POSPage() {
-  const router = useRouter();
+export default function POSView({ editOrderId: propEditOrderId, onClose, onOrderChanged, isActive = true }) {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
   const [menu, setMenu] = useState({ categories: [], items: [] });
@@ -374,9 +371,9 @@ export default function POSPage() {
     return () => window.removeEventListener("resize", updateCols);
   }, [effectiveSidebarOpen]);
 
-  // Load order for edit when ?edit=id is in URL
+  // Load order for edit when editOrderId prop is provided
   useEffect(() => {
-    const editId = router.query.edit;
+    const editId = propEditOrderId;
     if (!editId || !menu?.items?.length) return;
 
     let cancelled = false;
@@ -433,7 +430,6 @@ export default function POSPage() {
       .catch((err) => {
         if (!cancelled) {
           toast.error(err.message || "Failed to load order");
-          router.replace("/pos");
         }
       })
       .finally(() => {
@@ -441,7 +437,7 @@ export default function POSPage() {
       });
 
     return () => { cancelled = true; };
-  }, [router.query.edit, menu?.items?.length]);
+  }, [propEditOrderId, menu?.items?.length]);
 
   async function loadTables() {
     try {
@@ -680,7 +676,7 @@ export default function POSPage() {
       setShowCustomerDetails(false);
       setTableName("");
       loadRecentOrders();
-      router.replace("/dashboard/pos");
+      if (onOrderChanged) onOrderChanged();
     } catch (err) {
       if (isBranchRequiredError(err.message) && branches?.length > 0) {
         toast.dismiss(toastId);
@@ -1098,6 +1094,7 @@ export default function POSPage() {
       setShowCheckout(false);
       setTableName("");
       loadRecentOrders();
+      if (onOrderChanged) onOrderChanged();
     } catch (err) {
       if (isBranchRequiredError(err.message) && branches?.length > 0) {
         toast.dismiss(toastId);
@@ -1143,7 +1140,7 @@ export default function POSPage() {
       setTableName("");
       setShowCheckout(false);
       loadRecentOrders();
-      router.replace("/pos");
+      if (onOrderChanged) onOrderChanged();
     } catch (err) {
       toast.error(err.message || "Failed to update order", { id: toastId });
     } finally {
@@ -1257,7 +1254,10 @@ export default function POSPage() {
 
       // Open the created order in edit mode
       if (orderNum) {
-        router.push({ pathname: "/pos", query: { edit: orderNum } });
+        setEditingOrderId(orderNum);
+        getOrder(orderNum).then((order) => {
+          setEditingOrder(order);
+        }).catch(() => {});
       }
 
       // Clear local cart and reset POS state
@@ -1271,6 +1271,7 @@ export default function POSPage() {
       setShowCustomerDetails(false);
       setTableName("");
       loadRecentOrders();
+      if (onOrderChanged) onOrderChanged();
     } catch (err) {
       if (isBranchRequiredError(err.message) && branches?.length > 0) {
         setShowBranchModal(true);
@@ -1292,6 +1293,7 @@ export default function POSPage() {
 
   // Keyboard shortcuts: Esc (close payment modal or clear cart), Ctrl/Cmd + Shift + ...
   useEffect(() => {
+    if (!isActive) return;
     const mod = (e) => e.ctrlKey || e.metaKey;
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
@@ -1387,7 +1389,7 @@ export default function POSPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editingOrderId, cart, showTakePaymentModal, showShortcutsModal]);
+  }, [isActive, editingOrderId, cart, showTakePaymentModal, showShortcutsModal]);
 
   async function loadDrafts() {
     setLoadingDrafts(true);
@@ -1650,7 +1652,7 @@ export default function POSPage() {
     });
 
   return (
-    <AdminLayout title="Point of Sale" suspended={suspended}>
+    <>
       <div className="grid gap-4 lg:grid-cols-[1fr_400px] lg:h-[calc(100vh-110px)]">
         {/* Left Column - Recent Orders + Menu */}
         <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
@@ -2033,7 +2035,6 @@ export default function POSPage() {
                   setEditingOrderId(null);
                   setEditingOrder(null);
                   setCart([]);
-                  router.replace("/pos");
                 }}
                 className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
               >
@@ -2053,39 +2054,14 @@ export default function POSPage() {
               <h3 className="text-base font-bold text-gray-900 dark:text-white">
               Order #
               </h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 dark:text-neutral-400">
-                  {now ? now.toLocaleDateString("en-US", {
-                    day: "2-digit",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }) : ""}
-                </span>
-                {/* Business date indicator + session history */}
-                <div className="flex items-center gap-1">
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 text-xs font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
-                    {formatBusinessDate(businessDate)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { loadDayHistory(); setShowDayHistoryModal(true); }}
-                    className="p-1 rounded-lg bg-gray-100 dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-800 transition-colors"
-                    title="Past session history"
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openEndDayModal}
-                    className="p-1 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
-                    title="End business day"
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Orders
+              </button>
           </div>
 
             {/* Order Type Buttons + Settings (beside Delivery) */}
@@ -4192,7 +4168,36 @@ export default function POSPage() {
                 onClick={() => {
                   const id = orderConfirmation.orderId;
                   setOrderConfirmation(null);
-                  if (id) router.push(`/pos?edit=${id}`);
+                  if (id) {
+                    setEditingOrderId(id);
+                    getOrder(id).then((order) => {
+                      setEditingOrder(order);
+                      const items = order.items || [];
+                      const menuItems = menu.items || [];
+                      const cartItems = items.map((it) => {
+                        const menuItemId = it.menuItemId || null;
+                        let itemId = menuItemId;
+                        let price = it.unitPrice ?? 0;
+                        let imageUrl = "";
+                        if (!itemId) {
+                          const byName = menuItems.find((m) => (m.name || "").toLowerCase() === (it.name || "").toLowerCase());
+                          if (byName) { itemId = byName.id; price = byName.finalPrice ?? byName.price ?? price; imageUrl = byName.imageUrl || ""; }
+                          else { itemId = `edit-${it.name}-${Math.random().toString(36).slice(2)}`; }
+                        } else {
+                          const mi = menuItems.find((m) => (m.id || m._id) === itemId);
+                          if (mi) { imageUrl = mi.imageUrl || ""; price = mi.finalPrice ?? mi.price ?? price; }
+                        }
+                        return { id: itemId, name: it.name, price, quantity: it.qty ?? 1, imageUrl };
+                      });
+                      setCart(cartItems);
+                      setCustomerName(order.customerName || "");
+                      setCustomerPhone(order.customerPhone || "");
+                      setCustomerAddress(order.deliveryAddress || "");
+                      setOrderType(order.type === "takeaway" ? "TAKEAWAY" : order.type === "delivery" ? "DELIVERY" : "DINE_IN");
+                      setTableName(order.tableName || "");
+                      setDiscountAmount(order.discountAmount ? String(order.discountAmount) : "");
+                    }).catch(() => {});
+                  }
                 }}
                 className="px-3 py-2.5 rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-bold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-1.5"
               >
@@ -4228,6 +4233,6 @@ export default function POSPage() {
         </div>
       )}
 
-    </AdminLayout>
+    </>
   );
 }

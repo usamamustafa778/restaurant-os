@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
+import POSView from "../../components/pos/POSView";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {
   getOrders,
@@ -55,6 +56,7 @@ import {
   RefreshCw,
   ChevronDown,
   Power,
+  Plus,
 } from "lucide-react";
 
 // ─── Board configuration ────────────────────────────────────────────────────
@@ -325,6 +327,20 @@ export default function OrdersPage() {
   const isOrderTaker = role === "order_taker";
   const isCashier = role === "cashier";
   const isAdmin = ["restaurant_admin", "admin", "super_admin", "manager"].includes(role);
+
+  // POS view state (merged into orders page for instant switching)
+  const [activeView, setActiveView] = useState("orders");
+  const [posEditOrderId, setPosEditOrderId] = useState(null);
+
+  const openPOS = useCallback((editId = null) => {
+    setPosEditOrderId(editId);
+    setActiveView("pos");
+  }, []);
+
+  const closePOS = useCallback(() => {
+    setPosEditOrderId(null);
+    setActiveView("orders");
+  }, []);
 
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
@@ -806,8 +822,24 @@ export default function OrdersPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────
 
+  const handlePosOrderChanged = useCallback(() => {
+    loadOrders(dateRange);
+  }, [dateRange]);
+
   return (
-    <AdminLayout title="Orders" suspended={suspended}>
+    <AdminLayout title={activeView === "pos" ? "Point of Sale" : "Orders"} suspended={suspended}>
+      {/* ── POS View ──────────────────────────────────────────────── */}
+      <div style={{ display: activeView === "pos" ? "block" : "none" }}>
+        <POSView
+          editOrderId={posEditOrderId}
+          onClose={closePOS}
+          onOrderChanged={handlePosOrderChanged}
+          isActive={activeView === "pos"}
+        />
+      </div>
+
+      {/* ── Orders View ───────────────────────────────────────────── */}
+      <div style={{ display: activeView === "orders" ? "block" : "none" }}>
       {pageLoading ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-3">
@@ -824,10 +856,10 @@ export default function OrdersPage() {
         <div className="flex flex-col h-[calc(100vh-120px)]">
           {/* ── Filter bar ─────────────────────────────────────────── */}
           <div className="flex flex-col gap-3 mb-4 flex-shrink-0">
-            {/* Row 1: Filters (left) + Search (middle) + Refresh (right) */}
+            {/* Row 1: Filters (left) + Search (middle) + New Order + Refresh (right) */}
             <div className="flex items-center gap-2">
               {/* Left: order type filters */}
-              <div className="flex items-center gap-1.5 overflow-x-auto max-w-[45vw]">
+              <div className="flex items-center gap-1.5 overflow-x-auto max-w-[35vw]">
                 {ORDER_TYPE_FILTERS.map((t) => (
                   <button
                     key={t}
@@ -854,6 +886,15 @@ export default function OrdersPage() {
               />
 
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* New Order */}
+                <button
+                  type="button"
+                  onClick={() => openPOS()}
+                  className="h-9 px-3.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-bold transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> New Order
+                </button>
+
                 {/* Date filter */}
                 <div className="relative">
                   <button
@@ -964,6 +1005,28 @@ export default function OrdersPage() {
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Refresh
                 </button>
+
+                {/* Session indicator */}
+                <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 text-[11px] font-semibold flex-shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
+                  {formatBusinessDate(businessDateStr)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { loadSessionHistory(); setShowSessionHistoryModal(true); }}
+                  className="h-9 w-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 hover:border-gray-400 dark:hover:border-neutral-500 transition-all inline-flex items-center justify-center flex-shrink-0"
+                  title="Past session history"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={openEndDayModal}
+                  className="h-9 w-9 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-all inline-flex items-center justify-center flex-shrink-0"
+                  title="End business day"
+                >
+                  <Power className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           </div>
@@ -1018,7 +1081,7 @@ export default function OrdersPage() {
                             onOpenCollect={openCollectPaymentModal}
                             onPrint={openPrintBill}
                             onEdit={(order) =>
-                              router.push(`/pos?edit=${order.id || order._id}`)
+                              openPOS(order.id || order._id)
                             }
                           />
                         ))
@@ -1075,7 +1138,7 @@ export default function OrdersPage() {
                       onOpenCollect={openCollectPaymentModal}
                       onPrint={openPrintBill}
                       onEdit={(order) =>
-                        router.push(`/pos?edit=${order.id || order._id}`)
+                        openPOS(order.id || order._id)
                       }
                     />
                   ))}
@@ -1124,7 +1187,7 @@ export default function OrdersPage() {
                       onOpenCollect={openCollectPaymentModal}
                       onPrint={openPrintBill}
                       onEdit={(order) =>
-                        router.push(`/pos?edit=${order.id || order._id}`)
+                        openPOS(order.id || order._id)
                       }
                     />
                   ))}
@@ -1850,6 +1913,7 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+      </div>
     </AdminLayout>
   );
 }
