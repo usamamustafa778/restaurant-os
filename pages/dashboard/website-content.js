@@ -452,6 +452,17 @@ export default function WebsiteContentPage() {
       ? domainStatus.verification
       : [];
 
+  /** Vercel apex A record when API returns no rows but domain is misconfigured (matches Vercel dashboard default). */
+  const STATIC_INVALID_CONFIG_A_RECORD = {
+    type: "A",
+    domain: "@",
+    value: "216.150.1.1",
+  };
+  const displayDnsRecords =
+    domainInvalidConfig && domainVerificationRecords.length === 0
+      ? [STATIC_INVALID_CONFIG_A_RECORD]
+      : domainVerificationRecords;
+
   const stagingRoot = process.env.NEXT_PUBLIC_STOREFRONT_STAGING_DOMAIN || "";
   const stagingUrl =
     ws.subdomain && stagingRoot
@@ -858,7 +869,7 @@ export default function WebsiteContentPage() {
                       </div>
                     )}
 
-                    {domainVerificationRecords.length > 0 && (
+                    {displayDnsRecords.length > 0 && (
                       <div className="m-5 rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden">
                         <div className="grid grid-cols-12 bg-gray-50 dark:bg-neutral-900 text-xs font-semibold text-gray-600 dark:text-neutral-300">
                           <div className="col-span-2 px-3 py-2.5">Type</div>
@@ -869,7 +880,7 @@ export default function WebsiteContentPage() {
                             Value
                           </div>
                         </div>
-                        {domainVerificationRecords.map((record, idx) => (
+                        {displayDnsRecords.map((record, idx) => (
                           <div
                             key={`${record.type || "record"}-${idx}`}
                             className="grid grid-cols-12 text-xs border-t border-gray-200 dark:border-neutral-800"

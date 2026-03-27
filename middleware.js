@@ -44,6 +44,41 @@ function getSubdomain(host) {
   return prefix;
 }
 
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+const STOREFRONT_DOMAIN = (process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "").split(":")[0].toLowerCase();
+
+/**
+ * Custom domain (e.g. sufibiryani.com) → tenant subdomain via backend lookup on website.customDomain.
+ */
+async function resolveCustomDomainToSubdomain(hostHeader) {
+  const raw = hostHeader.split(":")[0].toLowerCase();
+  if (!raw || raw === "localhost" || raw.endsWith(".localhost")) return null;
+  if (!API_BASE) return null;
+
+  const root = (ROOT_DOMAIN || "").split(":")[0].toLowerCase();
+  if (root && (raw === root || raw === `www.${root}`)) return null;
+
+  if (STOREFRONT_DOMAIN && raw === STOREFRONT_DOMAIN) return null;
+
+  if (raw.endsWith(".vercel.app")) return null;
+
+  try {
+    const url = `${API_BASE}/api/storefront/resolve-host?host=${encodeURIComponent(raw)}`;
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.subdomain || null;
+  } catch {
+    return null;
+  }
+}
+
 async function checkAuth(request) {
   const token = request.cookies.get("token")?.value;
   if (!token) return null;
@@ -81,11 +116,10 @@ export async function middleware(request) {
     return NextResponse.next();
   }
 
-  // Block direct /r/ URLs — redirect to clean format
+  // Legacy /r/* → /public/* (storefront pages live under pages/public/[slug])
   if (pathname.startsWith("/r/")) {
-    const withoutR = pathname.replace(/^\/r\//, "/");
     const url = request.nextUrl.clone();
-    url.pathname = withoutR;
+    url.pathname = pathname.replace(/^\/r\//, "/public/");
     return NextResponse.redirect(url);
   }
 
@@ -95,6 +129,10 @@ export async function middleware(request) {
   if (!tenantSubdomain && host) {
     const h = host.split(":")[0].toLowerCase();
     if (h === "food.eatsdesk.com") tenantSubdomain = "food";
+  }
+  if (!tenantSubdomain && host) {
+    const fromCustom = await resolveCustomDomainToSubdomain(host);
+    if (fromCustom) tenantSubdomain = fromCustom;
   }
 
   if (tenantSubdomain) {
@@ -121,10 +159,10 @@ export async function middleware(request) {
       return NextResponse.redirect(url);
     }
 
-    // Customer-facing restaurant website: rewrite subdomain to /r/<slug>/...
+    // Customer-facing restaurant website: rewrite to /public/<slug>/... (see pages/public/[slug])
     const url = request.nextUrl.clone();
     const internalPath = pathname === "/" ? "" : pathname;
-    url.pathname = `/r/${tenantSubdomain}${internalPath}`;
+    url.pathname = `/public/${tenantSubdomain}${internalPath}`;
     return NextResponse.rewrite(url);
   }
 
@@ -257,7 +295,7 @@ export async function middleware(request) {
 
   // ─── Legacy clean-path tenant URLs: /<slug>/... ────────────────────────
   const RESERVED_SEGMENTS = new Set([
-    "dashboard", "api", "_next", "login", "signup", "r",
+    "dashboard", "api", "_next", "login", "signup", "r", "public",
     "favicon.ico", "images", "static", "super",
     "st-images", "fonts", "icons", "assets",
     "privacy-policy", "terms-and-conditions", "read-more",
@@ -291,7 +329,7 @@ export async function middleware(request) {
 
       // /<slug> or /<slug>/... → customer-facing website (localhost fallback)
       const url = request.nextUrl.clone();
-      url.pathname = `/r/${firstSegment}${rest}`;
+      url.pathname = `/public/${firstSegment}${rest}`;
       return NextResponse.rewrite(url);
     }
   }
