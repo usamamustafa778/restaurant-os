@@ -11,6 +11,7 @@ import {
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
+import { useTheme } from "../../contexts/ThemeContext";
 import {
   ShoppingCart,
   Plus,
@@ -40,6 +41,8 @@ import {
   History,
   RefreshCw,
   Wallet,
+  Sun,
+  Moon,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -79,6 +82,10 @@ function getPaymentStatus(order) {
 export default function OrderTakerPage() {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
+  const { theme, toggleTheme } = useTheme() || {
+    theme: "light",
+    toggleTheme: () => {},
+  };
 
   const [activeTab, setActiveTab] = useState(TABS.HOME);
   const [step, setStep] = useState(STEPS.TABLE);
@@ -579,6 +586,18 @@ export default function OrderTakerPage() {
                   <RefreshCw className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
                 </button>
               )}
+              <button
+                onClick={toggleTheme}
+                className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
+                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+                aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              >
+                {theme === "light" ? (
+                  <Moon className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
+                ) : (
+                  <Sun className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
+                )}
+              </button>
               {(activeTab === TABS.HOME || activeTab === TABS.ACTIVE || activeTab === TABS.HISTORY) && (
                 <button
                   onClick={handleLogout}

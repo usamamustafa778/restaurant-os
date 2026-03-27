@@ -33,6 +33,9 @@ import {
   Layout,
   Sparkles,
   ExternalLink,
+  AlertCircle,
+  CheckCircle2,
+  Copy,
   ChevronUp,
   ChevronDown,
   GripVertical,
@@ -43,6 +46,7 @@ import {
 const SECTIONS = [
   { id: "template", label: "Template", icon: Layout },
   { id: "branding", label: "Branding", icon: Palette },
+  { id: "domain", label: "Domain", icon: LinkIcon },
   { id: "contact", label: "Contact", icon: Phone },
   { id: "hero", label: "Hero Slides", icon: ImageIcon },
   { id: "theme", label: "Theme", icon: Sparkles },
@@ -94,8 +98,10 @@ function SectionCard({
   subtitle,
   iconColor,
   bodyClassName = "",
+  isActive = true,
   children,
 }) {
+  if (!isActive) return null;
   return (
     <div id={`section-${id}`} className={cardCls}>
       <div className="px-6 py-5 flex items-center gap-3 border-b border-gray-100 dark:border-neutral-800">
@@ -211,6 +217,11 @@ export default function WebsiteContentPage() {
   const { activeBranch } = useBranch();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [domainSaving, setDomainSaving] = useState(false);
+  const [domainFeedback, setDomainFeedback] = useState(null);
+  const [domainInput, setDomainInput] = useState("");
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [copiedKey, setCopiedKey] = useState("");
   const [ws, setWs] = useState({});
   const [menuItems, setMenuItems] = useState([]);
   const [activeSection, setActiveSection] = useState("template");
@@ -247,6 +258,14 @@ export default function WebsiteContentPage() {
     }));
   }
 
+  function normalizeDomainInput(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//i, "")
+      .replace(/\/+$/, "");
+  }
+
   async function handleSave() {
     setSaving(true);
     const toastId = toast.loading("Saving website settings...");
@@ -261,10 +280,91 @@ export default function WebsiteContentPage() {
     }
   }
 
+  async function handleConnectDomain() {
+    const typedDomain = normalizeDomainInput(domainInput);
+    const existingDomain = normalizeDomainInput(ws.customDomain);
+    const normalizedDomain = typedDomain || existingDomain;
+    if (!normalizedDomain) {
+      setDomainFeedback({
+        type: "error",
+        message: "Please enter a domain first.",
+      });
+      return;
+    }
+    setDomainSaving(true);
+    setDomainFeedback(null);
+    const toastId = toast.loading(
+      typedDomain ? "Connecting domain..." : "Checking domain status..."
+    );
+    try {
+      const updated = await updateWebsiteSettings({ customDomain: normalizedDomain });
+      setWs((prev) => ({ ...prev, ...(updated || {}), customDomain: normalizedDomain }));
+      if (typedDomain) {
+        // Keep connected domain details visible below; clear input for next add/check.
+        setDomainInput("");
+      }
+      const backendMsg = updated?.customDomainConnection?.message;
+      setDomainFeedback({
+        type: "success",
+        message:
+          backendMsg ||
+          (typedDomain
+            ? "Domain request sent successfully."
+            : "Domain status refreshed."),
+      });
+      toast.success(
+        typedDomain ? "Domain connected successfully!" : "Domain status refreshed",
+        { id: toastId }
+      );
+    } catch (err) {
+      setDomainFeedback({
+        type: "error",
+        message: err.message || "Failed to update domain",
+      });
+      toast.error(err.message || "Failed to update domain", { id: toastId });
+    } finally {
+      setDomainSaving(false);
+    }
+  }
+
+  async function handleRemoveDomain() {
+    if (!connectedDomain) return;
+    setShowRemoveConfirm(false);
+    setDomainSaving(true);
+    setDomainFeedback(null);
+    const toastId = toast.loading("Removing domain...");
+    try {
+      const updated = await updateWebsiteSettings({ customDomain: "" });
+      setWs((prev) => ({ ...prev, ...(updated || {}), customDomain: "" }));
+      setDomainInput("");
+      setDomainFeedback({
+        type: "success",
+        message: "Domain removed successfully.",
+      });
+      toast.success("Domain removed", { id: toastId });
+    } catch (err) {
+      setDomainFeedback({
+        type: "error",
+        message: err.message || "Failed to remove domain",
+      });
+      toast.error(err.message || "Failed to remove domain", { id: toastId });
+    } finally {
+      setDomainSaving(false);
+    }
+  }
+
+  async function copyText(value, key) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(""), 1200);
+    } catch (_) {
+      toast.error("Copy failed");
+    }
+  }
+
   function scrollTo(id) {
-    document
-      .getElementById(`section-${id}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
     setActiveSection(id);
   }
 
@@ -338,6 +438,19 @@ export default function WebsiteContentPage() {
 
   const rootDomain = "eatsdesk.app";
   const liveUrl = ws.subdomain ? `https://${ws.subdomain}.${rootDomain}` : null;
+  const customDomainUrl = ws.customDomain
+    ? `https://${String(ws.customDomain).trim().replace(/^https?:\/\//i, "")}`
+    : null;
+  const normalizedDomain = normalizeDomainInput(domainInput);
+  const connectedDomain = normalizeDomainInput(ws.customDomain);
+  const domainStatus = ws.customDomainConnection?.status || null;
+  const domainVerified = domainStatus?.verified === true;
+  const domainInvalidConfig = domainStatus?.invalidConfig === true;
+  const domainVerificationRecords = Array.isArray(domainStatus?.dnsRecords)
+    ? domainStatus.dnsRecords
+    : Array.isArray(domainStatus?.verification)
+      ? domainStatus.verification
+      : [];
 
   const stagingRoot = process.env.NEXT_PUBLIC_STOREFRONT_STAGING_DOMAIN || "";
   const stagingUrl =
@@ -387,12 +500,12 @@ export default function WebsiteContentPage() {
           </div>
           {(envView === "staging" ? stagingUrl : liveUrl) && (
             <a
-              href={envView === "staging" ? stagingUrl : liveUrl}
+              href={customDomainUrl || (envView === "staging" ? stagingUrl : liveUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-primary hover:underline flex items-center gap-1"
             >
-              {envView === "staging" ? stagingUrl : liveUrl}
+              {customDomainUrl || (envView === "staging" ? stagingUrl : liveUrl)}
               <ExternalLink className="w-3 h-3" />
             </a>
           )}
@@ -474,6 +587,20 @@ export default function WebsiteContentPage() {
 
           {/* Content */}
           <div className="flex-1 min-w-0 space-y-6">
+            <div className="lg:hidden">
+              <label className={labelCls}>Active Section</label>
+              <select
+                value={activeSection}
+                onChange={(e) => setActiveSection(e.target.value)}
+                className={inp}
+              >
+                {SECTIONS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {/* Template Selection */}
             <SectionCard
               id="template"
@@ -481,6 +608,7 @@ export default function WebsiteContentPage() {
               title="Template"
               subtitle="Choose the design template for your restaurant website"
               iconColor={iconAccentPrimary}
+              isActive={activeSection === "template"}
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {TEMPLATES.map((t) => (
@@ -528,6 +656,7 @@ export default function WebsiteContentPage() {
               title="Branding"
               subtitle="Restaurant name, logo, and description"
               iconColor={iconAccentPrimary}
+              isActive={activeSection === "branding"}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -573,6 +702,286 @@ export default function WebsiteContentPage() {
               </div>
             </SectionCard>
 
+            {/* Connect Domain */}
+            <SectionCard
+              id="domain"
+              icon={LinkIcon}
+              title="Connect Domain"
+              subtitle="Use your own domain for your restaurant website"
+              iconColor={iconAccentPrimary}
+              isActive={activeSection === "domain"}
+            >
+              <div className="space-y-4">
+                <div>
+                  <label className={labelCls}>Custom Domain</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={domainInput}
+                      onChange={(e) => {
+                        setDomainFeedback(null);
+                        setDomainInput(e.target.value);
+                      }}
+                      onBlur={(e) => setDomainInput(normalizeDomainInput(e.target.value))}
+                      placeholder="orders.yourrestaurant.com"
+                      className={`${inp} flex-1`}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleConnectDomain}
+                      disabled={domainSaving}
+                      className="inline-flex items-center justify-center h-10 px-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm font-semibold text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {domainSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : null}
+                      {domainSaving
+                        ? "Saving..."
+                        : normalizedDomain
+                          ? "Connect Domain"
+                          : connectedDomain
+                          ? "Check DNS Status"
+                          : "Connect Domain"}
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-gray-500 dark:text-neutral-400">
+                    Enter only domain/subdomain (without `https://`).
+                  </p>
+                  {connectedDomain && (
+                    <p className="mt-1 text-xs text-gray-600 dark:text-neutral-400">
+                      Connected domain:{" "}
+                      <span className="font-semibold text-gray-900 dark:text-white">
+                        {connectedDomain}
+                      </span>
+                    </p>
+                  )}
+                </div>
+
+                {domainSaving && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm text-primary flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Checking domain on Vercel...
+                  </div>
+                )}
+
+                {!domainSaving && domainFeedback?.message && (
+                  <div
+                    className={`rounded-xl border p-3 text-sm flex items-center gap-2 ${
+                      domainFeedback.type === "success"
+                        ? "border-emerald-200 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "border-red-200 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
+                    }`}
+                  >
+                    {domainFeedback.type === "success" ? (
+                      <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    )}
+                    <span>{domainFeedback.message}</span>
+                  </div>
+                )}
+
+                {!domainSaving && connectedDomain && (
+                  <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-200 dark:border-neutral-800 flex items-center justify-between gap-4">
+                      <div className="min-w-0 flex items-center gap-2">
+                        {!domainVerified || domainInvalidConfig ? (
+                          <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        )}
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                          {connectedDomain}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleConnectDomain}
+                          className="h-8 px-3 rounded-md border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                        >
+                          Refresh
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDomainInput(connectedDomain)}
+                          className="h-8 px-3 rounded-md border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowRemoveConfirm(true)}
+                          className="h-8 px-3 rounded-md border border-red-200 dark:border-red-500/40 text-xs font-medium text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
+                        >
+                          Remove
+                        </button>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              domainVerified
+                                ? domainInvalidConfig
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                : "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                            }`}
+                          >
+                            {domainInvalidConfig
+                              ? "Invalid Configuration"
+                              : domainVerified
+                                ? "Verified"
+                                : "Verification Needed"}
+                          </span>
+                          <a
+                            href="https://vercel.com/docs/domains"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-medium text-gray-500 dark:text-neutral-400 hover:underline"
+                          >
+                            Learn more
+                          </a>
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-neutral-400">
+                          Production
+                        </span>
+                      </div>
+                    </div>
+
+                    {(!domainVerified || domainInvalidConfig) && (
+                      <div className="mx-5 mt-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-100">
+                        {domainInvalidConfig
+                          ? "The DNS records at your provider must match the records below to verify and connect this domain."
+                          : "This domain is linked to another Vercel account. Add the TXT verification record to confirm ownership, then click "}
+                        {!domainInvalidConfig && (
+                          <span className="font-semibold">Check DNS Status</span>
+                        )}
+                      </div>
+                    )}
+
+                    {domainVerificationRecords.length > 0 && (
+                      <div className="m-5 rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden">
+                        <div className="grid grid-cols-12 bg-gray-50 dark:bg-neutral-900 text-xs font-semibold text-gray-600 dark:text-neutral-300">
+                          <div className="col-span-2 px-3 py-2.5">Type</div>
+                          <div className="col-span-4 px-3 py-2.5 border-l border-gray-200 dark:border-neutral-800">
+                            Name
+                          </div>
+                          <div className="col-span-6 px-3 py-2.5 border-l border-gray-200 dark:border-neutral-800">
+                            Value
+                          </div>
+                        </div>
+                        {domainVerificationRecords.map((record, idx) => (
+                          <div
+                            key={`${record.type || "record"}-${idx}`}
+                            className="grid grid-cols-12 text-xs border-t border-gray-200 dark:border-neutral-800"
+                          >
+                            <div className="col-span-2 px-3 py-3 text-gray-900 dark:text-neutral-100 font-medium">
+                              {record.type || "TXT"}
+                            </div>
+                            <div className="col-span-4 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
+                              <span className="flex-1">{record.domain || "_vercel"}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyText(record.domain || "_vercel", `name-${idx}`)}
+                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                                title="Copy name"
+                              >
+                                {copiedKey === `name-${idx}` ? (
+                                  <Check className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                            <div className="col-span-6 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
+                              <span className="flex-1">{record.value || "—"}</span>
+                              {record.value ? (
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(record.value, `value-${idx}`)}
+                                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                                  title="Copy value"
+                                >
+                                  {copiedKey === `value-${idx}` ? (
+                                    <Check className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {domainVerificationRecords.length === 0 && !domainInvalidConfig && (
+                      <div className="m-5 rounded-lg border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 p-3 text-xs text-gray-600 dark:text-neutral-400">
+                        No DNS verification records are required right now.
+                      </div>
+                    )}
+
+                    <div className="mx-5 mb-4 rounded-lg border border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900 p-2.5 text-xs text-gray-600 dark:text-neutral-400">
+                      It may take some time for DNS records to apply.{" "}
+                      <a
+                        href="https://vercel.com/docs/domains/working-with-dns"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Learn more
+                      </a>
+                    </div>
+                    {customDomainUrl && (
+                      <div className="mx-5 mb-4">
+                        <a
+                          href={customDomainUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                        >
+                          Open connected domain
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {showRemoveConfirm && (
+                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+                  <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                      Remove custom domain?
+                    </h3>
+                    <p className="text-xs text-gray-600 dark:text-neutral-400 mb-4 leading-relaxed">
+                      This will disconnect{" "}
+                      <span className="font-semibold">{connectedDomain}</span> from
+                      your EatsDesk website and attempt to remove it from the Vercel
+                      project. Your website will no longer be served on this domain.
+                    </p>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowRemoveConfirm(false)}
+                        className="h-9 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveDomain}
+                        className="h-9 px-3 rounded-lg bg-red-500 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-60"
+                        disabled={domainSaving}
+                      >
+                        {domainSaving ? "Removing..." : "Remove Domain"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+
             {/* Contact */}
             <SectionCard
               id="contact"
@@ -580,6 +989,7 @@ export default function WebsiteContentPage() {
               title="Contact Information"
               subtitle="Phone, email, and address shown on your website"
               iconColor={iconAccentPrimary}
+              isActive={activeSection === "contact"}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -631,6 +1041,7 @@ export default function WebsiteContentPage() {
               title="Hero Slides"
               subtitle="Carousel images at the top of your website"
               iconColor={iconAccentPrimary}
+              isActive={activeSection === "hero"}
             >
               <div className="space-y-4">
                 {(ws.heroSlides || []).map((slide, idx) => (
@@ -745,6 +1156,7 @@ export default function WebsiteContentPage() {
               title="Theme Colors"
               subtitle="Primary and secondary colors for your website"
               iconColor={iconAccentPrimary}
+              isActive={activeSection === "theme"}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -814,6 +1226,7 @@ export default function WebsiteContentPage() {
               subtitle="Links shown in header and footer of your website"
               iconColor={iconAccentPrimary}
               bodyClassName="bg-primary/3 dark:bg-neutral-950"
+              isActive={activeSection === "social"}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
@@ -851,6 +1264,7 @@ export default function WebsiteContentPage() {
               subtitle="Shown in the footer of your website"
               iconColor={iconAccentPrimary}
               bodyClassName="bg-primary/3 dark:bg-neutral-950"
+              isActive={activeSection === "hours"}
             >
               <label className={labelCls}>Opening Hours Text</label>
               <textarea
@@ -874,6 +1288,7 @@ export default function WebsiteContentPage() {
               title="Website Sections"
               subtitle="Up to 3 custom sections showcasing menu items"
               iconColor={iconAccentPrimary}
+              isActive={activeSection === "sections"}
             >
               <div className="space-y-4">
                 {(ws.websiteSections || []).map((section, sIdx) => (
@@ -1016,6 +1431,7 @@ export default function WebsiteContentPage() {
               subtitle="Visibility and ordering controls"
               iconColor={iconAccentPrimary}
               bodyClassName="bg-primary/3 dark:bg-neutral-950"
+              isActive={activeSection === "settings"}
             >
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-neutral-900">

@@ -13,6 +13,7 @@ import {
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
+import { useTheme } from "../../contexts/ThemeContext";
 import {
   Bike,
   MapPin,
@@ -42,6 +43,8 @@ import {
   Check,
   Bell,
   Wallet,
+  Sun,
+  Moon,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -118,6 +121,10 @@ function isDeliveryPaymentNotSubmitted(order) {
 export default function RiderPortalPage() {
   const { socket } = useSocket() || {};
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
+  const { theme, toggleTheme } = useTheme() || {
+    theme: "light",
+    toggleTheme: () => {},
+  };
   const searchRef = useRef(null);
 
   // Auth
@@ -570,6 +577,18 @@ export default function RiderPortalPage() {
                   <RefreshCw className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
                 </button>
               )}
+              <button
+                onClick={toggleTheme}
+                className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
+                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+                aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              >
+                {theme === "light" ? (
+                  <Moon className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
+                ) : (
+                  <Sun className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
+                )}
+              </button>
               {tab !== TABS.NEW_ORDER && (
                 <button
                   onClick={handleLogout}
