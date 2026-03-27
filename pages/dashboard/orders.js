@@ -1942,6 +1942,14 @@ function OrderCard({
   const orderType = order.type || order.orderType || "";
   const typeLabel = getOrderTypeLabel(order);
   const tableLabel = order.tableName || order.tableNumber;
+  const normalizedTableLabel = String(tableLabel || "")
+    .trim()
+    .toLowerCase();
+  const showDineInTableLabel =
+    typeLabel === "Dine In" &&
+    tableLabel &&
+    normalizedTableLabel !== "walk-in" &&
+    normalizedTableLabel !== "walk in";
   const TypeIcon = ORDER_TYPE_ICON[typeLabel] || ShoppingBag;
   const status = orderStatusForTab(order.status);
   const cancelReasonText = (order.cancelReason || order.cancelledReason || "").trim();
@@ -2027,7 +2035,7 @@ function OrderCard({
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {typeLabel === "Dine In" && tableLabel && (
+          {showDineInTableLabel && (
             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-500/20">
               <MapPin className="w-3 h-3" />
               {tableLabel}

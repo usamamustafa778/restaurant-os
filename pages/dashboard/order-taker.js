@@ -18,6 +18,7 @@ import {
   Trash2,
   LogOut,
   ChevronLeft,
+  ChevronDown,
   Loader2,
   Utensils,
   X,
@@ -38,6 +39,7 @@ import {
   Package,
   History,
   RefreshCw,
+  Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -47,6 +49,28 @@ const TABS = { HOME: "home", NEW_ORDER: "new_order", ACTIVE: "active", HISTORY: 
 
 function isBranchRequiredError(msg) {
   return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
+}
+
+function getOrderTotal(order) {
+  return Number(order.grandTotal ?? order.total) || 0;
+}
+
+function getPaymentStatus(order) {
+  if (order.status === "CANCELLED") return "cancelled";
+  if (order.source === "FOODPANDA") return "paid";
+  if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0) {
+    return "paid";
+  }
+  const paymentMethod = String(order.paymentMethod || "").toUpperCase();
+  if (
+    paymentMethod === "CASH" ||
+    paymentMethod === "CARD" ||
+    paymentMethod === "ONLINE" ||
+    paymentMethod === "FOODPANDA"
+  ) {
+    return "paid";
+  }
+  return "unpaid";
 }
 
 export default function OrderTakerPage() {
@@ -73,7 +97,9 @@ export default function OrderTakerPage() {
   const [activeOrders, setActiveOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState("new");
+  const [historyFilter, setHistoryFilter] = useState("pending_payment");
   const [showBranchModal, setShowBranchModal] = useState(false);
+  const [expandedOrderIds, setExpandedOrderIds] = useState([]);
 
   useEffect(() => {
     const auth = getStoredAuth();
@@ -240,7 +266,25 @@ export default function OrderTakerPage() {
 
   const historyRevenue = historyOrders
     .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
-    .reduce((sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0), 0);
+    .reduce((sum, o) => sum + getOrderTotal(o), 0);
+  const paymentPendingOrders = historyOrders.filter(
+    (o) =>
+      (o.status === "DELIVERED" || o.status === "COMPLETED") &&
+      getPaymentStatus(o) === "unpaid",
+  );
+  const paymentPendingTotal = paymentPendingOrders.reduce(
+    (sum, o) => sum + getOrderTotal(o),
+    0,
+  );
+  const clearedHistoryOrders = historyOrders.filter(
+    (o) => o.status === "CANCELLED" || getPaymentStatus(o) !== "unpaid",
+  );
+  const filteredHistoryOrders =
+    historyFilter === "pending_payment"
+      ? paymentPendingOrders
+      : historyFilter === "cleared"
+        ? clearedHistoryOrders
+        : historyOrders;
   const filteredActiveOrders =
     activeFilter === "ready"
       ? readyOrders
@@ -262,6 +306,14 @@ export default function OrderTakerPage() {
     0,
   );
   const cancelledCount = activeOrders.filter((o) => o.status === "CANCELLED").length;
+
+  function toggleOrderDetails(orderKey) {
+    setExpandedOrderIds((prev) =>
+      prev.includes(orderKey)
+        ? prev.filter((id) => id !== orderKey)
+        : prev.concat(orderKey),
+    );
+  }
 
   function getTimeAgo(createdAt) {
     const diff = Date.now() - new Date(createdAt).getTime();
@@ -577,6 +629,29 @@ export default function OrderTakerPage() {
                 </div>
               </div>
 
+              {paymentPendingTotal > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-500/10 rounded-2xl border border-amber-200 dark:border-amber-500/25 p-4 flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="w-5 h-5 text-amber-700 dark:text-amber-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                      Collect payment
+                    </p>
+                    <p className="text-base font-black text-amber-950 dark:text-amber-100 mt-0.5">
+                      Rs. {Math.round(paymentPendingTotal).toLocaleString()}
+                      <span className="text-xs font-bold text-amber-700/90 dark:text-amber-400/90 ml-1.5">
+                        · {paymentPendingOrders.length} order
+                        {paymentPendingOrders.length !== 1 ? "s" : ""}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-amber-800/80 dark:text-amber-400/80 mt-1">
+                      Completed orders still pending payment collection
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
                   <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">New</p>
@@ -630,62 +705,210 @@ export default function OrderTakerPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                    <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total Revenue (this session)</p>
-                    <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                      Rs. {Math.round(historyRevenue).toLocaleString()}
-                    </p>
-                    <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-1">
-                      From completed orders (cancelled excluded)
-                    </p>
-                  </div>
-                  {historyOrders.map((order) => {
-                    const isCancelled = order.status === "CANCELLED";
-                    const sc = getStatusConfig(order.status);
-                    const StatusIcon = sc.icon;
-                    return (
-                      <div
-                        key={order.id || order._id}
-                        className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border border-gray-200 dark:border-neutral-800"
-                      >
-                        <div className={`px-4 py-2 flex items-center justify-between ${isCancelled ? "bg-red-400" : sc.bg}`}>
-                          <div className="flex items-center gap-2">
-                            <StatusIcon className="w-4 h-4 text-white" />
-                            <span className="text-xs font-bold text-white">
-                              {isCancelled ? "Cancelled" : sc.label}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-white/70">
-                            <Clock className="w-3 h-3" />
-                            {getTimeAgo(order.createdAt)}
-                          </div>
-                        </div>
-                        <div className="p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <span className="text-base font-black text-gray-900 dark:text-white">
-                                #{order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}
-                              </span>
-                              {order.tableName && (
-                                <span className="ml-2 text-xs font-semibold text-gray-400 dark:text-neutral-500">
-                                  {order.tableName}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-sm font-black text-gray-900 dark:text-white">
-                              Rs. {(order.grandTotal ?? order.total)?.toLocaleString()}
-                            </span>
-                          </div>
-                          {order.customerName && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
-                              <User className="w-3 h-3" />
-                              {order.customerName}
-                            </div>
-                          )}
-                        </div>
+                  <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden shadow-sm">
+                    <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-neutral-800">
+                      <div className="p-3.5 sm:p-4">
+                        <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
+                          Cleared
+                        </p>
+                        <p className="text-base sm:text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight mt-1">
+                          Rs. {Math.round(historyRevenue - paymentPendingTotal).toLocaleString()}
+                        </p>
+                        <p className="text-[9px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">
+                          Prepaid + submitted
+                        </p>
                       </div>
-                    );
-                  })}
+                      <div
+                        className={`p-3.5 sm:p-4 ${
+                          paymentPendingTotal > 0 ? "bg-amber-50/90 dark:bg-amber-500/10" : ""
+                        }`}
+                      >
+                        <p
+                          className={`text-[9px] font-bold uppercase tracking-wider ${
+                            paymentPendingTotal > 0
+                              ? "text-amber-800 dark:text-amber-300"
+                              : "text-gray-400 dark:text-neutral-500"
+                          }`}
+                        >
+                          To submit
+                        </p>
+                        <p
+                          className={`text-base sm:text-lg font-black tabular-nums leading-tight mt-1 ${
+                            paymentPendingTotal > 0
+                              ? "text-amber-950 dark:text-amber-100"
+                              : "text-gray-900 dark:text-white"
+                          }`}
+                        >
+                          Rs. {Math.round(paymentPendingTotal).toLocaleString()}
+                        </p>
+                        <p className="text-[9px] text-gray-500 dark:text-neutral-500 mt-1">
+                          {paymentPendingOrders.length} order
+                          {paymentPendingOrders.length !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl p-1 bg-gray-100/90 dark:bg-neutral-900 border border-gray-200/80 dark:border-neutral-800">
+                    <div className="flex gap-0.5">
+                      {[
+                        {
+                          key: "pending_payment",
+                          label: "Pending",
+                          count: paymentPendingOrders.length,
+                          activeClass: "bg-amber-500 text-white shadow-sm shadow-amber-500/20",
+                          inactiveClass: "text-gray-600 dark:text-neutral-400",
+                        },
+                        {
+                          key: "all",
+                          label: "All",
+                          count: historyOrders.length,
+                          activeClass: "bg-primary text-white shadow-sm shadow-primary/20",
+                          inactiveClass: "text-gray-600 dark:text-neutral-400",
+                        },
+                        {
+                          key: "cleared",
+                          label: "Cleared",
+                          count: clearedHistoryOrders.length,
+                          activeClass: "bg-primary text-white shadow-sm shadow-primary/20",
+                          inactiveClass: "text-gray-600 dark:text-neutral-400",
+                        },
+                      ].map((f) => {
+                        const active = historyFilter === f.key;
+                        return (
+                          <button
+                            key={f.key}
+                            type="button"
+                            onClick={() => setHistoryFilter(f.key)}
+                            className={`flex-1 min-w-0 py-2 px-1.5 rounded-xl text-[11px] font-extrabold transition-all flex flex-col items-center justify-center gap-0.5 sm:flex-row sm:gap-1.5 ${
+                              active ? f.activeClass : `bg-transparent ${f.inactiveClass} hover:bg-white/60 dark:hover:bg-neutral-800/80`
+                            }`}
+                          >
+                            <span className="truncate">{f.label}</span>
+                            <span
+                              className={`text-[10px] font-black tabular-nums min-w-[1.25rem] ${
+                                active ? "opacity-95" : "opacity-70"
+                              }`}
+                            >
+                              {f.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 px-0.5 -mt-1">
+                    {historyFilter === "pending_payment"
+                      ? "Completed orders still marked “To be paid” — collect cash and submit at the counter."
+                      : historyFilter === "cleared"
+                        ? "Paid at order, cancelled, or already submitted."
+                        : "All orders in your session history."}
+                  </p>
+
+                  {filteredHistoryOrders.length === 0 ? (
+                    historyFilter === "pending_payment" && paymentPendingOrders.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center pt-10 pb-6 text-center px-3 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-500/5">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center mb-3">
+                          <Check className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <p className="text-sm font-extrabold text-gray-900 dark:text-white mb-1">All caught up</p>
+                        <p className="text-xs text-gray-500 dark:text-neutral-400 max-w-[260px] leading-relaxed">
+                          No pending collections right now.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setHistoryFilter("all")}
+                          className="mt-4 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-extrabold shadow-sm shadow-primary/25 active:scale-[0.98] transition-transform"
+                        >
+                          View all orders
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center pt-12 text-center px-2">
+                        <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                          <ClipboardList className="w-6 h-6 text-gray-300 dark:text-neutral-700" />
+                        </div>
+                        <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No orders here</p>
+                        <p className="text-xs text-gray-400 dark:text-neutral-600">Try a different filter above</p>
+                      </div>
+                    )
+                  ) : (
+                    filteredHistoryOrders.map((order) => {
+                      const paymentPending =
+                        (order.status === "DELIVERED" || order.status === "COMPLETED") &&
+                        getPaymentStatus(order) === "unpaid";
+                      const sc = getStatusConfig(order.status);
+                      const StatusIcon = paymentPending ? Wallet : sc.icon;
+                      const orderId = order.id || order._id;
+                      const headerBg = paymentPending
+                        ? "bg-amber-50 dark:bg-amber-500/10"
+                        : sc.bgLight;
+                      const headerText = paymentPending
+                        ? "text-amber-800 dark:text-amber-300"
+                        : sc.text;
+                      const borderClass = paymentPending
+                        ? "border-amber-200 dark:border-amber-500/30"
+                        : sc.border;
+                      return (
+                        <div
+                          key={orderId}
+                          className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${borderClass}`}
+                        >
+                          <div className={`px-4 py-2 flex items-center justify-between ${headerBg}`}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <StatusIcon className={`w-4 h-4 shrink-0 ${headerText}`} />
+                              <span className={`text-xs font-bold ${headerText} truncate`}>
+                                {paymentPending
+                                  ? "Delivered · payment not submitted"
+                                  : order.status === "CANCELLED"
+                                    ? "Cancelled"
+                                    : sc.label}
+                              </span>
+                            </div>
+                            <div className={`flex items-center gap-1.5 text-[11px] ${headerText} opacity-80 shrink-0`}>
+                              <Clock className="w-3 h-3" />
+                              {getTimeAgo(order.createdAt)}
+                            </div>
+                          </div>
+                          <div className="p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <span className="text-base font-black text-gray-900 dark:text-white">
+                                  #{order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}
+                                </span>
+                                {order.tableName && (
+                                  <span className="ml-2 text-xs font-semibold text-gray-400 dark:text-neutral-500">
+                                    {order.tableName}
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className={`text-sm font-black ${
+                                  paymentPending
+                                    ? "text-amber-800 dark:text-amber-200"
+                                    : "text-gray-900 dark:text-white"
+                                }`}
+                              >
+                                Rs. {getOrderTotal(order).toLocaleString()}
+                              </span>
+                            </div>
+                            {paymentPending && (
+                              <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 mb-2">
+                                Collect at counter — still marked &quot;To be paid&quot; in POS
+                              </p>
+                            )}
+                            {order.customerName && (
+                              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
+                                <User className="w-3 h-3" />
+                                {order.customerName}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>
@@ -742,22 +965,27 @@ export default function OrderTakerPage() {
                   {filteredActiveOrders.map((order) => {
                     const sc = getStatusConfig(order.status);
                     const StatusIcon = sc.icon;
+                    const orderKey = String(order.id || order._id);
+                    const isExpanded = expandedOrderIds.includes(orderKey);
+                    const totalWrapClass = isExpanded
+                      ? "flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-900 mb-3"
+                      : "flex items-center justify-between mb-3";
                     return (
                       <div
-                        key={order.id || order._id}
+                        key={orderKey}
                         className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${sc.border} ${
                           sc.pulse ? "ot-pulse-border" : ""
                         }`}
                       >
                         {/* Status banner */}
-                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bg}`}>
+                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
                           <div className="flex items-center gap-2">
-                            <StatusIcon className="w-4 h-4 text-white" />
-                            <span className="text-xs font-bold text-white">
+                            <StatusIcon className={`w-4 h-4 ${sc.text}`} />
+                            <span className={`text-xs font-bold ${sc.text}`}>
                               {sc.label}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-white/70">
+                          <div className={`flex items-center gap-1.5 text-[11px] ${sc.text} opacity-80`}>
                             <Clock className="w-3 h-3" />
                             {getTimeAgo(order.createdAt)}
                           </div>
@@ -789,33 +1017,52 @@ export default function OrderTakerPage() {
                             </span>
                           </div>
 
-                          {/* Customer */}
-                          {order.customerName && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
-                              <User className="w-3 h-3" />
-                              {order.customerName}
-                            </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleOrderDetails(orderKey)}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-colors border ${
+                              isExpanded
+                                ? "bg-primary/10 border-primary/20 text-primary"
+                                : "bg-gray-50 dark:bg-neutral-900 border-gray-200/70 dark:border-neutral-800 text-gray-600 dark:text-neutral-300"
+                            }`}
+                          >
+                            <span>{isExpanded ? "Hide Details" : "View Details"}</span>
+                            <ChevronDown
+                              className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                            />
+                          </button>
+
+                          {isExpanded && (
+                            <>
+                              {/* Customer */}
+                              {order.customerName && (
+                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
+                                  <User className="w-3 h-3" />
+                                  {order.customerName}
+                                </div>
+                              )}
+
+                              {/* Items list */}
+                              <div className="space-y-1 mb-3">
+                                {order.items?.map((item, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between text-xs"
+                                  >
+                                    <span className="text-gray-700 dark:text-neutral-300 font-medium">
+                                      <span className="font-bold text-gray-900 dark:text-white">
+                                        {item.quantity || item.qty}x
+                                      </span>{" "}
+                                      {item.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
                           )}
 
-                          {/* Items list */}
-                          <div className="space-y-1 mb-3">
-                            {order.items?.map((item, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-center justify-between text-xs"
-                              >
-                                <span className="text-gray-700 dark:text-neutral-300 font-medium">
-                                  <span className="font-bold text-gray-900 dark:text-white">
-                                    {item.quantity || item.qty}x
-                                  </span>{" "}
-                                  {item.name}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-
                           {/* Footer */}
-                          <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-900">
+                          <div className={totalWrapClass}>
                             <span className="text-xs text-gray-400 dark:text-neutral-500">
                               Total
                             </span>
