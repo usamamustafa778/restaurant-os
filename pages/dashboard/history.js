@@ -36,6 +36,7 @@ import {
   CreditCard,
   Package,
   Clock,
+  Eye,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -700,6 +701,8 @@ export default function HistoryPage() {
   const [ordersSearch, setOrdersSearch] = useState("");
   const [ordersPage, setOrdersPage] = useState(0);
   const [itemsDropdownId, setItemsDropdownId] = useState(null);
+  const [paymentDropdownId, setPaymentDropdownId] = useState(null);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [ordersPerPage, setOrdersPerPage] = useState(25);
   const ORDER_EXPORT_COLUMN_OPTIONS = [
     { key: "orderNumber", label: "Order #" },
@@ -1645,6 +1648,72 @@ export default function HistoryPage() {
     );
   }
 
+  function renderPaymentCell(order, rowId) {
+    if (!order?.paymentMethod) return "—";
+    const isSplit = String(order.paymentMethod || "").toUpperCase() === "SPLIT";
+    return (
+      <div className="flex items-center">
+        <span
+          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+            order.isPaid
+              ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          }`}
+        >
+          {order.isPaid ? order.paymentMethod : "Unpaid"}
+        </span>
+        {isSplit && (
+          <>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPaymentDropdownId(paymentDropdownId === rowId ? null : rowId);
+              }}
+              className="ml-1.5 inline-flex items-center justify-center h-5 w-5 rounded-md bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors"
+            >
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  paymentDropdownId === rowId ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {paymentDropdownId === rowId && (
+              <div className="absolute top-0 right-0 mt-8 mr-3 z-10 min-w-[180px] bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl p-2 space-y-1">
+                {(Number(order.splitCashAmount) || 0) > 0 && (
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="text-gray-700 dark:text-neutral-300">Cash</span>
+                    <span className="font-bold text-gray-700 dark:text-neutral-300 flex-shrink-0">
+                      {fmtRs(Number(order.splitCashAmount) || 0)}
+                    </span>
+                  </div>
+                )}
+                {(Number(order.splitCardAmount) || 0) > 0 && (
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="text-gray-700 dark:text-neutral-300">Card</span>
+                    <span className="font-bold text-gray-700 dark:text-neutral-300 flex-shrink-0">
+                      {fmtRs(Number(order.splitCardAmount) || 0)}
+                    </span>
+                  </div>
+                )}
+                {(Number(order.splitOnlineAmount) || 0) > 0 && (
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="text-gray-700 dark:text-neutral-300">
+                      Online{order.splitOnlineProvider ? ` (${order.splitOnlineProvider})` : ""}
+                    </span>
+                    <span className="font-bold text-gray-700 dark:text-neutral-300 flex-shrink-0">
+                      {fmtRs(Number(order.splitOnlineAmount) || 0)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   function renderOrders() {
     const dateFiltered = dateFilteredOrders;
 
@@ -2016,6 +2085,7 @@ export default function HistoryPage() {
                 <thead className="bg-gray-50 dark:bg-neutral-900/80 sticky top-0">
                   <tr>
                     <th className={TH_CLS}>Order #</th>
+                    <th className={TH_CLS}>View</th>
                     <th className={TH_CLS}>Status</th>
                     <th className={`${TH_CLS} text-right`}>Grand Total</th>
                     <th className={`${TH_CLS} text-right`}>Subtotal</th>
@@ -2053,6 +2123,15 @@ export default function HistoryPage() {
                         className={`${TD_CLS} font-semibold text-gray-900 dark:text-white`}
                       >
                         #{o.id}
+                      </td>
+                      <td className={TD_CLS}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOrderDetail(o)}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 hover:border-primary/40 hover:text-primary transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                       <td className={TD_CLS}>
                         <span
@@ -2139,7 +2218,9 @@ export default function HistoryPage() {
                       <td className={TD_CLS}>
                         {TYPE_LABEL_MAP[o.type] || o.type}
                       </td>
-                      <td className={TD_CLS}>{o.paymentMethod || "—"}</td>
+                      <td className={`${TD_CLS} relative`}>
+                        {renderPaymentCell(o, o._id || o.id)}
+                      </td>
                       <td className={TD_CLS}>
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${o.isPaid ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"}`}
@@ -3010,6 +3091,7 @@ export default function HistoryPage() {
                                 </th>
                                 {[
                                   "Order #",
+                                  "View",
                                   "Time",
                                   "Type",
                                   "Status",
@@ -3071,6 +3153,18 @@ export default function HistoryPage() {
                                     </td>
                                     <td className="py-2.5 px-3 text-[12px] whitespace-nowrap font-bold text-gray-900 dark:text-white">
                                       #{o.orderNumber || o.id?.slice(-4)}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedOrderDetail(o);
+                                        }}
+                                        className="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 hover:border-primary/40 hover:text-primary transition-colors"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </button>
                                     </td>
                                     <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
                                       {o.createdAt
@@ -3148,22 +3242,8 @@ export default function HistoryPage() {
                                     <td className="py-2.5 px-3 text-[12px] text-right font-bold text-gray-900 dark:text-white whitespace-nowrap">
                                       {fmtRs(o.total)}
                                     </td>
-                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
-                                      {o.paymentMethod ? (
-                                        <span
-                                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                            o.isPaid
-                                              ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                              : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                                          }`}
-                                        >
-                                          {o.isPaid
-                                            ? o.paymentMethod
-                                            : "Unpaid"}
-                                        </span>
-                                      ) : (
-                                        "—"
-                                      )}
+                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap relative">
+                                      {renderPaymentCell(o, o.id)}
                                     </td>
                                   </tr>
                                 );
@@ -3534,6 +3614,130 @@ export default function HistoryPage() {
               >
                 Got it
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedOrderDetail && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setSelectedOrderDetail(null)}
+        >
+          <div
+            className="bg-white dark:bg-neutral-950 border border-gray-200/80 dark:border-neutral-800 rounded-3xl shadow-2xl w-full max-w-3xl max-h-[88vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-5 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between bg-gradient-to-b from-gray-50/80 to-white dark:from-neutral-900/60 dark:to-neutral-950">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-neutral-500">
+                  Order Details
+                </p>
+                <h3 className="text-2xl font-black text-gray-900 dark:text-white leading-tight truncate mt-0.5">
+                  #{selectedOrderDetail.orderNumber || selectedOrderDetail.id?.slice(-4)}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-neutral-500 mt-1.5">
+                  {selectedOrderDetail.createdAt
+                    ? new Date(selectedOrderDetail.createdAt).toLocaleString("en-PK")
+                    : "—"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 ml-3">
+                <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-[11px] font-semibold ${STATUS_COLORS[selectedOrderDetail.status] || "bg-gray-100 text-gray-500"}`}>
+                  {STATUS_LABELS[selectedOrderDetail.status] || selectedOrderDetail.status || "—"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderDetail(null)}
+                  className="h-9 w-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(88vh-84px)] space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 p-4 bg-white dark:bg-neutral-950 shadow-sm">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-neutral-500 mb-3">
+                    Order Info
+                  </p>
+                  <div className="space-y-2.5 text-sm">
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Type</span><span className="font-semibold text-gray-900 dark:text-white">{(selectedOrderDetail.orderType || "").replace(/_/g, " ") || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Source</span><span className="font-semibold text-gray-900 dark:text-white">{selectedOrderDetail.source || "POS"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Table</span><span className="font-semibold text-gray-900 dark:text-white">{selectedOrderDetail.tableName || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Payment</span><span className="font-semibold text-gray-900 dark:text-white">{selectedOrderDetail.isPaid ? selectedOrderDetail.paymentMethod || "Paid" : "Unpaid"}</span></div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 p-4 bg-white dark:bg-neutral-950 shadow-sm">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-neutral-500 mb-3">
+                    Customer & Staff
+                  </p>
+                  <div className="space-y-2.5 text-sm">
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Customer</span><span className="font-semibold text-gray-900 dark:text-white">{selectedOrderDetail.customerName || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Phone</span><span className="font-semibold text-gray-900 dark:text-white">{selectedOrderDetail.customerPhone || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Staff</span><span className="font-semibold text-gray-900 dark:text-white text-right">{selectedOrderDetail.assignedRiderName || selectedOrderDetail.riderName ? `Rider: ${selectedOrderDetail.assignedRiderName || selectedOrderDetail.riderName}` : selectedOrderDetail.waiterName ? `Waiter: ${selectedOrderDetail.waiterName}` : selectedOrderDetail.orderTakerName ? `Taker: ${selectedOrderDetail.orderTakerName}` : selectedOrderDetail.createdBy?.name ? `Taker: ${selectedOrderDetail.createdBy.name}` : "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-gray-500 dark:text-neutral-500">Address</span><span className="font-semibold text-gray-900 dark:text-white text-right">{selectedOrderDetail.deliveryAddress || "—"}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              {String(selectedOrderDetail.paymentMethod || "").toUpperCase() === "SPLIT" && (
+                <div className="rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-gradient-to-r from-amber-50/80 to-orange-50/40 dark:from-amber-500/10 dark:to-amber-500/5 p-4 shadow-sm">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300 mb-2.5">
+                    Split Payment
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-sm">
+                    <div className="rounded-xl bg-white/90 dark:bg-neutral-900/70 px-3.5 py-2.5 border border-amber-100 dark:border-amber-500/20"><p className="text-[10px] uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">Cash</p><p className="font-extrabold text-amber-900 dark:text-amber-100 text-base">{fmtRs(Number(selectedOrderDetail.splitCashAmount) || 0)}</p></div>
+                    <div className="rounded-xl bg-white/90 dark:bg-neutral-900/70 px-3.5 py-2.5 border border-amber-100 dark:border-amber-500/20"><p className="text-[10px] uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">Card</p><p className="font-extrabold text-amber-900 dark:text-amber-100 text-base">{fmtRs(Number(selectedOrderDetail.splitCardAmount) || 0)}</p></div>
+                    <div className="rounded-xl bg-white/90 dark:bg-neutral-900/70 px-3.5 py-2.5 border border-amber-100 dark:border-amber-500/20"><p className="text-[10px] uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">Online</p><p className="font-extrabold text-amber-900 dark:text-amber-100 text-base">{fmtRs(Number(selectedOrderDetail.splitOnlineAmount) || 0)}</p><p className="text-[10px] text-amber-700/80 dark:text-amber-300/80 truncate mt-0.5">{selectedOrderDetail.splitOnlineProvider || "—"}</p></div>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden shadow-sm">
+                <div className="px-4 py-3 bg-gray-50 dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-neutral-400">
+                    Items
+                  </p>
+                  <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400">
+                    {(selectedOrderDetail.items || []).reduce((s, it) => s + Number(it.qty || it.quantity || 1), 0)} qty
+                  </p>
+                </div>
+                {(selectedOrderDetail.items || []).length === 0 ? (
+                  <p className="px-4 py-4 text-sm text-gray-500 dark:text-neutral-500">
+                    No item details found.
+                  </p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50/70 dark:bg-neutral-900/40 text-[11px] uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-semibold">Item</th>
+                        <th className="text-center px-2 py-2 font-semibold">Qty</th>
+                        <th className="text-right px-4 py-2 font-semibold">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-neutral-800">
+                      {(selectedOrderDetail.items || []).map((it, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50/70 dark:hover:bg-neutral-900/40">
+                          <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{it.name || "Item"}</td>
+                          <td className="px-2 py-2.5 text-center text-gray-600 dark:text-neutral-400">{it.qty || it.quantity || 1}</td>
+                          <td className="px-4 py-2.5 text-right font-semibold text-gray-900 dark:text-white">{fmtRs(Number(it.lineTotal ?? 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden shadow-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4">
+                  <div className="p-4 border-b md:border-b-0 md:border-r border-gray-100 dark:border-neutral-800"><p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500">Subtotal</p><p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{fmtRs(Number(selectedOrderDetail.subtotal ?? 0))}</p></div>
+                  <div className="p-4 border-b md:border-b-0 md:border-r border-gray-100 dark:border-neutral-800"><p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500">Discount</p><p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{fmtRs(Number(selectedOrderDetail.discountAmount ?? 0))}</p></div>
+                  <div className="p-4 md:border-r border-gray-100 dark:border-neutral-800"><p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500">Delivery</p><p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{fmtRs(Number(selectedOrderDetail.deliveryCharges ?? 0))}</p></div>
+                  <div className="p-4 bg-gradient-to-br from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20"><p className="text-[10px] uppercase tracking-wider text-primary/80">Grand Total</p><p className="mt-1 text-xl font-black text-primary">{fmtRs(Number(selectedOrderDetail.grandTotal ?? selectedOrderDetail.total ?? 0))}</p></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

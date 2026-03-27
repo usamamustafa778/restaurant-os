@@ -57,6 +57,7 @@ import {
   ChevronDown,
   Power,
   Plus,
+  Wallet,
 } from "lucide-react";
 
 // ─── Board configuration ────────────────────────────────────────────────────
@@ -167,12 +168,20 @@ function isOrderPaidOrNonEditable(order) {
   if (order.status === "CANCELLED") return true;
   if (order.status === "DELIVERED" || order.status === "COMPLETED") return true;
   if (order.status === "OUT_FOR_DELIVERY") return true;
-  if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0)
-    return true;
+  if (order.paymentAmountReceived != null) {
+    const gross = Number(order.paymentAmountReceived) || 0;
+    const returned = Number(order.paymentAmountReturned) || 0;
+    const net = gross - returned;
+    if (net >= getOrderTotal(order)) return true;
+  }
   if (order.source === "FOODPANDA") return true;
   const pm = (order.paymentMethod || "").toUpperCase();
   return (
-    pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA"
+    pm === "CASH" ||
+    pm === "CARD" ||
+    pm === "ONLINE" ||
+    pm === "SPLIT" ||
+    pm === "FOODPANDA"
   );
 }
 
@@ -197,10 +206,20 @@ function getOrderTotal(order) {
 function getPaymentStatus(order) {
   if (order.status === "CANCELLED") return "cancelled";
   if (order.source === "FOODPANDA") return "paid";
-  if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0)
-    return "paid";
+  if (order.paymentAmountReceived != null) {
+    const gross = Number(order.paymentAmountReceived) || 0;
+    const returned = Number(order.paymentAmountReturned) || 0;
+    const net = gross - returned;
+    if (net >= getOrderTotal(order)) return "paid";
+  }
   const pm = (order.paymentMethod || "").toUpperCase();
-  if (pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA")
+  if (
+    pm === "CASH" ||
+    pm === "CARD" ||
+    pm === "ONLINE" ||
+    pm === "SPLIT" ||
+    pm === "FOODPANDA"
+  )
     return "paid";
   if (isDeliveryOrder(order) && order.deliveryPaymentCollected === true)
     return "paid";
@@ -300,6 +319,9 @@ export default function OrdersPage() {
   const [paymentAccounts, setPaymentAccounts] = useState([]);
   const [paymentAccountsLoading, setPaymentAccountsLoading] = useState(true);
   const [amountReceived, setAmountReceived] = useState("");
+  const [splitCashAmount, setSplitCashAmount] = useState("");
+  const [splitCardAmount, setSplitCardAmount] = useState("");
+  const [splitOnlineAmount, setSplitOnlineAmount] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -491,6 +513,9 @@ export default function OrdersPage() {
     setPaymentMethod("CASH");
     setOnlineProvider(null);
     setAmountReceived("");
+    setSplitCashAmount("");
+    setSplitCardAmount("");
+    setSplitOnlineAmount("");
     setPaymentError("");
     setShowPaymentModal(true);
   }
@@ -498,7 +523,12 @@ export default function OrdersPage() {
   function closePaymentModal() {
     setShowPaymentModal(false);
     setPaymentOrder(null);
+    setPaymentMethod("CASH");
     setOnlineProvider(null);
+    setAmountReceived("");
+    setSplitCashAmount("");
+    setSplitCardAmount("");
+    setSplitOnlineAmount("");
     setPaymentError("");
   }
 
@@ -554,6 +584,9 @@ export default function OrdersPage() {
     setPaymentMethod("CASH");
     setOnlineProvider(null);
     setAmountReceived("");
+    setSplitCashAmount("");
+    setSplitCardAmount("");
+    setSplitOnlineAmount("");
     setPaymentError("");
     setShowPaymentModal(true);
   }
@@ -562,12 +595,46 @@ export default function OrdersPage() {
     if (e?.preventDefault) e.preventDefault();
     if (!paymentOrder) return;
     const orderId = getOrderId(paymentOrder);
+    if (paymentMethod === "SPLIT") {
+      const cashPart = Number(splitCashAmount);
+      const cardPart = Number(splitCardAmount);
+      const onlinePart = Number(splitOnlineAmount);
+      const parts = [cashPart, cardPart, onlinePart];
+      const positiveParts = parts.filter((n) => !isNaN(n) && n > 0).length;
+      const billTotal = getOrderTotal(paymentOrder);
+      const splitTotal =
+        (isNaN(cashPart) ? 0 : cashPart) +
+        (isNaN(cardPart) ? 0 : cardPart) +
+        (isNaN(onlinePart) ? 0 : onlinePart);
+      if (positiveParts < 2) {
+        setPaymentError("Split payment needs at least 2 non-zero parts.");
+        return;
+      }
+      if (Math.abs(splitTotal - billTotal) > 0.01) {
+        setPaymentError(
+          `Split amounts must equal bill total (Rs ${billTotal.toFixed(2)}).`,
+        );
+        return;
+      }
+      if (onlinePart > 0 && !onlineProvider) {
+        setPaymentError("Select an online account for the online split part.");
+        return;
+      }
+    }
     setPaymentLoading(true);
     setPaymentError("");
     const toastId = toast.loading("Collecting payment...");
     try {
       const payload = { paymentMethod };
       if (paymentMethod === "ONLINE") payload.paymentProvider = onlineProvider;
+      if (paymentMethod === "SPLIT") {
+        payload.cashAmount = Number(splitCashAmount) || 0;
+        payload.cardAmount = Number(splitCardAmount) || 0;
+        payload.onlineAmount = Number(splitOnlineAmount) || 0;
+        if ((Number(splitOnlineAmount) || 0) > 0 && onlineProvider) {
+          payload.paymentProvider = onlineProvider;
+        }
+      }
       const updated = await collectDeliveryPayment(orderId, payload);
       updateOrderInList(orderId, updated);
       toast.success("Payment collected from rider!", { id: toastId });
@@ -658,6 +725,33 @@ export default function OrdersPage() {
         return;
       }
     }
+    if (paymentMethod === "SPLIT") {
+      const cashPart = Number(splitCashAmount);
+      const cardPart = Number(splitCardAmount);
+      const onlinePart = Number(splitOnlineAmount);
+      const parts = [cashPart, cardPart, onlinePart];
+      const positiveParts = parts.filter((n) => !isNaN(n) && n > 0).length;
+      if (positiveParts < 2) {
+        setPaymentError(
+          "Split payment requires at least 2 non-zero parts (cash/card/online).",
+        );
+        return;
+      }
+      const splitTotal =
+        (isNaN(cashPart) ? 0 : cashPart) +
+        (isNaN(cardPart) ? 0 : cardPart) +
+        (isNaN(onlinePart) ? 0 : onlinePart);
+      if (Math.abs(splitTotal - billTotal) > 0.01) {
+        setPaymentError(
+          `Split amounts must equal bill total (Rs ${billTotal.toFixed(2)}).`,
+        );
+        return;
+      }
+      if (onlinePart > 0 && !onlineProvider) {
+        setPaymentError("Select an online account for the online part.");
+        return;
+      }
+    }
     setPaymentLoading(true);
     setPaymentError("");
     const toastId = toast.loading("Recording payment...");
@@ -670,6 +764,14 @@ export default function OrdersPage() {
       }
       if (paymentMethod === "ONLINE" && onlineProvider) {
         payload.paymentProvider = onlineProvider;
+      }
+      if (paymentMethod === "SPLIT") {
+        payload.cashAmount = Number(splitCashAmount);
+        payload.cardAmount = Number(splitCardAmount) || 0;
+        payload.onlineAmount = Number(splitOnlineAmount);
+        if ((Number(splitOnlineAmount) || 0) > 0) {
+          payload.paymentProvider = onlineProvider;
+        }
       }
       const updated = await recordOrderPayment(orderId, payload);
       updateOrderInList(orderId, updated);
@@ -1259,7 +1361,7 @@ export default function OrdersPage() {
                 <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
                   Payment method
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {[
                     {
                       m: "CASH",
@@ -1282,13 +1384,21 @@ export default function OrdersPage() {
                       active:
                         "border-primary bg-primary/10 dark:bg-primary/20 text-primary",
                     },
+                    {
+                      m: "SPLIT",
+                      Icon: Wallet,
+                      label: "Split",
+                      active:
+                        "border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                    },
                   ].map(({ m, Icon, label, active }) => (
                     <button
                       key={m}
                       type="button"
                       onClick={() => {
                         setPaymentMethod(m);
-                        if (m !== "ONLINE") setOnlineProvider(null);
+                        if (m !== "ONLINE" && m !== "SPLIT")
+                          setOnlineProvider(null);
                       }}
                       className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${paymentMethod === m ? active : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"}`}
                     >
@@ -1298,7 +1408,87 @@ export default function OrdersPage() {
                   ))}
                 </div>
               </div>
-              {paymentMethod === "ONLINE" && (
+              {paymentMethod === "SPLIT" &&
+                (() => {
+                  const orderTotal = getOrderTotal(paymentOrder);
+                  const cashPart = Number(splitCashAmount);
+                  const cardPart = Number(splitCardAmount);
+                  const onlinePart = Number(splitOnlineAmount);
+                  const hasCash = splitCashAmount !== "" && !isNaN(cashPart);
+                  const hasCard = splitCardAmount !== "" && !isNaN(cardPart);
+                  const hasOnline =
+                    splitOnlineAmount !== "" && !isNaN(onlinePart);
+                  const splitSum =
+                    (hasCash ? cashPart : 0) +
+                    (hasCard ? cardPart : 0) +
+                    (hasOnline ? onlinePart : 0);
+                  const diff = orderTotal - splitSum;
+                  return (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                            Cash amount (Rs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={splitCashAmount}
+                            onChange={(e) => setSplitCashAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                            Card amount (Rs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={splitCardAmount}
+                            onChange={(e) => setSplitCardAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                            Online amount (Rs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={splitOnlineAmount}
+                            onChange={(e) => setSplitOnlineAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                          Remaining
+                        </span>
+                        <span
+                          className={`text-sm font-black tabular-nums ${
+                            Math.abs(diff) < 0.01
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-amber-600 dark:text-amber-400"
+                          }`}
+                        >
+                          Rs {diff.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              {(paymentMethod === "ONLINE" ||
+                (paymentMethod === "SPLIT" &&
+                  (Number(splitOnlineAmount) || 0) > 0)) && (
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
                     Paid to
@@ -1475,9 +1665,41 @@ export default function OrdersPage() {
                           (amountReceived === "" ||
                             Number(amountReceived) <
                               getOrderTotal(paymentOrder))) ||
-                          (paymentMethod === "ONLINE" && !onlineProvider))
+                          (paymentMethod === "ONLINE" && !onlineProvider) ||
+                          (paymentMethod === "SPLIT" &&
+                            (() => {
+                              const cash = Number(splitCashAmount) || 0;
+                              const card = Number(splitCardAmount) || 0;
+                              const online = Number(splitOnlineAmount) || 0;
+                              const positiveParts = [cash, card, online].filter(
+                                (n) => n > 0,
+                              ).length;
+                              const sumMatches =
+                                Math.abs(
+                                  cash + card + online - getOrderTotal(paymentOrder),
+                                ) <= 0.01;
+                              const providerNeeded =
+                                online > 0 && !onlineProvider;
+                              return positiveParts < 2 || !sumMatches || providerNeeded;
+                            })()))
                       : paymentModalMode === "riderCollect"
-                        ? paymentMethod === "ONLINE" && !onlineProvider
+                        ? (paymentMethod === "ONLINE" && !onlineProvider) ||
+                          (paymentMethod === "SPLIT" &&
+                            (() => {
+                              const cash = Number(splitCashAmount) || 0;
+                              const card = Number(splitCardAmount) || 0;
+                              const online = Number(splitOnlineAmount) || 0;
+                              const positiveParts = [cash, card, online].filter(
+                                (n) => n > 0,
+                              ).length;
+                              const sumMatches =
+                                Math.abs(
+                                  cash + card + online - getOrderTotal(paymentOrder),
+                                ) <= 0.01;
+                              const providerNeeded =
+                                online > 0 && !onlineProvider;
+                              return positiveParts < 2 || !sumMatches || providerNeeded;
+                            })())
                         : false)
                   }
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 transition-colors ${

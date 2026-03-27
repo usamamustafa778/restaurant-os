@@ -58,14 +58,17 @@ function getOrderTotal(order) {
 function getPaymentStatus(order) {
   if (order.status === "CANCELLED") return "cancelled";
   if (order.source === "FOODPANDA") return "paid";
-  if (order.paymentAmountReceived != null && order.paymentAmountReceived > 0) {
-    return "paid";
+  if (order.paymentAmountReceived != null) {
+    const gross = Number(order.paymentAmountReceived) || 0;
+    const returned = Number(order.paymentAmountReturned) || 0;
+    if (gross - returned >= getOrderTotal(order)) return "paid";
   }
   const paymentMethod = String(order.paymentMethod || "").toUpperCase();
   if (
     paymentMethod === "CASH" ||
     paymentMethod === "CARD" ||
     paymentMethod === "ONLINE" ||
+    paymentMethod === "SPLIT" ||
     paymentMethod === "FOODPANDA"
   ) {
     return "paid";
@@ -1237,21 +1240,21 @@ export default function OrderTakerPage() {
                         </p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-2.5">
                         {filteredItems.map((item) => {
                           const qty = getCartQty(item.id);
                           const price = item.finalPrice ?? item.price ?? 0;
                           return (
                             <div
                               key={item.id || item._id}
-                              className="relative bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm active:scale-[0.97] transition-transform"
+                              className="relative bg-white dark:bg-neutral-950 rounded-2xl md:rounded-xl overflow-hidden shadow-sm active:scale-[0.97] transition-transform"
                             >
                               <button
                                 onClick={() => addToCart(item)}
                                 className="w-full text-left"
                               >
                                 {item.imageUrl ? (
-                                  <div className="w-full aspect-[4/3] bg-gray-100 dark:bg-neutral-900 overflow-hidden">
+                                  <div className="w-full aspect-[4/3] md:aspect-square bg-gray-100 dark:bg-neutral-900 overflow-hidden">
                                     <img
                                       src={item.imageUrl}
                                       alt={item.name}
@@ -1260,32 +1263,32 @@ export default function OrderTakerPage() {
                                     />
                                   </div>
                                 ) : (
-                                  <div className="w-full aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-neutral-900 dark:to-neutral-950 flex items-center justify-center">
-                                    <Utensils className="w-8 h-8 text-gray-200 dark:text-neutral-800" />
+                                  <div className="w-full aspect-[4/3] md:aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-neutral-900 dark:to-neutral-950 flex items-center justify-center">
+                                    <Utensils className="w-8 h-8 md:w-7 md:h-7 text-gray-200 dark:text-neutral-800" />
                                   </div>
                                 )}
-                                <div className="px-2.5 pt-1.5 pb-2">
-                                  <p className="text-[13px] font-bold leading-snug line-clamp-2 pb-0.5">
+                                <div className="px-2.5 md:px-2 pt-1.5 md:pt-1 pb-2 md:pb-1.5">
+                                  <p className="text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 pb-0.5">
                                     {item.name}
                                   </p>
-                                  <p className="text-xs font-extrabold text-primary">
+                                  <p className="text-xs md:text-[11px] font-extrabold text-primary">
                                     Rs. {price.toLocaleString()}
                                   </p>
                                 </div>
                               </button>
 
                               {qty > 0 && (
-                                <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200/50 dark:border-neutral-700/50 px-1 py-0.5">
+                                <div className="absolute top-2 md:top-1.5 right-2 md:right-1.5 flex items-center gap-0.5 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm rounded-xl md:rounded-lg shadow-lg border border-gray-200/50 dark:border-neutral-700/50 px-1 py-0.5">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       updateQty(item.id, -1);
                                     }}
-                                    className="w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                                    className="w-7 h-7 md:w-6 md:h-6 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
                                   >
-                                    <Minus className="w-3.5 h-3.5" />
+                                    <Minus className="w-3.5 h-3.5 md:w-3 md:h-3" />
                                   </button>
-                                  <span className="w-5 text-center text-xs font-black text-primary">
+                                  <span className="w-5 md:w-4.5 text-center text-xs md:text-[11px] font-black text-primary">
                                     {qty}
                                   </span>
                                   <button
@@ -1293,9 +1296,9 @@ export default function OrderTakerPage() {
                                       e.stopPropagation();
                                       addToCart(item);
                                     }}
-                                    className="w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-primary hover:bg-primary/10"
+                                    className="w-7 h-7 md:w-6 md:h-6 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-primary hover:bg-primary/10"
                                   >
-                                    <Plus className="w-3.5 h-3.5" />
+                                    <Plus className="w-3.5 h-3.5 md:w-3 md:h-3" />
                                   </button>
                                 </div>
                               )}
@@ -1306,9 +1309,9 @@ export default function OrderTakerPage() {
                                     e.stopPropagation();
                                     addToCart(item);
                                   }}
-                                  className="absolute top-2 right-2 w-8 h-8 rounded-xl bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-md flex items-center justify-center active:scale-90 transition-transform border border-gray-200/50 dark:border-neutral-700/50"
+                                  className="absolute top-2 md:top-1.5 right-2 md:right-1.5 w-8 h-8 md:w-7 md:h-7 rounded-xl md:rounded-lg bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-md flex items-center justify-center active:scale-90 transition-transform border border-gray-200/50 dark:border-neutral-700/50"
                                 >
-                                  <Plus className="w-4 h-4 text-primary" />
+                                  <Plus className="w-4 h-4 md:w-3.5 md:h-3.5 text-primary" />
                                 </button>
                               )}
                             </div>
