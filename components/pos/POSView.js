@@ -452,7 +452,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     setCustomerModalLoading(true);
     setCustomerModalError("");
     try {
-      const list = await getCustomers(false);
+      const list = await getCustomers({ forPos: true, allBranches: false });
       setCustomersList(Array.isArray(list) ? list : []);
     } catch (err) {
       setCustomerModalError(err.message || "Failed to load customers");
