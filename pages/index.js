@@ -117,49 +117,74 @@ export default function Home() {
   const [billingMode, setBillingMode] = useState("daily");
 
   useEffect(() => {
-    const cursor = document.getElementById("cursor");
-    const ring = document.getElementById("cursorRing");
-    if (!cursor || !ring) return;
+    const mqNarrow = window.matchMedia("(max-width: 900px)");
+    let cursorCleanup = () => {};
 
-    let mx = 0;
-    let my = 0;
-    let rx = 0;
-    let ry = 0;
-    let rafId = 0;
-    let cancelled = false;
+    const bindCustomCursor = () => {
+      cursorCleanup();
+      cursorCleanup = () => {};
+      if (mqNarrow.matches) return;
 
-    const onMove = (e) => {
-      mx = e.clientX;
-      my = e.clientY;
-      cursor.style.transform = `translate(${mx - 5}px,${my - 5}px)`;
+      const cursor = document.getElementById("cursor");
+      const ring = document.getElementById("cursorRing");
+      if (!cursor || !ring) return;
+
+      let mx = 0;
+      let my = 0;
+      let rx = 0;
+      let ry = 0;
+      let rafId = 0;
+      let ringActive = true;
+
+      const onMove = (e) => {
+        mx = e.clientX;
+        my = e.clientY;
+        cursor.style.transform = `translate(${mx - 5}px,${my - 5}px)`;
+      };
+
+      function animRing() {
+        if (!ringActive) return;
+        rx += (mx - rx) * 0.12;
+        ry += (my - ry) * 0.12;
+        ring.style.transform = `translate(${rx - 18}px,${ry - 18}px)`;
+        rafId = requestAnimationFrame(animRing);
+      }
+      animRing();
+
+      const onEnter = () => {
+        cursor.style.transform += " scale(1.8)";
+        ring.style.width = "54px";
+        ring.style.height = "54px";
+        ring.style.borderColor = "rgba(255,84,0,0.8)";
+      };
+      const onLeave = () => {
+        ring.style.width = "36px";
+        ring.style.height = "36px";
+        ring.style.borderColor = "rgba(255,84,0,0.5)";
+      };
+
+      document.addEventListener("mousemove", onMove);
+      const hoverEls = document.querySelectorAll(
+        "a,button,.pain-card,.testi-card",
+      );
+      hoverEls.forEach((el) => {
+        el.addEventListener("mouseenter", onEnter);
+        el.addEventListener("mouseleave", onLeave);
+      });
+
+      cursorCleanup = () => {
+        ringActive = false;
+        cancelAnimationFrame(rafId);
+        document.removeEventListener("mousemove", onMove);
+        hoverEls.forEach((el) => {
+          el.removeEventListener("mouseenter", onEnter);
+          el.removeEventListener("mouseleave", onLeave);
+        });
+      };
     };
 
-    function animRing() {
-      if (cancelled) return;
-      rx += (mx - rx) * 0.12;
-      ry += (my - ry) * 0.12;
-      ring.style.transform = `translate(${rx - 18}px,${ry - 18}px)`;
-      rafId = requestAnimationFrame(animRing);
-    }
-    animRing();
-
-    const onEnter = () => {
-      cursor.style.transform += " scale(1.8)";
-      ring.style.width = "54px";
-      ring.style.height = "54px";
-      ring.style.borderColor = "rgba(255,84,0,0.8)";
-    };
-    const onLeave = () => {
-      ring.style.width = "36px";
-      ring.style.height = "36px";
-      ring.style.borderColor = "rgba(255,84,0,0.5)";
-    };
-
-    document.addEventListener("mousemove", onMove);
-    document.querySelectorAll("a,button,.pain-card,.testi-card").forEach((el) => {
-      el.addEventListener("mouseenter", onEnter);
-      el.addEventListener("mouseleave", onLeave);
-    });
+    bindCustomCursor();
+    mqNarrow.addEventListener("change", bindCustomCursor);
 
     const nav = document.getElementById("nav");
     const onScroll = () => {
@@ -206,15 +231,10 @@ export default function Home() {
       });
 
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(rafId);
-      document.removeEventListener("mousemove", onMove);
+      cursorCleanup();
+      mqNarrow.removeEventListener("change", bindCustomCursor);
       window.removeEventListener("scroll", onScroll);
       observer.disconnect();
-      document.querySelectorAll("a,button,.pain-card,.testi-card").forEach((el) => {
-        el.removeEventListener("mouseenter", onEnter);
-        el.removeEventListener("mouseleave", onLeave);
-      });
     };
   }, []);
 
@@ -234,7 +254,13 @@ export default function Home() {
       <nav id="nav">
         <div className="nav-inner">
           <Link href="/" className="nav-logo">
-            <div className="nav-logo-mark">E</div>
+            <img
+              className="nav-logo-mark"
+              src="/favicon.png"
+              alt="EatsDesk"
+              width={34}
+              height={34}
+            />
             <span className="nav-logo-text">EatsDesk</span>
           </Link>
           <ul className="nav-links">
@@ -262,7 +288,8 @@ export default function Home() {
               Sign in
             </Link>
             <Link href="/signup" className="btn btn-primary">
-              Start free trial →
+              <span className="nav-trial-long">Start free trial →</span>
+              <span className="nav-trial-short">Free trial →</span>
             </Link>
           </div>
         </div>
@@ -273,7 +300,7 @@ export default function Home() {
         <div className="hero-grid" />
         <div className="hero-inner">
           <div className="hero-left">
-            <div className="hero-label fade-up">Restaurant OS · Pakistan</div>
+            <div className="hero-label fade-up">Restaurant OS · Fast food</div>
             <h1 className="fade-up delay-1">
               Stop losing
               <br />
@@ -590,7 +617,7 @@ export default function Home() {
 
       <section className="pricing-section" id="pricing">
         <div className="section-inner">
-          <div className="section-label">Pakistan launch pricing</div>
+          <div className="section-label">Simple launch pricing</div>
           <h2 className="section-title">
             Run your restaurant
             <br />
@@ -989,7 +1016,7 @@ export default function Home() {
                 <div className="testi-avatar">MK</div>
                 <div>
                   <div className="testi-name">Mohsin Khan</div>
-                  <div className="testi-role">Owner, Eatout — Lahore</div>
+                  <div className="testi-role">Owner, Eatout</div>
                 </div>
               </div>
             </div>
@@ -1004,7 +1031,7 @@ export default function Home() {
                 <div className="testi-avatar">AR</div>
                 <div>
                   <div className="testi-name">Ahmed Raza</div>
-                  <div className="testi-role">Owner, Fast Bites — Karachi</div>
+                  <div className="testi-role">Owner, Fast Bites</div>
                 </div>
               </div>
             </div>
@@ -1019,7 +1046,7 @@ export default function Home() {
                 <div className="testi-avatar">SB</div>
                 <div>
                   <div className="testi-name">Sufi Biryani</div>
-                  <div className="testi-role">Restaurant — Islamabad</div>
+                  <div className="testi-role">Restaurant owner</div>
                 </div>
               </div>
             </div>
@@ -1051,12 +1078,18 @@ export default function Home() {
         <div className="footer-inner">
           <div className="footer-brand">
             <Link href="/" className="nav-logo" style={{ textDecoration: "none" }}>
-              <div className="nav-logo-mark">E</div>
+              <img
+                className="nav-logo-mark"
+                src="/favicon.png"
+                alt="EatsDesk"
+                width={34}
+                height={34}
+              />
               <span className="nav-logo-text">EatsDesk</span>
             </Link>
             <p>
-              Restaurant OS built for fast food in Pakistan. POS, kitchen,
-              riders, inventory, and website — from one screen.
+              Restaurant OS built for fast food. POS, kitchen, riders,
+              inventory, and website — from one screen.
             </p>
           </div>
           <div className="footer-col">
@@ -1119,7 +1152,7 @@ export default function Home() {
         </div>
         <div className="footer-bottom">
           <span>
-            © 2026 EatsDesk · Built in <span>Pakistan 🇵🇰</span>
+            © 2026 EatsDesk
           </span>
           <span>eatsdesk.com</span>
         </div>

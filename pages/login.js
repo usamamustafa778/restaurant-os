@@ -251,9 +251,6 @@ export default function LoginPage() {
     setShowResetFields(true);
   }
 
-  const inputClass =
-    "w-full px-3.5 py-2.5 rounded-lg bg-white border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow";
-
   return (
     <>
       <SEO
@@ -262,81 +259,41 @@ export default function LoginPage() {
         keywords="eats desk login, restaurant dashboard login, POS login, restaurant management system login"
         noindex={true}
       />
-      <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-6">
-        {/* Modern gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-white to-secondary/5" />
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-        <div
-          className="absolute bottom-0 left-0 w-96 h-96 bg-secondary/10 rounded-full blur-3xl animate-pulse"
-          style={{ animationDelay: "1s" }}
-        />
-
-        <div className="relative w-full max-w-5xl mx-auto">
-          <div className="relative grid gap-8 md:grid-cols-2 bg-white dark:bg-black py-10 rounded-3xl items-stretch">
-            <Link href="/" className="absolute top-4 left-4 z-10">
+      <div className="auth-page">
+        <div className="auth-page-bg" aria-hidden />
+        <div className="auth-page-inner">
+          <div className="auth-page-grid">
+            <Link href="/" className="auth-back" aria-label="Back to home">
               <ArrowLeft className="w-4 h-4" />
             </Link>
 
-            {/* Left: illustration image */}
-            <div className="hidden relative md:flex  rounded-3xl overflow-hidden ">
-              <div className="relative w-full">
-                <div className=" dark:hidden h-full flex items-center justify-center">
-                  <img
-                    src="/st-images/light.png"
-                    alt="Eats Desk dashboard illustration"
-                    className="h-full max-h-[500px] w-auto object-cover"
-                  />
-                </div>
-                <div className="hidden dark:flex h-full items-center justify-center">
-                  <img
-                    src="/st-images/dark.png"
-                    alt="Eats Desk dashboard illustration (dark)"
-                    className="h-full max-h-[500px] w-auto object-cover"
-                  />
-                </div>
-              </div>
+            <div className="auth-page-panel">
+              <img src="/st-images/dark.png" alt="" />
             </div>
 
-            {/* Right: logo + form */}
-            <div className="relative w-full  max-w-md mx-auto flex flex-col">
-              {/* Logo */}
-              <div className="flex items-center justify-center gap-2 mb-5">
-                <img src="/favicon.png" alt="Eats Desk" className="h-11 w-11" />
+            <div className="auth-page-form-col">
+              <div className="auth-brand">
+                <img src="/favicon.png" alt="" width={44} height={44} />
                 <div>
-                  <div className="text-base font-bold text-gray-900">
-                    Eats Desk
-                  </div>
-                  <div className="text-[11px] text-gray-600">
-                    Restaurant Operations Platform
-                  </div>
+                  <div className="auth-brand-title">EatsDesk</div>
+                  <div className="auth-brand-sub">Restaurant OS</div>
                 </div>
               </div>
 
-              {/* Card */}
-              <div className="bg-white/90 rounded-2xl shadow-xl border px-6 py-6">
+              <div className="auth-card">
                 {checkingStoredAuth ? (
-                  <div className="flex flex-col items-center justify-center py-10 gap-3">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    <p className="text-xs text-gray-600">
-                      Checking existing session…
-                    </p>
+                  <div className="auth-loading-box">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                    <p>Checking existing session…</p>
                   </div>
                 ) : (
                   <>
-                    <div className="text-center mb-4">
-                      <h1 className="text-xl font-bold tracking-tight text-gray-900 mb-1">
-                        Welcome back
-                      </h1>
-                      <p className="text-xs text-gray-600">
-                        Sign in to your dashboard to continue
-                      </p>
-                    </div>
+                    <h1 className="auth-card-title">Welcome back</h1>
+                    <p className="auth-card-lead">
+                      Sign in to your dashboard to continue
+                    </p>
 
-                    {error && (
-                      <div className="mb-3 text-xs text-red-600 bg-red-50/80 border border-red-200 rounded-lg px-3 py-2 backdrop-blur-sm">
-                        {error}
-                      </div>
-                    )}
+                    {error && <div className="auth-error">{error}</div>}
 
                     <form
                       onSubmit={handleSubmit}
@@ -344,9 +301,7 @@ export default function LoginPage() {
                       autoComplete="off"
                     >
                       <div className="space-y-1">
-                        <label className="text-xs text-gray-700 font-semibold">
-                          Email Address
-                        </label>
+                        <label className="auth-label">Email Address</label>
                         <input
                           type="email"
                           required
@@ -354,16 +309,14 @@ export default function LoginPage() {
                           onChange={(e) => setEmail(e.target.value)}
                           placeholder="name@company.com"
                           autoComplete="off"
-                          className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all"
+                          className="auth-input"
                         />
                       </div>
 
                       {!showResetFields && (
                         <div className="space-y-1">
-                          <label className="text-xs text-gray-700 font-semibold">
-                            Password
-                          </label>
-                          <div className="relative">
+                          <label className="auth-label">Password</label>
+                          <div className="auth-input-wrap">
                             <input
                               type={showPassword ? "text" : "password"}
                               required
@@ -371,12 +324,12 @@ export default function LoginPage() {
                               onChange={(e) => setPassword(e.target.value)}
                               placeholder="Enter your password"
                               autoComplete="off"
-                              className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all pr-10"
+                              className="auth-input"
                             />
                             <button
                               type="button"
                               onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition-colors"
+                              className="auth-toggle-visibility"
                               aria-label={
                                 showPassword ? "Hide password" : "Show password"
                               }
@@ -394,10 +347,8 @@ export default function LoginPage() {
                       {showResetFields && (
                         <div className="space-y-2 mt-2">
                           <div className="space-y-1">
-                            <label className="text-xs text-gray-700 font-semibold">
-                              New password
-                            </label>
-                            <div className="relative">
+                            <label className="auth-label">New password</label>
+                            <div className="auth-input-wrap">
                               <input
                                 type={showForgotPassword ? "text" : "password"}
                                 required
@@ -407,12 +358,12 @@ export default function LoginPage() {
                                 }
                                 placeholder="Enter new password"
                                 autoComplete="new-password"
-                                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all pr-10"
+                                className="auth-input"
                               />
                               <button
                                 type="button"
                                 onClick={() => setShowForgotPassword((v) => !v)}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition-colors"
+                                className="auth-toggle-visibility"
                                 aria-label={
                                   showForgotPassword
                                     ? "Hide new password"
@@ -428,10 +379,8 @@ export default function LoginPage() {
                             </div>
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs text-gray-700 font-semibold">
-                              Confirm password
-                            </label>
-                            <div className="relative">
+                            <label className="auth-label">Confirm password</label>
+                            <div className="auth-input-wrap">
                               <input
                                 type={
                                   showForgotConfirmPassword
@@ -445,14 +394,14 @@ export default function LoginPage() {
                                 }
                                 placeholder="Re-enter new password"
                                 autoComplete="new-password"
-                                className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all pr-10"
+                                className="auth-input"
                               />
                               <button
                                 type="button"
                                 onClick={() =>
                                   setShowForgotConfirmPassword((v) => !v)
                                 }
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 transition-colors"
+                                className="auth-toggle-visibility"
                                 aria-label={
                                   showForgotConfirmPassword
                                     ? "Hide confirm password"
@@ -474,7 +423,7 @@ export default function LoginPage() {
                         <button
                           type="button"
                           onClick={openForgotModal}
-                          className="text-[11px] text-primary hover:text-secondary font-semibold"
+                          className="auth-link-text"
                         >
                           Forgot password?
                         </button>
@@ -520,7 +469,7 @@ export default function LoginPage() {
                               );
                             }
                           }}
-                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-bold hover:shadow-lg hover:shadow-primary/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed mt-4"
+                          className="auth-btn-primary mt-4"
                         >
                           {forgotLoading ? (
                             <>
@@ -535,7 +484,7 @@ export default function LoginPage() {
                         <button
                           type="submit"
                           disabled={loading}
-                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-bold hover:shadow-lg hover:shadow-primary/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed mt-4"
+                          className="auth-btn-primary mt-4"
                         >
                           {loading ? (
                             <>
@@ -552,26 +501,20 @@ export default function LoginPage() {
                       )}
                     </form>
 
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                      <p className="text-center text-xs text-gray-600">
+                    <div className="auth-footer-rule">
+                      <p>
                         Don&apos;t have an account?{" "}
-                        <Link
-                          href="/signup"
-                          className="font-bold text-primary hover:text-secondary transition-colors"
-                        >
-                          Create free account →
-                        </Link>
+                        <Link href="/signup">Create free account →</Link>
                       </p>
                     </div>
                   </>
                 )}
               </div>
 
-              {/* Trust indicators */}
-              <div className="mt-4 flex items-center justify-center gap-3 text-[11px] text-gray-500">
-                <span className="flex items-center gap-1">
+              <div className="auth-trust">
+                <span>
                   <svg
-                    className="w-3.5 h-3.5 text-emerald-500"
+                    className="w-3.5 h-3.5"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -583,11 +526,11 @@ export default function LoginPage() {
                       d="M5 13l4 4L19 7"
                     />
                   </svg>
-                  3-months free trial
+                  30-day free trial
                 </span>
-                <span className="flex items-center gap-1">
+                <span>
                   <svg
-                    className="w-3.5 h-3.5 text-emerald-500"
+                    className="w-3.5 h-3.5"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -608,21 +551,19 @@ export default function LoginPage() {
       </div>
 
       {showVerifyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-6 shadow-2xl">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-              Verify your email
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
+        <div className="auth-modal-overlay">
+          <div className="auth-modal">
+            <h2>Verify your email</h2>
+            <p>
               We&apos;ve sent a 6‑digit code to{" "}
-              <span className="font-semibold">{verifyEmailAddress}</span>. Enter
-              it below to complete sign‑in.
+              <span style={{ color: "var(--white)", fontWeight: 600 }}>
+                {verifyEmailAddress}
+              </span>
+              . Enter it below to complete sign‑in.
             </p>
             <form onSubmit={handleVerifySubmit} className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                  Verification code
-                </label>
+                <label className="auth-label">Verification code</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -633,16 +574,14 @@ export default function LoginPage() {
                   onChange={(e) =>
                     setVerifyCode(e.target.value.replace(/[^0-9]/g, ""))
                   }
-                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 tracking-[0.4em] text-center"
+                  className="auth-input tracking-[0.35em] text-center"
                   placeholder="••••••"
                 />
               </div>
               {verifyError && (
-                <p className="text-xs text-red-600 dark:text-red-400">
-                  {verifyError}
-                </p>
+                <p className="auth-error-text">{verifyError}</p>
               )}
-              <div className="flex gap-2 pt-1">
+              <div className="auth-modal-actions">
                 <button
                   type="button"
                   onClick={() => {
@@ -650,14 +589,14 @@ export default function LoginPage() {
                     setVerifyCode("");
                     setVerifyError("");
                   }}
-                  className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300"
+                  className="auth-btn-ghost"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={verifyLoading}
-                  className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="auth-btn-primary"
                 >
                   {verifyLoading ? "Verifying..." : "Verify & continue"}
                 </button>
@@ -668,44 +607,36 @@ export default function LoginPage() {
       )}
 
       {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-6 shadow-2xl">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-              Reset your password
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
+        <div className="auth-modal-overlay">
+          <div className="auth-modal">
+            <h2>Reset your password</h2>
+            <p>
               {forgotStep === 1
                 ? "Enter your email and we will send you a one‑time code."
-                : "Enter the code we sent to your email and choose a new password."}
+                : "Enter the code we sent to your email, then set a new password on the main form."}
             </p>
 
             {forgotError && (
-              <p className="text-xs text-red-600 dark:text-red-400 mb-2">
-                {forgotError}
-              </p>
+              <p className="auth-error-text">{forgotError}</p>
             )}
             {forgotSuccess && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-2">
-                {forgotSuccess}
-              </p>
+              <p className="auth-success-text">{forgotSuccess}</p>
             )}
 
             {forgotStep === 1 ? (
               <form onSubmit={handleForgotRequest} className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                    Email address
-                  </label>
+                  <label className="auth-label">Email address</label>
                   <input
                     type="email"
                     required
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                    className="auth-input"
                     placeholder="you@example.com"
                   />
                 </div>
-                <div className="flex gap-2 pt-1">
+                <div className="auth-modal-actions">
                   <button
                     type="button"
                     onClick={() => {
@@ -713,14 +644,14 @@ export default function LoginPage() {
                       setForgotError("");
                       setForgotSuccess("");
                     }}
-                    className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300"
+                    className="auth-btn-ghost"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={forgotLoading}
-                    className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="auth-btn-primary"
                   >
                     {forgotLoading ? "Sending..." : "Send code"}
                   </button>
@@ -729,9 +660,7 @@ export default function LoginPage() {
             ) : (
               <form onSubmit={handleForgotVerifyCode} className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                    Verification code
-                  </label>
+                  <label className="auth-label">Verification code</label>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -742,11 +671,11 @@ export default function LoginPage() {
                     onChange={(e) =>
                       setForgotCode(e.target.value.replace(/[^0-9]/g, ""))
                     }
-                    className="w-full px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 tracking-[0.4em] text-center"
+                    className="auth-input tracking-[0.35em] text-center"
                     placeholder="••••••"
                   />
                 </div>
-                <div className="flex gap-2 pt-1">
+                <div className="auth-modal-actions">
                   <button
                     type="button"
                     onClick={() => {
@@ -754,16 +683,16 @@ export default function LoginPage() {
                       setForgotError("");
                       setForgotSuccess("");
                     }}
-                    className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300"
+                    className="auth-btn-ghost"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={forgotLoading}
-                    className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="auth-btn-primary"
                   >
-                    {forgotLoading ? "Updating..." : "Set new password"}
+                    {forgotLoading ? "Updating..." : "Continue"}
                   </button>
                 </div>
               </form>

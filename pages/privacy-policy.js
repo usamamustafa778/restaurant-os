@@ -223,7 +223,7 @@ export default function PrivacyPolicy() {
                     We retain your information for as long as your account is active or as needed to provide you services. If you close your account, we will delete your data within 90 days, except where we are required to retain it for legal, regulatory, or security purposes.
                   </p>
                   <p className="text-gray-700">
-                    Transactional records may be retained for longer periods as required by tax and accounting regulations in Pakistan.
+                    Transactional records may be retained for longer periods as required by applicable tax and accounting regulations.
                   </p>
                 </div>
               </div>
@@ -294,7 +294,7 @@ export default function PrivacyPolicy() {
                     <p className="text-gray-900 font-semibold mb-2">Eats Desk Privacy Team</p>
                     <p className="text-gray-700 text-sm mb-1">Email: support@eatsdesk.com</p>
                     <p className="text-gray-700 text-sm mb-1">Phone / WhatsApp: +92 316 622 269</p>
-                    <p className="text-gray-700 text-sm">Address: Islamabad, Pakistan</p>
+                    <p className="text-gray-700 text-sm">Address: available on request — contact support@eatsdesk.com</p>
                   </div>
                 </div>
               </div>
@@ -336,7 +336,7 @@ export default function PrivacyPolicy() {
                   <div className="text-sm font-bold">Eats Desk</div>
                 </div>
                 <p className="text-sm text-gray-400 leading-relaxed">
-                  The all-in-one restaurant management platform for Pakistan.
+                  The all-in-one restaurant management platform for fast food and full-service restaurants.
                 </p>
               </div>
 

@@ -370,10 +370,10 @@ export default function TermsAndConditions() {
                 <h2 className="text-2xl font-bold text-gray-900 mb-3">14. Governing Law and Dispute Resolution</h2>
                 <div className="ml-0">
                   <p className="text-gray-700 mb-4">
-                    These Terms shall be governed by and construed in accordance with the laws of Pakistan, without regard to its conflict of law provisions.
+                    These Terms shall be governed by and construed in accordance with the laws applicable to Eats Desk&apos;s operations, without regard to conflict-of-law principles that would require application of another jurisdiction&apos;s laws.
                   </p>
                   <p className="text-gray-700">
-                    Any disputes arising out of or related to these Terms or the Service shall be resolved through good-faith negotiation. If negotiation fails, disputes shall be subject to the exclusive jurisdiction of the courts located in Islamabad, Pakistan.
+                    Any disputes arising out of or related to these Terms or the Service shall be resolved through good-faith negotiation. If negotiation fails, disputes shall be subject to the exclusive jurisdiction of the courts competent for Eats Desk&apos;s registered place of business.
                   </p>
                 </div>
               </div>
@@ -428,7 +428,7 @@ export default function TermsAndConditions() {
                     <p className="text-gray-900 font-semibold mb-2">Eats Desk Legal Team</p>
                     <p className="text-gray-700 text-sm mb-1">Email: support@eatsdesk.com</p>
                     <p className="text-gray-700 text-sm mb-1">Phone / WhatsApp: +92 316 622 269</p>
-                    <p className="text-gray-700 text-sm">Address: Islamabad, Pakistan</p>
+                    <p className="text-gray-700 text-sm">Address: available on request — contact support@eatsdesk.com</p>
                   </div>
                 </div>
               </div>
@@ -480,7 +480,7 @@ export default function TermsAndConditions() {
                   <div className="text-sm font-bold">Eats Desk</div>
                 </div>
                 <p className="text-sm text-gray-400 leading-relaxed">
-                  The all-in-one restaurant management platform for Pakistan.
+                  The all-in-one restaurant management platform for fast food and full-service restaurants.
                 </p>
               </div>
 

@@ -219,7 +219,7 @@ export default function ReadMore() {
     {
       question: "How is Eats Desk different from other POS systems?",
       answer:
-        "Most POS systems give you a billing machine. Eats Desk gives you a full operations platform: POS, inventory, customer management, kitchen display, analytics, and a free website — all in one place. Plus, it's built specifically for Pakistani restaurants and supports local payment methods.",
+        "Most POS systems give you a billing machine. Eats Desk gives you a full operations platform: POS, inventory, customer management, kitchen display, analytics, and a free website — all in one place. Plus, it's tuned for busy restaurants and supports the payment methods you already use.",
     },
     {
       question: "What kind of support do I get?",
@@ -234,7 +234,7 @@ export default function ReadMore() {
     {
       question: "Who is this best suited for?",
       answer:
-        "Eats Desk works best for dine-in restaurants, cafes, fast food outlets, and cloud kitchens in Pakistan that are doing at least 50+ orders per day and want to stop losing money to manual errors, slow service, and zero visibility into their numbers.",
+        "Eats Desk works best for dine-in restaurants, cafes, fast food outlets, and cloud kitchens that are doing at least 50+ orders per day and want to stop losing money to manual errors, slow service, and zero visibility into their numbers.",
     },
   ];
 
@@ -317,8 +317,8 @@ export default function ReadMore() {
     <>
       <SEO
         title="How Eats Desk Transforms Restaurants | Real Results, Real Restaurants"
-        description="See exactly how Eats Desk helps Pakistani restaurants increase revenue, eliminate errors, and run smoother operations. Book a free demo today."
-        keywords="restaurant management system Pakistan, restaurant POS Lahore Karachi Islamabad, restaurant software demo, Eats Desk case studies"
+        description="See exactly how Eats Desk helps restaurants increase revenue, eliminate errors, and run smoother operations. Book a free demo today."
+        keywords="restaurant management system, restaurant POS software, restaurant software demo, Eats Desk case studies"
       />
       <div className="min-h-screen bg-white text-gray-900 overflow-x-hidden">
 
@@ -414,7 +414,7 @@ export default function ReadMore() {
             <Reveal>
               <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary bg-primary/5 border border-primary/15 px-3 py-1.5 rounded-full mb-6">
                 <Zap className="w-3.5 h-3.5" />
-                Trusted by 500+ restaurants across Pakistan
+                Trusted by 500+ restaurants worldwide
               </span>
             </Reveal>
 
@@ -639,7 +639,7 @@ export default function ReadMore() {
                 </h2>
                 <p className="text-gray-500 text-base max-w-2xl mx-auto leading-relaxed">
                   Eats Desk replaces your notebooks, spreadsheets, and guesswork with a
-                  single operations platform built specifically for restaurants in Pakistan.
+                  single operations platform built for high-volume restaurants.
                 </p>
               </div>
             </Reveal>
@@ -1040,7 +1040,7 @@ export default function ReadMore() {
                   </div>
                   <ul className="space-y-3">
                     {[
-                      "You run a restaurant, café, fast food outlet, or cloud kitchen in Pakistan",
+                      "You run a restaurant, café, fast food outlet, or cloud kitchen",
                       "You process 50+ orders per day and want to scale",
                       "You're tired of guessing your numbers at the end of the month",
                       "You want your own online ordering website (no 30% commissions)",
@@ -1067,7 +1067,7 @@ export default function ReadMore() {
                       "You run a home-based food business with under 10 orders/day",
                       "You're looking for a free app with no support or onboarding",
                       "You don't want to change anything about how you currently operate",
-                      "You're outside Pakistan (we're optimized for local payment methods & workflows)",
+                      "You need a generic retail POS with no restaurant-specific workflows",
                     ].map((item, i) => (
                       <li key={i} className="flex gap-2.5 text-sm text-gray-500">
                         <XCircle className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />
@@ -1098,7 +1098,7 @@ export default function ReadMore() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <Reveal>
               <p className="text-center text-xs font-semibold uppercase tracking-widest text-gray-400 mb-8">
-                Trusted by restaurants, cafés &amp; cloud kitchens across Pakistan
+                Trusted by restaurants, cafés &amp; cloud kitchens everywhere
               </p>
             </Reveal>
             <div className="flex flex-wrap justify-center gap-3">

@@ -130,8 +130,8 @@ export default function FoodHub({ initialRestaurants = [], fetchError = null }) 
     <>
       <SEO
         title="Order food online — discover restaurants near you | Eats Desk Food"
-        description="Browse public restaurants on Eats Desk: menus, deals, and online ordering. Find food near you in Islamabad, Lahore, Karachi, and across Pakistan."
-        keywords="order food online Pakistan, food delivery, restaurant near me, eats desk food, browse restaurants"
+        description="Browse public restaurants on Eats Desk: menus, deals, and online ordering. Find food near you and order online."
+        keywords="order food online, food delivery, restaurant near me, eats desk food, browse restaurants"
       />
       <div className="min-h-screen bg-[#f7f7f7] text-gray-900">
         {/* Top bar — Foodpanda-style pink accent */}

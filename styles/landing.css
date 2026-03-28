@@ -65,7 +65,7 @@ body:has(.eatsdesk-landing){
 .eatsdesk-landing nav{
   position:fixed;top:0;left:0;right:0;
   z-index:100;
-  padding:20px 0;
+  padding:20px 32px;
   transition:background 0.3s,backdrop-filter 0.3s;
 }
 
@@ -77,7 +77,7 @@ body:has(.eatsdesk-landing){
 
 .eatsdesk-landing .nav-inner{
   max-width:1160px;margin:0 auto;
-  padding:0 32px;
+  width:100%;
   display:flex;align-items:center;justify-content:space-between;
 }
 
@@ -88,11 +88,11 @@ body:has(.eatsdesk-landing){
 
 .eatsdesk-landing .nav-logo-mark{
   width:34px;height:34px;
-  background:var(--orange);
   border-radius:8px;
-  display:flex;align-items:center;justify-content:center;
-  font-family:'Syne',sans-serif;
-  font-weight:800;font-size:15px;color:#fff;
+  display:block;
+  object-fit:cover;
+  flex-shrink:0;
+  filter:sepia(18%) saturate(1.35) hue-rotate(348deg) brightness(1.03);
 }
 
 .eatsdesk-landing .nav-logo-text{
@@ -117,6 +117,8 @@ body:has(.eatsdesk-landing){
 .eatsdesk-landing .nav-cta{
   display:flex;align-items:center;gap:12px;
 }
+
+.eatsdesk-landing .nav-trial-short{display:none;}
 
 .eatsdesk-landing .btn{
   display:inline-flex;align-items:center;gap:8px;
@@ -1037,9 +1039,127 @@ body:has(.eatsdesk-landing){
   .eatsdesk-landing .strip-stat{border-right:none;border-bottom:1px solid var(--gray-1);padding:24px 0;}
   .eatsdesk-landing .strip-stat:nth-child(odd){border-right:1px solid var(--gray-1);}
   .eatsdesk-landing .nav-links{display:none;}
+  body:has(.eatsdesk-landing){cursor:auto;}
+  .eatsdesk-landing .cursor,
+  .eatsdesk-landing .cursor-ring{display:none!important;}
+  .eatsdesk-landing .btn,
+  .eatsdesk-landing .tab-btn,
+  .eatsdesk-landing .pc-cta,
+  .eatsdesk-landing .billing-toggle button{cursor:auto;}
+  .eatsdesk-landing nav{padding:8px 12px;}
+  .eatsdesk-landing .nav-inner{
+    gap:8px;
+    align-items:center;
+  }
+  .eatsdesk-landing .nav-logo{
+    min-width:0;
+    flex-shrink:0;
+  }
+  .eatsdesk-landing .nav-logo-mark{
+    width:28px;height:28px;
+  }
+  .eatsdesk-landing .nav-logo-text{
+    font-size:15px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .eatsdesk-landing .nav-cta{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-shrink:0;
+    margin-left:auto;
+  }
+  .eatsdesk-landing .nav-cta .btn{
+    padding:7px 11px;
+    font-size:11px;
+    line-height:1.2;
+  }
+  .eatsdesk-landing .nav-trial-long{display:none;}
+  .eatsdesk-landing .nav-trial-short{display:inline;}
   .eatsdesk-landing .dash-stats{grid-template-columns:1fr 1fr;}
   .eatsdesk-landing .kds-grid{grid-template-columns:1fr 1fr;}
   .eatsdesk-landing .savings-strip{grid-template-columns:1fr;}
   .eatsdesk-landing .faq-grid{grid-template-columns:1fr;}
   .eatsdesk-landing .cmp-table th,.eatsdesk-landing .cmp-table td{padding:10px 10px;}
+
+  /* Comparison table — show a sliver of plan columns so horizontal scroll is discoverable */
+  .eatsdesk-landing .pricing-section .cmp-wrap{
+    margin-left:-10px;
+    margin-right:-10px;
+    width:calc(100% + 20px);
+    max-width:none;
+    padding-bottom:4px;
+  }
+  .eatsdesk-landing .cmp-table{
+    table-layout:fixed;
+    min-width:720px;
+  }
+  .eatsdesk-landing .cmp-table thead th:first-child,
+  .eatsdesk-landing .cmp-table tbody td:first-child{
+    width:228px!important;
+    max-width:228px;
+    min-width:228px;
+    overflow-wrap:break-word;
+    word-wrap:break-word;
+  }
+  .eatsdesk-landing .cmp-table thead th.plan-col{
+    width:164px!important;
+    min-width:164px;
+  }
+  .eatsdesk-landing .cmp-table tbody td.center{
+    width:164px!important;
+    min-width:164px;
+  }
+
+  /* Pricing — mobile rhythm (tighter header stack, less dead air, readable card) */
+  .eatsdesk-landing .pricing-section .section-title{
+    line-height:1.16;
+    margin-bottom:12px;
+  }
+  .eatsdesk-landing .pricing-section .section-sub{
+    margin-bottom:18px;
+    font-size:15px;
+    line-height:1.6;
+    max-width:36rem;
+  }
+  .eatsdesk-landing .pricing-section .section-sub + .pricing-billing-wrap{
+    padding-top:2px;
+  }
+  .eatsdesk-landing .pricing-section .billing-toggle{
+    margin:0 auto 20px;
+    padding-top:10px;
+  }
+  .eatsdesk-landing .pricing-section .pricing-grid{
+    margin-top:22px;
+  }
+  .eatsdesk-landing .pricing-section .price-card{
+    padding:28px 22px 34px;
+  }
+  .eatsdesk-landing .pricing-section .pc-tagline{
+    margin-bottom:14px;
+  }
+  .eatsdesk-landing .pricing-section .pc-price{
+    font-size:44px;
+    margin-bottom:6px;
+  }
+  .eatsdesk-landing .pricing-section .pc-price-tier{
+    margin-bottom:18px;
+  }
+  .eatsdesk-landing .pricing-section .pc-unit{
+    margin-bottom:10px;
+  }
+  .eatsdesk-landing .pricing-section .pc-equiv{
+    margin-bottom:22px;
+  }
+  .eatsdesk-landing .pricing-section .billing-toggle button{
+    padding:8px 14px;
+    font-size:12px;
+  }
+}
+
+@media(max-width:900px) and (min-width:721px){
+  .eatsdesk-landing .nav-trial-long{display:inline;}
+  .eatsdesk-landing .nav-trial-short{display:none;}
 }
