@@ -41,14 +41,16 @@ import {
   GripVertical,
   X,
   Check,
+  Search,
 } from "lucide-react";
 
 const SECTIONS = [
   { id: "template", label: "Template", icon: Layout },
   { id: "branding", label: "Branding", icon: Palette },
+  { id: "seo", label: "SEO", icon: Search },
   { id: "domain", label: "Domain", icon: LinkIcon },
   { id: "contact", label: "Contact", icon: Phone },
-  { id: "hero", label: "Hero Slides", icon: ImageIcon },
+  { id: "hero", label: "Hero", icon: ImageIcon },
   { id: "theme", label: "Theme", icon: Sparkles },
   { id: "social", label: "Social Media", icon: Globe },
   { id: "hours", label: "Opening Hours", icon: Clock },
@@ -124,8 +126,18 @@ function SectionCard({
   );
 }
 
-function MediaField({ label, value, onChange }) {
-  const [mode, setMode] = useState(value ? "link" : "link");
+function MediaField({
+  label,
+  value,
+  onChange,
+  accept = "image/*",
+  hint,
+  previewClassName,
+  className = "",
+  /** When true, hint sticks to bottom of the card (for equal-height paired fields). */
+  pinHintToBottom = false,
+}) {
+  const [mode, setMode] = useState("link");
   const [uploading, setUploading] = useState(false);
 
   async function handleUpload(e) {
@@ -144,10 +156,16 @@ function MediaField({ label, value, onChange }) {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className={labelCls}>{label}</label>
-        <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
+    <div
+      className={`flex h-full min-h-0 flex-col rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/40 ${className}`.trim()}
+    >
+      <div className="mb-3 flex min-h-[2.25rem] items-center justify-between gap-3">
+        <label className={`${labelCls} mb-0 shrink-0`}>{label}</label>
+        <div
+          className="inline-flex shrink-0 rounded-lg border border-gray-200 dark:border-neutral-600 overflow-hidden"
+          role="group"
+          aria-label={`${label} source`}
+        >
           {[
             ["link", LinkIcon, "URL"],
             ["upload", Upload, "Upload"],
@@ -156,59 +174,73 @@ function MediaField({ label, value, onChange }) {
               key={t}
               type="button"
               onClick={() => setMode(t)}
-              className={`inline-flex items-center gap-1.5 px-3 h-7 text-xs font-semibold transition-colors ${
+              className={`inline-flex items-center gap-1.5 px-2.5 h-8 text-[11px] font-semibold transition-colors sm:px-3 sm:text-xs ${
                 mode === t
                   ? "bg-gradient-to-r from-primary to-secondary text-white"
                   : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900"
               }`}
             >
-              <Ic className="w-3 h-3" />
+              <Ic className="w-3 h-3 shrink-0" />
               {lab}
             </button>
           ))}
         </div>
       </div>
-      {mode === "link" ? (
-        <input
-          type="url"
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="https://..."
-          className={inp}
-        />
-      ) : (
-        <label
-          className={`flex items-center justify-center gap-2 h-10 rounded-xl border-2 border-dashed border-gray-300 dark:border-neutral-700 cursor-pointer hover:border-primary transition-colors text-sm text-gray-500 ${
-            uploading ? "opacity-50 pointer-events-none" : ""
-          }`}
-        >
-          {uploading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Upload className="w-4 h-4" />
-          )}
-          {uploading ? "Uploading..." : "Choose file"}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {mode === "link" ? (
           <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleUpload}
+            type="url"
+            value={value || ""}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="https://..."
+            className={inp}
           />
-        </label>
-      )}
-      {value && (
-        <div className="mt-2 relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-700">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={value} alt="" className="w-full h-full object-cover" />
-          <button
-            type="button"
-            onClick={() => onChange("")}
-            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
+        ) : (
+          <label
+            className={`flex min-h-10 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 dark:border-neutral-600 cursor-pointer hover:border-primary transition-colors text-sm text-gray-500 dark:text-neutral-500 ${
+              uploading ? "opacity-50 pointer-events-none" : ""
+            }`}
           >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      )}
+            {uploading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            {uploading ? "Uploading..." : "Choose file"}
+            <input
+              type="file"
+              accept={accept}
+              className="hidden"
+              onChange={handleUpload}
+            />
+          </label>
+        )}
+        {value ? (
+          <div
+            className={`relative mt-3 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-neutral-700 ${previewClassName || "h-20 w-20"}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={value} alt="" className="h-full w-full object-cover" />
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+              aria-label="Remove image"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ) : null}
+        {hint ? (
+          <p
+            className={`text-[11px] leading-relaxed text-gray-500 dark:text-neutral-500 ${
+              pinHintToBottom ? "mt-auto pt-3" : "mt-2"
+            }`}
+          >
+            {hint}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -225,6 +257,7 @@ export default function WebsiteContentPage() {
   const [ws, setWs] = useState({});
   const [menuItems, setMenuItems] = useState([]);
   const [activeSection, setActiveSection] = useState("template");
+  const [envView, setEnvView] = useState("live");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -255,6 +288,13 @@ export default function WebsiteContentPage() {
     setWs((prev) => ({
       ...prev,
       [parent]: { ...(prev[parent] || {}), [key]: value },
+    }));
+  }
+
+  function updateSeo(key, value) {
+    setWs((prev) => ({
+      ...prev,
+      seo: { ...(prev.seo || {}), [key]: value },
     }));
   }
 
@@ -469,7 +509,17 @@ export default function WebsiteContentPage() {
       ? `https://${ws.subdomain}.${stagingRoot}`
       : null;
 
-  const [envView, setEnvView] = useState("live");
+  /** Custom hostname is only shown once Vercel reports verified and not invalid; until then show preview (staging) URL. */
+  const hasCustomDomain = !!connectedDomain;
+  const customDomainDnsLive =
+    hasCustomDomain && domainVerified && !domainInvalidConfig;
+  const effectiveLiveWebsiteUrl = !hasCustomDomain
+    ? liveUrl
+    : customDomainDnsLive
+      ? customDomainUrl
+      : stagingUrl || liveUrl;
+  const displayWebsiteUrl =
+    envView === "staging" ? stagingUrl || liveUrl : effectiveLiveWebsiteUrl;
 
   return (
     <AdminLayout title="Website Settings">
@@ -509,14 +559,14 @@ export default function WebsiteContentPage() {
               </div>
             )}
           </div>
-          {(envView === "staging" ? stagingUrl : liveUrl) && (
+          {displayWebsiteUrl && (
             <a
-              href={customDomainUrl || (envView === "staging" ? stagingUrl : liveUrl)}
+              href={displayWebsiteUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-primary hover:underline flex items-center gap-1"
             >
-              {customDomainUrl || (envView === "staging" ? stagingUrl : liveUrl)}
+              {displayWebsiteUrl}
               <ExternalLink className="w-3 h-3" />
             </a>
           )}
@@ -665,32 +715,35 @@ export default function WebsiteContentPage() {
               id="branding"
               icon={Palette}
               title="Branding"
-              subtitle="Restaurant name, logo, and description"
+              subtitle="Restaurant name, logo, favicon, and description"
               iconColor={iconAccentPrimary}
               isActive={activeSection === "branding"}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>Restaurant Name</label>
-                  <input
-                    type="text"
-                    value={ws.name || ""}
-                    onChange={(e) => update("name", e.target.value)}
-                    placeholder="My Restaurant"
-                    className={inp}
-                  />
+              <div className="space-y-8">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
+                  <div>
+                    <label className={labelCls}>Restaurant Name</label>
+                    <input
+                      type="text"
+                      value={ws.name || ""}
+                      onChange={(e) => update("name", e.target.value)}
+                      placeholder="My Restaurant"
+                      className={inp}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Tagline</label>
+                    <input
+                      type="text"
+                      value={ws.tagline || ""}
+                      onChange={(e) => update("tagline", e.target.value)}
+                      placeholder="Best food in town"
+                      className={inp}
+                    />
+                  </div>
                 </div>
+
                 <div>
-                  <label className={labelCls}>Tagline</label>
-                  <input
-                    type="text"
-                    value={ws.tagline || ""}
-                    onChange={(e) => update("tagline", e.target.value)}
-                    placeholder="Best food in town"
-                    className={inp}
-                  />
-                </div>
-                <div className="md:col-span-2">
                   <label className={labelCls}>Description</label>
                   <textarea
                     value={ws.description || ""}
@@ -700,16 +753,135 @@ export default function WebsiteContentPage() {
                     className={`${inp} h-auto py-2.5 resize-none`}
                   />
                 </div>
+
+                <div className="border-t border-gray-100 pt-8 dark:border-neutral-800">
+                  <div className="mb-5">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                      Logo & favicon
+                    </h4>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-neutral-500">
+                      Paste a URL or upload a file. Previews update after you save or set a value.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:items-stretch">
+                    <div className="flex min-h-0 md:h-full">
+                      <MediaField
+                        label="Logo"
+                        value={ws.logoUrl}
+                        onChange={(v) => update("logoUrl", v)}
+                        hint="Shown in the header and footer. Square or near-square works best."
+                        className="w-full flex-1"
+                        pinHintToBottom
+                      />
+                    </div>
+                    <div className="flex min-h-0 md:h-full">
+                      <MediaField
+                        label="Favicon"
+                        value={ws.faviconUrl}
+                        onChange={(v) => update("faviconUrl", v)}
+                        accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/jpeg,image/webp,.ico"
+                        hint="Browser tab icon. Use PNG or ICO, ideally 32×32px or larger."
+                        previewClassName="h-16 w-16"
+                        className="w-full flex-1"
+                        pinHintToBottom
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* SEO */}
+            <SectionCard
+              id="seo"
+              icon={Search}
+              title="SEO"
+              subtitle="Search results and social sharing previews"
+              iconColor={iconAccentPrimary}
+              isActive={activeSection === "seo"}
+            >
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600 dark:text-neutral-400 -mt-1">
+                  Leave fields empty to use your restaurant name and description from Branding. Set a
+                  custom Open Graph image to control how links look when shared (e.g. Facebook,
+                  WhatsApp).
+                </p>
+                <div>
+                  <label className={labelCls}>Page title</label>
+                  <input
+                    type="text"
+                    value={ws.seo?.title ?? ""}
+                    onChange={(e) => updateSeo("title", e.target.value)}
+                    placeholder={`${ws.name || "Restaurant"} | Eats Desk`}
+                    className={inp}
+                    maxLength={200}
+                  />
+                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
+                    Shown in the browser tab and search results. If empty, defaults to your restaurant
+                    name.
+                  </p>
+                </div>
+                <div>
+                  <label className={labelCls}>Meta description</label>
+                  <textarea
+                    value={ws.seo?.metaDescription ?? ""}
+                    onChange={(e) => updateSeo("metaDescription", e.target.value)}
+                    placeholder={ws.description || "A short summary for Google and social previews…"}
+                    rows={3}
+                    maxLength={500}
+                    className={`${inp} h-auto py-2.5 resize-none`}
+                  />
+                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
+                    Aim for ~150–160 characters. If empty, your restaurant description from Branding
+                    is used.
+                  </p>
+                </div>
+                <div>
+                  <label className={labelCls}>Keywords</label>
+                  <input
+                    type="text"
+                    value={ws.seo?.keywords ?? ""}
+                    onChange={(e) => updateSeo("keywords", e.target.value)}
+                    placeholder="pizza, delivery, downtown"
+                    className={inp}
+                    maxLength={500}
+                  />
+                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
+                    Comma-separated. Optional; many search engines ignore this field.
+                  </p>
+                </div>
                 <MediaField
-                  label="Logo"
-                  value={ws.logoUrl}
-                  onChange={(v) => update("logoUrl", v)}
+                  label="Social share image (Open Graph)"
+                  hint="Recommended 1200×630px. If empty, your banner image is used when available."
+                  value={ws.seo?.ogImageUrl}
+                  onChange={(v) => updateSeo("ogImageUrl", v)}
                 />
-                <MediaField
-                  label="Banner Image"
-                  value={ws.bannerUrl}
-                  onChange={(v) => update("bannerUrl", v)}
-                />
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border-2 border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Hide from search engines
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
+                      Adds a &quot;noindex&quot; tag so Google and others don&apos;t list this site.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updateSeo("noIndex", !ws.seo?.noIndex)}
+                    className={`self-start sm:self-center relative flex items-center gap-2 h-9 px-3 rounded-full text-xs font-semibold transition-colors ${
+                      ws.seo?.noIndex
+                        ? "bg-amber-500 text-white"
+                        : "bg-gray-200 dark:bg-neutral-700 text-gray-800 dark:text-neutral-100"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                        ws.seo?.noIndex ? "translate-x-0" : "translate-x-0"
+                      }`}
+                    />
+                    <span>{ws.seo?.noIndex ? "Hidden" : "Visible"}</span>
+                  </button>
+                </div>
               </div>
             </SectionCard>
 
@@ -945,12 +1117,14 @@ export default function WebsiteContentPage() {
                     {customDomainUrl && (
                       <div className="mx-5 mb-4">
                         <a
-                          href={customDomainUrl}
+                          href={effectiveLiveWebsiteUrl || customDomainUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
                         >
-                          Open connected domain
+                          {customDomainDnsLive
+                            ? "Open your site"
+                            : "Open preview site (DNS pending)"}
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       </div>
@@ -1045,16 +1219,97 @@ export default function WebsiteContentPage() {
               </div>
             </SectionCard>
 
-            {/* Hero Slides */}
+            {/* Hero: banner vs slides */}
             <SectionCard
               id="hero"
               icon={ImageIcon}
-              title="Hero Slides"
-              subtitle="Carousel images at the top of your website"
+              title="Hero"
+              subtitle="Single banner image or a rotating carousel"
               iconColor={iconAccentPrimary}
               isActive={activeSection === "hero"}
             >
-              <div className="space-y-4">
+              <div className="space-y-6">
+                <p className="text-sm text-gray-600 dark:text-neutral-400">
+                  Choose how the top of your website introduces your restaurant.{" "}
+                  <strong className="text-gray-800 dark:text-neutral-200">Hero banner</strong> uses a
+                  single wide image (set below when selected).{" "}
+                  <strong className="text-gray-800 dark:text-neutral-200">Hero slides</strong> uses the
+                  carousel you configure below.
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {[
+                    {
+                      id: "banner",
+                      title: "Hero banner",
+                      desc: "One full-width image behind your restaurant name and tagline. Upload or link the banner in the section below.",
+                    },
+                    {
+                      id: "slides",
+                      title: "Hero slides",
+                      desc: "Multiple slides with custom titles, images, and buttons. Great for promotions and specials.",
+                    },
+                  ].map((opt) => {
+                    const active =
+                      (ws.heroType === "banner" ? "banner" : "slides") === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => update("heroType", opt.id)}
+                        className={`text-left rounded-2xl border-2 p-5 transition-all ${
+                          active
+                            ? "border-primary ring-4 ring-primary/10 bg-primary/5 dark:bg-primary/10"
+                            : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                            {opt.title}
+                          </h4>
+                          {active && (
+                            <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
+                          {opt.desc}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {ws.heroType === "banner" ? (
+                  <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                        Banner image
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-neutral-500">
+                        Full-width hero background. Overlay text uses your{" "}
+                        <strong className="text-gray-700 dark:text-neutral-300">name</strong>,{" "}
+                        <strong className="text-gray-700 dark:text-neutral-300">tagline</strong>, and{" "}
+                        <strong className="text-gray-700 dark:text-neutral-300">description</strong> from
+                        Branding.
+                      </p>
+                    </div>
+                    <MediaField
+                      label="Hero banner image"
+                      value={ws.bannerUrl}
+                      onChange={(v) => update("bannerUrl", v)}
+                      hint="Wide image works best (about 1200×400 or larger). Also used as a fallback for social previews when no SEO image is set."
+                      previewClassName="aspect-[2.4/1] w-full max-h-44"
+                    />
+                  </div>
+                ) : null}
+              </div>
+
+              {ws.heroType !== "banner" ? (
+              <div className="mt-8 space-y-4 border-t border-gray-100 pt-8 dark:border-neutral-800">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                  Slide content
+                </h4>
                 {(ws.heroSlides || []).map((slide, idx) => (
                   <div
                     key={idx}
@@ -1158,6 +1413,7 @@ export default function WebsiteContentPage() {
                   Add Slide
                 </button>
               </div>
+              ) : null}
             </SectionCard>
 
             {/* Theme Colors */}
