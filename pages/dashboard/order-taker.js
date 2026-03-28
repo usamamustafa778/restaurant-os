@@ -738,8 +738,8 @@ export default function OrderTakerPage() {
                         </p>
                         <p className="text-[9px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">
                           Prepaid + submitted
-                        </p>
-                      </div>
+                    </p>
+                  </div>
                       <div
                         className={`p-3.5 sm:p-4 ${
                           paymentPendingTotal > 0 ? "bg-amber-50/90 dark:bg-amber-500/10" : ""
@@ -860,7 +860,7 @@ export default function OrderTakerPage() {
                       const paymentPending =
                         (order.status === "DELIVERED" || order.status === "COMPLETED") &&
                         getPaymentStatus(order) === "unpaid";
-                      const sc = getStatusConfig(order.status);
+                    const sc = getStatusConfig(order.status);
                       const StatusIcon = paymentPending ? Wallet : sc.icon;
                       const orderId = order.id || order._id;
                       const headerBg = paymentPending
@@ -872,8 +872,8 @@ export default function OrderTakerPage() {
                       const borderClass = paymentPending
                         ? "border-amber-200 dark:border-amber-500/30"
                         : sc.border;
-                      return (
-                        <div
+                    return (
+                      <div
                           key={orderId}
                           className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${borderClass}`}
                         >
@@ -886,25 +886,25 @@ export default function OrderTakerPage() {
                                   : order.status === "CANCELLED"
                                     ? "Cancelled"
                                     : sc.label}
-                              </span>
-                            </div>
-                            <div className={`flex items-center gap-1.5 text-[11px] ${headerText} opacity-80 shrink-0`}>
-                              <Clock className="w-3 h-3" />
-                              {getTimeAgo(order.createdAt)}
-                            </div>
+                            </span>
                           </div>
-                          <div className="p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <div>
-                                <span className="text-base font-black text-gray-900 dark:text-white">
-                                  #{order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}
+                            <div className={`flex items-center gap-1.5 text-[11px] ${headerText} opacity-80 shrink-0`}>
+                            <Clock className="w-3 h-3" />
+                            {getTimeAgo(order.createdAt)}
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <span className="text-base font-black text-gray-900 dark:text-white">
+                                #{order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}
+                              </span>
+                              {order.tableName && (
+                                <span className="ml-2 text-xs font-semibold text-gray-400 dark:text-neutral-500">
+                                  {order.tableName}
                                 </span>
-                                {order.tableName && (
-                                  <span className="ml-2 text-xs font-semibold text-gray-400 dark:text-neutral-500">
-                                    {order.tableName}
-                                  </span>
-                                )}
-                              </div>
+                              )}
+                            </div>
                               <span
                                 className={`text-sm font-black ${
                                   paymentPending
@@ -913,22 +913,22 @@ export default function OrderTakerPage() {
                                 }`}
                               >
                                 Rs. {getOrderTotal(order).toLocaleString()}
-                              </span>
-                            </div>
+                            </span>
+                          </div>
                             {paymentPending && (
                               <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 mb-2">
                                 Collect at counter — still marked &quot;To be paid&quot; in POS
                               </p>
                             )}
-                            {order.customerName && (
-                              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
-                                <User className="w-3 h-3" />
-                                {order.customerName}
-                              </div>
-                            )}
-                          </div>
+                          {order.customerName && (
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
+                              <User className="w-3 h-3" />
+                              {order.customerName}
+                            </div>
+                          )}
                         </div>
-                      );
+                      </div>
+                    );
                     })
                   )}
                 </div>
@@ -1056,30 +1056,30 @@ export default function OrderTakerPage() {
 
                           {isExpanded && (
                             <>
-                              {/* Customer */}
-                              {order.customerName && (
-                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
-                                  <User className="w-3 h-3" />
-                                  {order.customerName}
-                                </div>
-                              )}
+                          {/* Customer */}
+                          {order.customerName && (
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
+                              <User className="w-3 h-3" />
+                              {order.customerName}
+                            </div>
+                          )}
 
-                              {/* Items list */}
-                              <div className="space-y-1 mb-3">
-                                {order.items?.map((item, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="flex items-center justify-between text-xs"
-                                  >
-                                    <span className="text-gray-700 dark:text-neutral-300 font-medium">
-                                      <span className="font-bold text-gray-900 dark:text-white">
-                                        {item.quantity || item.qty}x
-                                      </span>{" "}
-                                      {item.name}
-                                    </span>
-                                  </div>
-                                ))}
+                          {/* Items list */}
+                          <div className="space-y-1 mb-3">
+                            {order.items?.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between text-xs"
+                              >
+                                <span className="text-gray-700 dark:text-neutral-300 font-medium">
+                                  <span className="font-bold text-gray-900 dark:text-white">
+                                    {item.quantity || item.qty}x
+                                  </span>{" "}
+                                  {item.name}
+                                </span>
                               </div>
+                            ))}
+                          </div>
                             </>
                           )}
 
