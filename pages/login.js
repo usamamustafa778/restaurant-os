@@ -16,6 +16,7 @@ import {
 } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft } from "lucide-react";
 import SEO from "../components/SEO";
+import AuthDashboardMockupPanel from "../components/AuthDashboardMockupPanel";
 import toast from "react-hot-toast";
 
 const ALLOWED_ROLES = [
@@ -267,9 +268,7 @@ export default function LoginPage() {
               <ArrowLeft className="w-4 h-4" />
             </Link>
 
-            <div className="auth-page-panel">
-              <img src="/st-images/dark.png" alt="" />
-            </div>
+            <AuthDashboardMockupPanel />
 
             <div className="auth-page-form-col">
               <div className="auth-brand">

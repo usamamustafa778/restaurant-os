@@ -4,6 +4,7 @@ import Link from "next/link";
 import { registerRestaurant, verifyEmail } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import SEO from "../components/SEO";
+import AuthDashboardMockupPanel from "../components/AuthDashboardMockupPanel";
 
 function getFlagEmoji(iso2) {
   if (!iso2 || iso2.length !== 2) return "";
@@ -227,9 +228,7 @@ export default function SignupPage() {
               <ArrowLeft className="w-4 h-4" />
             </Link>
 
-            <div className="auth-page-panel">
-              <img src="/st-images/dark.png" alt="" />
-            </div>
+            <AuthDashboardMockupPanel />
 
             <div className="auth-page-form-col">
               <div className="auth-brand">
@@ -330,7 +329,7 @@ export default function SignupPage() {
                         <label className="auth-label">
                           Phone number <span style={{ color: "#ff8a80" }}>*</span>
                         </label>
-                        <div className="flex gap-2">
+                        <div className="auth-phone-row">
                           <select
                             value={countryCode}
                             onChange={(e) => setCountryCode(e.target.value)}
@@ -352,7 +351,7 @@ export default function SignupPage() {
                             }}
                             placeholder="300 123 4567"
                             maxLength={18}
-                            className="auth-input flex-1 min-w-0"
+                            className="auth-input"
                           />
                         </div>
                         <p className="text-[11px] text-[var(--gray-3)] mt-1">

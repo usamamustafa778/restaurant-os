@@ -624,7 +624,7 @@ function TestSyncCard({ integrations, onOrderCreated }) {
                   customerPhone: e.target.value
                 }))
               }
-              placeholder="+923001234567"
+              placeholder="+923166222269"
               className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
             />
           </div>

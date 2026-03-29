@@ -62,14 +62,15 @@ body:has(.eatsdesk-landing){
 }
 
 /* NAV */
-.eatsdesk-landing nav{
+/* Only the top bar — footer uses <nav> for a11y and must NOT match */
+.eatsdesk-landing nav#nav{
   position:fixed;top:0;left:0;right:0;
   z-index:100;
   padding:20px 32px;
   transition:background 0.3s,backdrop-filter 0.3s;
 }
 
-.eatsdesk-landing nav.scrolled{
+.eatsdesk-landing nav#nav.scrolled{
   background:rgba(10,10,8,0.85);
   backdrop-filter:blur(16px);
   border-bottom:1px solid var(--gray-1);
@@ -965,48 +966,130 @@ body:has(.eatsdesk-landing){
 
 .eatsdesk-landing .cta-note{font-size:13px;color:rgba(255,255,255,0.6);margin-top:16px;}
 
-/* FOOTER */
-.eatsdesk-landing footer{
+/* FOOTER — simple 3-column layout, no duplicate CTAs */
+.eatsdesk-landing .site-footer{
+  position:relative;
   background:var(--dark-2);
   border-top:1px solid var(--gray-1);
-  padding:60px 32px 40px;
+  padding:48px 32px 28px;
+}
+
+.eatsdesk-landing .site-footer-accent{
+  position:absolute;
+  top:0;left:0;right:0;
+  height:1px;
+  background:linear-gradient(90deg, transparent, rgba(255,84,0,0.5), transparent);
+  pointer-events:none;
 }
 
 .eatsdesk-landing .footer-inner{
-  max-width:1160px;margin:0 auto;
-  display:grid;grid-template-columns:2fr 1fr 1fr 1fr;
-  gap:48px;margin-bottom:48px;
+  position:relative;
+  z-index:1;
+  max-width:1080px;
+  margin:0 auto 40px;
+  display:grid;
+  grid-template-columns:minmax(200px, 1.35fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap:40px 56px;
+  align-items:start;
 }
 
-.eatsdesk-landing .footer-brand p{
-  font-size:14px;color:var(--gray-3);
-  line-height:1.65;margin-top:16px;max-width:280px;
+.eatsdesk-landing .footer-brand-logo{
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  width:fit-content;
+  color:inherit;
+  transition:opacity 0.2s;
 }
 
-.eatsdesk-landing .footer-col h4{
+.eatsdesk-landing .footer-brand-logo:hover{opacity:0.88;}
+
+.eatsdesk-landing .footer-brand-desc{
+  font-size:14px;
+  color:var(--gray-3);
+  line-height:1.65;
+  margin:14px 0 0;
+  max-width:300px;
+  font-family:"Instrument Sans",system-ui,sans-serif;
+}
+
+.eatsdesk-landing .footer-col-title{
   font-family:'Syne',sans-serif;
-  font-size:13px;font-weight:700;
-  letter-spacing:0.5px;color:var(--white);
-  margin-bottom:16px;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  color:var(--white);
+  margin:0 0 14px;
 }
 
-.eatsdesk-landing .footer-col ul{list-style:none;display:flex;flex-direction:column;gap:10px;}
-
-.eatsdesk-landing .footer-col a{
-  font-size:13px;color:var(--gray-3);
-  text-decoration:none;transition:color 0.2s;
+.eatsdesk-landing .footer-link-list{
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
 }
 
-.eatsdesk-landing .footer-col a:hover{color:var(--white);}
+.eatsdesk-landing .footer-link-list li{margin:0;}
+
+.eatsdesk-landing .footer-link-list a{
+  display:block;
+  font-size:14px;
+  color:var(--gray-3);
+  text-decoration:none;
+  padding:7px 0;
+  font-family:"Instrument Sans",system-ui,sans-serif;
+  transition:color 0.15s ease;
+}
+
+.eatsdesk-landing .footer-link-list a:hover{color:var(--white);}
+
+.eatsdesk-landing .footer-link-list a.footer-link-wa:hover{
+  color:var(--orange);
+}
 
 .eatsdesk-landing .footer-bottom{
+  position:relative;
+  z-index:1;
+  max-width:1080px;
+  margin:0 auto;
+  padding-top:22px;
   border-top:1px solid var(--gray-1);
-  padding-top:24px;
-  display:flex;align-items:center;justify-content:space-between;
-  font-size:12px;color:var(--gray-3);
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px 20px;
 }
 
-.eatsdesk-landing .footer-bottom span{color:var(--orange);}
+.eatsdesk-landing .footer-legal{
+  font-size:12px;
+  color:var(--gray-4);
+  font-family:"Instrument Sans",system-ui,sans-serif;
+}
+
+.eatsdesk-landing .footer-domain{
+  font-size:12px;
+  font-weight:600;
+  font-family:'Syne',sans-serif;
+  color:var(--orange);
+}
+
+@media (max-width: 900px) {
+  .eatsdesk-landing .footer-inner{
+    grid-template-columns:1fr;
+    gap:28px;
+    margin-bottom:32px;
+  }
+  .eatsdesk-landing .site-footer{padding:40px 20px 24px;}
+  .eatsdesk-landing .footer-bottom{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+}
 
 /* FADE IN ANIMATION */
 @keyframes fadeUp{
@@ -1030,7 +1113,7 @@ body:has(.eatsdesk-landing){
 .eatsdesk-landing .delay-5{animation-delay:0.5s;}
 
 @media(max-width:900px){
-  .eatsdesk-landing .hero-inner,.eatsdesk-landing .features-body,.eatsdesk-landing .footer-inner{grid-template-columns:1fr;}
+  .eatsdesk-landing .hero-inner,.eatsdesk-landing .features-body{grid-template-columns:1fr;}
   .eatsdesk-landing .hero-visual{display:none;}
   .eatsdesk-landing .pain-grid,.eatsdesk-landing .pricing-grid,.eatsdesk-landing .testi-grid{grid-template-columns:1fr;}
   .eatsdesk-landing .hiw-steps{grid-template-columns:1fr 1fr;gap:32px;}
@@ -1046,7 +1129,7 @@ body:has(.eatsdesk-landing){
   .eatsdesk-landing .tab-btn,
   .eatsdesk-landing .pc-cta,
   .eatsdesk-landing .billing-toggle button{cursor:auto;}
-  .eatsdesk-landing nav{padding:8px 12px;}
+  .eatsdesk-landing nav#nav{padding:8px 12px;}
   .eatsdesk-landing .nav-inner{
     gap:8px;
     align-items:center;
@@ -1162,4 +1245,175 @@ body:has(.eatsdesk-landing){
 @media(max-width:900px) and (min-width:721px){
   .eatsdesk-landing .nav-trial-long{display:inline;}
   .eatsdesk-landing .nav-trial-short{display:none;}
+}
+
+/* Legal pages (Terms, Privacy) — same shell as landing, readable prose */
+body:has(.legal-doc-page){
+  cursor:auto!important;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-hero{
+  padding:100px 32px 40px;
+  border-bottom:1px solid var(--gray-1);
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-hero-inner{
+  max-width:720px;
+  margin:0 auto;
+  text-align:center;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-back{
+  display:inline-block;
+  font-size:13px;
+  font-weight:500;
+  color:var(--gray-4);
+  text-decoration:none;
+  margin-bottom:20px;
+  transition:color .2s;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-back:hover{
+  color:var(--orange);
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-hero h1{
+  font-family:'Syne',sans-serif;
+  font-size:clamp(28px,4vw,40px);
+  font-weight:800;
+  letter-spacing:-0.5px;
+  color:var(--white);
+  margin-bottom:10px;
+  line-height:1.15;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-updated{
+  font-size:14px;
+  color:var(--gray-3);
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-body{
+  padding:48px 32px 80px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner{
+  max-width:720px;
+  margin:0 auto;
+  font-size:15px;
+  line-height:1.7;
+  color:var(--gray-4);
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-lead{
+  font-size:16px;
+  line-height:1.65;
+  margin-bottom:40px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-lead p{
+  margin:0;
+  color:var(--gray-4);
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner a{
+  color:var(--orange);
+  font-weight:500;
+  text-decoration:none;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner a:hover{
+  text-decoration:underline;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner h2{
+  font-family:'Syne',sans-serif;
+  font-size:1.35rem;
+  font-weight:800;
+  color:var(--white);
+  margin-bottom:12px;
+  letter-spacing:-0.3px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner h3{
+  font-family:'Instrument Sans',sans-serif;
+  font-size:1rem;
+  font-weight:600;
+  color:var(--gray-5);
+  margin-top:16px;
+  margin-bottom:8px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-section{
+  margin-bottom:36px;
+  padding-bottom:36px;
+  border-bottom:1px solid var(--gray-1);
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-section:last-of-type{
+  border-bottom:none;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner ul{
+  list-style:none;
+  padding:0;
+  margin:12px 0 0;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner ul li{
+  position:relative;
+  padding-left:16px;
+  margin-bottom:8px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner ul li::before{
+  content:'•';
+  position:absolute;
+  left:0;
+  color:var(--orange);
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-card{
+  background:var(--dark-3);
+  border:1px solid var(--gray-1);
+  border-radius:var(--radius-lg);
+  padding:22px 24px;
+  margin-top:16px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-card strong{
+  color:var(--white);
+  display:block;
+  margin-bottom:10px;
+  font-size:14px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-card p{
+  font-size:13px;
+  color:var(--gray-4);
+  margin-bottom:6px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-ack{
+  background:rgba(255,84,0,0.08);
+  border:1px solid rgba(255,84,0,0.25);
+  border-radius:var(--radius-lg);
+  padding:22px 24px;
+  margin-top:32px;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-ack p{
+  font-size:13px;
+  color:var(--gray-4);
+  margin:0;
+}
+
+.eatsdesk-landing.legal-doc-page .legal-doc-inner .legal-ack p:first-child{
+  font-weight:600;
+  color:var(--white);
+  margin-bottom:8px;
+}
+
+@media(max-width:900px){
+  .eatsdesk-landing.legal-doc-page .legal-doc-hero{padding-top:88px;}
+  .eatsdesk-landing.legal-doc-page .legal-doc-body{padding-left:20px;padding-right:20px;}
 }

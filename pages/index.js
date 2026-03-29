@@ -2,9 +2,10 @@ import { Fragment, useEffect, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { COMPARISON_SECTIONS, FAQ_ITEMS } from "../lib/landingPricingData";
+import MarketingFooter from "../components/MarketingFooter";
 
 const WHATSAPP_DEMO_URL =
-  process.env.NEXT_PUBLIC_WHATSAPP_URL || "https://wa.me/923001234567";
+  process.env.NEXT_PUBLIC_WHATSAPP_URL || "https://wa.me/923166222269";
 
 const TAB_DATA = {
   kds: {
@@ -1074,89 +1075,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer>
-        <div className="footer-inner">
-          <div className="footer-brand">
-            <Link href="/" className="nav-logo" style={{ textDecoration: "none" }}>
-              <img
-                className="nav-logo-mark"
-                src="/favicon.png"
-                alt="EatsDesk"
-                width={34}
-                height={34}
-              />
-              <span className="nav-logo-text">EatsDesk</span>
-            </Link>
-            <p>
-              Restaurant OS built for fast food. POS, kitchen, riders,
-              inventory, and website — from one screen.
-            </p>
-          </div>
-          <div className="footer-col">
-            <h4>Product</h4>
-            <ul>
-              <li>
-                <Link href="/#features">Features</Link>
-              </li>
-              <li>
-                <Link href="/#pricing">Pricing</Link>
-              </li>
-              <li>
-                <Link href="/#compare">Compare plans</Link>
-              </li>
-              <li>
-                <Link href="/#faq">FAQ</Link>
-              </li>
-              <li>
-                <Link href="/read-more">Integrations</Link>
-              </li>
-              <li>
-                <Link href="/read-more">Roadmap</Link>
-              </li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Company</h4>
-            <ul>
-              <li>
-                <Link href="/read-more">About</Link>
-              </li>
-              <li>
-                <Link href="/read-more">Blog</Link>
-              </li>
-              <li>
-                <Link href="/read-more">Careers</Link>
-              </li>
-              <li>
-                <a href="mailto:support@eatsdesk.com">Contact</a>
-              </li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Support</h4>
-            <ul>
-              <li>
-                <a href={WHATSAPP_DEMO_URL}>WhatsApp</a>
-              </li>
-              <li>
-                <Link href="/read-more">Help center</Link>
-              </li>
-              <li>
-                <Link href="/privacy-policy">Privacy</Link>
-              </li>
-              <li>
-                <Link href="/terms-and-conditions">Terms</Link>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div className="footer-bottom">
-          <span>
-            © 2026 EatsDesk
-          </span>
-          <span>eatsdesk.com</span>
-        </div>
-      </footer>
+      <MarketingFooter />
       </div>
     </>
   );

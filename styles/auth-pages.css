@@ -104,6 +104,259 @@
   object-fit: contain;
 }
 
+/* Login left panel — dashboard mockup (replaces illustration) */
+@media (min-width: 768px) {
+  .auth-page-panel--dashboard-mockup {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 28px 20px 32px;
+    background:
+      radial-gradient(
+        ellipse 600px 500px at 50% 50%,
+        rgba(255, 84, 0, 0.08) 0%,
+        transparent 70%
+      ),
+      #0d0d0b;
+  }
+}
+
+.auth-login-mockup-scale {
+  width: 100%;
+  max-width: 380px;
+  transform: scale(0.82);
+  transform-origin: top center;
+  /* Scale does not shrink layout box; pull following trust block up visually */
+  margin-bottom: -56px;
+}
+
+.auth-login-mockup-card {
+  font-family: "Syne", sans-serif;
+  background: #1a1a18;
+  border: 1px solid #2a2a28;
+  border-top: 2px solid #ff5400;
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  padding: 14px 14px 16px;
+}
+
+.auth-login-mockup-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.auth-login-mockup-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.auth-login-mockup-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #ff5400;
+  color: #0d0d0b;
+  font-family: "Syne", sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.auth-login-mockup-overview {
+  font-family: "Syne", sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.auth-login-mockup-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Syne", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ff5400;
+  white-space: nowrap;
+}
+
+.auth-login-mockup-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00c896;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0 rgba(0, 200, 150, 0.5);
+  animation: auth-login-mockup-pulse 1.8s ease-out infinite;
+}
+
+@keyframes auth-login-mockup-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 200, 150, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(0, 200, 150, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 200, 150, 0);
+  }
+}
+
+.auth-login-mockup-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.auth-login-mockup-stat {
+  background: #1e1e1c;
+  border: 1px solid #2a2a28;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.auth-login-mockup-stat-label {
+  font-family: "Syne", sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #6b6b67;
+  margin-bottom: 6px;
+}
+
+.auth-login-mockup-stat-val {
+  font-family: "Syne", sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.auth-login-mockup-stat-val--orange {
+  color: #ff5400;
+}
+
+.auth-login-mockup-stat-val--white {
+  color: #fff;
+}
+
+.auth-login-mockup-stat-val--green {
+  color: #00c896;
+}
+
+.auth-login-mockup-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.auth-login-mockup-chart-label {
+  font-family: "Syne", sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b6b67;
+  margin-bottom: 8px;
+}
+
+.auth-login-mockup-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 3px;
+  height: 60px;
+}
+
+.auth-login-mockup-bar {
+  flex: 1;
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+  background: #2a2a28;
+  transition: background 0.2s;
+}
+
+.auth-login-mockup-bar--hot {
+  background: #ff5400;
+}
+
+.auth-login-mockup-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-login-mockup-order-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: "Syne", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.auth-login-mockup-badge {
+  font-family: "Syne", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 100px;
+  flex-shrink: 0;
+}
+
+.auth-login-mockup-badge--new {
+  background: rgba(255, 84, 0, 0.22);
+  color: #ff5400;
+}
+
+.auth-login-mockup-badge--prep {
+  background: rgba(245, 158, 11, 0.22);
+  color: #f59e0b;
+}
+
+.auth-login-mockup-badge--ready {
+  background: rgba(0, 200, 150, 0.2);
+  color: #00c896;
+}
+
+.auth-login-mockup-trust {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  max-width: 320px;
+}
+
+.auth-login-mockup-trust-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6b6b67;
+}
+
+.auth-login-mockup-trust-line span:first-child {
+  color: #ff5400;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
 .auth-page-form-col {
   padding: 8px 0 8px;
   max-width: 440px;
@@ -219,9 +472,37 @@ select.auth-input option {
   color: var(--white);
 }
 
-.auth-input-select-sm {
-  width: 7.25rem;
+/* Country + phone: select must not use select.auth-input { width:100% } */
+.auth-phone-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.auth-phone-row select.auth-input.auth-input-select-sm {
+  width: 7.5rem;
+  min-width: 7.5rem;
+  max-width: 8.25rem;
   flex-shrink: 0;
+  margin: 0;
+  min-height: 46px;
+  padding: 11px 28px 11px 12px;
+  line-height: 1.35;
+  box-sizing: border-box;
+}
+
+.auth-phone-row input.auth-input {
+  flex: 1 1 0%;
+  min-width: 0;
+  width: auto;
+  min-height: 46px;
+  box-sizing: border-box;
+  margin: 0;
+  align-self: stretch;
+}
+
+.auth-input-select-sm {
   padding-left: 10px;
   padding-right: 10px;
 }
