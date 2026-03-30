@@ -116,6 +116,175 @@ function CmpCell({ value, col }) {
 export default function Home() {
   const [activeTab, setActiveTab] = useState("kds");
   const [billingMode, setBillingMode] = useState("daily");
+  const [country, setCountry] = useState("PK"); // PK | IN | INTL
+  const [hasManualCountry, setHasManualCountry] = useState(false);
+  const [isPriceFading, setIsPriceFading] = useState(false);
+
+  useEffect(() => {
+    setIsPriceFading(true);
+    const t = setTimeout(() => setIsPriceFading(false), 10);
+    return () => clearTimeout(t);
+  }, [country, billingMode]);
+
+  useEffect(() => {
+    if (hasManualCountry) return;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 3000);
+
+    fetch("https://ipapi.co/json/", { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data || !data.country_code || hasManualCountry) return;
+        if (data.country_code === "PK") {
+          setCountry("PK");
+        } else if (data.country_code === "IN") {
+          setCountry("IN");
+        } else {
+          setCountry("INTL");
+        }
+      })
+      .catch(() => {
+        if (!hasManualCountry) {
+          setCountry("PK");
+        }
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [hasManualCountry]);
+
+  const handleCountrySelect = (code) => {
+    setHasManualCountry(true);
+    setCountry(code);
+  };
+
+  const countryOptions = [
+    { code: "PK", label: "PK", flag: "🇵🇰" },
+    { code: "IN", label: "IN", flag: "🇮🇳" },
+    { code: "INTL", label: "US", flag: "🌍" },
+  ];
+
+  const getPrice = (plan, mode) => {
+    const table = {
+      PK: {
+        starter: { daily: "Rs 100", monthly: "Rs 2,900", yearly: "Rs 29,000" },
+        growth: { daily: "Rs 250", monthly: "Rs 7,000", yearly: "Rs 70,000" },
+        pro: { daily: "Rs 400", monthly: "Rs 11,000", yearly: "Rs 1,10,000" },
+      },
+      IN: {
+        starter: { daily: "₹ 80", monthly: "₹ 2,400", yearly: "₹ 24,000" },
+        growth: { daily: "₹ 150", monthly: "₹ 4,500", yearly: "₹ 45,000" },
+        pro: { daily: "₹ 250", monthly: "₹ 7,500", yearly: "₹ 75,000" },
+      },
+      INTL: {
+        starter: { daily: "$0.5", monthly: "$14", yearly: "$140" },
+        growth: { daily: "$1", monthly: "$30", yearly: "$300" },
+        pro: { daily: "$1.50", monthly: "$50", yearly: "$500" },
+      },
+    };
+    return table[country][plan][mode];
+  };
+
+  const getMonthlyEquivalent = (plan) => {
+    const table = {
+      PK: {
+        starter: "~Rs 3,000 / month",
+        growth: "~Rs 7,500 / month",
+        pro: "~Rs 12,000 / month",
+      },
+      IN: {
+        starter: "~₹ 2,400 / month",
+        growth: "~₹ 4,500 / month",
+        pro: "~₹ 7,500 / month",
+      },
+      INTL: {
+        starter: "~$14 / month",
+        growth: "~$30 / month",
+        pro: "~$50 / month",
+      },
+    };
+    return table[country][plan];
+  };
+
+  const getMonthlySavingsCopy = (plan) => {
+    const table = {
+      PK: {
+        starter: "Save Rs 100 vs daily",
+        growth: "Save Rs 500 vs daily",
+        pro: "Save Rs 1,000 vs daily",
+      },
+      IN: {
+        starter: "Save ₹ 80 vs daily",
+        growth: "Save ₹ 300 vs daily",
+        pro: "Save ₹ 500 vs daily",
+      },
+      INTL: {
+        starter: "Save $1.00 vs daily",
+        growth: "Save $3 vs daily",
+        pro: "Save $5 vs daily",
+      },
+    };
+    return table[country][plan];
+  };
+
+  const getYearlySavingsCopy = (plan) => {
+    const table = {
+      PK: {
+        starter: "Save Rs 6,000 · 2 months free",
+        growth: "Save Rs 20,000 · 2.5 months free",
+        pro: "Save Rs 34,000 · 3 months free",
+      },
+      IN: {
+        starter: "Save ₹ 6,000 · 2 months free",
+        growth: "Save ₹ 20,000 · 2.5 months free",
+        pro: "Save ₹ 34,000 · 3 months free",
+      },
+      INTL: {
+        starter: "Save $60 · 2 months free",
+        growth: "Save $200 · 2.5 months free",
+        pro: "Save $340 · 3 months free",
+      },
+    };
+    return table[country][plan];
+  };
+
+  const getComparisonDailyLabel = (plan) => {
+    const base = {
+      PK: { starter: "Rs 100/day", growth: "Rs 250/day", pro: "Rs 400/day" },
+      IN: { starter: "₹ 80/day", growth: "₹ 150/day", pro: "₹ 250/day" },
+      INTL: { starter: "$0.5/day", growth: "$1/day", pro: "$1.50/day" },
+    };
+    return base[country][plan];
+  };
+
+  const getSavingsStripAmount = (plan) => {
+    const table = {
+      PK: {
+        starter: "Rs 6,000",
+        growth: "Rs 20,000",
+        pro: "Rs 34,000",
+      },
+      IN: {
+        starter: "₹ 6,000",
+        growth: "₹ 20,000",
+        pro: "₹ 34,000",
+      },
+      INTL: {
+        starter: "$60",
+        growth: "$200",
+        pro: "$340",
+      },
+    };
+    return table[country][plan];
+  };
 
   useEffect(() => {
     const mqNarrow = window.matchMedia("(max-width: 900px)");
@@ -622,7 +791,13 @@ export default function Home() {
           <h2 className="section-title">
             Run your restaurant
             <br />
-            <span className="orange">from Rs 100 a day</span>
+            <span className="orange">
+              {country === "PK"
+                ? "from Rs 100 a day"
+                : country === "IN"
+                  ? "from ₹ 80 a day"
+                  : "from $0.5 a day"}
+            </span>
           </h2>
           <p className="section-sub">
             Full restaurant OS — POS, kitchen display, riders, inventory,
@@ -654,6 +829,21 @@ export default function Home() {
                 <span className="save-badge">−17%</span>
               </button>
             </div>
+            <div className="country-toggle-row">
+              <div className="country-dropdown">
+                <select
+                  className="country-select"
+                  value={country}
+                  onChange={(e) => handleCountrySelect(e.target.value)}
+                >
+                  {countryOptions.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.flag} {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
           <div className="pricing-grid">
@@ -663,20 +853,38 @@ export default function Home() {
               <div
                 className={`pricing-billing-wrap billing-${billingMode}`}
               >
-                <div className="pc-price-tier pc-price-tier--daily">
-                  <div className="pc-price">Rs 100</div>
-                  <div className="pc-unit">per day</div>
-                  <div className="pc-equiv">~Rs 3,000 / month</div>
-                </div>
-                <div className="pc-price-tier pc-price-tier--monthly">
-                  <div className="pc-price">Rs 2,900</div>
-                  <div className="pc-unit">per month</div>
-                  <div className="pc-equiv">Save Rs 100 vs daily</div>
-                </div>
-                <div className="pc-price-tier pc-price-tier--yearly">
-                  <div className="pc-price">Rs 29,000</div>
-                  <div className="pc-unit">per year</div>
-                  <div className="pc-equiv">Save Rs 6,000 · 2 months free</div>
+                <div
+                  className="pc-price-content"
+                  style={{
+                    opacity: isPriceFading ? 0 : 1,
+                    transition: "opacity 0.15s ease",
+                  }}
+                >
+                  <div className="pc-price-tier pc-price-tier--daily">
+                    <div className="pc-price">{getPrice("starter", "daily")}</div>
+                    <div className="pc-unit">per day</div>
+                    <div className="pc-equiv">
+                      {getMonthlyEquivalent("starter")}
+                    </div>
+                  </div>
+                  <div className="pc-price-tier pc-price-tier--monthly">
+                    <div className="pc-price">
+                      {getPrice("starter", "monthly")}
+                    </div>
+                    <div className="pc-unit">per month</div>
+                    <div className="pc-equiv">
+                      {getMonthlySavingsCopy("starter")}
+                    </div>
+                  </div>
+                  <div className="pc-price-tier pc-price-tier--yearly">
+                    <div className="pc-price">
+                      {getPrice("starter", "yearly")}
+                    </div>
+                    <div className="pc-unit">per year</div>
+                    <div className="pc-equiv">
+                      {getYearlySavingsCopy("starter")}
+                    </div>
+                  </div>
                 </div>
               </div>
               <Link href="/signup" className="pc-cta">
@@ -746,21 +954,37 @@ export default function Home() {
               <div
                 className={`pricing-billing-wrap billing-${billingMode}`}
               >
-                <div className="pc-price-tier pc-price-tier--daily">
-                  <div className="pc-price">Rs 250</div>
-                  <div className="pc-unit">per day</div>
-                  <div className="pc-equiv">~Rs 7,500 / month</div>
-                </div>
-                <div className="pc-price-tier pc-price-tier--monthly">
-                  <div className="pc-price">Rs 7,000</div>
-                  <div className="pc-unit">per month</div>
-                  <div className="pc-equiv">Save Rs 500 vs daily</div>
-                </div>
-                <div className="pc-price-tier pc-price-tier--yearly">
-                  <div className="pc-price">Rs 70,000</div>
-                  <div className="pc-unit">per year</div>
-                  <div className="pc-equiv">
-                    Save Rs 20,000 · 2.5 months free
+                <div
+                  className="pc-price-content"
+                  style={{
+                    opacity: isPriceFading ? 0 : 1,
+                    transition: "opacity 0.15s ease",
+                  }}
+                >
+                  <div className="pc-price-tier pc-price-tier--daily">
+                    <div className="pc-price">{getPrice("growth", "daily")}</div>
+                    <div className="pc-unit">per day</div>
+                    <div className="pc-equiv">
+                      {getMonthlyEquivalent("growth")}
+                    </div>
+                  </div>
+                  <div className="pc-price-tier pc-price-tier--monthly">
+                    <div className="pc-price">
+                      {getPrice("growth", "monthly")}
+                    </div>
+                    <div className="pc-unit">per month</div>
+                    <div className="pc-equiv">
+                      {getMonthlySavingsCopy("growth")}
+                    </div>
+                  </div>
+                  <div className="pc-price-tier pc-price-tier--yearly">
+                    <div className="pc-price">
+                      {getPrice("growth", "yearly")}
+                    </div>
+                    <div className="pc-unit">per year</div>
+                    <div className="pc-equiv">
+                      {getYearlySavingsCopy("growth")}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -830,21 +1054,33 @@ export default function Home() {
               <div
                 className={`pricing-billing-wrap billing-${billingMode}`}
               >
-                <div className="pc-price-tier pc-price-tier--daily">
-                  <div className="pc-price">Rs 400</div>
-                  <div className="pc-unit">per day · per location</div>
-                  <div className="pc-equiv">~Rs 12,000 / month</div>
-                </div>
-                <div className="pc-price-tier pc-price-tier--monthly">
-                  <div className="pc-price">Rs 11,000</div>
-                  <div className="pc-unit">per month · per location</div>
-                  <div className="pc-equiv">Save Rs 1,000 vs daily</div>
-                </div>
-                <div className="pc-price-tier pc-price-tier--yearly">
-                  <div className="pc-price">Rs 1,10,000</div>
-                  <div className="pc-unit">per year · per location</div>
-                  <div className="pc-equiv">
-                    Save Rs 34,000 · 3 months free
+                <div
+                  className="pc-price-content"
+                  style={{
+                    opacity: isPriceFading ? 0 : 1,
+                    transition: "opacity 0.15s ease",
+                  }}
+                >
+                  <div className="pc-price-tier pc-price-tier--daily">
+                    <div className="pc-price">{getPrice("pro", "daily")}</div>
+                    <div className="pc-unit">per day · per location</div>
+                    <div className="pc-equiv">
+                      {getMonthlyEquivalent("pro")}
+                    </div>
+                  </div>
+                  <div className="pc-price-tier pc-price-tier--monthly">
+                    <div className="pc-price">{getPrice("pro", "monthly")}</div>
+                    <div className="pc-unit">per month · per location</div>
+                    <div className="pc-equiv">
+                      {getMonthlySavingsCopy("pro")}
+                    </div>
+                  </div>
+                  <div className="pc-price-tier pc-price-tier--yearly">
+                    <div className="pc-price">{getPrice("pro", "yearly")}</div>
+                    <div className="pc-unit">per year · per location</div>
+                    <div className="pc-equiv">
+                      {getYearlySavingsCopy("pro")}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -896,15 +1132,21 @@ export default function Home() {
           </p>
           <div className="savings-strip">
             <div className="savings-card">
-              <div className="savings-amount">Rs 6,000</div>
+              <div className="savings-amount">
+                {getSavingsStripAmount("starter")}
+              </div>
               <div className="savings-label">saved per year on Starter</div>
             </div>
             <div className="savings-card highlight">
-              <div className="savings-amount">Rs 20,000</div>
+              <div className="savings-amount">
+                {getSavingsStripAmount("growth")}
+              </div>
               <div className="savings-label">saved per year on Growth</div>
             </div>
             <div className="savings-card">
-              <div className="savings-amount">Rs 34,000</div>
+              <div className="savings-amount">
+                {getSavingsStripAmount("pro")}
+              </div>
               <div className="savings-label">saved per year on Pro</div>
             </div>
           </div>
@@ -923,21 +1165,21 @@ export default function Home() {
                       Starter
                       <br />
                       <span style={{ fontSize: 10, fontWeight: 400 }}>
-                        Rs 100/day
+                        {getComparisonDailyLabel("starter")}
                       </span>
                     </th>
                     <th className="plan-col featured-col" style={{ width: "19%" }}>
                       Growth
                       <br />
                       <span style={{ fontSize: 10, fontWeight: 400 }}>
-                        Rs 250/day
+                        {getComparisonDailyLabel("growth")}
                       </span>
                     </th>
                     <th className="plan-col" style={{ width: "19%" }}>
                       Pro
                       <br />
                       <span style={{ fontSize: 10, fontWeight: 400 }}>
-                        Rs 400/day
+                        {getComparisonDailyLabel("pro")}
                       </span>
                     </th>
                   </tr>

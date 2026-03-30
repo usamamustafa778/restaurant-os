@@ -82,6 +82,13 @@ function RestaurantCard({ r }) {
             {r.address}
           </p>
         ) : null}
+        {r.allowWebsiteOrders && r.deliveryZoneCount > 0 && r.minDeliveryFee != null ? (
+          <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-gray-600">
+            <Bike className="h-3 w-3 shrink-0 text-pink-500" />
+            Delivery from Rs {Math.round(Number(r.minDeliveryFee)).toLocaleString()}
+            {r.deliveryZoneCount > 1 ? ` · ${r.deliveryZoneCount} areas` : ""}
+          </p>
+        ) : null}
         <div className="mt-3 flex items-center justify-between border-t border-gray-50 pt-3">
           <span className="text-[11px] font-medium text-gray-500">
             {r.allowWebsiteOrders ? "Delivery & pickup" : "View menu"}

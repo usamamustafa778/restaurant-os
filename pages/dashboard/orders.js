@@ -328,13 +328,9 @@ export default function OrdersPage() {
   const [cancelTargetOrder, setCancelTargetOrder] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
 
-  const [showRiderModal, setShowRiderModal] = useState(false);
-  const [riderTargetOrder, setRiderTargetOrder] = useState(null);
   const [riders, setRiders] = useState([]);
   const [ridersLoading, setRidersLoading] = useState(false);
-  const [selectedRiderId, setSelectedRiderId] = useState("");
-  const [deliveryCharges, setDeliveryCharges] = useState("0");
-  const [riderAssigning, setRiderAssigning] = useState(false);
+  const [assigningOrderId, setAssigningOrderId] = useState(null);
 
   const [showEndDayModal, setShowEndDayModal] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
@@ -459,6 +455,17 @@ export default function OrdersPage() {
     };
   }, [socket]);
 
+  // Load delivery riders once on mount so inline dropdowns are ready
+  useEffect(() => {
+    let cancelled = false;
+    setRidersLoading(true);
+    getDeliveryRiders()
+      .then((data) => { if (!cancelled) setRiders(data); })
+      .catch(() => { if (!cancelled) setRiders([]); })
+      .finally(() => { if (!cancelled) setRidersLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Handlers (preserved exactly) ───────────────────────────────────────
 
   async function handleUpdateStatus(orderId, newStatus, extra = {}) {
@@ -532,49 +539,20 @@ export default function OrdersPage() {
     setPaymentError("");
   }
 
-  async function openRiderModal(order) {
-    setRiderTargetOrder(order);
-    setSelectedRiderId("");
-    setShowRiderModal(true);
-    setRidersLoading(true);
-    try {
-      const data = await getDeliveryRiders();
-      setRiders(data);
-    } catch {
-      toast.error("Failed to load delivery riders");
-      setRiders([]);
-    } finally {
-      setRidersLoading(false);
-    }
-  }
-
-  function closeRiderModal() {
-    setShowRiderModal(false);
-    setRiderTargetOrder(null);
-    setSelectedRiderId("");
-    setDeliveryCharges("0");
-  }
-
-  async function handleAssignRider() {
-    if (!riderTargetOrder || !selectedRiderId) return;
-    const orderId = getOrderId(riderTargetOrder);
-    setRiderAssigning(true);
+  async function handleInlineAssignRider(order, riderId) {
+    if (!riderId) return;
+    const orderId = getOrderId(order);
+    setAssigningOrderId(orderId);
     const toastId = toast.loading("Assigning rider...");
     try {
-      const extra = { deliveryCharges: Number(deliveryCharges) || 0 };
-      const updated = await assignRiderToOrder(orderId, selectedRiderId, extra);
+      const updated = await assignRiderToOrder(orderId, riderId, {});
       updateOrderInList(orderId, updated);
-      toast.success("Rider assigned! Order is out for delivery.", {
-        id: toastId,
-      });
-      const dcAmount = Number(deliveryCharges) || 0;
-      const orderToPrint = { ...riderTargetOrder, ...updated, deliveryCharges: dcAmount };
-      closeRiderModal();
-      openPrintBill(orderToPrint, "bill");
+      toast.success("Rider assigned!", { id: toastId });
+      openPrintBill({ ...order, ...updated }, "bill");
     } catch (err) {
       toast.error(err.message || "Failed to assign rider", { id: toastId });
     } finally {
-      setRiderAssigning(false);
+      setAssigningOrderId(null);
     }
   }
 
@@ -1179,7 +1157,10 @@ export default function OrdersPage() {
                             onUpdateStatus={handleUpdateStatus}
                             onOpenCancel={openCancelModal}
                             onOpenPayment={openPaymentModal}
-                            onOpenRider={openRiderModal}
+                            riders={riders}
+                            ridersLoading={ridersLoading}
+                            assigningOrderId={assigningOrderId}
+                            onAssignRider={handleInlineAssignRider}
                             onOpenCollect={openCollectPaymentModal}
                             onPrint={openPrintBill}
                             onEdit={(order) =>
@@ -1236,7 +1217,10 @@ export default function OrdersPage() {
                       onUpdateStatus={handleUpdateStatus}
                       onOpenCancel={openCancelModal}
                       onOpenPayment={openPaymentModal}
-                      onOpenRider={openRiderModal}
+                      riders={riders}
+                      ridersLoading={ridersLoading}
+                      assigningOrderId={assigningOrderId}
+                      onAssignRider={handleInlineAssignRider}
                       onOpenCollect={openCollectPaymentModal}
                       onPrint={openPrintBill}
                       onEdit={(order) =>
@@ -1285,7 +1269,10 @@ export default function OrdersPage() {
                       onUpdateStatus={handleUpdateStatus}
                       onOpenCancel={openCancelModal}
                       onOpenPayment={openPaymentModal}
-                      onOpenRider={openRiderModal}
+                      riders={riders}
+                      ridersLoading={ridersLoading}
+                      assigningOrderId={assigningOrderId}
+                      onAssignRider={handleInlineAssignRider}
                       onOpenCollect={openCollectPaymentModal}
                       onPrint={openPrintBill}
                       onEdit={(order) =>
@@ -1795,132 +1782,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* ── Assign Rider modal (unchanged) ──────────────────────────── */}
-      {showRiderModal && riderTargetOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
-                  <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Assign Delivery Rider
-                  </h2>
-                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                    Order #{getDisplayOrderId(riderTargetOrder)}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeRiderModal}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="px-5 py-4">
-              {riderTargetOrder.customerName && (
-                <div className="flex items-center gap-2 text-sm mb-2">
-                  <User className="w-4 h-4 text-gray-400" />
-                  <span className="font-medium text-gray-900 dark:text-white">
-                    {riderTargetOrder.customerName}
-                  </span>
-                </div>
-              )}
-              {riderTargetOrder.deliveryAddress && (
-                <div className="flex items-start gap-2 text-xs text-gray-600 dark:text-neutral-400 mb-2">
-                  <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <span>{riderTargetOrder.deliveryAddress}</span>
-                </div>
-              )}
-              <div className="px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 mb-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 dark:text-neutral-500">Order Total</span>
-                  <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">Rs {Math.round(Number(riderTargetOrder.total)).toLocaleString()}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-gray-500 dark:text-neutral-500 flex-shrink-0">Delivery Charges</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={deliveryCharges}
-                    onChange={(e) => setDeliveryCharges(e.target.value)}
-                    placeholder="0"
-                    className="w-24 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm font-bold text-gray-900 dark:text-white text-right tabular-nums placeholder:text-gray-400 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500/10 transition-all"
-                  />
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-gray-200/60 dark:border-neutral-700">
-                  <span className="text-xs font-semibold text-gray-700 dark:text-neutral-300">Total to Collect</span>
-                  <span className="text-lg font-black text-primary tabular-nums">Rs {(Number(riderTargetOrder.total) + (Number(deliveryCharges) || 0)).toLocaleString()}</span>
-                </div>
-              </div>
-              <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                Select Rider
-              </label>
-              {ridersLoading ? (
-                <div className="flex items-center justify-center gap-2 py-6">
-                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  <span className="text-xs text-gray-400">Loading riders...</span>
-                </div>
-              ) : riders.length === 0 ? (
-                <div className="px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
-                  No delivery riders found. Add riders in{" "}
-                  <span className="font-semibold">Staff Management</span>.
-                </div>
-              ) : (
-                <>
-                  <div className="relative">
-                    <select
-                      value={selectedRiderId}
-                      onChange={(e) => setSelectedRiderId(e.target.value)}
-                      className="w-full h-10 px-3 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm font-semibold text-gray-900 dark:text-white outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/10 transition-all pr-9"
-                    >
-                      <option value="">Select a rider...</option>
-                      {riders.map((rider) => (
-                        <option key={rider.id} value={rider.id}>
-                          {rider.name}
-                          {rider.phone ? ` • ${rider.phone}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-4 h-4 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={!selectedRiderId || riderAssigning}
-                    onClick={handleAssignRider}
-                    className="w-full flex items-center justify-center gap-2 mt-3 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-bold disabled:opacity-50 transition-colors"
-                  >
-                    {riderAssigning ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" /> Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Bike className="w-4 h-4" /> Send Rider
-                      </>
-                    )}
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="flex gap-2 px-5 pb-5">
-              <button
-                type="button"
-                onClick={closeRiderModal}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Past Sessions modal ──────────────────────────────────── */}
       {showSessionHistoryModal && (
@@ -2140,6 +2001,35 @@ export default function OrdersPage() {
   );
 }
 
+// ─── RiderSelect — inline rider dropdown on the order card ──────────────────
+
+function RiderSelect({ order, riders, ridersLoading, isAssigning, onAssign, placeholder }) {
+  const orderId = order.id || order._id;
+  return (
+    <div className="relative">
+      <select
+        value=""
+        disabled={isAssigning || ridersLoading}
+        onChange={(e) => { if (e.target.value) onAssign(order, e.target.value); }}
+        className="w-full py-2 pl-8 pr-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-neutral-100 text-xs font-bold transition-colors appearance-none cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60"
+      >
+        <option value="">{isAssigning ? "Assigning…" : ridersLoading ? "Loading…" : placeholder}</option>
+        {riders.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.name}{r.phone ? ` · ${r.phone}` : ""}
+          </option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
+        {isAssigning
+          ? <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+          : <Bike className="w-3.5 h-3.5 text-gray-500 dark:text-neutral-400" />
+        }
+      </div>
+    </div>
+  );
+}
+
 // ─── OrderCard component ────────────────────────────────────────────────────
 
 function OrderCard({
@@ -2153,7 +2043,10 @@ function OrderCard({
   onUpdateStatus,
   onOpenCancel,
   onOpenPayment,
-  onOpenRider,
+  riders,
+  ridersLoading,
+  assigningOrderId,
+  onAssignRider,
   onOpenCollect,
   onPrint,
   onEdit,
@@ -2525,25 +2418,25 @@ function OrderCard({
               <Banknote className="w-3.5 h-3.5" /> Collect Payment
             </button>
           ) : showAssignRider ? (
-            <button
-              type="button"
-              onClick={() => onOpenRider(order)}
-              className="w-full py-2 rounded-lg bg-[#25343F] hover:bg-[#25343F]/90 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
-            >
-              <Bike className="w-3.5 h-3.5" />
-              Assign Rider
-            </button>
+            <RiderSelect
+              order={order}
+              riders={riders}
+              ridersLoading={ridersLoading}
+              isAssigning={assigningOrderId === (order.id || order._id)}
+              onAssign={onAssignRider}
+              placeholder="— Assign rider —"
+            />
           ) : showOutForDelivery ? (
             <div className="space-y-2">
               {showChangeRider && (
-                <button
-                  type="button"
-                  onClick={() => onOpenRider(order)}
-                  className="w-full py-2 rounded-lg border border-gray-300 hover:bg-gray-50 text-gray-900 dark:border-neutral-700 dark:hover:bg-neutral-900/40 dark:text-neutral-100 text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Bike className="w-3.5 h-3.5" />
-                  {order.assignedRiderName ? `${order.assignedRiderName} · Change Rider` : "Change Rider"}
-                </button>
+                <RiderSelect
+                  order={order}
+                  riders={riders}
+                  ridersLoading={ridersLoading}
+                  isAssigning={assigningOrderId === (order.id || order._id)}
+                  onAssign={onAssignRider}
+                  placeholder={order.assignedRiderName ? `${order.assignedRiderName} · Change` : "— Assign rider —"}
+                />
               )}
               <button
                 type="button"

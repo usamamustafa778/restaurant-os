@@ -7,6 +7,7 @@ import {
   getRiderCustomers,
   createRiderCustomer,
   createPosOrder,
+  getWebsiteSettings,
   getStoredAuth,
   clearStoredAuth,
   SubscriptionInactiveError,
@@ -197,6 +198,33 @@ export default function RiderPortalPage() {
   useEffect(() => { loadOrders(); }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    getWebsiteSettings()
+      .then((ws) => {
+        if (cancelled || !ws) return;
+        const raw = Array.isArray(ws.deliveryLocations) ? ws.deliveryLocations : [];
+        const mapped = raw
+          .map((z) => ({
+            id: z._id != null ? String(z._id) : z.id != null ? String(z.id) : "",
+            name: String(z.name || "").trim(),
+            fee: Math.max(0, Number(z.fee) || 0),
+            sortOrder: Number(z.sortOrder) || 0,
+          }))
+          .filter((z) => z.name && z.id)
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        setDeliveryZones(mapped);
+        setDeliveryLocationId((prev) => (prev && mapped.some((m) => m.id === prev) ? prev : ""));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDeliveryZones([]);
+          setDeliveryLocationId("");
+        }
+      });
+    return () => { cancelled = true; };
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
     if (!socket) return;
     const onOrderEvent = () => loadOrders();
     socket.on("order:updated", onOrderEvent);
@@ -335,6 +363,10 @@ export default function RiderPortalPage() {
   const getCartQty = useCallback((itemId) => cart.find((c) => c.id === itemId)?.quantity || 0, [cart]);
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
   const cartBadge = cart.reduce((sum, i) => sum + i.quantity, 0);
+  const deliveryZonesActive = deliveryZones.length > 0;
+  const selectedDeliveryZone = deliveryZones.find((z) => z.id === deliveryLocationId);
+  const deliveryFee = selectedDeliveryZone ? Math.round(selectedDeliveryZone.fee * 100) / 100 : 0;
+  const cartTotalDue = Math.round((subtotal + deliveryFee) * 100) / 100;
 
   // ── Cart helpers ──────────────────────────────────────────────────────
   function addToCart(item, qty = 1) {
@@ -363,8 +395,16 @@ export default function RiderPortalPage() {
 
   async function handlePlaceOrder() {
     if (cart.length === 0) return;
-    if (!customerName.trim() || !customerPhone.trim() || !deliveryAddress.trim()) {
-      toast.error("Customer name, phone and delivery address are required");
+    if (!customerName.trim() || !customerPhone.trim()) {
+      toast.error("Customer name and phone are required");
+      return;
+    }
+    if (deliveryZonesActive && !deliveryLocationId) {
+      toast.error("Select a delivery area");
+      return;
+    }
+    if (!deliveryZonesActive && !deliveryAddress.trim()) {
+      toast.error("Delivery address is required");
       return;
     }
     setPlacing(true);
@@ -376,12 +416,14 @@ export default function RiderPortalPage() {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: deliveryAddress.trim(),
+        ...(deliveryLocationId ? { deliveryLocationId } : {}),
         branchId: currentBranch?.id ?? undefined,
       });
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
       setDeliveryAddress("");
+      setDeliveryLocationId("");
       setCustomerSearch("");
       setStep(STEPS.MENU);
       setTab(TABS.ACTIVE);
@@ -438,7 +480,7 @@ export default function RiderPortalPage() {
     const name = quickCustomerName.trim();
     const address = quickCustomerAddress.trim();
     if (!phone || !name) { setCustomersError("Enter customer name and phone to add"); return; }
-    if (!address) { setCustomersError("Address is required for delivery orders"); return; }
+    if (!deliveryZonesActive && !address) { setCustomersError("Address is required for delivery orders"); return; }
     setAddingQuickCustomer(true);
     setCustomersError("");
     try {
@@ -1243,6 +1285,24 @@ export default function RiderPortalPage() {
                       <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm p-4 space-y-4">
                         <p className="text-xs font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Customer Details</p>
 
+                        {deliveryZones.length > 0 && (
+                          <div>
+                            <label className="text-[11px] font-semibold text-gray-600 dark:text-neutral-400 block mb-1">Delivery area *</label>
+                            <select
+                              value={deliveryLocationId}
+                              onChange={(e) => setDeliveryLocationId(e.target.value)}
+                              className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium text-gray-900 dark:text-white border-0 outline-none focus:ring-2 focus:ring-primary/20"
+                            >
+                              <option value="">Select area</option>
+                              {deliveryZones.map((z) => (
+                                <option key={z.id} value={z.id}>
+                                  {z.name} — Rs {z.fee.toFixed(2)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
                         {/* Search */}
                         <div>
                           <div className="relative mb-2">
@@ -1271,7 +1331,7 @@ export default function RiderPortalPage() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          if (!c.address?.trim()) {
+                                          if (!deliveryZonesActive && !c.address?.trim()) {
                                             selectCustomerForOrder(c);
                                             toast("No address on file — please enter one below", { icon: "📍" });
                                           } else {
@@ -1297,7 +1357,7 @@ export default function RiderPortalPage() {
                                   <p className="text-xs text-gray-500 dark:text-neutral-400">No customer found. Add new:</p>
                                   <div className="px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 text-sm text-gray-900 dark:text-white font-medium">{term}</div>
                                   <input type="text" value={quickCustomerName} onChange={(e) => setQuickCustomerName(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-sm" placeholder="Customer name *" />
-                                  <input type="text" value={quickCustomerAddress} onChange={(e) => setQuickCustomerAddress(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-sm" placeholder="Delivery address *" />
+                                  <input type="text" value={quickCustomerAddress} onChange={(e) => setQuickCustomerAddress(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-sm" placeholder={deliveryZonesActive ? "Address notes (optional)" : "Delivery address *"} />
                                   <button type="button" onClick={handleQuickAddCustomer} disabled={addingQuickCustomer} className="w-full px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50">
                                     {addingQuickCustomer ? "Adding…" : "Add & Select Customer"}
                                   </button>
@@ -1315,7 +1375,7 @@ export default function RiderPortalPage() {
                           <div className="space-y-2.5 pt-2 border-t border-gray-100 dark:border-neutral-800">
                             <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
                             <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
-                            <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Delivery address *" rows={2} className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0 resize-none" />
+                            <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder={deliveryZonesActive ? "Address / notes (optional)" : "Delivery address *"} rows={2} className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0 resize-none" />
                           </div>
                         )}
                       </div>
@@ -1339,7 +1399,7 @@ export default function RiderPortalPage() {
                   <span className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center text-[11px] font-black">{cartBadge}</span>
                   View Order
                 </span>
-                <span className="font-extrabold">Rs. {subtotal.toLocaleString()}</span>
+                <span className="font-extrabold">Rs. {cartTotalDue.toLocaleString()}</span>
               </button>
             </div>
           </div>
@@ -1351,7 +1411,7 @@ export default function RiderPortalPage() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total</p>
-                  <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Rs. {subtotal.toLocaleString()}</p>
+                  <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Rs. {cartTotalDue.toLocaleString()}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Items</p>

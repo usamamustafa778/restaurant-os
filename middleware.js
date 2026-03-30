@@ -20,7 +20,7 @@ const DASHBOARD_PAGES = new Set([
   "overview", "orders", "kitchen", "reservations",
   "categories", "menu-items", "menu",
   "customers", "inventory", "deals",
-  "users", "branches", "tables", "history",
+  "users", "business-settings", "tables", "history",
   "website-content", "integrations", "ai-agents",
   "subscription", "profile", "day-report",
   "order-taker", "rider", "migrate-pending",

@@ -106,10 +106,27 @@ export function BranchProvider({ children }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  const refreshBranches = useCallback(() => {
+    const auth = getStoredAuth();
+    const role = auth?.user?.role;
+    if (!auth?.token) return;
+    (role === "delivery_rider" ? getRiderBranches() : getBranches())
+      .then((data) => {
+        const list = data?.branches ?? (Array.isArray(data) ? data : []);
+        setBranches(list);
+        setCurrentBranchState((prev) => {
+          if (!prev) return prev;
+          return list.find((b) => b.id === prev.id) ?? prev;
+        });
+      })
+      .catch(() => {});
+  }, []);
+
   const value = {
     branches,
     currentBranch,
     setCurrentBranch,
+    refreshBranches,
     loading,
     hasMultipleBranches: branches.length > 1,
   };

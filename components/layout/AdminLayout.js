@@ -142,7 +142,7 @@ const tenantNav = [
 
   { type: "section", label: "SETTINGS" },
   {
-    path: "/branches",
+    path: "/business-settings",
     label: "Business Settings",
     icon: MapPin,
     roles: ["restaurant_admin", "admin"],
@@ -1148,7 +1148,13 @@ export default function AdminLayout({
                           (role === "super_admin" && actingAsSlug)) && (
                           <div className="border-t-2 border-gray-100 dark:border-neutral-800 p-2">
                             <Link
-                              href="/branches"
+                              href="/business-settings"
+                              onClick={(e) => {
+                                if (cleanPath === "/business-settings") {
+                                  e.preventDefault();
+                                  setBranchDropdownOpen(false);
+                                }
+                              }}
                               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-primary dark:text-primary hover:bg-primary/10 transition-all"
                             >
                               <PlusSquare className="w-4 h-4" />

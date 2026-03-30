@@ -26,6 +26,7 @@ import {
   updateCustomer,
   getBranch,
   updateBranch,
+  getWebsiteSettings,
   getRestaurantSettings,
   getUsers,
   getDaySessions,
@@ -48,6 +49,7 @@ import {
   ChevronUp,
   ChevronDown,
   User,
+  UserPlus,
   Loader2,
   CircleCheckBig,
   ChevronLeft,
@@ -105,6 +107,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
+  /** { id, name, fee } from getWebsiteSettings → deliveryLocations (branch-scoped) */
+  const [deliveryZones, setDeliveryZones] = useState([]);
+  const [deliveryLocationId, setDeliveryLocationId] = useState("");
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [onlineProvider, setOnlineProvider] = useState(null);
@@ -208,7 +213,6 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const [customerModalError, setCustomerModalError] = useState("");
   const [customerAddForm, setCustomerAddForm] = useState({ name: "", phone: "", address: "", notes: "" });
   const [quickCustomerName, setQuickCustomerName] = useState("");
-  const [quickCustomerAddress, setQuickCustomerAddress] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState(null);
   const [editCustomerForm, setEditCustomerForm] = useState({ name: "", phone: "", address: "" });
@@ -324,6 +328,32 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       });
     return () => { cancelled = true; };
   }, [currentBranch?.id]);
+
+  // Derive delivery zones directly from the current branch (already loaded by BranchContext)
+  useEffect(() => {
+    if (!isActive) {
+      setDeliveryZones([]);
+      setDeliveryLocationId("");
+      return;
+    }
+    const raw = Array.isArray(currentBranch?.deliveryLocations)
+      ? currentBranch.deliveryLocations
+      : [];
+    const mapped = raw
+      .map((z) => ({
+        id: z._id != null ? String(z._id) : z.id != null ? String(z.id) : "",
+        name: String(z.name || "").trim(),
+        fee: Math.max(0, Number(z.fee) || 0),
+        sortOrder: Number(z.sortOrder) || 0,
+      }))
+      .filter((z) => z.name && z.id)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    setDeliveryZones(mapped);
+    setDeliveryLocationId((prev) => {
+      if (prev && mapped.some((m) => m.id === prev)) return prev;
+      return "";
+    });
+  }, [currentBranch?.id, currentBranch?.deliveryLocations, isActive]);
 
   useEffect(() => {
     let cancelled = false;
@@ -469,7 +499,6 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     setCustomerModalError("");
     setCustomerAddForm({ name: "", phone: "", address: "", notes: "" });
     setQuickCustomerName("");
-    setQuickCustomerAddress("");
     setAddingQuickCustomer(false);
     loadCustomersForModal();
   }
@@ -487,7 +516,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     setCustomerAddress(customer.address || "");
     const shouldCheckout = pendingDeliveryCheckoutRef.current;
     closeCustomerModal();
-    if (shouldCheckout && customer.phone && customer.address) {
+    const canAutoCheckout =
+      customer.phone &&
+      (deliveryZonesActive ? deliveryLocationId : customer.address);
+    if (shouldCheckout && canAutoCheckout) {
       handleCheckout({
         customerName: customer.name || "",
         customerPhone: customer.phone || "",
@@ -524,22 +556,24 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   async function handleQuickAddCustomer() {
     const phone = customerSearch.trim();
     const name = quickCustomerName.trim();
-    const address = quickCustomerAddress.trim();
     if (!phone || !name) {
       setCustomerModalError("Enter customer name and phone to add");
       return;
     }
-    if (orderType === "DELIVERY" && !address) {
-      setCustomerModalError("Address is required for delivery orders");
+    if (orderType === "DELIVERY" && deliveryZones.length > 0 && !deliveryLocationId) {
+      setCustomerModalError("Select a delivery area");
       return;
     }
+    // Resolve zone name as the customer address for tracking area stats
+    const selectedZone = deliveryZones.find((z) => z.id === deliveryLocationId);
+    const address = selectedZone ? selectedZone.name : undefined;
     setAddingQuickCustomer(true);
     setCustomerModalError("");
     try {
       const created = await createCustomer({
         name,
         phone,
-        address: address || undefined,
+        address,
       });
       // Optimistically add to list and select
       setCustomersList((prev) => [created, ...prev]);
@@ -583,11 +617,15 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setPaymentError("Customer phone is required for delivery orders");
       return;
     }
-    if (orderType === "DELIVERY" && !customerAddress.trim()) {
+    if (orderType === "DELIVERY" && deliveryZonesActive && !deliveryLocationId.trim()) {
+      setPaymentError("Select a delivery area");
+      return;
+    }
+    if (orderType === "DELIVERY" && !deliveryZonesActive && !customerAddress.trim()) {
       setPaymentError("Delivery address is required for delivery orders");
       return;
     }
-    const billTotal = total;
+    const billTotal = amountDue;
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
       if (isNaN(received) || received < billTotal) {
@@ -616,9 +654,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           deliveryAddress: customerAddress.trim(),
           orderType,
           tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+          ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
         });
         const receivedAmt = paymentMethod === "CASH" ? Number(amountReceived) : undefined;
-        const returnedAmt = paymentMethod === "CASH" ? Math.max(0, Number(amountReceived) - billTotal) : undefined;
+        const returnedAmt = paymentMethod === "CASH" ? Math.max(0, Number(amountReceived) - amountDue) : undefined;
         await recordOrderPayment(editingOrderId, {
           paymentMethod,
           ...(receivedAmt != null ? { amountReceived: receivedAmt } : {}),
@@ -644,17 +683,19 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
           deliveryAddress: customerAddress.trim(),
+          ...(orderType === "DELIVERY" && deliveryLocationId ? { deliveryLocationId } : {}),
           branchId: currentBranch?.id ?? undefined,
           tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
           ...(paymentMethod === "CASH" && amountReceived !== "" ? { amountReceived: Number(amountReceived) } : {}),
           ...(paymentMethod === "ONLINE" && onlineProvider ? { paymentProvider: onlineProvider } : {}),
+          ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
         });
         orderNum = result?.orderNumber ?? result?.id ?? "";
         toast.success("Order placed and payment recorded", { id: toastId });
       }
 
-      const received = paymentMethod === "CASH" ? Number(amountReceived) : total;
-      const returned = paymentMethod === "CASH" ? Math.max(0, received - total) : 0;
+      const received = paymentMethod === "CASH" ? Number(amountReceived) : billTotal;
+      const returned = paymentMethod === "CASH" ? Math.max(0, received - billTotal) : 0;
       printPaymentBill({
         orderNumber: orderNum,
         id: orderNum,
@@ -670,6 +711,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setCustomerName("");
       setCustomerPhone("");
       setCustomerAddress("");
+      setDeliveryLocationId("");
       setDiscountAmount("");
       setSelectedDeals([]);
       setDealDiscount(0);
@@ -1002,6 +1044,11 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const manualDiscount = discountAmount ? Number(discountAmount) : 0;
   const totalDiscount = dealDiscount + manualDiscount;
   const total = Math.max(0, subtotal - totalDiscount);
+  const selectedDeliveryZone = deliveryZones.find((z) => z.id === deliveryLocationId);
+  const deliveryFee =
+    orderType === "DELIVERY" && selectedDeliveryZone ? Math.round(selectedDeliveryZone.fee * 100) / 100 : 0;
+  const amountDue = Math.round((total + deliveryFee) * 100) / 100;
+  const deliveryZonesActive = orderType === "DELIVERY" && deliveryZones.length > 0;
 
   const handleCheckout = async (overrides) => {
     if (cart.length === 0) {
@@ -1012,10 +1059,21 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     const cPhone = overrides?.customerPhone ?? customerPhone.trim();
     const cAddress = overrides?.customerAddress ?? customerAddress.trim();
 
-    if (orderType === "DELIVERY" && (!cPhone || !cAddress)) {
-      pendingDeliveryCheckoutRef.current = true;
-      openCustomerModal();
-      return;
+    if (orderType === "DELIVERY") {
+      if (!cPhone) {
+        pendingDeliveryCheckoutRef.current = true;
+        openCustomerModal();
+        return;
+      }
+      if (deliveryZonesActive && !deliveryLocationId) {
+        toast.error("Select a delivery area");
+        return;
+      }
+      if (!deliveryZonesActive && !cAddress) {
+        pendingDeliveryCheckoutRef.current = true;
+        openCustomerModal();
+        return;
+      }
     }
 
     setLoading(true);
@@ -1044,8 +1102,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         customerName: cName,
         customerPhone: cPhone,
         deliveryAddress: cAddress,
+        ...(orderType === "DELIVERY" && deliveryLocationId ? { deliveryLocationId } : {}),
         branchId: currentBranch?.id ?? undefined,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+        ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
       });
 
       toast.success("Order placed!", { id: toastId });
@@ -1074,7 +1134,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setOrderConfirmation({
         orderId: result.id || result._id || "",
         orderNumber: result.orderNumber || result.id || "",
-        total: result.total,
+        total: result.amountDue ?? result.total,
         orderType,
         customerName: cName,
         customerPhone: cPhone,
@@ -1087,6 +1147,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setCustomerName("");
       setCustomerPhone("");
       setCustomerAddress("");
+      setDeliveryLocationId("");
       setDiscountAmount("");
       setSelectedDeals([]);
       setDealDiscount(0);
@@ -1236,6 +1297,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: customerAddress.trim(),
+        ...(orderType === "DELIVERY" && deliveryLocationId ? { deliveryLocationId } : {}),
         branchId: currentBranch?.id ?? undefined,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
       });
@@ -1248,6 +1310,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           orderNumber: orderNum,
           id: orderNum,
           createdAt: result?.createdAt ?? new Date().toISOString(),
+          total: result?.amountDue ?? amountDue,
         }),
         "bill",
       );
@@ -2110,34 +2173,29 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               )}
             </div>
 
-            {/* Table selection (optional, only for DINE_IN; hidden until options loaded to avoid flash) */}
-            {orderType === "DINE_IN" && posOptionsLoaded && showTablePos && (
-              <div className="mb-2">
-                <label className="block text-xs font-semibold text-gray-600 dark:text-neutral-400 mb-1">Table (optional)</label>
-                <select
-                  value={tableName}
-                  onChange={(e) => setTableName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
-                >
-                  <option value="">No table</option>
-                  {tables.filter((t) => t.isAvailable).map((t) => (
-                    <option key={t.id} value={t.name}>{t.name}</option>
-                  ))}
-                  {tables.filter((t) => !t.isAvailable).map((t) => (
-                    <option key={t.id} value={t.name}>{t.name} (occupied)</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Waiter & Customer Selection (hidden until options loaded to avoid flash) */}
-            {posOptionsLoaded && (showWaiterPos || showCustomerPos) && (
-              <div className={`grid gap-2 ${showWaiterPos && showCustomerPos ? "grid-cols-2" : "grid-cols-1"} mb-2`}>
-                {showWaiterPos && orderType !== "DELIVERY" && (
+            {/* Table + Order Taker in one row */}
+            {posOptionsLoaded && orderType === "DINE_IN" && (showTablePos || showWaiterPos) && (
+              <div className="flex gap-2 mb-2">
+                {orderType === "DINE_IN" && showTablePos && (
+                  <select
+                    value={tableName}
+                    onChange={(e) => setTableName(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
+                  >
+                    <option value="">No table</option>
+                    {tables.filter((t) => t.isAvailable).map((t) => (
+                      <option key={t.id} value={t.name}>{t.name}</option>
+                    ))}
+                    {tables.filter((t) => !t.isAvailable).map((t) => (
+                      <option key={t.id} value={t.name}>{t.name} (occupied)</option>
+                    ))}
+                  </select>
+                )}
+                {showWaiterPos && orderType === "DINE_IN" && (
                   <select
                     value={selectedWaiter}
                     onChange={(e) => setSelectedWaiter(e.target.value)}
-                    className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
                   >
                     <option value="">Order Taker</option>
                     {orderTakers.map((u) => (
@@ -2145,18 +2203,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     ))}
                   </select>
                 )}
-                {showCustomerPos && (
-                  <button
-                    type="button"
-                    onClick={openCustomerModal}
-                    className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white flex items-center justify-between hover:border-gray-300 dark:hover:border-neutral-600"
-                  >
-                    <span>{customerName || "Add Customer"}</span>
-                    <Plus className="w-3.5 h-3.5 flex-shrink-0" />
-                  </button>
-                )}
               </div>
             )}
+
           </div>
 
           {/* Ordered Items Header */}
@@ -2457,6 +2506,14 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     Rs 0
                   </span>
                 </div>
+                {orderType === "DELIVERY" && deliveryFee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-neutral-400">Delivery</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      Rs {deliveryFee.toFixed(2)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Amount to be Paid */}
@@ -2466,10 +2523,38 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     Amount to be Paid
                   </span>
                   <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                    Rs {total.toFixed(2)}
+                    Rs {amountDue.toFixed(2)}
                   </span>
                 </div>
               </div>
+
+              {/* Delivery area selector */}
+              {orderType === "DELIVERY" && (
+                <div className="mb-2">
+                  {deliveryZones.length > 0 ? (
+                    <select
+                      value={deliveryLocationId}
+                      onChange={(e) => setDeliveryLocationId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
+                    >
+                      <option value="">— Select delivery area —</option>
+                      {deliveryZones.map((z) => (
+                        <option key={z.id} value={z.id}>
+                          {z.name} — Rs {z.fee.toFixed(2)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <textarea
+                      value={customerAddress}
+                      onChange={(e) => setCustomerAddress(e.target.value)}
+                      rows={2}
+                      placeholder="Full delivery address"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white resize-none"
+                    />
+                  )}
+                </div>
+              )}
 
               {/* Place Order / Update Order Button */}
               {editingOrderId ? (
@@ -2510,15 +2595,29 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 </button>
               )}
 
-              {/* Print, Cash, Card, Online buttons */}
-              <div className="grid grid-cols-4 gap-2 mt-2">
+              {/* Add Customer + Print + Take Payment */}
+              <div className="flex gap-2 mt-2">
+                {showCustomerPos && (
+                  <button
+                    type="button"
+                    onClick={openCustomerModal}
+                    title={customerName || "Add Customer"}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-gray-300 dark:hover:border-neutral-600 transition-colors flex-shrink-0"
+                  >
+                    <UserPlus className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
+                    <span className="text-xs font-medium text-gray-700 dark:text-neutral-300 max-w-[72px] truncate">
+                      {customerName || "Customer"}
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={printMenuBill}
                   disabled={printingMenu || cart.length === 0}
-                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={printingMenu ? "Printing..." : "Print bill"}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                 >
-                  <Printer className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
+                  <Printer className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
                   <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
                     {printingMenu ? "Printing..." : "Print"}
                   </span>
@@ -2527,34 +2626,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   type="button"
                   onClick={() => openTakePaymentModal("CASH")}
                   disabled={cart.length === 0}
-                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-sm font-medium text-gray-700 dark:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Banknote className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Cash
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openTakePaymentModal("CARD")}
-                  disabled={cart.length === 0}
-                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <CreditCard className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Card
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openTakePaymentModal("ONLINE")}
-                  disabled={cart.length === 0}
-                  className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Smartphone className="w-5 h-5 text-gray-600 dark:text-neutral-400" />
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    Online
-                  </span>
+                  <Receipt className="w-4 h-4" />
+                  Take Payment
                 </button>
               </div>
 
@@ -3689,7 +3764,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                       type="text"
                                       value={editCustomerForm.address}
                                       onChange={(e) => setEditCustomerForm((prev) => ({ ...prev, address: e.target.value }))}
-                                      placeholder={orderType === "DELIVERY" ? "Address *" : "Address"}
+                                      placeholder={orderType === "DELIVERY" && !deliveryZonesActive ? "Address *" : "Address"}
                                       className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                     />
                                     <div className="flex gap-2">
@@ -3698,7 +3773,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                         disabled={savingCustomer}
                                         onClick={async () => {
                                           if (!editCustomerForm.name.trim()) return;
-                                          if (orderType === "DELIVERY" && !editCustomerForm.address.trim()) {
+                                          if (orderType === "DELIVERY" && !deliveryZonesActive && !editCustomerForm.address.trim()) {
                                             toast.error("Address is required for delivery orders");
                                             return;
                                           }
@@ -3732,7 +3807,11 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (orderType === "DELIVERY" && !c.address?.trim()) {
+                                        if (orderType === "DELIVERY" && deliveryZonesActive && !deliveryLocationId) {
+                                          toast.error("Select a delivery area first");
+                                          return;
+                                        }
+                                        if (orderType === "DELIVERY" && !deliveryZonesActive && !c.address?.trim()) {
                                           setEditingCustomerId(c.id);
                                           setEditCustomerForm({ name: c.name || "", phone: c.phone || "", address: c.address || "" });
                                           toast.error("Please add an address for delivery");
@@ -3813,18 +3892,25 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                               placeholder="Customer name"
                             />
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                              Address{orderType === "DELIVERY" ? " *" : ""}
-                            </label>
-                            <input
-                              type="text"
-                              value={quickCustomerAddress}
-                              onChange={(e) => setQuickCustomerAddress(e.target.value)}
-                              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                              placeholder="Customer address"
-                            />
-                          </div>
+                          {orderType === "DELIVERY" && deliveryZones.length > 0 && (
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                                Delivery area *
+                              </label>
+                              <select
+                                value={deliveryLocationId}
+                                onChange={(e) => setDeliveryLocationId(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                              >
+                                <option value="">— Select delivery area —</option>
+                                {deliveryZones.map((z) => (
+                                  <option key={z.id} value={z.id}>
+                                    {z.name} — Rs {z.fee.toFixed(2)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={handleQuickAddCustomer}
