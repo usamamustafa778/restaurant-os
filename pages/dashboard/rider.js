@@ -172,6 +172,8 @@ export default function RiderPortalPage() {
   const [quickCustomerName, setQuickCustomerName] = useState("");
   const [quickCustomerAddress, setQuickCustomerAddress] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
+  const [deliveryZones, setDeliveryZones] = useState([]);
+  const [deliveryLocationId, setDeliveryLocationId] = useState("");
 
   // UI
   const [showBranchModal, setShowBranchModal] = useState(false);
