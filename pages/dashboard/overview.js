@@ -1882,17 +1882,17 @@ export default function OverviewPage() {
           </div>
 
           {/* ─── Currency Counter ─────────────────────────────────────────── */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
-                  <Wallet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
+                  <Wallet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                  <h3 className="text-xs font-bold text-gray-900 dark:text-white">
                     Currency Counter
                   </h3>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500">
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
                     {currencyCode
                       ? `Counting in ${currencyCode} (manual denominations)`
                       : "Manual denomination mode — set your currency in Business Settings"}
@@ -1906,7 +1906,7 @@ export default function OverviewPage() {
                       key={d}
                       type="button"
                       onClick={() => setCurrencyDate(d)}
-                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all capitalize ${currencyDate === d ? "bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 dark:text-neutral-400"}`}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all capitalize ${currencyDate === d ? "bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm" : "text-gray-500 dark:text-neutral-400"}`}
                     >
                       {d === "today" ? "Today" : "Yesterday"}
                     </button>
@@ -1917,8 +1917,9 @@ export default function OverviewPage() {
                 )}
               </div>
             </div>
-            <div className="p-4 space-y-3">
-              {[
+            <div className="p-3 space-y-2">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                {[
                 { key: "note", label: "Cash Notes", icon: Banknote },
                 { key: "coin", label: "Coins", icon: Coins },
               ].map((section) => {
@@ -1928,17 +1929,28 @@ export default function OverviewPage() {
                 return (
                   <div
                     key={section.key}
-                    className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden"
+                    className="rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden h-full"
                   >
-                    <div className="px-3 py-2 bg-gray-50 dark:bg-neutral-900/50 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2">
-                      <section.icon className="w-3.5 h-3.5 text-gray-500 dark:text-neutral-400" />
-                      <p className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                    <div className="px-3 py-1.5 bg-gray-50/80 dark:bg-neutral-900/50 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                      <section.icon className="w-3 h-3 text-gray-500 dark:text-neutral-400" />
+                      <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
                         {section.label}
                       </p>
+                      </div>
+                      <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                        {sectionRows.length} rows
+                      </span>
                     </div>
-                    <div className="p-2 space-y-2">
+                    <div className="p-2 space-y-1.5">
+                      <div className="grid grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                        <div className="col-span-5">Cash value</div>
+                        <div className="col-span-3">Qty</div>
+                        <div className="col-span-4 text-right">Total</div>
+                      </div>
+                      <div className="max-h-52 overflow-auto pr-1 space-y-1">
                       {sectionRows.length === 0 ? (
-                        <p className="text-xs text-gray-400 dark:text-neutral-500 px-2 py-2">
+                        <p className="text-[11px] text-gray-400 dark:text-neutral-500 px-2 py-2">
                           No {section.label.toLowerCase()} configured
                         </p>
                       ) : (
@@ -1949,9 +1961,9 @@ export default function OverviewPage() {
                           return (
                             <div
                               key={row.id}
-                              className="grid grid-cols-12 gap-2 items-center px-2 py-2 rounded-lg bg-gray-50/70 dark:bg-neutral-900/40"
+                              className="grid grid-cols-12 gap-2 items-center px-2 py-1 rounded-md bg-gray-50/70 dark:bg-neutral-900/35 border border-transparent hover:border-gray-200 dark:hover:border-neutral-700 transition-colors"
                             >
-                              <div className="col-span-12 sm:col-span-4">
+                              <div className="col-span-5">
                                 <input
                                   type="number"
                                   min="0"
@@ -1963,10 +1975,10 @@ export default function OverviewPage() {
                                   placeholder={
                                     section.key === "note" ? "Cash value" : "Coin value"
                                   }
-                                  className="w-full h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-xs font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                                  className="w-full h-8 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-[11px] font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
                                 />
                               </div>
-                              <div className="col-span-6 sm:col-span-3">
+                              <div className="col-span-3">
                                 <input
                                   type="number"
                                   min="0"
@@ -1974,14 +1986,11 @@ export default function OverviewPage() {
                                   value={row.qty}
                                   onChange={(e) => setCurrencyQty(row.id, e.target.value)}
                                   placeholder="0"
-                                  className="w-full h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-xs font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                                  className="w-full h-8 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-[11px] font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
                                 />
                               </div>
-                              <div className="col-span-6 sm:col-span-5 text-right">
-                                <p className="text-xs text-gray-500 dark:text-neutral-400">
-                                  Subtotal
-                                </p>
-                                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                              <div className="col-span-4 text-right">
+                                <p className="text-xs font-semibold text-gray-900 dark:text-white tabular-nums">
                                   {formatMoney(amount)}
                                 </p>
                               </div>
@@ -1989,6 +1998,7 @@ export default function OverviewPage() {
                           );
                         })
                       )}
+                      </div>
                       <button
                         type="button"
                         onClick={() =>
@@ -2002,7 +2012,7 @@ export default function OverviewPage() {
                             },
                           ])
                         }
-                        className="mt-1 inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 text-[11px] font-semibold text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                        className="mt-0.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-dashed border-gray-200 dark:border-neutral-700 text-[10px] font-semibold text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
                       >
                         + Add {section.label.slice(0, -1)}
                       </button>
@@ -2010,51 +2020,52 @@ export default function OverviewPage() {
                   </div>
                 );
               })}
+              </div>
               {currencyRows.every((row) => !(Number(row.qty) > 0)) && (
-                <div className="rounded-lg border border-dashed border-gray-200 dark:border-neutral-800 px-3 py-2">
-                  <p className="text-xs text-gray-400 dark:text-neutral-500">
+                <div className="rounded-md border border-dashed border-gray-200 dark:border-neutral-800 px-2.5 py-1.5">
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
                     Enter quantities to start cash counting.
                   </p>
                 </div>
               )}
-              <div className="sticky bottom-0 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur px-3 py-3">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
-                  <div className="rounded-lg bg-gray-50 dark:bg-neutral-900 px-3 py-2">
-                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+              <div className="sticky bottom-0 rounded-lg border border-gray-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur px-2.5 py-2 shadow-[0_-6px_14px_rgba(0,0,0,0.04)] dark:shadow-none">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 mb-2">
+                  <div className="rounded-md bg-gray-50 dark:bg-neutral-900 px-2.5 py-1.5">
+                    <p className="text-[10px] text-gray-500 dark:text-neutral-400">
                       Expected cash sales
                     </p>
-                    <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    <p className="text-xs font-bold text-gray-900 dark:text-white">
                       {expectedCashLoading ? "…" : formatMoney(expectedCashSales)}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2">
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                  <div className="rounded-md bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1.5">
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
                       Actual counted
                     </p>
-                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                    <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
                       {formatMoney(currencyTotal)}
                     </p>
                   </div>
                   <div
-                    className={`rounded-lg px-3 py-2 ${currencyDifference === 0 ? "bg-gray-50 dark:bg-neutral-900" : currencyDifference > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-rose-50 dark:bg-rose-500/10"}`}
+                    className={`rounded-md px-2.5 py-1.5 ${currencyDifference === 0 ? "bg-gray-50 dark:bg-neutral-900" : currencyDifference > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-rose-50 dark:bg-rose-500/10"}`}
                   >
-                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                    <p className="text-[10px] text-gray-500 dark:text-neutral-400">
                       Difference
                     </p>
                     <p
-                      className={`text-sm font-bold ${currencyDifference === 0 ? "text-gray-900 dark:text-white" : currencyDifference > 0 ? "text-amber-700 dark:text-amber-400" : "text-rose-700 dark:text-rose-400"}`}
+                      className={`text-xs font-bold ${currencyDifference === 0 ? "text-gray-900 dark:text-white" : currencyDifference > 0 ? "text-amber-700 dark:text-amber-400" : "text-rose-700 dark:text-rose-400"}`}
                     >
                       {currencyDifference > 0 ? "+" : ""}
                       {formatMoney(currencyDifference)}
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row items-center justify-end gap-2">
+                <div className="flex flex-col sm:flex-row items-center justify-end gap-1.5">
                   <button
                     type="button"
                     onClick={handleSaveCurrency}
                     disabled={!isCurrencyEditable || currencySaving}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-md hover:shadow-primary/25 disabled:opacity-50 transition-all"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-gradient-to-r from-primary to-secondary text-white text-[11px] font-semibold hover:shadow-md hover:shadow-primary/25 disabled:opacity-50 transition-all"
                   >
                     {currencySaving ? (
                       <>
@@ -2068,7 +2079,7 @@ export default function OverviewPage() {
                   <button
                     type="button"
                     onClick={handleSaveDenominationsAsDefault}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-dashed border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-[11px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
                   >
                     Save layout
                   </button>
@@ -2077,7 +2088,7 @@ export default function OverviewPage() {
                       type="button"
                       onClick={handleOpenDrawer}
                       disabled={drawerOpening}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-200 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-200 text-[11px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-60"
                     >
                       {drawerOpening ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
