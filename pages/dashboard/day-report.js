@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Card from "../../components/ui/Card";
 import DataTable from "../../components/ui/DataTable";
-import { getDayReport, SubscriptionInactiveError } from "../../lib/apiClient";
+import {
+  getDayReport,
+  SubscriptionInactiveError,
+  getCurrencySymbol,
+} from "../../lib/apiClient";
 import { Calendar, Loader2, FileDown, Printer } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -58,6 +62,7 @@ export default function DayReportPage() {
   };
   const paymentRows = report?.paymentRows || [];
   const orderTypeRows = report?.orderTypeRows || [];
+  const currencySymbol = getCurrencySymbol();
 
   const reportDateObj = report?.date ? new Date(report.date) : new Date(selectedDate);
   const formattedDate = reportDateObj.toLocaleDateString("en-US", {
@@ -71,7 +76,7 @@ export default function DayReportPage() {
       ["Generated", new Date().toLocaleString("en-PK")],
       [],
       ["SALES DETAILS"],
-      ["Metric", "Value (Rs)"],
+      ["Metric", `Value (${currencySymbol})`],
       ["Gross Sales", salesDetails.grossSales],
       ["Net Sales (Inc. Tax)", salesDetails.netSales],
       ["Total Revenue", salesDetails.totalRevenue],
@@ -95,13 +100,13 @@ export default function DayReportPage() {
       ...(paymentRows.length > 0 ? [
         [],
         ["PAYMENT WISE SALES"],
-        ["Payment Method", "Orders", "Amount (Rs)", "Percentage"],
+        ["Payment Method", "Orders", `Amount (${currencySymbol})`, "Percentage"],
         ...paymentRows.map((r) => [r.method, r.orders, r.amount, r.percent]),
       ] : []),
       ...(orderTypeRows.length > 0 ? [
         [],
         ["ORDER TYPE SALES"],
-        ["Order Type", "Orders", "Amount (Rs)", "Percentage"],
+        ["Order Type", "Orders", `Amount (${currencySymbol})`, "Percentage"],
         ...orderTypeRows.map((r) => [r.type, r.orders, r.amount, r.percent]),
       ] : []),
     ];
@@ -118,13 +123,13 @@ export default function DayReportPage() {
     const paymentTable = paymentRows.length > 0
       ? `<h2>Payment Wise Sales</h2><table>
           <thead><tr><th>Method</th><th>Orders</th><th>Amount</th><th>%</th></tr></thead>
-          <tbody>${paymentRows.map((r) => `<tr><td>${r.method}</td><td>${r.orders}</td><td>Rs ${r.amount?.toLocaleString?.() ?? r.amount}</td><td>${r.percent}</td></tr>`).join("")}</tbody>
+          <tbody>${paymentRows.map((r) => `<tr><td>${r.method}</td><td>${r.orders}</td><td>${currencySymbol} ${r.amount?.toLocaleString?.() ?? r.amount}</td><td>${r.percent}</td></tr>`).join("")}</tbody>
         </table>` : "";
 
     const orderTypeTable = orderTypeRows.length > 0
       ? `<h2>Order Type Sales</h2><table>
           <thead><tr><th>Type</th><th>Orders</th><th>Amount</th><th>%</th></tr></thead>
-          <tbody>${orderTypeRows.map((r) => `<tr><td>${r.type}</td><td>${r.orders}</td><td>Rs ${r.amount?.toLocaleString?.() ?? r.amount}</td><td>${r.percent}</td></tr>`).join("")}</tbody>
+          <tbody>${orderTypeRows.map((r) => `<tr><td>${r.type}</td><td>${r.orders}</td><td>${currencySymbol} ${r.amount?.toLocaleString?.() ?? r.amount}</td><td>${r.percent}</td></tr>`).join("")}</tbody>
         </table>` : "";
 
     const html = `<!DOCTYPE html><html><head><title>Day Report – ${formattedDate}</title>
@@ -151,12 +156,12 @@ export default function DayReportPage() {
 <div class="grid2">
   <div class="section">
     <div class="section-title">Sales Details</div>
-    <div class="row"><span>Gross Sales</span><span class="val">Rs ${salesDetails.grossSales.toLocaleString()}</span></div>
-    <div class="row"><span>Net Sales (Inc. Tax)</span><span class="val">Rs ${salesDetails.netSales.toLocaleString()}</span></div>
-    <div class="row"><span>Total Revenue</span><span class="val">Rs ${salesDetails.totalRevenue.toLocaleString()}</span></div>
-    <div class="row"><span>Discounts</span><span class="val" style="color:#dc2626">- Rs ${salesDetails.discounts.toLocaleString()}</span></div>
-    <div class="row"><span>Delivery Charges</span><span class="val">Rs ${salesDetails.deliveryCharges.toLocaleString()}</span></div>
-    <div class="row"><span>Tax Amount</span><span class="val">Rs ${salesDetails.taxAmount.toLocaleString()}</span></div>
+    <div class="row"><span>Gross Sales</span><span class="val">${currencySymbol} ${salesDetails.grossSales.toLocaleString()}</span></div>
+    <div class="row"><span>Net Sales (Inc. Tax)</span><span class="val">${currencySymbol} ${salesDetails.netSales.toLocaleString()}</span></div>
+    <div class="row"><span>Total Revenue</span><span class="val">${currencySymbol} ${salesDetails.totalRevenue.toLocaleString()}</span></div>
+    <div class="row"><span>Discounts</span><span class="val" style="color:#dc2626">- ${currencySymbol} ${salesDetails.discounts.toLocaleString()}</span></div>
+    <div class="row"><span>Delivery Charges</span><span class="val">${currencySymbol} ${salesDetails.deliveryCharges.toLocaleString()}</span></div>
+    <div class="row"><span>Tax Amount</span><span class="val">${currencySymbol} ${salesDetails.taxAmount.toLocaleString()}</span></div>
   </div>
   <div class="section">
     <div class="section-title">Insights</div>
@@ -164,8 +169,8 @@ export default function DayReportPage() {
     <div class="row"><span>Completed Sales</span><span class="val" style="color:#059669">${insights.completedSales}</span></div>
     <div class="row"><span>Paid Sales</span><span class="val">${insights.paidSales}</span></div>
     <div class="row"><span>Cancelled</span><span class="val" style="color:#dc2626">${insights.cancelledToday}</span></div>
-    <div class="row"><span>Inventory Cost</span><span class="val" style="color:#d97706">Rs ${salesDetails.budgetCost.toLocaleString()}</span></div>
-    <div class="row"><span>Net Profit</span><span class="val profit">Rs ${salesDetails.profit.toLocaleString()} (${marginPct}%)</span></div>
+    <div class="row"><span>Inventory Cost</span><span class="val" style="color:#d97706">${currencySymbol} ${salesDetails.budgetCost.toLocaleString()}</span></div>
+    <div class="row"><span>Net Profit</span><span class="val profit">${currencySymbol} ${salesDetails.profit.toLocaleString()} (${marginPct}%)</span></div>
   </div>
 </div>
 ${paymentTable}
@@ -258,37 +263,37 @@ ${orderTypeTable}
                 <div className="space-y-1">
                   <div className="text-neutral-500">Gross Sales</div>
                   <div className="text-lg font-semibold text-gray-900">
-                    Rs {salesDetails.grossSales.toLocaleString()}
+                    {currencySymbol} {salesDetails.grossSales.toLocaleString()}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-neutral-500">Net Sales (Inc. Tax)</div>
                   <div className="text-lg font-semibold text-gray-900">
-                    Rs {salesDetails.netSales.toLocaleString()}
+                    {currencySymbol} {salesDetails.netSales.toLocaleString()}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-neutral-500">Total Revenue</div>
                   <div className="text-lg font-semibold text-gray-900">
-                    Rs {salesDetails.totalRevenue.toLocaleString()}
+                    {currencySymbol} {salesDetails.totalRevenue.toLocaleString()}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-neutral-500">Discounts</div>
                   <div className="text-lg font-semibold text-rose-500">
-                    - Rs {salesDetails.discounts.toLocaleString()}
+                    - {currencySymbol} {salesDetails.discounts.toLocaleString()}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-neutral-500">Delivery Charges</div>
                   <div className="text-lg font-semibold text-gray-900">
-                    Rs {salesDetails.deliveryCharges.toLocaleString()}
+                    {currencySymbol} {salesDetails.deliveryCharges.toLocaleString()}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-neutral-500">Tax Amount</div>
                   <div className="text-lg font-semibold text-gray-900">
-                    Rs {salesDetails.taxAmount.toLocaleString()}
+                    {currencySymbol} {salesDetails.taxAmount.toLocaleString()}
                   </div>
                 </div>
               </div>
@@ -343,7 +348,7 @@ ${orderTypeTable}
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Total Inventory Cost</span>
                   <span className="text-lg font-semibold text-amber-600">
-                    Rs {salesDetails.budgetCost.toLocaleString()}
+                    {currencySymbol} {salesDetails.budgetCost.toLocaleString()}
                   </span>
                 </div>
                 <div className="text-[11px] text-neutral-400">
@@ -356,7 +361,7 @@ ${orderTypeTable}
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Net Profit</span>
                   <span className={`text-lg font-semibold ${salesDetails.profit >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
-                    Rs {salesDetails.profit.toLocaleString()}
+                    {currencySymbol} {salesDetails.profit.toLocaleString()}
                   </span>
                 </div>
                 <div className="text-[11px] text-neutral-400">
@@ -391,7 +396,7 @@ ${orderTypeTable}
                       key: "amount",
                       header: "Amount",
                       align: "right",
-                      render: val => `Rs ${val.toLocaleString()}`
+                      render: val => `${currencySymbol} ${val.toLocaleString()}`
                     },
                     { key: "percent", header: "Percentage", align: "right" }
                   ]}
@@ -414,7 +419,7 @@ ${orderTypeTable}
                       key: "amount",
                       header: "Amount",
                       align: "right",
-                      render: val => `Rs ${val.toLocaleString()}`
+                      render: val => `${currencySymbol} ${val.toLocaleString()}`
                     },
                     { key: "percent", header: "Percentage", align: "right" }
                   ]}

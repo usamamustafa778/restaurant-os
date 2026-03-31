@@ -14,8 +14,10 @@ import {
   updateBranch,
   getInventory,
   getRestaurantSettings,
+  updateRestaurantSettings,
   openCashDrawer,
   getStoredAuth,
+  getCurrencySymbol,
 } from "../../lib/apiClient";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
@@ -574,32 +576,12 @@ export default function OverviewPage() {
     }
   }
 
-  const CURRENCY_PRESETS = {
-    PKR: {
-      symbol: "Rs",
-      notes: [5000, 1000, 500, 100, 50, 20, 10],
-      coins: [5, 2, 1],
-    },
-    USD: {
-      symbol: "$",
-      notes: [100, 50, 20, 10, 5, 1],
-      coins: [0.25, 0.1, 0.05, 0.01],
-    },
-    EUR: {
-      symbol: "€",
-      notes: [500, 200, 100, 50, 20, 10, 5],
-      coins: [2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01],
-    },
-    INR: {
-      symbol: "₹",
-      notes: [500, 200, 100, 50, 20, 10],
-      coins: [5, 2, 1],
-    },
-    GBP: {
-      symbol: "£",
-      notes: [50, 20, 10, 5],
-      coins: [2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01],
-    },
+  const CURRENCY_SYMBOLS = {
+    PKR: "Rs",
+    USD: "$",
+    EUR: "€",
+    INR: "₹",
+    GBP: "£",
   };
   const DRAWER_ALLOWED_ROLES = new Set([
     "restaurant_admin",
@@ -611,33 +593,9 @@ export default function OverviewPage() {
   const userRole = String(getStoredAuth()?.user?.role || "").toLowerCase();
   const canOpenDrawer = DRAWER_ALLOWED_ROLES.has(userRole);
 
-  const buildPresetRows = (currencyCode) => {
-    const preset = CURRENCY_PRESETS[currencyCode];
-    if (!preset) return [];
-    return [
-      ...preset.notes.map((v) => ({
-        id: `n-${currencyCode}-${v}`,
-        type: "note",
-        value: v,
-        qty: "",
-      })),
-      ...preset.coins.map((v) => ({
-        id: `c-${currencyCode}-${v}`,
-        type: "coin",
-        value: v,
-        qty: "",
-      })),
-    ];
-  };
-  const buildGenericRows = () => [
-    { id: "m-1", type: "note", value: "", qty: "" },
-    { id: "m-2", type: "note", value: "", qty: "" },
-    { id: "m-3", type: "note", value: "", qty: "" },
-    { id: "m-4", type: "coin", value: "", qty: "" },
-    { id: "m-5", type: "coin", value: "", qty: "" },
-    { id: "m-6", type: "coin", value: "", qty: "" },
-  ];
+  const buildGenericRows = () => [];
   const [currencyCode, setCurrencyCode] = useState(null);
+  const [defaultDenominations, setDefaultDenominations] = useState([]);
   const [currencyRows, setCurrencyRows] = useState(() => buildGenericRows());
   const [currencyDate, setCurrencyDate] = useState("today");
   const [currencyLoading, setCurrencyLoading] = useState(false);
@@ -658,9 +616,7 @@ export default function OverviewPage() {
           d.setDate(d.getDate() - 1);
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         })();
-  const activeCurrencyPreset = CURRENCY_PRESETS[currencyCode] || null;
-  const currencySymbol = activeCurrencyPreset?.symbol || "¤";
-  const isManualDenominationMode = !activeCurrencyPreset;
+  const currencySymbol = getCurrencySymbol();
   const isCurrencyEditable = true;
   const currencyTotal = currencyRows.reduce((sum, row) => {
     const v = Number(row.value);
@@ -702,17 +658,32 @@ export default function OverviewPage() {
       .then((s) => {
         const code = String(s?.currencyCode || "").trim().toUpperCase();
         setCurrencyCode(code || null);
+        if (Array.isArray(s?.currencyDenominations)) {
+          setDefaultDenominations(
+            s.currencyDenominations
+              .map((v) => Number(v))
+              .filter((v) => Number.isFinite(v) && v > 0),
+          );
+        }
       })
-      .catch(() => setCurrencyCode(null));
+      .catch(() => {
+        setCurrencyCode(null);
+        setDefaultDenominations([]);
+      });
   }, []);
 
   useEffect(() => {
     const rows =
-      buildPresetRows(currencyCode).length > 0
-        ? buildPresetRows(currencyCode)
+      (defaultDenominations || []).length > 0
+        ? (defaultDenominations || []).map((v, idx) => ({
+            id: `d-${idx}-${v}`,
+            type: v >= 1 ? "note" : "coin",
+            value: String(v),
+            qty: "",
+          }))
         : buildGenericRows();
     setCurrencyRows(rows);
-  }, [currencyCode]);
+  }, [defaultDenominations]);
 
   function formatMoney(value) {
     return `${currencySymbol} ${Math.abs(Number(value || 0)).toLocaleString(undefined, {
@@ -734,26 +705,18 @@ export default function OverviewPage() {
     currencyDirtyRef.current = false;
     setCurrencyLoading(true);
     const templateRows =
-      buildPresetRows(currencyCode).length > 0
-        ? buildPresetRows(currencyCode)
-        : buildGenericRows();
+      (defaultDenominations || []).length > 0
+        ? (defaultDenominations || []).map((v, idx) => ({
+            id: `t-${idx}-${v}`,
+            type: v >= 1 ? "note" : "coin",
+            value: String(v),
+            qty: "",
+          }))
+        : [];
     getDailyCurrency(currencyDateValue)
       .then((res) => {
         if (cancelled) return;
         const q = res?.quantities || {};
-        if (activeCurrencyPreset) {
-          setCurrencyRows(
-            templateRows.map((row) => {
-              const key = normalizeDenomKey(row.value);
-              const raw = q[key];
-              return {
-                ...row,
-                qty: raw != null ? String(raw) : "",
-              };
-            }),
-          );
-          return;
-        }
         const entries = Object.entries(q)
           .map(([denom, qty], idx) => ({
             id: `saved-${idx}`,
@@ -775,7 +738,7 @@ export default function OverviewPage() {
       if (currencySaveTimeoutRef.current)
         clearTimeout(currencySaveTimeoutRef.current);
     };
-  }, [currencyDateValue, currencyCode]);
+  }, [currencyDateValue, defaultDenominations]);
 
   useEffect(() => {
     let cancelled = false;
@@ -839,6 +802,32 @@ export default function OverviewPage() {
         toast.error(err.message || "Failed to open drawer");
       })
       .finally(() => setDrawerOpening(false));
+  }
+
+  function handleSaveDenominationsAsDefault() {
+    const denoms = currencyRows
+      .map((row) => Number(row.value))
+      .filter((v) => Number.isFinite(v) && v > 0);
+    const uniqueSorted = Array.from(new Set(denoms)).sort((a, b) => b - a);
+    if (uniqueSorted.length === 0) {
+      toast.error("Add at least one denomination to save as default");
+      return;
+    }
+    toast.promise(
+      updateRestaurantSettings({
+        currencyCode: currencyCode || null,
+        currencyDenominations: uniqueSorted,
+      }),
+      {
+        loading: "Saving denominations…",
+        success: "Denominations saved for future days",
+        error: (err) => err.message || "Failed to save denominations",
+      },
+    ).then((updated) => {
+      if (updated?.currencyDenominations) {
+        setDefaultDenominations(updated.currencyDenominations);
+      }
+    });
   }
 
   useEffect(() => {
@@ -1310,7 +1299,7 @@ export default function OverviewPage() {
               {
                 label: "Revenue",
                 sub: periodLabel,
-                value: `Rs ${Math.round(viewTotalRevenue).toLocaleString()}`,
+                value: `${currencySymbol} ${Math.round(viewTotalRevenue).toLocaleString()}`,
                 icon: DollarSign,
                 color: "text-primary",
                 bg: "bg-primary/10 dark:bg-primary/20",
@@ -1328,7 +1317,7 @@ export default function OverviewPage() {
               {
                 label: "Net Profit",
                 sub: periodLabel,
-                value: `Rs ${Math.round(viewTotalProfit).toLocaleString()}`,
+                value: `${currencySymbol} ${Math.round(viewTotalProfit).toLocaleString()}`,
                 icon: TrendingUp,
                 color: "text-emerald-600 dark:text-emerald-400",
                 bg: "bg-emerald-50 dark:bg-emerald-500/10",
@@ -1337,7 +1326,7 @@ export default function OverviewPage() {
               {
                 label: "Avg Order",
                 sub: periodLabel,
-                value: `Rs ${viewAvgOrder.toLocaleString()}`,
+                value: `${currencySymbol} ${viewAvgOrder.toLocaleString()}`,
                 icon: Activity,
                 color: "text-sky-600 dark:text-sky-400",
                 bg: "bg-sky-50 dark:bg-sky-500/10",
@@ -1408,7 +1397,7 @@ export default function OverviewPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-xl font-bold text-gray-900 dark:text-white">
-                    Rs {Math.round(viewTotalRevenue).toLocaleString()}
+                    {currencySymbol} {Math.round(viewTotalRevenue).toLocaleString()}
                   </p>
                   <p className="text-[10px] text-gray-400 dark:text-neutral-500">
                     total revenue
@@ -1468,7 +1457,7 @@ export default function OverviewPage() {
                     Profit
                   </p>
                   <p className="text-white text-2xl font-bold leading-tight">
-                    Rs {Math.round(viewTotalProfit).toLocaleString()}
+                    {currencySymbol} {Math.round(viewTotalProfit).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -1539,7 +1528,7 @@ export default function OverviewPage() {
                     </p>
                   </div>
                   <h2 className="font-bold text-base text-gray-900 dark:text-white">
-                    Rs {Math.round(totalReceivedAmount).toLocaleString()}
+                    {currencySymbol} {Math.round(totalReceivedAmount).toLocaleString()}
                   </h2>
                 </div>
               </div>
@@ -1573,10 +1562,8 @@ export default function OverviewPage() {
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-gray-900 dark:text-white">
-                                Rs{" "}
-                                {Math.round(
-                                  Number(row.amount || 0),
-                                ).toLocaleString()}
+                                {currencySymbol}{" "}
+                                {Math.round(Number(row.amount || 0)).toLocaleString()}
                               </span>
                               <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
                                 {pct}%
@@ -1652,10 +1639,8 @@ export default function OverviewPage() {
                         </p>
                       </div>
                       <h2 className="font-bold text-sm text-gray-900 dark:text-white shrink-0">
-                        Rs{" "}
-                        {Math.round(
-                          upcomingPayments.totalAmount,
-                        ).toLocaleString()}
+                        {currencySymbol}{" "}
+                        {Math.round(upcomingPayments.totalAmount).toLocaleString()}
                       </h2>
                     </div>
                   </div>
@@ -1668,9 +1653,9 @@ export default function OverviewPage() {
                       <span className="text-[10px] text-gray-600 dark:text-neutral-400 leading-tight">
                         {row.label} · {row.count.toLocaleString()} orders
                       </span>
-                      <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
-                        Rs {Math.round(row.amount || 0).toLocaleString()}
-                      </p>
+                    <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
+                      {currencySymbol} {Math.round(row.amount || 0).toLocaleString()}
+                    </p>
                     </div>
                   ))}
 
@@ -1690,7 +1675,7 @@ export default function OverviewPage() {
                       Total unpaid (in progress + delivered above)
                     </span>
                     <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 tabular-nums">
-                      Rs {Math.round(totalUnpaidExposure).toLocaleString()}
+                      {currencySymbol} {Math.round(totalUnpaidExposure).toLocaleString()}
                     </p>
                   </div>
 
@@ -1700,7 +1685,7 @@ export default function OverviewPage() {
                       {pendingCollection.orders.toLocaleString()} orders
                     </span>
                     <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
-                      Rs {Math.round(pendingCollection.amount).toLocaleString()}
+                      {currencySymbol} {Math.round(pendingCollection.amount).toLocaleString()}
                     </p>
                   </div>
                 </div>
@@ -1908,9 +1893,9 @@ export default function OverviewPage() {
                     Currency Counter
                   </h3>
                   <p className="text-xs text-gray-400 dark:text-neutral-500">
-                    {isManualDenominationMode
-                      ? "Manual denomination mode (set in Business Settings)"
-                      : `Counting in ${currencyCode}`}
+                    {currencyCode
+                      ? `Counting in ${currencyCode} (manual denominations)`
+                      : "Manual denomination mode — set your currency in Business Settings"}
                   </p>
                 </div>
               </div>
@@ -1927,21 +1912,6 @@ export default function OverviewPage() {
                     </button>
                   ))}
                 </div>
-                {canOpenDrawer && (
-                  <button
-                    type="button"
-                    onClick={handleOpenDrawer}
-                    disabled={drawerOpening}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-200 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-60"
-                  >
-                    {drawerOpening ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Wallet className="w-3.5 h-3.5" />
-                    )}
-                    Open Drawer
-                  </button>
-                )}
                 {currencyLoading && (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
                 )}
@@ -1949,7 +1919,7 @@ export default function OverviewPage() {
             </div>
             <div className="p-4 space-y-3">
               {[
-                { key: "note", label: "Notes", icon: Banknote },
+                { key: "note", label: "Cash Notes", icon: Banknote },
                 { key: "coin", label: "Coins", icon: Coins },
               ].map((section) => {
                 const sectionRows = currencyRows.filter(
@@ -1982,23 +1952,19 @@ export default function OverviewPage() {
                               className="grid grid-cols-12 gap-2 items-center px-2 py-2 rounded-lg bg-gray-50/70 dark:bg-neutral-900/40"
                             >
                               <div className="col-span-12 sm:col-span-4">
-                                {isManualDenominationMode ? (
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={row.value}
-                                    onChange={(e) =>
-                                      setCurrencyDenomination(row.id, e.target.value)
-                                    }
-                                    placeholder="Denomination"
-                                    className="w-full h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-xs font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
-                                  />
-                                ) : (
-                                  <p className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
-                                    {formatDenomination(row.value)}
-                                  </p>
-                                )}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={row.value}
+                                  onChange={(e) =>
+                                    setCurrencyDenomination(row.id, e.target.value)
+                                  }
+                                  placeholder={
+                                    section.key === "note" ? "Cash value" : "Coin value"
+                                  }
+                                  className="w-full h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-xs font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
                               </div>
                               <div className="col-span-6 sm:col-span-3">
                                 <input
@@ -2023,6 +1989,23 @@ export default function OverviewPage() {
                           );
                         })
                       )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCurrencyRows((prev) => [
+                            ...prev,
+                            {
+                              id: `${section.key}-${Date.now()}-${prev.length}`,
+                              type: section.key,
+                              value: "",
+                              qty: "",
+                            },
+                          ])
+                        }
+                        className="mt-1 inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 text-[11px] font-semibold text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                      >
+                        + Add {section.label.slice(0, -1)}
+                      </button>
                     </div>
                   </div>
                 );
@@ -2035,7 +2018,7 @@ export default function OverviewPage() {
                 </div>
               )}
               <div className="sticky bottom-0 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur px-3 py-3">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
                   <div className="rounded-lg bg-gray-50 dark:bg-neutral-900 px-3 py-2">
                     <p className="text-[11px] text-gray-500 dark:text-neutral-400">
                       Expected cash sales
@@ -2066,7 +2049,7 @@ export default function OverviewPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center justify-end">
+                <div className="flex flex-col sm:flex-row items-center justify-end gap-2">
                   <button
                     type="button"
                     onClick={handleSaveCurrency}
@@ -2079,9 +2062,31 @@ export default function OverviewPage() {
                         Saving…
                       </>
                     ) : (
-                      "Save Count"
+                      "Save cash count"
                     )}
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveDenominationsAsDefault}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
+                  >
+                    Save layout
+                  </button>
+                  {canOpenDrawer && (
+                    <button
+                      type="button"
+                      onClick={handleOpenDrawer}
+                      disabled={drawerOpening}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-200 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-60"
+                    >
+                      {drawerOpening ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Wallet className="w-3.5 h-3.5" />
+                      )}
+                      Open cash drawer
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2142,7 +2147,7 @@ export default function OverviewPage() {
                         Revenue
                       </p>
                       <p className="text-base font-bold text-gray-900 dark:text-white">
-                        Rs {(currentSession.totalSales || 0).toLocaleString()}
+                        {currencySymbol} {(currentSession.totalSales || 0).toLocaleString()}
                       </p>
                     </div>
                     <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">

@@ -18,6 +18,7 @@ import {
   updatePaymentAccount,
   deletePaymentAccount,
   updateBranchDeliveryZones,
+  setStoredCurrencyCode,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import {
@@ -578,6 +579,9 @@ export default function BusinessSettingsPage() {
         currencyCode: restaurantSettings?.currencyCode || null,
       });
       setRestaurantSettings((prev) => ({ ...(prev || {}), ...updated }));
+      if (updated?.currencyCode) {
+        setStoredCurrencyCode(updated.currencyCode);
+      }
       toast.success("Currency setting saved", { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to save currency", { id: toastId });

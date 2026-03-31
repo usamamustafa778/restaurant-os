@@ -13,6 +13,8 @@ import {
   setStoredAuth,
   setTokenCookie,
   clearStoredAuth,
+  getRestaurantSettings,
+  setStoredCurrencyCode,
 } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft } from "lucide-react";
 import SEO from "../components/SEO";
@@ -170,7 +172,19 @@ export default function LoginPage() {
       );
     }
 
-    window.location.href = target;
+    // Fetch restaurant settings once after login to prime currency code
+    getRestaurantSettings()
+      .then((s) => {
+        if (s?.currencyCode) {
+          setStoredCurrencyCode(s.currencyCode);
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      })
+      .finally(() => {
+        window.location.href = target;
+      });
   }
 
   async function handleSubmit(e) {
