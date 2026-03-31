@@ -6,6 +6,8 @@ import {
   getDaySessions,
   getDaySessionOrders,
   reassignOrdersToSession,
+  getDailyCurrency,
+  getRestaurantSettings,
   SubscriptionInactiveError,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
@@ -105,6 +107,14 @@ const STATUS_COLORS = {
     "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
   OUT_FOR_DELIVERY:
     "bg-sky-100 dark:bg-sky-500/10 text-sky-700 dark:text-sky-400",
+};
+
+const CURRENCY_SYMBOLS = {
+  PKR: "Rs",
+  USD: "$",
+  EUR: "€",
+  INR: "₹",
+  GBP: "£",
 };
 
 /** Match dashboard/overview.js — same rules as backend `isOrderPaid` */
@@ -674,6 +684,9 @@ export default function HistoryPage() {
   const [sessionOrderTypeFilter, setSessionOrderTypeFilter] = useState("");
   const [sessionOrderPositionFilter, setSessionOrderPositionFilter] =
     useState("all");
+  const [settingsCurrencyCode, setSettingsCurrencyCode] = useState("PKR");
+  const [sessionCurrency, setSessionCurrency] = useState({});
+  const [sessionCurrencyLoading, setSessionCurrencyLoading] = useState(false);
   const [showExportColumns, setShowExportColumns] = useState(false);
   const [exportColumns, setExportColumns] = useState([
     "orderNumber",
@@ -900,6 +913,7 @@ export default function HistoryPage() {
     setSessionOrderTypeFilter("");
     setSessionOrderPositionFilter("all");
     setShowExportColumns(false);
+    setSessionCurrency({});
     setSessionDetailLoading(true);
     try {
       const res = await getDaySessionOrders(session.id);
@@ -910,6 +924,33 @@ export default function HistoryPage() {
       setSessionDetailLoading(false);
     }
   }
+
+  useEffect(() => {
+    getRestaurantSettings()
+      .then((s) => {
+        const code = String(s?.currencyCode || "PKR").toUpperCase();
+        setSettingsCurrencyCode(code || "PKR");
+      })
+      .catch(() => setSettingsCurrencyCode("PKR"));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedSession?.startAt) return;
+    const d = new Date(selectedSession.startAt);
+    if (Number.isNaN(d.getTime())) return;
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    setSessionCurrencyLoading(true);
+    getDailyCurrency(date)
+      .then((res) => {
+        setSessionCurrency(
+          res?.quantities && typeof res.quantities === "object"
+            ? res.quantities
+            : {},
+        );
+      })
+      .catch(() => setSessionCurrency({}))
+      .finally(() => setSessionCurrencyLoading(false));
+  }, [selectedSession?.id, selectedSession?.startAt]);
 
   function resetFilters() {
     setOrdersStatusFilter(FILTER_ALL);
@@ -2461,6 +2502,25 @@ export default function HistoryPage() {
         Number(summary.cashSales || 0) -
         Number(summary.cardSales || 0),
     );
+    const currencySymbol = CURRENCY_SYMBOLS[settingsCurrencyCode] || "¤";
+    const fmtMoney = (v) =>
+      `${currencySymbol} ${Math.round(Number(v || 0)).toLocaleString()}`;
+    const currencyRows = Object.entries(sessionCurrency || {})
+      .map(([denom, qty]) => ({
+        denom: Number(denom),
+        qty: Number(qty) || 0,
+      }))
+      .filter((r) => Number.isFinite(r.denom) && r.denom > 0 && r.qty > 0)
+      .sort((a, b) => b.denom - a.denom)
+      .map((r) => ({ ...r, subtotal: r.denom * r.qty }));
+    const notesRows = currencyRows.filter((r) => r.denom >= 1);
+    const coinsRows = currencyRows.filter((r) => r.denom < 1);
+    const countedCashTotal = currencyRows.reduce(
+      (sum, r) => sum + Number(r.subtotal || 0),
+      0,
+    );
+    const expectedCashTotal = Number(summary.cashSales || 0);
+    const cashDiff = countedCashTotal - expectedCashTotal;
 
     const getSessionExportRows = () => {
       const labelsByKey = Object.fromEntries(
@@ -2860,6 +2920,98 @@ export default function HistoryPage() {
                         </div>
                       ))}
                       </div>
+                    </div>
+
+                    {/* Session cash denomination breakdown */}
+                    <div className="rounded-md border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <h3 className="text-[11px] font-bold text-gray-900 dark:text-white">
+                          Cash Breakdown
+                        </h3>
+                        <span className="text-[10px] text-gray-500 dark:text-neutral-400">
+                          Saved denomination count
+                        </span>
+                      </div>
+
+                      {sessionCurrencyLoading ? (
+                        <div className="py-3 flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        </div>
+                      ) : currencyRows.length === 0 ? (
+                        <p className="text-[11px] text-gray-500 dark:text-neutral-400 py-1">
+                          No denomination count saved for this day.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
+                              <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
+                                Notes
+                              </p>
+                              <div className="space-y-1">
+                                {notesRows.length === 0 ? (
+                                  <p className="text-[10px] text-gray-400 dark:text-neutral-500">None</p>
+                                ) : (
+                                  notesRows.map((r) => (
+                                    <div
+                                      key={`n-${r.denom}`}
+                                      className="flex items-center justify-between text-[10px]"
+                                    >
+                                      <span className="text-gray-600 dark:text-neutral-400">
+                                        {fmtMoney(r.denom)} x {r.qty}
+                                      </span>
+                                      <span className="font-semibold text-gray-900 dark:text-white">
+                                        {fmtMoney(r.subtotal)}
+                                      </span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
+                              <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
+                                Coins
+                              </p>
+                              <div className="space-y-1">
+                                {coinsRows.length === 0 ? (
+                                  <p className="text-[10px] text-gray-400 dark:text-neutral-500">None</p>
+                                ) : (
+                                  coinsRows.map((r) => (
+                                    <div
+                                      key={`c-${r.denom}`}
+                                      className="flex items-center justify-between text-[10px]"
+                                    >
+                                      <span className="text-gray-600 dark:text-neutral-400">
+                                        {fmtMoney(r.denom)} x {r.qty}
+                                      </span>
+                                      <span className="font-semibold text-gray-900 dark:text-white">
+                                        {fmtMoney(r.subtotal)}
+                                      </span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                            <div className="rounded-md bg-gray-50 dark:bg-neutral-800/60 px-2 py-1.5">
+                              <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">Expected Cash</p>
+                              <p className="text-[12px] font-bold text-gray-900 dark:text-white">{fmtMoney(expectedCashTotal)}</p>
+                            </div>
+                            <div className="rounded-md bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1.5">
+                              <p className="text-[9px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Counted Cash</p>
+                              <p className="text-[12px] font-bold text-emerald-700 dark:text-emerald-400">{fmtMoney(countedCashTotal)}</p>
+                            </div>
+                            <div className={`rounded-md px-2 py-1.5 ${cashDiff === 0 ? "bg-gray-50 dark:bg-neutral-800/60" : cashDiff > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-rose-50 dark:bg-rose-500/10"}`}>
+                              <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">Difference</p>
+                              <p className={`text-[12px] font-bold ${cashDiff === 0 ? "text-gray-900 dark:text-white" : cashDiff > 0 ? "text-amber-700 dark:text-amber-400" : "text-rose-700 dark:text-rose-400"}`}>
+                                {cashDiff > 0 ? "+" : ""}
+                                {fmtMoney(cashDiff)}
+                              </p>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Order type breakdown */}

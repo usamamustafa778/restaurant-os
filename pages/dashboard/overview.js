@@ -13,6 +13,9 @@ import {
   endDaySession,
   updateBranch,
   getInventory,
+  getRestaurantSettings,
+  openCashDrawer,
+  getStoredAuth,
 } from "../../lib/apiClient";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
@@ -32,6 +35,8 @@ import {
   Zap,
   Power,
   ChevronDown,
+  Banknote,
+  Coins,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -569,13 +574,77 @@ export default function OverviewPage() {
     }
   }
 
-  const CURRENCY_NOTES = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
+  const CURRENCY_PRESETS = {
+    PKR: {
+      symbol: "Rs",
+      notes: [5000, 1000, 500, 100, 50, 20, 10],
+      coins: [5, 2, 1],
+    },
+    USD: {
+      symbol: "$",
+      notes: [100, 50, 20, 10, 5, 1],
+      coins: [0.25, 0.1, 0.05, 0.01],
+    },
+    EUR: {
+      symbol: "€",
+      notes: [500, 200, 100, 50, 20, 10, 5],
+      coins: [2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01],
+    },
+    INR: {
+      symbol: "₹",
+      notes: [500, 200, 100, 50, 20, 10],
+      coins: [5, 2, 1],
+    },
+    GBP: {
+      symbol: "£",
+      notes: [50, 20, 10, 5],
+      coins: [2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01],
+    },
+  };
+  const DRAWER_ALLOWED_ROLES = new Set([
+    "restaurant_admin",
+    "admin",
+    "manager",
+    "cashier",
+    "super_admin",
+  ]);
+  const userRole = String(getStoredAuth()?.user?.role || "").toLowerCase();
+  const canOpenDrawer = DRAWER_ALLOWED_ROLES.has(userRole);
+
+  const buildPresetRows = (currencyCode) => {
+    const preset = CURRENCY_PRESETS[currencyCode];
+    if (!preset) return [];
+    return [
+      ...preset.notes.map((v) => ({
+        id: `n-${currencyCode}-${v}`,
+        type: "note",
+        value: v,
+        qty: "",
+      })),
+      ...preset.coins.map((v) => ({
+        id: `c-${currencyCode}-${v}`,
+        type: "coin",
+        value: v,
+        qty: "",
+      })),
+    ];
+  };
+  const buildGenericRows = () => [
+    { id: "m-1", type: "note", value: "", qty: "" },
+    { id: "m-2", type: "note", value: "", qty: "" },
+    { id: "m-3", type: "note", value: "", qty: "" },
+    { id: "m-4", type: "coin", value: "", qty: "" },
+    { id: "m-5", type: "coin", value: "", qty: "" },
+    { id: "m-6", type: "coin", value: "", qty: "" },
+  ];
+  const [currencyCode, setCurrencyCode] = useState(null);
+  const [currencyRows, setCurrencyRows] = useState(() => buildGenericRows());
   const [currencyDate, setCurrencyDate] = useState("today");
-  const [currencyQuantities, setCurrencyQuantities] = useState(() =>
-    Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""])),
-  );
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [currencySaving, setCurrencySaving] = useState(false);
+  const [drawerOpening, setDrawerOpening] = useState(false);
+  const [expectedCashSales, setExpectedCashSales] = useState(0);
+  const [expectedCashLoading, setExpectedCashLoading] = useState(false);
   const currencySaveTimeoutRef = useRef(null);
   const currencyDirtyRef = useRef(false);
   const currencyDateValue =
@@ -589,43 +658,114 @@ export default function OverviewPage() {
           d.setDate(d.getDate() - 1);
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         })();
+  const activeCurrencyPreset = CURRENCY_PRESETS[currencyCode] || null;
+  const currencySymbol = activeCurrencyPreset?.symbol || "¤";
+  const isManualDenominationMode = !activeCurrencyPreset;
   const isCurrencyEditable = true;
-  const currencyTotal = CURRENCY_NOTES.reduce(
-    (sum, note) => sum + (Number(currencyQuantities[note]) || 0) * note,
-    0,
-  );
+  const currencyTotal = currencyRows.reduce((sum, row) => {
+    const v = Number(row.value);
+    const q = Number(row.qty);
+    if (!Number.isFinite(v) || v <= 0 || !Number.isFinite(q) || q <= 0)
+      return sum;
+    return sum + v * q;
+  }, 0);
+  const currencyDifference = currencyTotal - Number(expectedCashSales || 0);
 
-  function setCurrencyQty(note, value) {
+  function normalizeDenomKey(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    return n.toString();
+  }
+
+  function setCurrencyQty(rowId, value) {
     currencyDirtyRef.current = true;
-    setCurrencyQuantities((prev) => ({ ...prev, [note]: value }));
+    setCurrencyRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId ? { ...row, qty: value.replace(/[^\d]/g, "") } : row,
+      ),
+    );
+  }
+
+  function setCurrencyDenomination(rowId, value) {
+    currencyDirtyRef.current = true;
+    setCurrencyRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId
+          ? { ...row, value: value.replace(/[^0-9.]/g, "") }
+          : row,
+      ),
+    );
+  }
+
+  useEffect(() => {
+    getRestaurantSettings()
+      .then((s) => {
+        const code = String(s?.currencyCode || "").trim().toUpperCase();
+        setCurrencyCode(code || null);
+      })
+      .catch(() => setCurrencyCode(null));
+  }, []);
+
+  useEffect(() => {
+    const rows =
+      buildPresetRows(currencyCode).length > 0
+        ? buildPresetRows(currencyCode)
+        : buildGenericRows();
+    setCurrencyRows(rows);
+  }, [currencyCode]);
+
+  function formatMoney(value) {
+    return `${currencySymbol} ${Math.abs(Number(value || 0)).toLocaleString(undefined, {
+      minimumFractionDigits: Number.isInteger(Number(value || 0)) ? 0 : 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  function formatDenomination(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "Enter value";
+    return Number.isInteger(n)
+      ? `${currencySymbol} ${n.toLocaleString()}`
+      : `${currencySymbol} ${n}`;
   }
 
   useEffect(() => {
     let cancelled = false;
     currencyDirtyRef.current = false;
     setCurrencyLoading(true);
+    const templateRows =
+      buildPresetRows(currencyCode).length > 0
+        ? buildPresetRows(currencyCode)
+        : buildGenericRows();
     getDailyCurrency(currencyDateValue)
       .then((res) => {
         if (cancelled) return;
         const q = res?.quantities || {};
-        setCurrencyQuantities(
-          Object.fromEntries(
-            CURRENCY_NOTES.map((n) => [
-              n,
-              q[n] != null
-                ? String(q[n])
-                : q[String(n)] != null
-                  ? String(q[String(n)])
-                  : "",
-            ]),
-          ),
-        );
+        if (activeCurrencyPreset) {
+          setCurrencyRows(
+            templateRows.map((row) => {
+              const key = normalizeDenomKey(row.value);
+              const raw = q[key];
+              return {
+                ...row,
+                qty: raw != null ? String(raw) : "",
+              };
+            }),
+          );
+          return;
+        }
+        const entries = Object.entries(q)
+          .map(([denom, qty], idx) => ({
+            id: `saved-${idx}`,
+            value: denom,
+            qty: qty != null ? String(qty) : "",
+            type: Number(denom) >= 1 ? "note" : "coin",
+          }))
+          .sort((a, b) => Number(b.value) - Number(a.value));
+        setCurrencyRows(entries.length > 0 ? entries : templateRows);
       })
       .catch(() => {
-        if (!cancelled)
-          setCurrencyQuantities(
-            Object.fromEntries(CURRENCY_NOTES.map((n) => [n, ""])),
-          );
+        if (!cancelled) setCurrencyRows(templateRows);
       })
       .finally(() => {
         if (!cancelled) setCurrencyLoading(false);
@@ -635,15 +775,46 @@ export default function OverviewPage() {
       if (currencySaveTimeoutRef.current)
         clearTimeout(currencySaveTimeoutRef.current);
     };
+  }, [currencyDateValue, currencyCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setExpectedCashLoading(true);
+    const from = currencyDateValue;
+    const toDate = new Date(`${currencyDateValue}T00:00:00`);
+    toDate.setDate(toDate.getDate() + 1);
+    const to = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, "0")}-${String(toDate.getDate()).padStart(2, "0")}`;
+    getSalesReport({ from, to })
+      .then((report) => {
+        if (cancelled) return;
+        const cash = Array.isArray(report?.paymentRows)
+          ? report.paymentRows
+              .filter((r) => String(r?.method || "").trim().toUpperCase() === "CASH")
+              .reduce((sum, r) => sum + Number(r?.amount || 0), 0)
+          : 0;
+        setExpectedCashSales(cash);
+      })
+      .catch(() => {
+        if (!cancelled) setExpectedCashSales(0);
+      })
+      .finally(() => {
+        if (!cancelled) setExpectedCashLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [currencyDateValue]);
 
   function handleSaveCurrency() {
     if (!isCurrencyEditable) return;
     const quantitiesToSave = {};
-    CURRENCY_NOTES.forEach((n) => {
-      const v = currencyQuantities[n];
-      const num = Number(v);
-      if (!Number.isNaN(num) && num >= 0) quantitiesToSave[String(n)] = num;
+    currencyRows.forEach((row) => {
+      const denomKey = normalizeDenomKey(row.value);
+      const qtyNum = Number(row.qty);
+      if (!denomKey) return;
+      if (!Number.isNaN(qtyNum) && qtyNum >= 0) {
+        quantitiesToSave[denomKey] = (quantitiesToSave[denomKey] || 0) + qtyNum;
+      }
     });
     setCurrencySaving(true);
     saveDailyCurrency(currencyDateValue, quantitiesToSave)
@@ -656,6 +827,18 @@ export default function OverviewPage() {
         setCurrencySaving(false);
         toast.error(err.message || "Failed to save currency");
       });
+  }
+
+  function handleOpenDrawer() {
+    setDrawerOpening(true);
+    openCashDrawer({ reason: "manual" })
+      .then(() => {
+        toast.success("Drawer opened");
+      })
+      .catch((err) => {
+        toast.error(err.message || "Failed to open drawer");
+      })
+      .finally(() => setDrawerOpening(false));
   }
 
   useEffect(() => {
@@ -1725,7 +1908,9 @@ export default function OverviewPage() {
                     Currency Counter
                   </h3>
                   <p className="text-xs text-gray-400 dark:text-neutral-500">
-                    Count notes & coins — saved per day
+                    {isManualDenominationMode
+                      ? "Manual denomination mode (set in Business Settings)"
+                      : `Counting in ${currencyCode}`}
                   </p>
                 </div>
               </div>
@@ -1742,71 +1927,162 @@ export default function OverviewPage() {
                     </button>
                   ))}
                 </div>
+                {canOpenDrawer && (
+                  <button
+                    type="button"
+                    onClick={handleOpenDrawer}
+                    disabled={drawerOpening}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-200 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-60"
+                  >
+                    {drawerOpening ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Wallet className="w-3.5 h-3.5" />
+                    )}
+                    Open Drawer
+                  </button>
+                )}
                 {currencyLoading && (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
                 )}
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
-                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                    Total
-                  </span>
-                  <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                    Rs {currencyTotal.toLocaleString()}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSaveCurrency}
-                  disabled={!isCurrencyEditable || currencySaving}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-md hover:shadow-primary/25 disabled:opacity-50 transition-all"
-                >
-                  {currencySaving ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Saving…
-                    </>
-                  ) : (
-                    "Save"
-                  )}
-                </button>
               </div>
             </div>
-            <div className="p-4">
-              <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-10 gap-2">
-                {CURRENCY_NOTES.map((note) => {
-                  const qty = Number(currencyQuantities[note]) || 0;
-                  const amount = qty * note;
-                  return (
-                    <div
-                      key={note}
-                      className={`rounded-xl border text-center p-2.5 transition-all ${qty > 0 ? "border-primary/30 bg-primary/5 dark:bg-primary/10" : "border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50"}`}
-                    >
-                      <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 mb-1.5">
-                        Rs {note.toLocaleString()}
+            <div className="p-4 space-y-3">
+              {[
+                { key: "note", label: "Notes", icon: Banknote },
+                { key: "coin", label: "Coins", icon: Coins },
+              ].map((section) => {
+                const sectionRows = currencyRows.filter(
+                  (row) => row.type === section.key,
+                );
+                return (
+                  <div
+                    key={section.key}
+                    className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden"
+                  >
+                    <div className="px-3 py-2 bg-gray-50 dark:bg-neutral-900/50 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2">
+                      <section.icon className="w-3.5 h-3.5 text-gray-500 dark:text-neutral-400" />
+                      <p className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                        {section.label}
                       </p>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={currencyQuantities[note]}
-                        onChange={(e) =>
-                          setCurrencyQty(
-                            note,
-                            e.target.value.replace(/\D/g, ""),
-                          )
-                        }
-                        placeholder="0"
-                        disabled={!isCurrencyEditable}
-                        className={`w-full text-center text-sm font-bold rounded-lg px-1 py-1 border-0 outline-none focus:ring-2 focus:ring-primary/20 bg-transparent ${qty > 0 ? "text-primary" : "text-gray-900 dark:text-white"} ${!isCurrencyEditable ? "cursor-not-allowed opacity-50" : ""}`}
-                      />
-                      {amount > 0 && (
-                        <p className="text-[9px] font-medium text-primary/70 mt-1">
-                          {(amount / 1000).toFixed(amount < 1000 ? 0 : 1)}
-                          {amount >= 1000 ? "k" : ""}
+                    </div>
+                    <div className="p-2 space-y-2">
+                      {sectionRows.length === 0 ? (
+                        <p className="text-xs text-gray-400 dark:text-neutral-500 px-2 py-2">
+                          No {section.label.toLowerCase()} configured
                         </p>
+                      ) : (
+                        sectionRows.map((row) => {
+                          const qty = Number(row.qty) || 0;
+                          const denom = Number(row.value) || 0;
+                          const amount = qty * denom;
+                          return (
+                            <div
+                              key={row.id}
+                              className="grid grid-cols-12 gap-2 items-center px-2 py-2 rounded-lg bg-gray-50/70 dark:bg-neutral-900/40"
+                            >
+                              <div className="col-span-12 sm:col-span-4">
+                                {isManualDenominationMode ? (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={row.value}
+                                    onChange={(e) =>
+                                      setCurrencyDenomination(row.id, e.target.value)
+                                    }
+                                    placeholder="Denomination"
+                                    className="w-full h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-xs font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                                  />
+                                ) : (
+                                  <p className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                                    {formatDenomination(row.value)}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="col-span-6 sm:col-span-3">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={row.qty}
+                                  onChange={(e) => setCurrencyQty(row.id, e.target.value)}
+                                  placeholder="0"
+                                  className="w-full h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-xs font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
+                              </div>
+                              <div className="col-span-6 sm:col-span-5 text-right">
+                                <p className="text-xs text-gray-500 dark:text-neutral-400">
+                                  Subtotal
+                                </p>
+                                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                  {formatMoney(amount)}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
+              {currencyRows.every((row) => !(Number(row.qty) > 0)) && (
+                <div className="rounded-lg border border-dashed border-gray-200 dark:border-neutral-800 px-3 py-2">
+                  <p className="text-xs text-gray-400 dark:text-neutral-500">
+                    Enter quantities to start cash counting.
+                  </p>
+                </div>
+              )}
+              <div className="sticky bottom-0 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur px-3 py-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                  <div className="rounded-lg bg-gray-50 dark:bg-neutral-900 px-3 py-2">
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                      Expected cash sales
+                    </p>
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">
+                      {expectedCashLoading ? "…" : formatMoney(expectedCashSales)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2">
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                      Actual counted
+                    </p>
+                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                      {formatMoney(currencyTotal)}
+                    </p>
+                  </div>
+                  <div
+                    className={`rounded-lg px-3 py-2 ${currencyDifference === 0 ? "bg-gray-50 dark:bg-neutral-900" : currencyDifference > 0 ? "bg-amber-50 dark:bg-amber-500/10" : "bg-rose-50 dark:bg-rose-500/10"}`}
+                  >
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                      Difference
+                    </p>
+                    <p
+                      className={`text-sm font-bold ${currencyDifference === 0 ? "text-gray-900 dark:text-white" : currencyDifference > 0 ? "text-amber-700 dark:text-amber-400" : "text-rose-700 dark:text-rose-400"}`}
+                    >
+                      {currencyDifference > 0 ? "+" : ""}
+                      {formatMoney(currencyDifference)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSaveCurrency}
+                    disabled={!isCurrencyEditable || currencySaving}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-md hover:shadow-primary/25 disabled:opacity-50 transition-all"
+                  >
+                    {currencySaving ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Saving…
+                      </>
+                    ) : (
+                      "Save Count"
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -111,6 +111,14 @@ const inp =
   "w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all";
 
 const labelCls = "text-xs font-semibold text-gray-700 dark:text-neutral-300";
+const CURRENCY_OPTIONS = [
+  { value: "", label: "Not configured (manual denominations)" },
+  { value: "PKR", label: "PKR (Rs)" },
+  { value: "USD", label: "USD ($)" },
+  { value: "EUR", label: "EUR (€)" },
+  { value: "INR", label: "INR (₹)" },
+  { value: "GBP", label: "GBP (£)" },
+];
 
 const cardCls =
   "bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm";
@@ -185,6 +193,7 @@ export default function BusinessSettingsPage() {
   const [logoDirty, setLogoDirty] = useState(false);
   const [logoHeight, setLogoHeight] = useState(100);
   const [billFooterMessage, setBillFooterMessage] = useState("Thank you for your order!");
+  const [currencySaving, setCurrencySaving] = useState(false);
   const logoInputRef = useRef(null);
 
   // Payment accounts
@@ -560,6 +569,22 @@ export default function BusinessSettingsPage() {
       setLogoSaving(false);
     }
   }
+
+  async function handleCurrencySave() {
+    setCurrencySaving(true);
+    const toastId = toast.loading("Saving currency...");
+    try {
+      const updated = await updateRestaurantSettings({
+        currencyCode: restaurantSettings?.currencyCode || null,
+      });
+      setRestaurantSettings((prev) => ({ ...(prev || {}), ...updated }));
+      toast.success("Currency setting saved", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to save currency", { id: toastId });
+    } finally {
+      setCurrencySaving(false);
+    }
+  }
   async function handleLogoUploadChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -714,6 +739,36 @@ export default function BusinessSettingsPage() {
                 </div>
               ) : (
                 <form onSubmit={handleWebsiteSubmit} className="space-y-5 max-w-xl">
+                  <div className="space-y-1.5">
+                    <label className={labelCls}>Operating Currency</label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={restaurantSettings?.currencyCode || ""}
+                        onChange={(e) =>
+                          setRestaurantSettings((p) => ({
+                            ...(p || {}),
+                            currencyCode: e.target.value || null,
+                          }))
+                        }
+                        className={inp}
+                      >
+                        {CURRENCY_OPTIONS.map((opt) => (
+                          <option key={opt.value || "none"} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleCurrencySave}
+                        disabled={currencySaving}
+                        className="h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-60"
+                      >
+                        {currencySaving ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className={labelCls}>Restaurant Name</label>
                     <input
