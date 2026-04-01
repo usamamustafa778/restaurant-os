@@ -141,6 +141,8 @@ export default function InventoryPage() {
   const [pageLoading, setPageLoading]           = useState(true);
   const [search, setSearch]                     = useState("");
   const [statusFilter, setStatusFilter]         = useState("all");
+  const [filterUnit, setFilterUnit]             = useState("all");
+  const [sortBy, setSortBy]                     = useState("name_asc");
   const [sortKey, setSortKey]                   = useState(null);
   const [sortDir, setSortDir]                   = useState("asc");
   const [modalError, setModalError]             = useState("");
@@ -464,6 +466,12 @@ export default function InventoryPage() {
     { value: "out",     label: "Out of Stock", count: outOfStock.length,         filter: "out"     },
   ];
 
+  const UNIT_GROUP_MAP = {
+    weight:  ["gram", "kilogram"],
+    volume:  ["milliliter", "liter"],
+    count:   ["piece", "dozen", "box", "pack", "bag", "bottle", "can"],
+  };
+
   const statusFiltered =
     statusFilter === "healthy" ? healthy
     : statusFilter === "low"   ? lowStock
@@ -472,16 +480,29 @@ export default function InventoryPage() {
 
   const searchFiltered = statusFiltered.filter((item) => {
     const term = search.trim().toLowerCase();
-    if (!term) return true;
-    return item.name.toLowerCase().includes(term) || item.unit.toLowerCase().includes(term);
+    if (term && !item.name.toLowerCase().includes(term) && !item.unit.toLowerCase().includes(term)) return false;
+    if (filterUnit !== "all") {
+      const allowed = UNIT_GROUP_MAP[filterUnit] || [];
+      if (!allowed.includes(item.unit)) return false;
+    }
+    return true;
   });
 
   const sortedFiltered = [...searchFiltered].sort((a, b) => {
-    if (!sortKey) return 0;
-    const va = a[sortKey] ?? (sortKey === "name" ? "" : 0);
-    const vb = b[sortKey] ?? (sortKey === "name" ? "" : 0);
-    if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
-    return sortDir === "asc" ? va - vb : vb - va;
+    // Column-header sort takes priority if set
+    if (sortKey) {
+      const va = a[sortKey] ?? (sortKey === "name" ? "" : 0);
+      const vb = b[sortKey] ?? (sortKey === "name" ? "" : 0);
+      if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+      return sortDir === "asc" ? va - vb : vb - va;
+    }
+    if (sortBy === "name_asc")    return a.name.localeCompare(b.name);
+    if (sortBy === "name_desc")   return b.name.localeCompare(a.name);
+    if (sortBy === "stock_asc")   return (a.currentStock ?? 0) - (b.currentStock ?? 0);
+    if (sortBy === "stock_desc")  return (b.currentStock ?? 0) - (a.currentStock ?? 0);
+    if (sortBy === "cost_asc")    return (a.costPrice ?? 0) - (b.costPrice ?? 0);
+    if (sortBy === "cost_desc")   return (b.costPrice ?? 0) - (a.costPrice ?? 0);
+    return 0;
   });
 
   const adjustAmt    = Number(adjustDialog.value) || 0;
@@ -687,16 +708,55 @@ export default function InventoryPage() {
 
 
       {/* ── Toolbar ───────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        {/* Search */}
         <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search inventory items..."
-          className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm" />
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+          placeholder="Search items..."
+          className="w-48 h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all" />
+
+        {/* Status */}
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit">
+          <option value="all">All Status</option>
+          <option value="healthy">Healthy</option>
+          <option value="low">Low Stock</option>
+          <option value="out">Out of Stock</option>
+        </select>
+
+        {/* Unit type */}
+        <select value={filterUnit} onChange={e => setFilterUnit(e.target.value)}
+          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit">
+          <option value="all">All Units</option>
+          <option value="weight">Weight (g / kg)</option>
+          <option value="volume">Volume (ml / L)</option>
+          <option value="count">Count (pcs, box…)</option>
+        </select>
+
+        {/* Sort */}
+        <select value={sortBy} onChange={e => { setSortBy(e.target.value); setSortKey(null); }}
+          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit">
+          <option value="name_asc">A → Z</option>
+          <option value="name_desc">Z → A</option>
+          <option value="stock_asc">Stock Low → High</option>
+          <option value="stock_desc">Stock High → Low</option>
+          <option value="cost_asc">Cost Low → High</option>
+          <option value="cost_desc">Cost High → Low</option>
+        </select>
+
+        {/* Clear */}
+        {(statusFilter !== "all" || filterUnit !== "all" || search.trim()) && (
+          <button type="button"
+            onClick={() => { setStatusFilter("all"); setFilterUnit("all"); setSearch(""); }}
+            className="inline-flex items-center gap-1 h-9 px-3 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-semibold text-gray-600 dark:text-neutral-300 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+            <X className="w-3.5 h-3.5" /> Clear
+          </button>
+        )}
+
+        <div className="flex items-center gap-2 ml-auto">
           {needsRestock && (
             <button type="button" onClick={printRestockList}
               className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border-2 border-orange-300 dark:border-orange-500/40 text-orange-600 dark:text-orange-400 text-sm font-semibold hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-all whitespace-nowrap">
-              <Printer className="w-4 h-4" />
-              Print Restock List
+              <Printer className="w-4 h-4" /> Restock List
               <span className="px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-500/20 text-[10px] font-bold">
                 {outOfStock.length + lowStock.length}
               </span>
@@ -720,24 +780,20 @@ export default function InventoryPage() {
                 <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 shadow-xl overflow-hidden">
                   <button type="button" onClick={exportCSV}
                     className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
-                    <FileDown className="w-4 h-4 text-green-600" />
-                    Export Excel (CSV)
+                    <FileDown className="w-4 h-4 text-green-600" /> Export Excel (CSV)
                   </button>
                   <button type="button" onClick={exportPDF}
                     className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
-                    <FileText className="w-4 h-4 text-red-500" />
-                    Export PDF
+                    <FileText className="w-4 h-4 text-red-500" /> Export PDF
                   </button>
                   <button type="button" onClick={printInventory}
                     className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors border-t border-gray-100 dark:border-neutral-800">
-                    <Printer className="w-4 h-4 text-gray-500" />
-                    Print
+                    <Printer className="w-4 h-4 text-gray-500" /> Print
                   </button>
                 </div>
               </>
             )}
           </div>
-
           <button type="button" onClick={startCreateItem}
             className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap">
             <Plus className="w-4 h-4" /> Add Item
@@ -745,42 +801,21 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* ── Filter tabs + bulk action bar ─────────────────────────────────── */}
-      {!pageLoading && branchFilteredItems.length > 0 && (
-        <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
-          <div className="flex items-center gap-1 flex-wrap">
-            {STATUS_FILTERS.map((f) => (
-              <button key={f.value} type="button" onClick={() => setStatusFilter(f.value)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  statusFilter === f.value
-                    ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
-                    : "bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:text-gray-800 dark:hover:text-white"
-                }`}>
-                {f.label}
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  statusFilter === f.value ? "bg-white/20" : "bg-gray-100 dark:bg-neutral-800"
-                }`}>{f.count}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Bulk delete bar */}
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30">
-              <span className="text-xs font-semibold text-red-700 dark:text-red-400">
-                {selectedIds.size} selected
-              </span>
-              <button type="button" onClick={() => setSelectedIds(new Set())}
-                className="text-[10px] text-red-500 hover:text-red-700 dark:text-red-400 underline">
-                Clear
-              </button>
-              <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors disabled:opacity-50">
-                {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                Delete {selectedIds.size}
-              </button>
-            </div>
-          )}
+      {/* ── Bulk action bar ───────────────────────────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 mb-4">
+          <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+            {selectedIds.size} selected
+          </span>
+          <button type="button" onClick={() => setSelectedIds(new Set())}
+            className="text-[10px] text-red-500 hover:text-red-700 dark:text-red-400 underline">
+            Clear
+          </button>
+          <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors disabled:opacity-50">
+            {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+            Delete {selectedIds.size}
+          </button>
         </div>
       )}
 

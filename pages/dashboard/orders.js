@@ -573,6 +573,14 @@ export default function OrdersPage() {
     if (e?.preventDefault) e.preventDefault();
     if (!paymentOrder) return;
     const orderId = getOrderId(paymentOrder);
+    if (paymentMethod === "CASH") {
+      const received = Number(amountReceived);
+      const billTotal = getOrderTotal(paymentOrder);
+      if (isNaN(received) || received < billTotal) {
+        setPaymentError(`Amount received must be at least Rs ${billTotal}`);
+        return;
+      }
+    }
     if (paymentMethod === "SPLIT") {
       const cashPart = Number(splitCashAmount);
       const cardPart = Number(splitCardAmount);
@@ -604,6 +612,12 @@ export default function OrdersPage() {
     const toastId = toast.loading("Collecting payment...");
     try {
       const payload = { paymentMethod };
+      if (paymentMethod === "CASH") {
+        const received = Number(amountReceived);
+        const billTotal = getOrderTotal(paymentOrder);
+        payload.amountReceived = received;
+        payload.amountReturned = Math.max(0, received - billTotal);
+      }
       if (paymentMethod === "ONLINE") payload.paymentProvider = onlineProvider;
       if (paymentMethod === "SPLIT") {
         payload.cashAmount = Number(splitCashAmount) || 0;
@@ -1525,7 +1539,7 @@ export default function OrdersPage() {
                   )}
                 </div>
               )}
-              {paymentMethod === "CASH" && paymentModalMode === "record" &&
+              {paymentMethod === "CASH" &&
                 (() => {
                   const orderTotal = getOrderTotal(paymentOrder);
                   const exactAmt = Math.ceil(orderTotal);
@@ -1608,31 +1622,19 @@ export default function OrdersPage() {
                     </>
                   );
                 })()}
-              {paymentModalMode === "riderCollect" && (
-                <div className="space-y-3">
-                  {paymentOrder?.assignedRiderName && (
-                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
-                      <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      <div>
-                        <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
-                          {paymentOrder.assignedRiderName}
-                        </p>
-                        {paymentOrder?.assignedRiderPhone && (
-                          <p className="text-[10px] text-indigo-500 dark:text-indigo-500">
-                            {paymentOrder.assignedRiderPhone}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-500 dark:text-neutral-400">
-                    Confirm that the rider has submitted{" "}
-                    <span className="font-semibold">
-                      Rs{" "}
-                      {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
-                    </span>{" "}
-                    for this delivery order.
-                  </p>
+              {paymentModalMode === "riderCollect" && paymentOrder?.assignedRiderName && (
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
+                  <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
+                      {paymentOrder.assignedRiderName}
+                    </p>
+                    {paymentOrder?.assignedRiderPhone && (
+                      <p className="text-[10px] text-indigo-500 dark:text-indigo-500">
+                        {paymentOrder.assignedRiderPhone}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
               <div className="flex gap-2 pt-1">
@@ -1670,7 +1672,10 @@ export default function OrdersPage() {
                               return positiveParts < 2 || !sumMatches || providerNeeded;
                             })()))
                       : paymentModalMode === "riderCollect"
-                        ? (paymentMethod === "ONLINE" && !onlineProvider) ||
+                        ? (paymentMethod === "CASH" &&
+                            (amountReceived === "" ||
+                              Number(amountReceived) < getOrderTotal(paymentOrder))) ||
+                          (paymentMethod === "ONLINE" && !onlineProvider) ||
                           (paymentMethod === "SPLIT" &&
                             (() => {
                               const cash = Number(splitCashAmount) || 0;
@@ -1701,8 +1706,8 @@ export default function OrdersPage() {
                     </>
                   ) : (
                     <>
-                      <CircleCheckBig className="w-4 h-4" />{" "}
-                     Record Payment
+                      <CircleCheckBig className="w-4 h-4" />
+                      {paymentModalMode === "riderCollect" ? "Collect Payment" : "Record Payment"}
                     </>
                   )}
                 </button>

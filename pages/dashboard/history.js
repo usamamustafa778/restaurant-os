@@ -699,6 +699,12 @@ export default function HistoryPage() {
     "payment",
   ]);
   const SESSIONS_PER_PAGE = 20;
+  const [sessionsViewMode, setSessionsViewMode] = useState("sessions"); // "sessions" | "daily"
+  const [expandedDays, setExpandedDays] = useState(new Set());
+  const [sessionsDateFrom, setSessionsDateFrom] = useState("");
+  const [sessionsDateTo, setSessionsDateTo] = useState("");
+  const [sessionsDatePreset, setSessionsDatePreset] = useState("all");
+  const [showSessionsDateDropdown, setShowSessionsDateDropdown] = useState(false);
 
   // Orders tab state
   const [allOrders, setAllOrders] = useState([]);
@@ -887,12 +893,16 @@ export default function HistoryPage() {
     loadOrders({ from, to });
   }
 
-  async function loadSessions(pageNum = 0) {
+  async function loadSessions(pageNum = 0, fromDate, toDate) {
     setSessionsLoading(true);
+    const from = fromDate !== undefined ? fromDate : sessionsDateFrom;
+    const to = toDate !== undefined ? toDate : sessionsDateTo;
     try {
       const res = await getDaySessions(currentBranch?.id, {
         limit: SESSIONS_PER_PAGE,
         offset: pageNum * SESSIONS_PER_PAGE,
+        ...(from ? { from: new Date(from + "T00:00:00").toISOString() } : {}),
+        ...(to ? { to: new Date(to + "T23:59:59.999").toISOString() } : {}),
       });
       setSessionsList(Array.isArray(res?.sessions) ? res.sessions : []);
       setSessionsTotal(res?.total || 0);
@@ -1027,6 +1037,105 @@ export default function HistoryPage() {
       return true;
     });
   }, [allOrders, activeDateRange]);
+
+  // All active filters applied — used by both the table UI and CSV/print export
+  const ordersFiltered = useMemo(() => {
+    let filtered = dateFilteredOrders;
+
+    if (ordersStatusFilter === STATUS_FILTERS.COMPLETED)
+      filtered = filtered.filter((o) => o.status !== STATUS_FILTERS.CANCELLED);
+    else if (ordersStatusFilter === STATUS_FILTERS.CANCELLED)
+      filtered = filtered.filter((o) => o.status === STATUS_FILTERS.CANCELLED);
+
+    if (ordersTypeFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        (o) =>
+          o.type ===
+          (TYPE_API_MAP[ordersTypeFilter] || ordersTypeFilter.toLowerCase()),
+      );
+    }
+
+    if (ordersPaymentFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        (o) =>
+          (o.paymentMethod || "").toLowerCase() ===
+          ordersPaymentFilter.toLowerCase(),
+      );
+    }
+
+    if (ordersSourceFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        (o) => (o.source || "").toUpperCase() === ordersSourceFilter,
+      );
+    }
+
+    if (ordersPaidFilter !== FILTER_ALL) {
+      filtered = filtered.filter((o) =>
+        ordersPaidFilter === PAID_FILTERS.PAID ? o.isPaid : !o.isPaid,
+      );
+    }
+
+    if (ordersRiderFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        (o) => (o.assignedRiderName || "") === ordersRiderFilter,
+      );
+    }
+
+    if (ordersWaiterFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        (o) =>
+          (o.orderTakerName || "") === ordersWaiterFilter &&
+          o.createdByRole === "order_taker",
+      );
+    }
+
+    if (ordersCashierFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        (o) =>
+          (o.orderTakerName || "") === ordersCashierFilter &&
+          o.createdByRole === "cashier",
+      );
+    }
+
+    if (ordersAdminFilter !== FILTER_ALL) {
+      filtered = filtered.filter(
+        (o) =>
+          (o.orderTakerName || "") === ordersAdminFilter &&
+          ["restaurant_admin", "admin", "super_admin"].includes(
+            o.createdByRole,
+          ),
+      );
+    }
+
+    if (ordersSearch.trim()) {
+      const q = ordersSearch.trim().toLowerCase();
+      filtered = filtered.filter(
+        (o) =>
+          (o.id || "").toString().toLowerCase().includes(q) ||
+          (o.customerName || "").toLowerCase().includes(q) ||
+          (o.tableName || "").toLowerCase().includes(q) ||
+          (o.customerPhone || "").includes(q) ||
+          (o.assignedRiderName || "").toLowerCase().includes(q) ||
+          (o.items || []).some((item) =>
+            (item.name || "").toLowerCase().includes(q),
+          ),
+      );
+    }
+
+    return filtered;
+  }, [
+    dateFilteredOrders,
+    ordersStatusFilter,
+    ordersTypeFilter,
+    ordersPaymentFilter,
+    ordersSourceFilter,
+    ordersPaidFilter,
+    ordersRiderFilter,
+    ordersWaiterFilter,
+    ordersCashierFilter,
+    ordersAdminFilter,
+    ordersSearch,
+  ]);
 
   const dateFilteredOrdersCount = dateFilteredOrders.length;
 
@@ -1169,9 +1278,23 @@ export default function HistoryPage() {
 
   // Export CSV for current tab
   function handleExportCSV() {
+    const activeFilters = [
+      ordersStatusFilter !== FILTER_ALL ? `Status: ${ordersStatusFilter}` : null,
+      ordersTypeFilter !== FILTER_ALL ? `Type: ${ordersTypeFilter}` : null,
+      ordersPaymentFilter !== FILTER_ALL ? `Payment: ${ordersPaymentFilter}` : null,
+      ordersSourceFilter !== FILTER_ALL ? `Source: ${ordersSourceFilter}` : null,
+      ordersPaidFilter !== FILTER_ALL ? `Paid: ${ordersPaidFilter}` : null,
+      ordersRiderFilter !== FILTER_ALL ? `Rider: ${ordersRiderFilter}` : null,
+      ordersWaiterFilter !== FILTER_ALL ? `Waiter: ${ordersWaiterFilter}` : null,
+      ordersCashierFilter !== FILTER_ALL ? `Cashier: ${ordersCashierFilter}` : null,
+      ordersAdminFilter !== FILTER_ALL ? `Admin: ${ordersAdminFilter}` : null,
+      ordersSearch.trim() ? `Search: ${ordersSearch.trim()}` : null,
+    ].filter(Boolean);
+
     const rows = [
       ["Eats Desk Reports — " + TABS.find((t) => t.id === activeTab)?.label],
       ["Period", periodLabel],
+      ...(activeFilters.length > 0 ? [["Filters", activeFilters.join(", ")]] : []),
       ["Generated", new Date().toLocaleString("en-PK")],
       [],
     ];
@@ -1215,7 +1338,7 @@ export default function HistoryPage() {
       rows.push(
         ["ALL ORDERS"],
         headers,
-        ...allOrders.map((o) =>
+        ...ordersFiltered.map((o) =>
           selectedCols.map((k) => orderExportValueByKey(o, k)),
         ),
       );
@@ -1248,8 +1371,8 @@ export default function HistoryPage() {
         (k) => ORDER_EXPORT_COLUMN_OPTIONS.find((c) => c.key === k)?.label || k,
       );
       bodyContent =
-        `<h2>Orders (${allOrders.length})</h2><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>` +
-        allOrders
+        `<h2>Orders (${ordersFiltered.length})</h2><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>` +
+        ordersFiltered
           .map((o) => {
             const cols = selectedCols
               .map(
@@ -1766,72 +1889,7 @@ export default function HistoryPage() {
       (o) => o.status === STATUS_FILTERS.CANCELLED,
     ).length;
 
-    let filtered = dateFiltered;
-    if (ordersStatusFilter === STATUS_FILTERS.COMPLETED)
-      filtered = filtered.filter((o) => o.status !== STATUS_FILTERS.CANCELLED);
-    else if (ordersStatusFilter === STATUS_FILTERS.CANCELLED)
-      filtered = filtered.filter((o) => o.status === STATUS_FILTERS.CANCELLED);
-
-    if (ordersTypeFilter !== FILTER_ALL) {
-      filtered = filtered.filter(
-        (o) =>
-          o.type ===
-          (TYPE_API_MAP[ordersTypeFilter] || ordersTypeFilter.toLowerCase()),
-      );
-    }
-
-    if (ordersPaymentFilter !== FILTER_ALL) {
-      filtered = filtered.filter(
-        (o) =>
-          (o.paymentMethod || "").toLowerCase() ===
-          ordersPaymentFilter.toLowerCase(),
-      );
-    }
-
-    if (ordersSourceFilter !== FILTER_ALL) {
-      filtered = filtered.filter(
-        (o) => (o.source || "").toUpperCase() === ordersSourceFilter,
-      );
-    }
-
-    if (ordersPaidFilter !== FILTER_ALL) {
-      filtered = filtered.filter((o) =>
-        ordersPaidFilter === PAID_FILTERS.PAID ? o.isPaid : !o.isPaid,
-      );
-    }
-
-    if (ordersRiderFilter !== FILTER_ALL) {
-      filtered = filtered.filter(
-        (o) => (o.assignedRiderName || "") === ordersRiderFilter,
-      );
-    }
-
-    if (ordersWaiterFilter !== FILTER_ALL) {
-      filtered = filtered.filter(
-        (o) =>
-          (o.orderTakerName || "") === ordersWaiterFilter &&
-          o.createdByRole === "order_taker",
-      );
-    }
-
-    if (ordersCashierFilter !== FILTER_ALL) {
-      filtered = filtered.filter(
-        (o) =>
-          (o.orderTakerName || "") === ordersCashierFilter &&
-          o.createdByRole === "cashier",
-      );
-    }
-
-    // Admins who create orders: restaurant_admin/admin/super_admin
-    if (ordersAdminFilter !== FILTER_ALL) {
-      filtered = filtered.filter(
-        (o) =>
-          (o.orderTakerName || "") === ordersAdminFilter &&
-          ["restaurant_admin", "admin", "super_admin"].includes(
-            o.createdByRole,
-          ),
-      );
-    }
+    const filtered = ordersFiltered;
 
     const availableRiders = [
       ...new Set(
@@ -1870,21 +1928,6 @@ export default function HistoryPage() {
           .map((o) => o.orderTakerName),
       ),
     ].sort();
-
-    if (ordersSearch.trim()) {
-      const q = ordersSearch.trim().toLowerCase();
-      filtered = filtered.filter(
-        (o) =>
-          (o.id || "").toString().toLowerCase().includes(q) ||
-          (o.customerName || "").toLowerCase().includes(q) ||
-          (o.tableName || "").toLowerCase().includes(q) ||
-          (o.customerPhone || "").includes(q) ||
-          (o.assignedRiderName || "").toLowerCase().includes(q) ||
-          (o.items || []).some((item) =>
-            (item.name || "").toLowerCase().includes(q),
-          ),
-      );
-    }
 
     const hasActiveFilters =
       ordersStatusFilter !== FILTER_ALL ||
@@ -2125,6 +2168,7 @@ export default function HistoryPage() {
               <table className="text-xs min-w-[2100px]">
                 <thead className="bg-gray-50 dark:bg-neutral-900/80 sticky top-0">
                   <tr>
+                    <th className={`${TH_CLS} text-center`}>#</th>
                     <th className={TH_CLS}>Order #</th>
                     <th className={TH_CLS}>View</th>
                     <th className={TH_CLS}>Status</th>
@@ -2160,6 +2204,9 @@ export default function HistoryPage() {
                       key={o._id || i}
                       className="hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors"
                     >
+                      <td className={`${TD_CLS} text-center text-gray-400 dark:text-neutral-600 select-none`}>
+                        {safePage * ordersPerPage + i + 1}
+                      </td>
                       <td
                         className={`${TD_CLS} font-semibold text-gray-900 dark:text-white`}
                       >
@@ -2633,33 +2680,13 @@ export default function HistoryPage() {
       <div className="space-y-4">
         {/* Sessions table */}
         <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-md">
-                <CalendarDays className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Business Day Sessions
-                </h2>
-                {currentBranch && (
-                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                    {currentBranch.name}
-                  </p>
-                )}
-              </div>
+          {currentBranch && (
+            <div className="px-5 py-2.5 border-b border-gray-100 dark:border-neutral-800">
+              <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                {currentBranch.name}
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => loadSessions(sessionsPage)}
-              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${sessionsLoading ? "animate-spin" : ""}`}
-              />
-            </button>
-          </div>
+          )}
 
           {sessionsLoading ? (
             <div className="flex items-center justify-center py-16">
@@ -2671,6 +2698,146 @@ export default function HistoryPage() {
             </div>
           ) : (
             <>
+              {sessionsViewMode === "daily" ? (() => {
+                const dayKey = (s) =>
+                  new Date(s.startAt).toLocaleDateString("en-CA");
+                const grouped = [];
+                const seen = {};
+                for (const s of sessionsList) {
+                  const k = dayKey(s);
+                  if (!seen[k]) {
+                    seen[k] = { key: k, sessions: [], totalOrders: 0, totalSales: 0, hasOpen: false };
+                    grouped.push(seen[k]);
+                  }
+                  seen[k].sessions.push(s);
+                  seen[k].totalOrders += Number(s.totalOrders || 0);
+                  seen[k].totalSales += Number(s.totalSales || 0);
+                  if (s.status === "OPEN") seen[k].hasOpen = true;
+                }
+                const maxSales = Math.max(...grouped.map((d) => d.totalSales), 1);
+                return (
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-800/70">
+                    {grouped.map((day) => {
+                      const isExpanded = expandedDays.has(day.key);
+                      const d = new Date(day.key + "T00:00:00");
+                      const weekday = d.toLocaleDateString("en-PK", { weekday: "long" });
+                      const dateStr = d.toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
+                      const barPct = Math.round((day.totalSales / maxSales) * 100);
+                      return (
+                        <div key={day.key}>
+                          {/* Day header row */}
+                          <button
+                            type="button"
+                            className={`w-full text-left transition-colors group ${isExpanded ? "bg-gray-50/80 dark:bg-neutral-900/60" : "hover:bg-gray-50/60 dark:hover:bg-neutral-900/30"}`}
+                            onClick={() => {
+                              setExpandedDays((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(day.key)) next.delete(day.key);
+                                else next.add(day.key);
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className="flex items-center gap-3 px-4 py-2.5">
+                              {/* Chevron */}
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 flex-shrink-0 transition-transform text-gray-400 dark:text-neutral-500 ${isExpanded ? "rotate-0" : "-rotate-90"}`}
+                              />
+                              {/* Date block */}
+                              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-primary/10 to-secondary/10 dark:from-primary/20 dark:to-secondary/20 flex flex-col items-center justify-center border border-primary/15 dark:border-primary/25">
+                                <span className="text-[8px] font-bold text-primary uppercase leading-none">
+                                  {d.toLocaleDateString("en-PK", { month: "short" })}
+                                </span>
+                                <span className="text-[13px] font-extrabold text-primary leading-tight">
+                                  {d.getDate()}
+                                </span>
+                              </div>
+                              {/* Date label */}
+                              <div className="flex-shrink-0 min-w-[160px]">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[13px] font-bold text-gray-900 dark:text-white">{weekday}</span>
+                                  <span className="text-[11px] text-gray-400 dark:text-neutral-500">{dateStr}</span>
+                                  {day.hasOpen && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/25">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                      LIVE
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Revenue bar — centre of row */}
+                              <div className="flex-1 flex items-center gap-2 min-w-0 px-4">
+                                <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-neutral-800 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-gradient-to-r from-primary to-secondary"
+                                    style={{ width: `${barPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                              {/* Session count + Stats */}
+                              <div className="flex items-center gap-2.5 flex-shrink-0">
+                                <span className="text-[11px] text-gray-400 dark:text-neutral-500">
+                                  {day.sessions.length} session{day.sessions.length !== 1 ? "s" : ""}
+                                </span>
+                                <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700">
+                                  <ShoppingBag className="w-3 h-3 text-gray-400 dark:text-neutral-500" />
+                                  <span className="text-[12px] font-semibold text-gray-700 dark:text-neutral-300">{day.totalOrders.toLocaleString()}</span>
+                                  <span className="text-[10px] text-gray-400 dark:text-neutral-500">orders</span>
+                                </div>
+                                <div className="px-2.5 py-1 rounded-lg bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/25">
+                                  <span className="text-[13px] font-extrabold text-primary">{fmtRs(day.totalSales)}</span>
+                                </div>
+                                <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 transition-all ${isExpanded ? "opacity-0" : "text-gray-300 dark:text-neutral-600 group-hover:text-primary"}`} />
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Expanded sessions */}
+                          {isExpanded && (
+                            <div className="border-t border-gray-100 dark:border-neutral-800 bg-gray-50/40 dark:bg-neutral-900/30">
+                              {day.sessions.map((s, idx) => (
+                                <div
+                                  key={s.id}
+                                  className={`flex items-center gap-3 pl-[52px] pr-4 py-2.5 cursor-pointer hover:bg-white dark:hover:bg-neutral-900/60 transition-colors group ${idx !== day.sessions.length - 1 ? "border-b border-gray-100 dark:border-neutral-800/50" : ""}`}
+                                  onClick={() => openSessionDetail(s)}
+                                >
+                                  {/* Session badge */}
+                                  <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold border ${
+                                    s.status === "OPEN"
+                                      ? "bg-emerald-500 border-emerald-500 text-white"
+                                      : "bg-white dark:bg-neutral-900 border-gray-300 dark:border-neutral-600 text-gray-500 dark:text-neutral-400"
+                                  }`}>
+                                    {s.status === "OPEN" ? <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> : idx + 1}
+                                  </div>
+                                  {/* Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[12px] font-semibold ${s.status === "OPEN" ? "text-emerald-600 dark:text-emerald-400" : "text-gray-700 dark:text-neutral-300"}`}>
+                                        {s.status === "OPEN" ? "Current session" : `Session ${idx + 1}`}
+                                      </span>
+                                      <span className="text-[11px] text-gray-400 dark:text-neutral-500">
+                                        {new Date(s.startAt).toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                                        {s.endAt ? ` → ${new Date(s.endAt).toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true })}` : " → Ongoing"}
+                                        {fmtDuration(s.startAt, s.endAt) ? ` · ${fmtDuration(s.startAt, s.endAt)}` : ""}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {/* Stats */}
+                                  <div className="flex items-center gap-3 flex-shrink-0">
+                                    <span className="text-[11px] text-gray-400 dark:text-neutral-500">{(s.totalOrders || 0).toLocaleString()} orders</span>
+                                    <span className="text-[12px] font-bold text-gray-800 dark:text-neutral-200">{fmtRs(s.totalSales)}</span>
+                                    <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-neutral-700 group-hover:text-primary transition-colors" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })() : (
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead className="bg-gray-50 dark:bg-neutral-900/70 border-b border-gray-200 dark:border-neutral-800">
@@ -2761,6 +2928,7 @@ export default function HistoryPage() {
                   </tbody>
                 </table>
               </div>
+              )}
               {sessionPages > 1 && (
                 <div className="flex items-center justify-center gap-3 px-5 py-4 border-t border-gray-100 dark:border-neutral-800">
                   <button
@@ -3482,10 +3650,201 @@ export default function HistoryPage() {
               })}
             </div>
 
-            {/* Right: Date + Export + Help (hidden on Sessions tab) */}
-            <div
-              className={`flex items-center gap-2 flex-shrink-0 ${activeTab === "sessions" ? "invisible pointer-events-none" : ""}`}
-            >
+            {/* Right side */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Sessions view toggle — only on sessions tab */}
+              {activeTab === "sessions" && (
+                <>
+                  {/* Sessions date filter */}
+                  {(() => {
+                    const SESSION_DATE_PRESETS = [
+                      { id: "all", label: "All Time" },
+                      { id: "yesterday", label: "Yesterday" },
+                      { id: "last3days", label: "Last 3 Days" },
+                      { id: "this_week", label: "This Week" },
+                      { id: "this_month", label: "This Month" },
+                      { id: "custom", label: "Custom" },
+                    ];
+                    const getSessionPresetDates = (id) => {
+                      const today = new Date();
+                      const fmt = (d) => d.toISOString().slice(0, 10);
+                      switch (id) {
+                        case "yesterday": {
+                          const y = new Date(today); y.setDate(y.getDate() - 1);
+                          return { from: fmt(y), to: fmt(y) };
+                        }
+                        case "last3days": {
+                          const s = new Date(today); s.setDate(s.getDate() - 2);
+                          return { from: fmt(s), to: fmt(today) };
+                        }
+                        case "this_week": {
+                          const dow = today.getDay();
+                          const diff = dow === 0 ? -6 : 1 - dow;
+                          const mon = new Date(today); mon.setDate(today.getDate() + diff);
+                          return { from: fmt(mon), to: fmt(today) };
+                        }
+                        case "this_month": {
+                          const first = new Date(today.getFullYear(), today.getMonth(), 1);
+                          return { from: fmt(first), to: fmt(today) };
+                        }
+                        default: return { from: "", to: "" };
+                      }
+                    };
+                    const activePreset = SESSION_DATE_PRESETS.find(p => p.id === sessionsDatePreset);
+                    const isFiltered = sessionsDatePreset !== "all";
+                    const presetLabel = sessionsDatePreset === "custom" && (sessionsDateFrom || sessionsDateTo)
+                      ? `${sessionsDateFrom || "…"} → ${sessionsDateTo || "…"}`
+                      : activePreset?.label || "All Time";
+                    return (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowSessionsDateDropdown(v => !v)}
+                          className={`inline-flex items-center gap-2 h-9 px-3.5 rounded-xl border-2 text-xs font-semibold transition-all ${
+                            isFiltered
+                              ? "border-primary/40 bg-primary/5 dark:bg-primary/10 text-primary"
+                              : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-gray-700 dark:text-neutral-300 hover:border-primary/40"
+                          }`}
+                        >
+                          <Calendar className={`w-3.5 h-3.5 ${isFiltered ? "text-primary" : "text-gray-400"}`} />
+                          {presetLabel}
+                          {isFiltered ? (
+                            <span
+                              className="hover:text-red-500 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSessionsDatePreset("all");
+                                setSessionsDateFrom("");
+                                setSessionsDateTo("");
+                                setSessionsPage(0);
+                                loadSessions(0, "", "");
+                                setShowSessionsDateDropdown(false);
+                              }}
+                            >
+                              <X className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSessionsDateDropdown ? "rotate-180" : ""}`} />
+                          )}
+                        </button>
+                        {showSessionsDateDropdown && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowSessionsDateDropdown(false)} />
+                            <div className="absolute right-0 top-full mt-1.5 z-50 w-64 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-2xl shadow-xl overflow-hidden">
+                              <div className="p-2 space-y-0.5">
+                                {SESSION_DATE_PRESETS.filter(p => p.id !== "custom").map(p => (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSessionsDatePreset(p.id);
+                                      const { from, to } = getSessionPresetDates(p.id);
+                                      setSessionsDateFrom(from);
+                                      setSessionsDateTo(to);
+                                      setSessionsPage(0);
+                                      loadSessions(0, from, to);
+                                      setShowSessionsDateDropdown(false);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                                      sessionsDatePreset === p.id
+                                        ? "bg-gradient-to-r from-primary to-secondary text-white"
+                                        : "text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                                    }`}
+                                  >
+                                    {p.label}
+                                  </button>
+                                ))}
+                                {/* Custom range */}
+                                <div className="pt-1 mt-1 border-t border-gray-100 dark:border-neutral-800">
+                                  <p className="px-3 py-1 text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Custom Range</p>
+                                  <div className="px-3 pb-2 space-y-2">
+                                    <div>
+                                      <label className="text-[10px] text-gray-400 dark:text-neutral-500 font-medium">From</label>
+                                      <input
+                                        type="date"
+                                        value={sessionsDateFrom}
+                                        onChange={(e) => {
+                                          setSessionsDateFrom(e.target.value);
+                                          setSessionsDatePreset("custom");
+                                        }}
+                                        className="mt-0.5 w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-gray-400 dark:text-neutral-500 font-medium">To</label>
+                                      <input
+                                        type="date"
+                                        value={sessionsDateTo}
+                                        onChange={(e) => {
+                                          setSessionsDateTo(e.target.value);
+                                          setSessionsDatePreset("custom");
+                                        }}
+                                        className="mt-0.5 w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={!sessionsDateFrom && !sessionsDateTo}
+                                      onClick={() => {
+                                        setSessionsPage(0);
+                                        loadSessions(0, sessionsDateFrom, sessionsDateTo);
+                                        setShowSessionsDateDropdown(false);
+                                      }}
+                                      className="w-full h-8 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold disabled:opacity-40 transition-opacity"
+                                    >
+                                      Apply
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <div className="flex items-center bg-gray-100 dark:bg-neutral-800 rounded-lg p-0.5 gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setSessionsViewMode("sessions")}
+                      className={`flex items-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-semibold transition-all ${
+                        sessionsViewMode === "sessions"
+                          ? "bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-sm"
+                          : "text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200"
+                      }`}
+                    >
+                      <CalendarDays className="w-3 h-3" />
+                      Sessions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSessionsViewMode("daily");
+                        setExpandedDays(new Set());
+                      }}
+                      className={`flex items-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-semibold transition-all ${
+                        sessionsViewMode === "daily"
+                          ? "bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-sm"
+                          : "text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200"
+                      }`}
+                    >
+                      <BarChart3 className="w-3 h-3" />
+                      Daily
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadSessions(sessionsPage)}
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-gray-400 hover:text-gray-600 hover:border-primary/40 transition-all"
+                    title="Refresh"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${sessionsLoading ? "animate-spin" : ""}`} />
+                  </button>
+                </>
+              )}
+              {/* Date + Export + Help — hidden on sessions tab */}
+              {activeTab !== "sessions" && (
+              <>
               {/* Date dropdown */}
               <div className="relative">
                 <button
@@ -3710,6 +4069,8 @@ export default function HistoryPage() {
               >
                 <HelpCircle className="w-4 h-4" />
               </button>
+              </>
+              )}
             </div>
           </div>
 

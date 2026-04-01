@@ -631,27 +631,13 @@ export default function BusinessSettingsPage() {
           ))}
         </div>
         {tab === "link" ? (
-          <div className="flex gap-2 items-center">
-            <input
-              type="text"
-              value={linkValue}
-              onChange={onLink}
-              placeholder="https://..."
-              className={inp}
-            />
-            {linkValue ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={linkValue}
-                alt=""
-                className="h-10 w-10 rounded-lg object-cover border-2 border-gray-200 dark:border-neutral-700 flex-shrink-0"
-              />
-            ) : (
-              <div className="h-10 w-10 rounded-lg border-2 border-dashed border-gray-200 dark:border-neutral-700 flex items-center justify-center flex-shrink-0">
-                <ImageIcon className="w-4 h-4 text-gray-300" />
-              </div>
-            )}
-          </div>
+          <input
+            type="text"
+            value={linkValue}
+            onChange={onLink}
+            placeholder="https://..."
+            className={inp}
+          />
         ) : (
           <label className="flex flex-col items-center justify-center w-full h-20 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/50 cursor-pointer transition-colors">
             {uploading ? (
@@ -742,159 +728,156 @@ export default function BusinessSettingsPage() {
                   </span>
                 </div>
               ) : (
-                <form onSubmit={handleWebsiteSubmit} className="space-y-5 max-w-xl">
-                  <div className="space-y-1.5">
-                    <label className={labelCls}>Operating Currency</label>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={restaurantSettings?.currencyCode || ""}
-                        onChange={(e) =>
-                          setRestaurantSettings((p) => ({
-                            ...(p || {}),
-                            currencyCode: e.target.value || null,
-                          }))
-                        }
-                        className={inp}
-                      >
-                        {CURRENCY_OPTIONS.map((opt) => (
-                          <option key={opt.value || "none"} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
+                <form onSubmit={handleWebsiteSubmit}>
+
+                  {/* ── Two-column main body ── */}
+                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+
+                    {/* Left column — identity + contact */}
+                    <div className="space-y-5">
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">Restaurant Identity</p>
+                        <div className="space-y-4">
+                          <div className="space-y-1.5">
+                            <label className={labelCls}>Restaurant Name</label>
+                            <input
+                              type="text"
+                              value={websiteSettings?.name || ""}
+                              onChange={onWebsiteChange("name")}
+                              placeholder="Your Restaurant Name"
+                              className={inp}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className={labelCls}>Description</label>
+                            <textarea
+                              rows={4}
+                              value={websiteSettings?.description || ""}
+                              onChange={onWebsiteChange("description")}
+                              placeholder="Tell customers about your restaurant…"
+                              className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 resize-none transition-all"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100 dark:border-neutral-800" />
+
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">Contact Details</p>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className={`${labelCls} flex items-center gap-1.5`}>
+                              <Phone className="w-3.5 h-3.5 text-primary" />
+                              Phone
+                            </label>
+                            <input
+                              type="text"
+                              value={websiteSettings?.contactPhone || ""}
+                              onChange={onWebsiteChange("contactPhone")}
+                              placeholder="03XX-XXXXXXX"
+                              className={inp}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className={`${labelCls} flex items-center gap-1.5`}>
+                              <Mail className="w-3.5 h-3.5 text-primary" />
+                              Email
+                            </label>
+                            <input
+                              type="email"
+                              value={websiteSettings?.contactEmail || ""}
+                              onChange={onWebsiteChange("contactEmail")}
+                              placeholder="contact@restaurant.com"
+                              className={inp}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100 dark:border-neutral-800" />
+
+                      {/* ── Currency ── */}
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">Operating Currency</p>
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] text-gray-500 dark:text-neutral-400">Saved separately — applied across POS and all reports</p>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={restaurantSettings?.currencyCode || ""}
+                              onChange={(e) =>
+                                setRestaurantSettings((p) => ({
+                                  ...(p || {}),
+                                  currencyCode: e.target.value || null,
+                                }))
+                              }
+                              className={inp}
+                            >
+                              {CURRENCY_OPTIONS.map((opt) => (
+                                <option key={opt.value || "none"} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={handleCurrencySave}
+                              disabled={currencySaving}
+                              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:border-primary/50 hover:text-primary transition-colors disabled:opacity-60 flex-shrink-0"
+                            >
+                              {currencySaving ? <><Loader2 className="w-3 h-3 animate-spin" />Saving…</> : <><Check className="w-3 h-3" />Save</>}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
                       <button
-                        type="button"
-                        onClick={handleCurrencySave}
-                        disabled={currencySaving}
-                        className="h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-60"
+                        type="submit"
+                        disabled={websiteSaving}
+                        className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
                       >
-                        {currencySaving ? "Saving..." : "Save"}
+                        {websiteSaving ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                        ) : (
+                          <><Check className="w-4 h-4" />Save</>
+                        )}
                       </button>
                     </div>
-                  </div>
 
-                  <div className="space-y-1.5">
-                    <label className={labelCls}>Restaurant Name</label>
-                    <input
-                      type="text"
-                      value={websiteSettings?.name || ""}
-                      onChange={onWebsiteChange("name")}
-                      placeholder="Your Restaurant Name"
-                      className={inp}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className={labelCls}>Description</label>
-                    <textarea
-                      rows={3}
-                      value={websiteSettings?.description || ""}
-                      onChange={onWebsiteChange("description")}
-                      placeholder="Tell customers about your restaurant..."
-                      className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 resize-none transition-all"
-                    />
-                  </div>
-
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <label className={`${labelCls} flex items-center gap-1.5`}>
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        Logo
-                      </label>
-                      <MediaToggle
-                        tab={websiteLogoTab}
-                        setTab={setWebsiteLogoTab}
-                        linkValue={websiteSettings?.logoUrl || ""}
-                        onLink={onWebsiteChange("logoUrl")}
-                        onUpload={handleWebsiteLogoUpload}
-                        uploading={uploadingWebsiteLogo}
-                        inputRef={websiteLogoInputRef}
-                      />
+                    {/* Right column — logo only */}
+                    <div className="space-y-4">
+                      <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">Logo</p>
+                      <div className="rounded-xl border border-gray-100 dark:border-neutral-800 p-4 space-y-3 bg-gray-50/40 dark:bg-neutral-900/30">
+                        <MediaToggle
+                          tab={websiteLogoTab}
+                          setTab={setWebsiteLogoTab}
+                          linkValue={websiteSettings?.logoUrl || ""}
+                          onLink={onWebsiteChange("logoUrl")}
+                          onUpload={handleWebsiteLogoUpload}
+                          uploading={uploadingWebsiteLogo}
+                          inputRef={websiteLogoInputRef}
+                        />
+                        {/* Preview */}
+                        <div className="rounded-lg border border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex items-center justify-center h-32 overflow-hidden">
+                          {websiteSettings?.logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={websiteSettings.logoUrl}
+                              alt="Logo preview"
+                              className="max-h-24 max-w-full object-contain"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center gap-1.5 text-gray-300 dark:text-neutral-600">
+                              <ImageIcon className="w-8 h-8" />
+                              <span className="text-[11px]">No logo set</span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">Shown on your public restaurant page</p>
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className={`${labelCls} flex items-center gap-1.5`}>
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        Banner
-                      </label>
-                      <MediaToggle
-                        tab={websiteBannerTab}
-                        setTab={setWebsiteBannerTab}
-                        linkValue={websiteSettings?.bannerUrl || ""}
-                        onLink={onWebsiteChange("bannerUrl")}
-                        onUpload={handleWebsiteBannerUpload}
-                        uploading={uploadingWebsiteBanner}
-                        inputRef={websiteBannerInputRef}
-                      />
-                    </div>
-                  </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <label className={`${labelCls} flex items-center gap-1.5`}>
-                        <Phone className="w-3.5 h-3.5" />
-                        Contact Phone
-                      </label>
-                      <input
-                        type="text"
-                        value={websiteSettings?.contactPhone || ""}
-                        onChange={onWebsiteChange("contactPhone")}
-                        placeholder="03XX-XXXXXXX"
-                        className={inp}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className={`${labelCls} flex items-center gap-1.5`}>
-                        <Mail className="w-3.5 h-3.5" />
-                        Contact Email
-                      </label>
-                      <input
-                        type="email"
-                        value={websiteSettings?.contactEmail || ""}
-                        onChange={onWebsiteChange("contactEmail")}
-                        placeholder="contact@restaurant.com"
-                        className={inp}
-                      />
-                    </div>
                   </div>
-
-                  <div className="space-y-1.5">
-                    <label className={`${labelCls} flex items-center gap-1.5`}>
-                      {websiteSettings?.isPublic ? (
-                        <Eye className="w-3.5 h-3.5" />
-                      ) : (
-                        <EyeOff className="w-3.5 h-3.5" />
-                      )}
-                      Website Visibility
-                    </label>
-                    <select
-                      value={websiteSettings?.isPublic ? "yes" : "no"}
-                      onChange={(e) =>
-                        setWebsiteSettings((p) => ({
-                          ...p,
-                          isPublic: e.target.value === "yes",
-                        }))
-                      }
-                      className={inp + " font-semibold"}
-                    >
-                      <option value="yes">✓ Visible to Public</option>
-                      <option value="no">✗ Hidden (Website Offline)</option>
-                    </select>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={websiteSaving}
-                    className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
-                  >
-                    {websiteSaving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      "Save Branding"
-                    )}
-                  </button>
                 </form>
               )}
             </SectionCard>

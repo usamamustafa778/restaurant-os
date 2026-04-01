@@ -39,6 +39,7 @@ import {
   ChevronDown,
   Banknote,
   Coins,
+  Pencil,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -597,6 +598,7 @@ export default function OverviewPage() {
   const [currencyCode, setCurrencyCode] = useState(null);
   const [defaultDenominations, setDefaultDenominations] = useState([]);
   const [currencyRows, setCurrencyRows] = useState(() => buildGenericRows());
+  const [editingDenomId, setEditingDenomId] = useState(null);
   const [currencyDate, setCurrencyDate] = useState("today");
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [currencySaving, setCurrencySaving] = useState(false);
@@ -1944,8 +1946,8 @@ export default function OverviewPage() {
                     </div>
                     <div className="p-2 space-y-1.5">
                       <div className="grid grid-cols-12 gap-2 px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
-                        <div className="col-span-5">Cash value</div>
-                        <div className="col-span-3">Qty</div>
+                        <div className="col-span-4">Value</div>
+                        <div className="col-span-4">Qty</div>
                         <div className="col-span-4 text-right">Total</div>
                       </div>
                       <div className="max-h-52 overflow-auto pr-1 space-y-1">
@@ -1963,22 +1965,38 @@ export default function OverviewPage() {
                               key={row.id}
                               className="grid grid-cols-12 gap-2 items-center px-2 py-1 rounded-md bg-gray-50/70 dark:bg-neutral-900/35 border border-transparent hover:border-gray-200 dark:hover:border-neutral-700 transition-colors"
                             >
-                              <div className="col-span-5">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={row.value}
-                                  onChange={(e) =>
-                                    setCurrencyDenomination(row.id, e.target.value)
-                                  }
-                                  placeholder={
-                                    section.key === "note" ? "Cash value" : "Coin value"
-                                  }
-                                  className="w-full h-8 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-[11px] font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
-                                />
+                              <div className="col-span-4">
+                                {editingDenomId === row.id ? (
+                                  <input
+                                    autoFocus
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={row.value}
+                                    onChange={(e) =>
+                                      setCurrencyDenomination(row.id, e.target.value)
+                                    }
+                                    onBlur={() => setEditingDenomId(null)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === "Escape")
+                                        setEditingDenomId(null);
+                                    }}
+                                    className="w-full h-7 rounded-md border border-primary/60 bg-white dark:bg-neutral-950 px-2 text-[11px] font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingDenomId(row.id)}
+                                    className="group flex items-center gap-1.5 w-full text-left"
+                                  >
+                                    <span className="text-[11px] font-semibold text-gray-800 dark:text-white tabular-nums truncate">
+                                      {row.value !== "" ? row.value : <span className="text-gray-400 dark:text-neutral-500 font-normal">—</span>}
+                                    </span>
+                                    <Pencil className="w-3 h-3 text-gray-400 dark:text-neutral-500 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" />
+                                  </button>
+                                )}
                               </div>
-                              <div className="col-span-3">
+                              <div className="col-span-4">
                                 <input
                                   type="number"
                                   min="0"

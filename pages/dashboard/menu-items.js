@@ -18,7 +18,7 @@ import {
   copyMenuFromBranch,
   updateBranchMenuItem
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, SlidersHorizontal } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -78,6 +78,11 @@ export default function MenuItemsPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [filterAvailability, setFilterAvailability] = useState("all");
+  const [filterDietary, setFilterDietary] = useState("all");
+  const [sortBy, setSortBy] = useState("name_asc");
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [modalError, setModalError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -92,6 +97,7 @@ export default function MenuItemsPage() {
     itemName: "",
     consumptions: []
   });
+  const [recipeSearch, setRecipeSearch] = useState("");
 
   const [copyModalOpen, setCopyModalOpen] = useState(false);
   const [copySourceBranchId, setCopySourceBranchId] = useState("");
@@ -492,6 +498,7 @@ export default function MenuItemsPage() {
   function closeRecipeDialog() {
     setRecipeDialog(prev => ({ ...prev, open: false }));
     setRecipeUnits({});
+    setRecipeSearch("");
   }
 
   function toggleRecipeUnit(inventoryItemId, baseUnit) {
@@ -576,17 +583,142 @@ export default function MenuItemsPage() {
     }
   }
 
-  const filtered = items.filter(item => {
-    const term = search.trim().toLowerCase();
-    if (!term) return true;
-    const category = categories.find(c => c.id === item.categoryId);
-    return (
-      item.name.toLowerCase().includes(term) ||
-      (item.description || "").toLowerCase().includes(term) ||
-      (category?.name || "").toLowerCase().includes(term) ||
-      String(item.price).includes(term)
-    );
-  });
+  const filtered = items
+    .filter(item => {
+      const term = search.trim().toLowerCase();
+      if (term) {
+        const category = categories.find(c => c.id === item.categoryId);
+        const matches =
+          item.name.toLowerCase().includes(term) ||
+          (item.description || "").toLowerCase().includes(term) ||
+          (category?.name || "").toLowerCase().includes(term) ||
+          String(item.price).includes(term);
+        if (!matches) return false;
+      }
+      if (filterCategory !== "all" && item.categoryId !== filterCategory) return false;
+      if (filterAvailability === "available" && !(item.finalAvailable ?? item.available ?? true)) return false;
+      if (filterAvailability === "unavailable" && (item.finalAvailable ?? item.available ?? true)) return false;
+      if (filterDietary !== "all" && (item.dietaryType || "non_veg") !== filterDietary) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "name_asc")   return a.name.localeCompare(b.name);
+      if (sortBy === "name_desc")  return b.name.localeCompare(a.name);
+      if (sortBy === "price_asc")  return (a.finalPrice ?? a.price ?? 0) - (b.finalPrice ?? b.price ?? 0);
+      if (sortBy === "price_desc") return (b.finalPrice ?? b.price ?? 0) - (a.finalPrice ?? a.price ?? 0);
+      return 0;
+    });
+
+  // ─── Export helpers ──────────────────────────────────────────────────────────
+
+  function toCSVRow(cells) {
+    return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
+  }
+
+  function exportCSV() {
+    const date = new Date().toLocaleDateString("en-PK");
+    const branchName = currentBranch?.name || "All Branches";
+    const rows = [
+      ["Menu Items Report"],
+      ["Branch", branchName],
+      ["Generated", date],
+      [],
+      ["Name", "Category", "Price", "Dietary", "Available", "Trending", "Must Try"],
+      ...filtered.map((item) => {
+        const cat = categories.find((c) => c.id === item.categoryId)?.name || "Uncategorized";
+        const price = item.finalPrice ?? item.price ?? 0;
+        const available = (item.finalAvailable ?? item.available ?? true) ? "Yes" : "No";
+        const dietary = item.dietaryType === "veg" ? "Veg" : item.dietaryType === "vegan" ? "Vegan" : "Non-Veg";
+        return [item.name, cat, price, dietary, available, item.isTrending ? "Yes" : "No", item.isMustTry ? "Yes" : "No"];
+      }),
+      [],
+      ["SUMMARY"],
+      ["Total Items", filtered.length],
+      ["Available", filtered.filter((i) => (i.finalAvailable ?? i.available ?? true)).length],
+      ["Unavailable", filtered.filter((i) => !(i.finalAvailable ?? i.available ?? true)).length],
+    ];
+    const content = rows.map(toCSVRow).join("\n");
+    const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `menu-items-${branchName.replace(/\s/g, "-")}-${date.replace(/\//g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("CSV exported — open in Excel");
+    setShowExportMenu(false);
+  }
+
+  function buildMenuHTML(title, extraStyle = "") {
+    const date = new Date().toLocaleDateString("en-PK", { year: "numeric", month: "long", day: "numeric" });
+    const branchName = currentBranch?.name || "All Branches";
+    const availableCount   = filtered.filter((i) => (i.finalAvailable ?? i.available ?? true)).length;
+    const unavailableCount = filtered.length - availableCount;
+
+    const itemRows = filtered.map((item) => {
+      const cat = categories.find((c) => c.id === item.categoryId)?.name || "Uncategorized";
+      const price = item.finalPrice ?? item.price ?? 0;
+      const available = (item.finalAvailable ?? item.available ?? true);
+      const dietary = item.dietaryType === "veg" ? "Veg" : item.dietaryType === "vegan" ? "Vegan" : "Non-Veg";
+      const availStyle = available
+        ? "background:#f0fdf4;color:#16a34a;"
+        : "background:#fef2f2;color:#dc2626;";
+      return `<tr>
+        <td><strong>${item.name}</strong>${item.description ? `<br><span style="font-size:11px;color:#6b7280">${item.description}</span>` : ""}</td>
+        <td>${cat}</td>
+        <td style="font-weight:700">Rs ${Number(price).toLocaleString()}</td>
+        <td>${dietary}</td>
+        <td><span style="font-weight:700;padding:2px 8px;border-radius:4px;font-size:11px;${availStyle}">${available ? "Available" : "Unavailable"}</span></td>
+      </tr>`;
+    }).join("");
+
+    return `<!DOCTYPE html><html><head><title>${title}</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:1000px;margin:0 auto}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  .meta{font-size:12px;color:#6b7280;margin-bottom:20px}
+  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+  .stat{border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px}
+  .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:4px}
+  .stat-value{font-size:22px;font-weight:800}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}
+  td{padding:9px 12px;border-bottom:1px solid #f3f4f6;font-size:13px;vertical-align:middle}
+  tr:hover td{background:#fafafa}
+  ${extraStyle}
+  @media print{body{padding:0}button{display:none}}
+</style></head><body>
+<h1>Menu Items Report</h1>
+<p class="meta">${branchName} &nbsp;·&nbsp; ${date}</p>
+<div class="summary">
+  <div class="stat"><div class="stat-label">Total</div><div class="stat-value" style="color:#1d4ed8">${filtered.length}</div></div>
+  <div class="stat"><div class="stat-label">Available</div><div class="stat-value" style="color:#16a34a">${availableCount}</div></div>
+  <div class="stat"><div class="stat-label">Unavailable</div><div class="stat-value" style="color:#dc2626">${unavailableCount}</div></div>
+</div>
+<table>
+  <thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Dietary</th><th>Status</th></tr></thead>
+  <tbody>${itemRows || '<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:32px">No items match current filter</td></tr>'}</tbody>
+</table>
+</body></html>`;
+  }
+
+  function exportPDF() {
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Pop-up blocked — please allow pop-ups."); return; }
+    win.document.write(buildMenuHTML("Menu Items – PDF", "@media print{@page{size:A4 landscape}}"));
+    win.document.close();
+    setTimeout(() => { win.print(); }, 300);
+    setShowExportMenu(false);
+  }
+
+  function printMenu() {
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Pop-up blocked — please allow pop-ups."); return; }
+    win.document.write(buildMenuHTML("Menu Items – Print"));
+    win.document.close();
+    setTimeout(() => win.print(), 300);
+    setShowExportMenu(false);
+  }
 
   return (
     <AdminLayout title="Menu Items" suspended={suspended}>
@@ -596,34 +728,116 @@ export default function MenuItemsPage() {
         </div>
       )}
 
-      {/* Search, View Toggle and Add Button – always visible */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
+      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        {/* Search */}
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name, category or price..."
-          className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+          placeholder="Search items..."
+          className="flex-1 min-w-[160px] h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
         />
-        <ViewToggle viewMode={viewMode} onChange={setViewMode} />
-        {currentBranch?.id && (
+
+        {/* Category */}
+        <select
+          value={filterCategory}
+          onChange={e => setFilterCategory(e.target.value)}
+          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+        >
+          <option value="all">All Categories</option>
+          {categories.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+
+        {/* Status */}
+        <select
+          value={filterAvailability}
+          onChange={e => setFilterAvailability(e.target.value)}
+          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+        >
+          <option value="all">All Status</option>
+          <option value="available">Available</option>
+          <option value="unavailable">Unavailable</option>
+        </select>
+
+        {/* Dietary */}
+        <select
+          value={filterDietary}
+          onChange={e => setFilterDietary(e.target.value)}
+          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+        >
+          <option value="all">All Dietary</option>
+          <option value="non_veg">Non-Veg</option>
+          <option value="veg">Veg</option>
+          <option value="vegan">Vegan</option>
+        </select>
+
+        {/* Sort */}
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value)}
+          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+        >
+          <option value="name_asc">A → Z</option>
+          <option value="name_desc">Z → A</option>
+          <option value="price_asc">Low → High</option>
+          <option value="price_desc">High → Low</option>
+        </select>
+
+        {/* Clear */}
+        {(filterCategory !== "all" || filterAvailability !== "all" || filterDietary !== "all" || search.trim()) && (
           <button
             type="button"
-            onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
-            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl border-2 border-primary text-primary text-sm font-semibold hover:bg-primary/10 transition-all whitespace-nowrap flex-shrink-0"
+            onClick={() => { setFilterCategory("all"); setFilterAvailability("all"); setFilterDietary("all"); setSearch(""); }}
+            className="inline-flex items-center gap-1 h-10 px-3 rounded-xl bg-gray-100 dark:bg-neutral-800 text-sm font-semibold text-gray-600 dark:text-neutral-300 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
           >
-            <Copy className="w-4 h-4" />
-            Copy Item
+            <X className="w-3.5 h-3.5" /> Clear
           </button>
         )}
-        <button
-          type="button"
-          onClick={startCreate}
-          className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Add New Item
-        </button>
+
+        <div className="flex items-center gap-2 ml-auto">
+          <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+
+          {/* Export */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border-2 border-gray-300 dark:border-neutral-600 text-gray-700 dark:text-neutral-300 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all whitespace-nowrap"
+            >
+              <FileDown className="w-4 h-4" /> Export <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+            </button>
+            {showExportMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+                <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 shadow-xl overflow-hidden">
+                  <button type="button" onClick={exportCSV}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
+                    <FileDown className="w-4 h-4 text-green-600" /> Export Excel (CSV)
+                  </button>
+                  <button type="button" onClick={exportPDF}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
+                    <FileText className="w-4 h-4 text-red-500" /> Export PDF
+                  </button>
+                  <button type="button" onClick={printMenu}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors border-t border-gray-100 dark:border-neutral-800">
+                    <Printer className="w-4 h-4 text-gray-500" /> Print
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={startCreate}
+            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" /> Add New Item
+          </button>
+        </div>
       </div>
 
       {pageLoading ? (
@@ -1171,77 +1385,131 @@ export default function MenuItemsPage() {
       )}
 
       {/* Recipe / Inventory Dialog */}
-      {recipeDialog.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-              Inventory recipe for {recipeDialog.itemName}
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
-              For each sale of this menu item, how much of each inventory ingredient should be deducted?
-            </p>
-            {modalError && (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
-                {modalError}
+      {recipeDialog.open && (() => {
+        const UNIT_DISPLAY = { kg: "gram", liter: "ml", gram: "gram", ml: "ml", piece: "piece" };
+        const activeIngredients = branchFilteredInventoryItems.filter(inv =>
+          recipeDialog.consumptions.some(c => c.inventoryItemId === inv.id && Number(c.quantity) > 0)
+        );
+        const term = recipeSearch.trim().toLowerCase();
+        const visibleItems = branchFilteredInventoryItems.filter(inv =>
+          !term || inv.name.toLowerCase().includes(term)
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+            <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col max-h-[85vh]">
+
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4 border-b border-gray-100 dark:border-neutral-800 flex-shrink-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white leading-snug">
+                      Recipe — {recipeDialog.itemName}
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
+                      Set how much of each ingredient is deducted per sale.
+                    </p>
+                  </div>
+                  {activeIngredients.length > 0 && (
+                    <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
+                      {activeIngredients.length} ingredient{activeIngredients.length !== 1 ? "s" : ""} set
+                    </span>
+                  )}
+                </div>
+                {modalError && (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
+                    {modalError}
+                  </div>
+                )}
               </div>
-            )}
-            <div className="max-h-72 overflow-y-auto text-xs mb-4">
-              {branchFilteredInventoryItems.length === 0 ? (
-                <p className="text-xs text-gray-800 dark:text-neutral-500">
-                  No inventory items yet. Create ingredients in the Inventory page first.
-                </p>
-              ) : (
-                <table className="w-full text-xs">
-                  <thead className="text-[11px] uppercase text-gray-800 dark:text-neutral-400 border-b border-gray-300 dark:border-neutral-700">
-                    <tr>
-                      <th className="py-2 text-left">Ingredient</th>
-                      <th className="py-2 text-center w-20">Unit</th>
-                      <th className="py-2 text-right w-32">Quantity per sale</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-neutral-800">
-                    {branchFilteredInventoryItems.map(inv => {
+
+              {/* Search */}
+              <div className="px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex-shrink-0">
+                <input
+                  type="text"
+                  value={recipeSearch}
+                  onChange={e => setRecipeSearch(e.target.value)}
+                  placeholder="Search ingredients..."
+                  className="w-full h-9 px-3 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+                />
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-2 min-h-0">
+                {branchFilteredInventoryItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
+                      <ShoppingBag className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-neutral-400">No inventory items yet</p>
+                    <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Create ingredients in the Inventory page first.</p>
+                  </div>
+                ) : visibleItems.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-gray-400 dark:text-neutral-500">
+                    No ingredients match &ldquo;{recipeSearch}&rdquo;
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    {visibleItems.map(inv => {
                       const existing = recipeDialog.consumptions.find(c => c.inventoryItemId === inv.id);
-                      // Always show gram/ml/piece — map legacy kg→gram, liter→ml
-                      const UNIT_DISPLAY = { kg: "gram", liter: "ml", gram: "gram", ml: "ml", piece: "piece" };
                       const displayUnit = UNIT_DISPLAY[inv.unit] || inv.unit;
+                      const hasValue = Number(existing?.quantity) > 0;
                       return (
-                        <tr key={inv.id}>
-                          <td className="py-2 pr-3">
-                            <div className="font-medium text-gray-900 dark:text-neutral-100">{inv.name}</div>
-                          </td>
-                          <td className="py-2 px-1 text-center">
-                            <span className="text-[11px] text-gray-500 dark:text-neutral-500">{displayUnit}</span>
-                          </td>
-                          <td className="py-2 pr-3 text-right">
+                        <div key={inv.id}
+                          className={`flex items-center gap-4 py-3 rounded-lg px-2 -mx-2 transition-colors ${hasValue ? "bg-primary/5 dark:bg-primary/10" : "hover:bg-gray-50 dark:hover:bg-neutral-900/50"}`}
+                        >
+                          {/* Ingredient name + unit badge */}
+                          <div className="flex-1 min-w-0 flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasValue ? "bg-primary" : "bg-gray-300 dark:bg-neutral-600"}`} />
+                            <span className={`text-sm font-medium truncate ${hasValue ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-neutral-300"}`}>
+                              {inv.name}
+                            </span>
+                            <span className="flex-shrink-0 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-[10px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
+                              {displayUnit}
+                            </span>
+                          </div>
+                          {/* Quantity input */}
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             <input
                               type="number"
                               min="0"
                               step="any"
                               value={existing?.quantity ?? ""}
                               onChange={e => updateConsumption(inv.id, e.target.value)}
-                              className="w-full px-2 py-1 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                              placeholder={`0 ${displayUnit}`}
+                              placeholder="0"
+                              className={`w-24 h-8 px-2 rounded-lg border text-sm text-right font-semibold outline-none transition-all ${
+                                hasValue
+                                  ? "border-primary/50 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                  : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20"
+                              }`}
                             />
-                          </td>
-                        </tr>
+                            <span className="text-[11px] text-gray-400 dark:text-neutral-500 w-8">{displayUnit}</span>
+                          </div>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 text-xs">
-              <Button type="button" variant="ghost" className="px-3" onClick={closeRecipeDialog}>
-                Cancel
-              </Button>
-              <Button type="button" className="px-3" onClick={handleSaveRecipe} disabled={branchFilteredInventoryItems.length === 0}>
-                Save recipe
-              </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3 flex-shrink-0">
+                <p className="text-xs text-gray-400 dark:text-neutral-500">
+                  {visibleItems.length} of {branchFilteredInventoryItems.length} ingredient{branchFilteredInventoryItems.length !== 1 ? "s" : ""}
+                </p>
+                <div className="flex gap-2">
+                  <Button type="button" variant="ghost" className="px-4" onClick={closeRecipeDialog}>
+                    Cancel
+                  </Button>
+                  <Button type="button" className="px-4" onClick={handleSaveRecipe} disabled={branchFilteredInventoryItems.length === 0}>
+                    Save recipe
+                  </Button>
+                </div>
+              </div>
+
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Copy from branch modal */}
       {copyModalOpen && (
