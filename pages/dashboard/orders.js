@@ -864,6 +864,7 @@ export default function OrdersPage() {
         (o.id || "").toLowerCase().includes(term) ||
         (o.customerName || "").toLowerCase().includes(term) ||
         (o.orderTakerName || "").toLowerCase().includes(term) ||
+        (o.assignedRiderName || "").toLowerCase().includes(term) ||
         (o.externalOrderId || "").toLowerCase().includes(term) ||
         (o.customerPhone || "").toLowerCase().includes(term)
       )) return false;
@@ -977,7 +978,7 @@ export default function OrdersPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search order #, customer, phone..."
+                placeholder="Search order #, customer, phone, rider..."
                 className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
               />
 
