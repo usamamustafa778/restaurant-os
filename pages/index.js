@@ -7,6 +7,8 @@ import MarketingFooter from "../components/MarketingFooter";
 const WHATSAPP_DEMO_URL =
   process.env.NEXT_PUBLIC_WHATSAPP_URL || "https://wa.me/923166222269";
 
+const ENTERPRISE_WHATSAPP_URL = "https://wa.me/923231557988";
+
 const TAB_DATA = {
   kds: {
     items: [
@@ -119,6 +121,7 @@ export default function Home() {
   const [country, setCountry] = useState("PK"); // PK | IN | INTL
   const [hasManualCountry, setHasManualCountry] = useState(false);
   const [isPriceFading, setIsPriceFading] = useState(false);
+  const [growthAccountingOpen, setGrowthAccountingOpen] = useState(false);
 
   useEffect(() => {
     setIsPriceFading(true);
@@ -862,17 +865,20 @@ export default function Home() {
               className="pricing-billing-wrap"
               style={{ textAlign: "center" }}
             >
-              <div className="country-pills">
-                {countryOptions.map((opt) => (
-                  <button
-                    key={opt.code}
-                    type="button"
-                    className={`country-pill${country === opt.code ? " active" : ""}`}
-                    onClick={() => handleCountrySelect(opt.code)}
+              <div className="country-toggle-row">
+                <div className="country-dropdown">
+                  <select
+                    className="country-select"
+                    value={country}
+                    onChange={(e) => handleCountrySelect(e.target.value)}
                   >
-                    {opt.flag} {opt.label}
-                  </button>
-                ))}
+                    {countryOptions.map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.flag} {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="billing-toggle">
                 <button
@@ -944,14 +950,12 @@ export default function Home() {
                 <Link href="/signup" className="pc-cta">
                   Start free trial
                 </Link>
-                <div className="pc-features-label">What&apos;s included</div>
-                <div className="pc-section-label">Core operations</div>
                 <ul className="pc-features">
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>Point of Sale (POS)
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Order management board
+                    <span className="dot">✓</span>Order management
                   </li>
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>Menu management
@@ -963,54 +967,22 @@ export default function Home() {
                     <span className="dot">✓</span>Customer database
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Cash + Easypaisa / JazzCash
+                    <span className="dot">✓</span>Easypaisa / JazzCash
                   </li>
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>Daily sales reports
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Basic analytics dashboard
-                  </li>
-                  <li className="pc-feat yes">
                     <span className="dot">✓</span>Deals &amp; discounts
                   </li>
-                </ul>
-                <div className="pc-divider" />
-                <div className="pc-section-label">Not included</div>
-                <ul className="pc-features">
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Kitchen Display System
+                  <li className="pc-feat pc-feat-dash-only">
+                    — No Kitchen Display
                   </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Riders app
+                  <li className="pc-feat pc-feat-dash-only">
+                    — No Riders app
                   </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Staff scheduling
-                  </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Inventory management
-                  </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Restaurant website
-                  </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Reservations
-                  </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Foodpanda integration
-                  </li>
-                </ul>
-                <div className="pc-divider" />
-                <div className="pc-section-label">Accounting</div>
-                <ul className="pc-features">
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Basic income &amp; expense tracking
-                  </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Daily cash summary
-                  </li>
-                  <li className="pc-feat no">
-                    <span className="dot">–</span>Sales ledger (auto from POS)
+                  <li className="pc-feat pc-feat-dash-only">
+                    — No Accounting
                   </li>
                 </ul>
               </div>
@@ -1058,11 +1030,11 @@ export default function Home() {
                 <Link href="/signup" className="pc-cta primary">
                   Start free trial
                 </Link>
-                <div className="pc-features-label">
-                  Everything in Starter, plus
-                </div>
-                <div className="pc-section-label">Kitchen &amp; delivery</div>
+                <div className="pc-section-heading">Operations</div>
                 <ul className="pc-features">
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Everything in Starter
+                  </li>
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>Kitchen Display System (KDS)
                   </li>
@@ -1070,231 +1042,116 @@ export default function Home() {
                     <span className="dot">✓</span>Riders app + live tracking
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Per-rider earnings &amp;
-                    history
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Foodpanda integration
-                  </li>
-                </ul>
-                <div className="pc-divider" />
-                <div className="pc-section-label">Staff &amp; operations</div>
-                <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Staff scheduling
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>
-                    Role-based access (cashier, waiter, manager)
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Waiter &amp; cashier apps
+                    <span className="dot">✓</span>Staff scheduling &amp; roles
                   </li>
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>Inventory management
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Table &amp; reservation
-                    management
+                    <span className="dot">✓</span>Table &amp; reservation management
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Foodpanda integration
                   </li>
                 </ul>
-                <div className="pc-divider" />
-                <div className="pc-section-label">Growth tools</div>
+                <div className="pc-section-heading">Growth tools</div>
                 <ul className="pc-features">
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>Restaurant website + CMS
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Custom domain support
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Advanced reports &amp;
-                    analytics
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Business day reports
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Export to CSV
+                    <span className="dot">✓</span>Advanced analytics &amp; reports
                   </li>
                 </ul>
-                <div className="pc-divider" />
-                <div className="pc-section-label">Accounting</div>
-                <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Full double-entry bookkeeping
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Chart of accounts (restaurant template)
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Auto-posting from POS sales
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Cash, bank &amp; journal vouchers
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Supplier &amp; expense management
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Profit &amp; Loss report
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Balance Sheet
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Trial Balance
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Day Book &amp; Ledger reports
-                  </li>
-                </ul>
+                <button
+                  type="button"
+                  className="pc-accounting-toggle"
+                  onClick={() => setGrowthAccountingOpen((o) => !o)}
+                  aria-expanded={growthAccountingOpen}
+                >
+                  <span className="pc-section-heading pc-section-heading--inline">
+                    Accounting
+                  </span>
+                  <span
+                    className={`pc-pricing-chevron${growthAccountingOpen ? " is-open" : ""}`}
+                    aria-hidden
+                  >
+                    ▾
+                  </span>
+                </button>
+                <div
+                  className={`pc-accounting-panel${growthAccountingOpen ? " is-open" : ""}`}
+                >
+                  <ul className="pc-features">
+                    <li className="pc-feat yes">
+                      <span className="dot">✓</span>Double-entry bookkeeping
+                    </li>
+                    <li className="pc-feat yes">
+                      <span className="dot">✓</span>Auto-posting from POS sales
+                    </li>
+                    <li className="pc-feat yes">
+                      <span className="dot">✓</span>P&amp;L, Balance Sheet, Trial Balance
+                    </li>
+                    <li className="pc-feat yes">
+                      <span className="dot">✓</span>Cash, bank &amp; journal vouchers
+                    </li>
+                    <li className="pc-feat yes">
+                      <span className="dot">✓</span>Supplier &amp; expense management
+                    </li>
+                  </ul>
+                </div>
               </div>
 
-              <div className="price-card">
-                <div className="pc-name">Pro</div>
-                <p className="pc-tagline">Chain or multi-location operator</p>
-                <div className={`pricing-billing-wrap billing-${billingMode}`}>
-                  <div
-                    className="pc-price-content"
-                    style={{
-                      opacity: isPriceFading ? 0 : 1,
-                      transition: "opacity 0.15s ease",
-                    }}
-                  >
-                    <div className="pc-price-tier pc-price-tier--daily">
-                      <div className="pc-price">{getPrice("pro", "daily")}</div>
-                      <div className="pc-unit">per day · per location</div>
-                      <div className="pc-equiv">
-                        {getMonthlyEquivalent("pro")}
-                      </div>
-                    </div>
-                    <div className="pc-price-tier pc-price-tier--monthly">
-                      <div className="pc-price">
-                        {getPrice("pro", "monthly")}
-                      </div>
-                      <div className="pc-unit">per month · per location</div>
-                      <div className="pc-equiv">
-                        {getMonthlySavingsCopy("pro")}
-                      </div>
-                    </div>
-                    <div className="pc-price-tier pc-price-tier--yearly">
-                      <div className="pc-price">
-                        {getPrice("pro", "yearly")}
-                      </div>
-                      <div className="pc-unit">per year · per location</div>
-                      <div className="pc-equiv">
-                        {getYearlySavingsCopy("pro")}
-                      </div>
+              <div className="price-card price-card--enterprise">
+                <div className="pc-name">Enterprise</div>
+                <p className="pc-tagline">Chains, groups &amp; large operators</p>
+                <div className="pricing-billing-wrap pricing-billing-wrap--enterprise">
+                  <div className="pc-price-content" style={{ opacity: 1 }}>
+                    <div className="pc-price-tier pc-price-tier--enterprise">
+                      <div className="pc-price">Custom</div>
+                      <div className="pc-unit pc-unit--enterprise">pricing</div>
+                      <span className="pc-enterprise-pill">Tailored to your scale</span>
                     </div>
                   </div>
                 </div>
-                <a href={WHATSAPP_DEMO_URL} className="pc-cta">
-                  Book a demo
+                <a
+                  href={ENTERPRISE_WHATSAPP_URL}
+                  className="pc-cta"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Contact us →
                 </a>
-                <div className="pc-features-label">
-                  Everything in Growth, plus
-                </div>
-                <div className="pc-section-label">Multi-location</div>
                 <ul className="pc-features">
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Multi-branch dashboard
+                    <span className="dot">✓</span>Everything in Growth
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Cross-location reporting
+                    <span className="dot">✓</span>Multi-location dashboard
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Centralised menu management
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Branch-level access control
-                  </li>
-                </ul>
-                <div className="pc-divider" />
-                <div className="pc-section-label">Support &amp; extras</div>
-                <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Priority WhatsApp support
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Dedicated onboarding session
+                    <span className="dot">✓</span>Consolidated accounting
                   </li>
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>Custom report builder
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>API access
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>AI agents (coming soon)
-                  </li>
-                </ul>
-                <div className="pc-divider" />
-                <div className="pc-section-label">Accounting</div>
-                <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Everything in Growth accounting
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Multi-branch consolidated accounts
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Custom financial reports
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Accountant access role
-                  </li>
-                </ul>
-              </div>
-
-              <div className="price-card">
-                <div className="pc-name">Enterprise</div>
-                <p className="pc-tagline">Large chains &amp; enterprise groups</p>
-                <div className="pc-price-content" style={{ opacity: 1, transition: "opacity 0.15s ease" }}>
-                  <div className="pc-price-tier" style={{ display: "block", marginBottom: 24 }}>
-                    <div className="pc-price pc-price--custom">Custom</div>
-                    <div className="pc-unit">pricing</div>
-                    <div className="pc-equiv">Tailored to your scale</div>
-                  </div>
-                </div>
-                <a href={WHATSAPP_DEMO_URL} className="pc-cta">
-                  Contact us →
-                </a>
-                <div className="pc-features-label">Everything in Pro, plus</div>
-                <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Unlimited locations
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Dedicated account manager
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Custom integrations &amp; API
+                    <span className="dot">✓</span>API access &amp; integrations
                   </li>
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>White-label option
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>SLA guarantee
+                    <span className="dot">✓</span>Dedicated account manager
                   </li>
                   <li className="pc-feat yes">
                     <span className="dot">✓</span>On-site training &amp; onboarding
                   </li>
                   <li className="pc-feat yes">
-                    <span className="dot">✓</span>Custom AI agents
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Annual contract pricing
+                    <span className="dot">✓</span>SLA guarantee
                   </li>
                 </ul>
               </div>
-            </div>
-
-            <div className="accounting-callout">
-              <span className="accounting-callout-icon">⚡</span>
-              <p className="accounting-callout-text">
-                Accounting module included in <strong>Growth and Pro</strong> plans — auto-posts your POS sales, manages expenses, and generates P&amp;L and Balance Sheet reports automatically.
-              </p>
             </div>
 
             <h3 className="pricing-detail-title">Save more, worry less</h3>

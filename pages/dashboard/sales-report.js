@@ -9,6 +9,7 @@ import {
   getDailyCurrency,
   getRestaurantSettings,
   SubscriptionInactiveError,
+  getCurrencySymbol,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import {
@@ -392,7 +393,7 @@ function buildPeriodLabel(preset, customFrom, customTo) {
 }
 
 function fmtRs(v) {
-  return `Rs ${Math.round(Number(v) || 0).toLocaleString()}`;
+  return `${getCurrencySymbol()} ${Math.round(Number(v) || 0).toLocaleString()}`;
 }
 function fmtDate(d) {
   return new Date(d).toLocaleString("en-PK", {
@@ -3613,7 +3614,8 @@ export default function HistoryPage() {
           {/* ── Toolbar: Tabs (left) + Date & Export (right) ── */}
           <div className="flex items-center justify-between gap-3">
             {/* Tabs */}
-            <div className="flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 p-1 gap-0.5">
+            <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-950/90 shadow-sm backdrop-blur-sm">
+              <nav className="flex flex-wrap sm:flex-nowrap items-stretch gap-1 p-1 sm:p-1.5 overflow-x-auto" aria-label="Report views">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -3630,17 +3632,17 @@ export default function HistoryPage() {
                       if (tab.id === "sessions" && sessionsList.length === 0)
                         loadSessions(0);
                     }}
-                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                    className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 sm:px-3 py-2 text-xs font-semibold transition-all min-h-[2.5rem] sm:min-h-0 ${
                       isActive
-                        ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
-                        : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
+                        ? "bg-orange-500 text-white shadow-md shadow-orange-500/25 ring-1 ring-orange-400/30"
+                        : "text-gray-600 dark:text-neutral-400 bg-gray-50 dark:bg-neutral-900 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white border border-transparent hover:border-gray-200 dark:hover:border-neutral-700"
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5" />
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? "opacity-95" : "opacity-70"}`} aria-hidden />
                     {tab.label}
                     {badge != null && (
                       <span
-                        className={`ml-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isActive ? "bg-white/20 text-white" : "bg-gray-200 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"}`}
+                        className={`ml-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isActive ? "bg-white/25 text-white" : "bg-gray-200 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"}`}
                       >
                         {badge}
                       </span>
@@ -3648,6 +3650,7 @@ export default function HistoryPage() {
                   </button>
                 );
               })}
+              </nav>
             </div>
 
             {/* Right side */}

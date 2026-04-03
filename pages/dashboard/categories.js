@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
-import PageLoader from "../../components/ui/PageLoader";
 import ViewToggle from "../../components/ui/ViewToggle";
 import ActionDropdown from "../../components/ui/ActionDropdown";
 import {
@@ -14,7 +13,22 @@ import {
   getSourceBranchMenu,
   copyMenuFromBranch,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, FolderOpen, Loader2, Copy, X } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  FolderOpen,
+  Loader2,
+  Copy,
+  X,
+  Download,
+  Upload,
+  Search,
+  ChevronDown,
+  Building2,
+  FileText,
+  Printer,
+} from "lucide-react";
 import { useBranch } from "../../contexts/BranchContext";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -23,7 +37,123 @@ import { useDropdown } from "../../hooks/useDropdown";
 import { handleAsyncAction } from "../../utils/toastActions";
 import toast from "react-hot-toast";
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function categoriesExportPDFHTML(categories, items, title) {
+  const rows = categories
+    .map((c) => {
+      const count = items.filter((i) => i.categoryId === c.id).length;
+      const desc = (c.description || "—").replace(/\s+/g, " ");
+      return `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(desc)}</td><td style="text-align:right">${count}</td></tr>`;
+    })
+    .join("");
+  const safeTitle = escapeHtml(title);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${safeTitle}</title>
+<style>
+body{font-family:system-ui,sans-serif;font-size:12px;padding:24px;color:#111}
+h1{font-size:18px;margin:0 0 4px}
+p.sub{margin:0 0 16px;color:#555;font-size:13px}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #ddd;padding:8px 10px;text-align:left}
+th{background:#f5f5f5;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+</style></head><body>
+<h1>${safeTitle}</h1>
+<p class="sub">${categories.length} categor${categories.length === 1 ? "y" : "ies"} · ${escapeHtml(new Date().toLocaleString())}</p>
+<table><thead><tr><th>Name</th><th>Description</th><th style="text-align:right">Items</th></tr></thead><tbody>${rows}</tbody></table>
+</body></html>`;
+}
+
+function openPrintableCategoriesHTML(html) {
+  const w = window.open("", "_blank");
+  if (!w) {
+    toast.error("Allow pop-ups to export PDF or print");
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => {
+    w.print();
+  }, 250);
+}
+
 const isAdminRole = (role) => role === "restaurant_admin" || role === "admin";
+
+const SORT_OPTIONS = [
+  { value: "name_asc", label: "Name A–Z" },
+  { value: "name_desc", label: "Name Z–A" },
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "items_desc", label: "Most items" },
+];
+
+const ITEM_FILTER_OPTIONS = [
+  { value: "all", label: "All categories" },
+  { value: "with_items", label: "With menu items" },
+  { value: "empty", label: "Empty (no items)" },
+];
+
+const selectBaseCls =
+  "h-9 px-2.5 bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 rounded-xl text-xs text-gray-800 dark:text-neutral-200 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-all";
+const filterSelectCls = `${selectBaseCls} min-w-[7.5rem]`;
+const sortSelectCls = `${selectBaseCls} w-[5.75rem] min-w-0 shrink-0`;
+
+function parseCSVLine(line) {
+  const out = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQ = !inQ;
+      continue;
+    }
+    if (!inQ && c === ",") {
+      out.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  out.push(cur.trim());
+  return out.map((s) => s.replace(/^"|"$/g, "").replace(/""/g, '"'));
+}
+
+function escapeCSVField(s) {
+  const t = String(s ?? "");
+  if (/[",\n\r]/.test(t)) return `"${t.replace(/"/g, '""')}"`;
+  return t;
+}
+
+function exportCategoriesToCSV(categories, items) {
+  const header = ["name", "description", "item_count"];
+  const lines = [header.join(",")];
+  for (const c of categories) {
+    const count = items.filter((i) => i.categoryId === c.id).length;
+    lines.push(
+      [
+        escapeCSVField(c.name),
+        escapeCSVField(c.description || ""),
+        String(count),
+      ].join(","),
+    );
+  }
+  const blob = new Blob([lines.join("\n")], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `categories-export-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function CategoriesPage() {
   const { branches, currentBranch } = useBranch() || {};
@@ -39,6 +169,14 @@ export default function CategoriesPage() {
   const [form, setForm] = useState({ id: null, name: "", description: "" });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("name_asc");
+  const [itemFilter, setItemFilter] = useState("all");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const fileInputRef = useRef(null);
+  const importMenuRef = useRef(null);
+  const exportMenuRef = useRef(null);
   const [modalError, setModalError] = useState("");
   const { viewMode, setViewMode } = useViewMode("grid");
   const [isLoading, setIsLoading] = useState(false);
@@ -56,6 +194,28 @@ export default function CategoriesPage() {
   const [copySourceLoading, setCopySourceLoading] = useState(false);
   const [copySelectedCategoryIds, setCopySelectedCategoryIds] = useState([]);
   const [copySubmitting, setCopySubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    function handleDown(e) {
+      if (importMenuRef.current && !importMenuRef.current.contains(e.target)) {
+        setImportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [importMenuOpen]);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    function handleDown(e) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setExportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [exportMenuOpen]);
 
   useEffect(() => {
     if (!copySourceBranchId || !copyModalOpen || copySourceBranchId === "all") {
@@ -225,56 +385,401 @@ export default function CategoriesPage() {
     setDeletingId(null);
   }
 
-  const filtered = categories.filter((cat) => {
+  const displayCategories = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return true;
-    return (
-      cat.name.toLowerCase().includes(term) ||
-      (cat.description || "").toLowerCase().includes(term)
+    let list = categories.filter((cat) => {
+      if (!term) return true;
+      return (
+        cat.name.toLowerCase().includes(term) ||
+        (cat.description || "").toLowerCase().includes(term)
+      );
+    });
+    list = list.filter((cat) => {
+      const n = items.filter((i) => i.categoryId === cat.id).length;
+      if (itemFilter === "with_items") return n > 0;
+      if (itemFilter === "empty") return n === 0;
+      return true;
+    });
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      const countA = items.filter((i) => i.categoryId === a.id).length;
+      const countB = items.filter((i) => i.categoryId === b.id).length;
+      switch (sortBy) {
+        case "name_desc":
+          return b.name.localeCompare(a.name, undefined, {
+            sensitivity: "base",
+          });
+        case "newest": {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return tb - ta;
+        }
+        case "oldest": {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return ta - tb;
+        }
+        case "items_desc":
+          return countB - countA;
+        case "name_asc":
+        default:
+          return a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+          });
+      }
+    });
+    return sorted;
+  }, [categories, items, search, itemFilter, sortBy]);
+
+  const handleExportCSV = useCallback(() => {
+    exportCategoriesToCSV(displayCategories, items);
+    toast.success("Categories exported");
+  }, [displayCategories, items]);
+
+  const handleExportPDF = useCallback(() => {
+    const title = currentBranch?.name
+      ? `Categories — ${currentBranch.name}`
+      : "Categories";
+    const html = categoriesExportPDFHTML(displayCategories, items, title);
+    openPrintableCategoriesHTML(html);
+  }, [displayCategories, items, currentBranch?.name]);
+
+  const handlePrintPage = useCallback(() => {
+    window.print();
+  }, []);
+
+  const canImportFromBranch =
+    !!currentBranch?.id &&
+    (sourceBranches.length > 0 || isAdmin);
+
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!currentBranch?.id) {
+      toast.error("Select a branch in the header before importing.");
+      return;
+    }
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      toast.error("Could not read file");
+      return;
+    }
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) {
+      toast.error("CSV is empty");
+      return;
+    }
+    let start = 0;
+    const firstCells = parseCSVLine(lines[0]).map((c) => c.toLowerCase());
+    if (firstCells[0] === "name" || firstCells.includes("name")) {
+      start = 1;
+    }
+    const existingLower = new Set(
+      categories.map((c) => c.name.trim().toLowerCase()),
     );
-  });
+    const rows = [];
+    for (let i = start; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      const name = (cols[0] || "").trim();
+      if (!name) continue;
+      const description = (cols[1] || "").trim();
+      rows.push({ name, description });
+    }
+    if (!rows.length) {
+      toast.error("No category rows found in CSV");
+      return;
+    }
+    setImportLoading(true);
+    let created = 0;
+    let skipped = 0;
+    const newCats = [];
+    const seen = new Set(existingLower);
+    for (const row of rows) {
+      const key = row.name.toLowerCase();
+      if (seen.has(key)) {
+        skipped++;
+        continue;
+      }
+      seen.add(key);
+      try {
+        const cat = await createCategory({
+          name: row.name,
+          description: row.description,
+          branchId: currentBranch.id,
+        });
+        newCats.push(cat);
+        created++;
+      } catch {
+        skipped++;
+      }
+    }
+    setImportLoading(false);
+    if (newCats.length) {
+      setMenuData((prev) => ({
+        ...prev,
+        categories: [...prev.categories, ...newCats],
+      }));
+    }
+    if (created > 0) {
+      toast.success(
+        `Imported ${created} categor${created === 1 ? "y" : "ies"}${
+          skipped ? ` · ${skipped} skipped` : ""
+        }`,
+      );
+    } else if (skipped > 0) {
+      toast.error(
+        `No new categories added (${skipped} duplicate or failed).`,
+      );
+    } else {
+      toast.error("Nothing to import");
+    }
+  }
 
   return (
     <AdminLayout title="Categories" suspended={suspended}>
+      <style>{`@media print { .categories-no-print { display: none !important; } }`}</style>
       {error && !pageLoading && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+        <div className="categories-no-print mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
 
-      {/* Search, View Toggle and Add Button – always visible */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search categories by name or description..."
-          className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={handleImportFile}
+      />
+
+      {/* Toolbar: search grows to fill space between edges and controls */}
+      <div className="categories-no-print mb-2 flex w-full min-w-0 flex-wrap items-center gap-2">
+        <label className="sr-only" htmlFor="categories-search">
+          Search categories
+        </label>
+        <div className="relative min-w-0 w-full flex-1 basis-full sm:basis-0 sm:min-w-[12rem]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            id="categories-search"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="h-9 w-full rounded-xl border-2 border-gray-200 bg-white pl-8 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+          />
+        </div>
+        <label className="sr-only" htmlFor="categories-sort">
+          Sort by
+        </label>
+        <select
+          id="categories-sort"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className={sortSelectCls}
+          title="Sort by"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <label className="sr-only" htmlFor="categories-items-filter">
+          Filter by items
+        </label>
+        <select
+          id="categories-items-filter"
+          value={itemFilter}
+          onChange={(e) => setItemFilter(e.target.value)}
+          className={`${filterSelectCls} min-w-[10.5rem]`}
+          title="Items"
+        >
+          {ITEM_FILTER_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
+        <span
+          className="hidden h-6 w-px bg-gray-200 sm:block dark:bg-neutral-700"
+          aria-hidden
         />
+
         <ViewToggle viewMode={viewMode} onChange={setViewMode} />
-        {currentBranch?.id && (
+
+        <div className="relative" ref={exportMenuRef}>
           <button
             type="button"
-            onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
-            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl border-2 border-primary text-primary text-sm font-semibold hover:bg-primary/10 transition-all whitespace-nowrap flex-shrink-0"
+            onClick={() => setExportMenuOpen((o) => !o)}
+            disabled={!displayCategories.length}
+            title="Export categories"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
           >
-            <Copy className="w-4 h-4" />
-            Copy Category
+            <Download className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">Export</span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${exportMenuOpen ? "rotate-180" : ""}`}
+            />
           </button>
-        )}
+          {exportMenuOpen && (
+            <div
+              className="absolute right-0 top-full z-[100] mt-1.5 w-56 overflow-hidden rounded-xl border-2 border-gray-200 bg-white py-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  handleExportCSV();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <Download className="h-4 w-4 shrink-0 text-gray-400" />
+                Download CSV
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  handleExportPDF();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                Export PDF…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  handlePrintPage();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <Printer className="h-4 w-4 shrink-0 text-gray-400" />
+                Print
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="relative" ref={importMenuRef}>
+          <button
+            type="button"
+            onClick={() => setImportMenuOpen((o) => !o)}
+            disabled={importLoading || !currentBranch?.id}
+            title={
+              !currentBranch?.id
+                ? "Select a branch in the header first"
+                : "Import categories"
+            }
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          >
+            {importLoading ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4 shrink-0" />
+            )}
+            <span className="hidden sm:inline">Import</span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${importMenuOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {importMenuOpen && (
+            <div
+              className="absolute right-0 top-full z-[100] mt-1.5 w-56 overflow-hidden rounded-xl border-2 border-gray-200 bg-white py-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!canImportFromBranch}
+                title={
+                  !currentBranch?.id
+                    ? "Select a branch first"
+                    : !canImportFromBranch
+                      ? "No other branches available"
+                      : undefined
+                }
+                onClick={() => {
+                  setImportMenuOpen(false);
+                  setCopySourceBranchId("");
+                  setCopyModalOpen(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <Building2 className="h-4 w-4 shrink-0 text-gray-400" />
+                Import from a branch
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!currentBranch?.id}
+                onClick={() => {
+                  setImportMenuOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <Upload className="h-4 w-4 shrink-0 text-gray-400" />
+                Upload from device
+              </button>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={startCreate}
-          className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
+          className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gradient-to-r from-primary to-secondary px-4 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/30"
         >
-          <Plus className="w-4 h-4" />
-          Add Category
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Add category</span>
+          <span className="sm:hidden">Add</span>
         </button>
       </div>
+      <p className="categories-no-print mb-6 text-[11px] text-gray-500 dark:text-neutral-500">
+        <span className="font-medium text-gray-600 dark:text-neutral-400">
+          CSV:
+        </span>{" "}
+        columns{" "}
+        <code className="rounded bg-gray-100 px-1 text-[10px] dark:bg-neutral-800">
+          name
+        </code>
+        ,{" "}
+        <code className="rounded bg-gray-100 px-1 text-[10px] dark:bg-neutral-800">
+          description
+        </code>{" "}
+        (optional header). Export adds{" "}
+        <code className="rounded bg-gray-100 px-1 text-[10px] dark:bg-neutral-800">
+          item_count
+        </code>{" "}
+        (ignored on import).         Use{" "}
+        <span className="font-medium text-gray-600 dark:text-neutral-400">
+          Import → Upload from device
+        </span>{" "}
+        for CSV, or{" "}
+        <span className="font-medium text-gray-600 dark:text-neutral-400">
+          Import from a branch
+        </span>{" "}
+        to copy categories from another location.{" "}
+        <span className="font-medium text-gray-600 dark:text-neutral-400">
+          Export
+        </span>{" "}
+        supports CSV, PDF (print dialog → Save as PDF), and Print.
+      </p>
 
       {/* Loading state – inside content area */}
       {pageLoading ? (
-        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+        <div className="categories-no-print bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
               <FolderOpen className="w-10 h-10 text-primary animate-pulse" />
@@ -289,10 +794,41 @@ export default function CategoriesPage() {
         </div>
       ) : (
         <>
-          {/* Categories Grid View */}
-          {viewMode === "grid" && (
+          {displayCategories.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 rounded-2xl border-2 border-dashed border-gray-200 dark:border-neutral-700 bg-white/50 dark:bg-neutral-950/50">
+              <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+                <FolderOpen className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
+              </div>
+              <p className="text-sm font-medium text-gray-600 dark:text-neutral-400 mb-1">
+                {categories.length === 0
+                  ? "No categories yet"
+                  : "No categories match your filters"}
+              </p>
+              {categories.length === 0 ? (
+                <>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mb-4 text-center max-w-sm px-4">
+                    Create your first category or import a CSV (name,
+                    description columns).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={startCreate}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create category
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 dark:text-neutral-500 text-center max-w-sm px-4">
+                  Clear search, set Items to &quot;All categories&quot;, or widen
+                  your sort to see more.
+                </p>
+              )}
+            </div>
+          ) : viewMode === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filtered.map((cat) => {
+              {displayCategories.map((cat) => {
                 const itemCount = items.filter(
                   (i) => i.categoryId === cat.id,
                 ).length;
@@ -355,10 +891,7 @@ export default function CategoriesPage() {
                 );
               })}
             </div>
-          )}
-
-          {/* Categories Table View */}
-          {viewMode === "table" && (
+          ) : (
             <DataTable
               variant="card"
               columns={[
@@ -436,51 +969,19 @@ export default function CategoriesPage() {
                   },
                 },
               ]}
-              rows={filtered.map((cat) => ({
+              rows={displayCategories.map((cat) => ({
                 ...cat,
                 itemCount: items.filter((i) => i.categoryId === cat.id).length,
               }))}
-              emptyMessage={
-                categories.length === 0
-                  ? "No categories yet. Create your first category to organize menu items."
-                  : "No categories match your search"
-              }
+              emptyMessage="No rows"
             />
-          )}
-
-          {/* Empty State */}
-          {filtered.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
-                <FolderOpen className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
-              </div>
-              <p className="text-sm font-medium text-gray-600 dark:text-neutral-400 mb-1">
-                {categories.length === 0
-                  ? "No categories yet"
-                  : "No categories match your search"}
-              </p>
-              {categories.length === 0 && (
-                <>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500 mb-4">
-                    Create your first category to organize menu items
-                  </p>
-                  <button
-                    onClick={startCreate}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Create Category
-                  </button>
-                </>
-              )}
-            </div>
           )}
         </>
       )}
 
       {/* Category Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+        <div className="categories-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-5 shadow-xl text-xs">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
               {form.id ? "Edit category" : "New category"}
@@ -559,7 +1060,7 @@ export default function CategoriesPage() {
 
       {/* Copy categories from branch modal */}
       {copyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="categories-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">

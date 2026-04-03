@@ -41,6 +41,15 @@ import {
   Landmark,
   CalendarDays,
   LayoutGrid,
+  ArrowUpCircle,
+  ArrowDownCircle,
+  Building2,
+  List,
+  BarChart2,
+  BookMarked,
+  Wallet,
+  Scale,
+  Network,
 } from "lucide-react";
 import {
   getToken,
@@ -97,7 +106,7 @@ const tenantNav = [
   },
   {
     path: "/menu-items",
-    label: "Items",
+    label: "Menu Items",
     icon: ShoppingBag,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
@@ -139,17 +148,10 @@ const tenantNav = [
     icon: History,
     roles: ["restaurant_admin", "admin", "manager"],
   },
-  {
-    path: "/sales-report",
-    label: "Sales & Reports",
-    icon: BarChart3,
-    roles: ["restaurant_admin", "admin", "manager"],
-  },
-
-  { type: "section", label: "ACCOUNTING" },
+  { type: "section", label: "ACCOUNTS" },
   {
     path: "/accounting",
-    label: "Overview",
+    label: "Accounts Board",
     icon: LayoutGrid,
     roles: ["restaurant_admin", "admin", "manager"],
     exact: true,
@@ -160,36 +162,86 @@ const tenantNav = [
     path: "/accounting/vouchers",
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
     children: [
-      { path: "/accounting/vouchers/cash-payment", label: "Cash Payment" },
-      { path: "/accounting/vouchers/cash-receipt", label: "Cash Receipt" },
-      { path: "/accounting/vouchers/bank-payment", label: "Bank Payment" },
-      { path: "/accounting/vouchers/bank-receipt", label: "Bank Receipt" },
-      { path: "/accounting/vouchers/journal",      label: "Journal Voucher" },
-      { path: "/accounting/vouchers",              label: "All Vouchers" },
+      {
+        path: "/accounting/vouchers/cash-payment",
+        label: "Cash Payment",
+        icon: ArrowUpCircle,
+      },
+      {
+        path: "/accounting/vouchers/cash-receipt",
+        label: "Cash Receipt",
+        icon: ArrowDownCircle,
+      },
+      {
+        path: "/accounting/vouchers/bank-payment",
+        label: "Bank Payment",
+        icon: Building2,
+      },
+      {
+        path: "/accounting/vouchers/bank-receipt",
+        label: "Bank Receipt",
+        icon: Landmark,
+      },
+      {
+        path: "/accounting/vouchers/journal",
+        label: "Journal Voucher",
+        icon: BookOpen,
+      },
+      { path: "/accounting/vouchers", label: "All Vouchers", icon: List },
     ],
   },
   {
     label: "Reports",
-    icon: FileText,
+    icon: BarChart2,
     path: "/accounting/reports/day-book",
     roles: ["restaurant_admin", "admin", "manager"],
     children: [
-      { path: "/accounting/reports/day-book",       label: "Day Book" },
-      { path: "/accounting/reports/ledger",         label: "Ledger" },
-      { path: "/accounting/reports/profit-loss",    label: "P&L Statement" },
-      { path: "/accounting/reports/cash-statement", label: "Cash Statement" },
-      { path: "/accounting/reports/payables",       label: "Payables" },
-      { path: "/accounting/reports/balance-sheet",  label: "Balance Sheet" },
+      {
+        path: "/sales-report",
+        label: "Sales",
+        icon: BarChart3,
+        roles: ["restaurant_admin", "admin", "manager"],
+      },
+      {
+        path: "/accounting/reports/day-book",
+        label: "Day Book",
+        icon: CalendarDays,
+      },
+      { path: "/accounting/reports/ledger", label: "Ledger", icon: BookMarked },
+      {
+        path: "/accounting/reports/profit-loss",
+        label: "P&L Statement",
+        icon: TrendingDown,
+      },
+      {
+        path: "/accounting/reports/cash-statement",
+        label: "Cash Statement",
+        icon: Wallet,
+      },
+      {
+        path: "/accounting/reports/payables",
+        label: "Payables",
+        icon: FileText,
+      },
+      {
+        path: "/accounting/reports/balance-sheet",
+        label: "Balance Sheet",
+        icon: Scale,
+      },
     ],
   },
   {
     label: "Setup",
-    icon: BookOpen,
+    icon: Settings2,
     path: "/accounting/chart-of-accounts",
     roles: ["restaurant_admin", "admin", "manager"],
     children: [
-      { path: "/accounting/chart-of-accounts", label: "Chart of Accounts" },
-      { path: "/accounting/parties",           label: "Parties" },
+      {
+        path: "/accounting/chart-of-accounts",
+        label: "Chart of Accounts",
+        icon: Network,
+      },
+      { path: "/accounting/parties", label: "Parties", icon: Users },
     ],
   },
 
@@ -758,9 +810,11 @@ export default function AdminLayout({
                           router.asPath.startsWith(cHref + "/")
                         );
                       })
-                    : router.asPath === href ||
-                      router.asPath.startsWith(href + "?") ||
-                      router.asPath.startsWith(href + "/");
+                    : item.exact
+                      ? router.asPath === href
+                      : router.asPath === href ||
+                        router.asPath.startsWith(href + "?") ||
+                        router.asPath.startsWith(href + "/");
 
                   const effectivelyCollapsed = collapsed && !mobileSidebarOpen;
                   if (suspended && role !== "super_admin") {
@@ -862,14 +916,14 @@ export default function AdminLayout({
                               });
                             }
                           }}
-                          className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                          className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
                             isActive
                               ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/20"
                               : "text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 hover:text-gray-900 dark:hover:text-white hover:shadow-sm"
                           }`}
                         >
                           <Icon
-                            className={`w-5 h-5 shrink-0 transition-transform ${isActive ? "" : "group-hover:scale-110"}`}
+                            className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "" : "group-hover:scale-110"}`}
                           />
                           {(!collapsed || mobileSidebarOpen) && (
                             <>

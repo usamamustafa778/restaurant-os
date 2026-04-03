@@ -44,6 +44,8 @@ import {
   Palette,
   Wallet,
   Truck,
+  Search,
+  Download,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -112,6 +114,95 @@ const inp =
   "w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all";
 
 const labelCls = "text-xs font-semibold text-gray-700 dark:text-neutral-300";
+
+const MAX_DELIVERY_ZONES = 40;
+
+function feeCurrencyLabel(currencyCode) {
+  const c = String(currencyCode || "").toUpperCase();
+  if (c === "PKR") return "Rs";
+  if (c === "USD") return "$";
+  if (c === "EUR") return "€";
+  if (c === "INR") return "₹";
+  if (c === "GBP") return "£";
+  if (c) return c;
+  return "Rs";
+}
+
+/** Split one CSV line respecting quoted fields. */
+function parseCsvRow(line) {
+  const row = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && c === ",") {
+      row.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  row.push(cur.trim());
+  return row;
+}
+
+function parseDeliveryZonesCsv(text) {
+  const lines = String(text)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [];
+  let start = 0;
+  const headerCells = parseCsvRow(lines[0]);
+  if (
+    headerCells.length >= 2 &&
+    /^name$/i.test(headerCells[0].replace(/\s/g, "")) &&
+    /^fee$/i.test(headerCells[1].replace(/\s/g, ""))
+  ) {
+    start = 1;
+  }
+  const out = [];
+  for (let i = start; i < lines.length; i++) {
+    const cells = parseCsvRow(lines[i]);
+    if (cells.length < 2) continue;
+    const feeRaw = cells[cells.length - 1];
+    const fee = Number.parseFloat(feeRaw);
+    const name = cells
+      .slice(0, -1)
+      .join(",")
+      .trim()
+      .slice(0, 120);
+    if (!name) continue;
+    out.push({
+      name,
+      fee: Math.max(0, Number.isFinite(fee) ? fee : 0),
+    });
+  }
+  return out;
+}
+
+function escapeCsvCell(v) {
+  const s = String(v ?? "");
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function buildDeliveryZonesCsv(rows) {
+  const header = ["name", "fee"].map(escapeCsvCell).join(",");
+  const body = rows.map((z) =>
+    [escapeCsvCell(z.name || ""), escapeCsvCell(String(z.fee ?? 0))].join(","),
+  );
+  return [header, ...body].join("\r\n");
+}
 const CURRENCY_OPTIONS = [
   { value: "", label: "Not configured (manual denominations)" },
   { value: "PKR", label: "PKR (Rs)" },
@@ -173,6 +264,10 @@ export default function BusinessSettingsPage() {
   const [deliveryZonesBranch, setDeliveryZonesBranch] = useState(null);
   const [deliveryZonesEditList, setDeliveryZonesEditList] = useState([]);
   const [deliveryZonesSaving, setDeliveryZonesSaving] = useState(false);
+  const [deliveryZonesSearch, setDeliveryZonesSearch] = useState("");
+  const deliveryZonesListRef = useRef(null);
+  const deliveryZonesListEndRef = useRef(null);
+  const deliveryZonesCsvInputRef = useRef(null);
 
   // Branding
   const [websiteSettings, setWebsiteSettings] = useState(null);
@@ -485,6 +580,7 @@ export default function BusinessSettingsPage() {
 
   // ── Per-branch delivery zone modal helpers ──
   function openDeliveryZonesModal(branch) {
+    setDeliveryZonesSearch("");
     setDeliveryZonesBranch(branch);
     setDeliveryZonesEditList(
       Array.isArray(branch.deliveryLocations)
@@ -494,6 +590,7 @@ export default function BusinessSettingsPage() {
   }
 
   function closeDeliveryZonesModal() {
+    setDeliveryZonesSearch("");
     setDeliveryZonesBranch(null);
     setDeliveryZonesEditList([]);
   }
@@ -507,7 +604,96 @@ export default function BusinessSettingsPage() {
   }
 
   function addDeliveryZone() {
-    setDeliveryZonesEditList((prev) => [...prev, { name: "", fee: 0 }]);
+    setDeliveryZonesEditList((prev) => {
+      if (prev.length >= MAX_DELIVERY_ZONES) {
+        toast.error(`Maximum ${MAX_DELIVERY_ZONES} delivery zones per branch.`);
+        return prev;
+      }
+      return [...prev, { name: "", fee: 0 }];
+    });
+    setTimeout(() => {
+      deliveryZonesListEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 0);
+  }
+
+  const deliveryZonesFilteredRows = useMemo(() => {
+    const q = deliveryZonesSearch.trim().toLowerCase();
+    if (!q) {
+      return deliveryZonesEditList.map((z, idx) => ({ z, idx }));
+    }
+    return deliveryZonesEditList
+      .map((z, idx) => ({ z, idx }))
+      .filter(
+        ({ z }) =>
+          String(z.name || "")
+            .toLowerCase()
+            .includes(q) || String(z.fee ?? "").includes(q),
+      );
+  }, [deliveryZonesEditList, deliveryZonesSearch]);
+
+  function exportDeliveryZonesCsv() {
+    const csv = buildDeliveryZonesCsv(deliveryZonesEditList);
+    const blob = new Blob(["\ufeff", csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safe = String(deliveryZonesBranch?.name || "branch")
+      .replace(/[^\w\-]+/g, "-")
+      .slice(0, 40);
+    a.download = `delivery-zones-${safe}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("CSV downloaded");
+  }
+
+  function handleDeliveryZonesCsvImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseDeliveryZonesCsv(String(reader.result || ""));
+        if (parsed.length === 0) {
+          toast.error("No valid rows found. Use columns: name, fee");
+          return;
+        }
+        setDeliveryZonesEditList((prev) => {
+          const next = [...prev];
+          for (const row of parsed) {
+            if (next.length >= MAX_DELIVERY_ZONES) break;
+            next.push({ name: row.name, fee: row.fee });
+          }
+          const added = next.length - prev.length;
+          if (added > 0) {
+            setTimeout(() => {
+              toast.success(`Imported ${added} zone(s)`);
+              deliveryZonesListEndRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "end",
+              });
+            }, 0);
+          } else if (parsed.length > 0) {
+            setTimeout(
+              () =>
+                toast.error(
+                  `Cannot import more zones (max ${MAX_DELIVERY_ZONES} per branch).`,
+                ),
+              0,
+            );
+          }
+          return next;
+        });
+      } catch {
+        toast.error("Could not read CSV file");
+      }
+      if (deliveryZonesCsvInputRef.current) deliveryZonesCsvInputRef.current.value = "";
+    };
+    reader.readAsText(file, "UTF-8");
   }
 
   function removeDeliveryZone(index) {
@@ -1014,108 +1200,227 @@ export default function BusinessSettingsPage() {
 
                   {/* Delivery zones modal */}
                   {deliveryZonesBranch && (
-                    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-                      <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-6 space-y-4 mx-4 max-h-[90vh] flex flex-col">
-                        <div className="flex items-center justify-between flex-shrink-0">
-                          <div className="flex items-center gap-2">
-                            <Truck className="w-4 h-4 text-primary" />
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                              Delivery Zones — {deliveryZonesBranch.name}
-                            </h3>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={closeDeliveryZonesModal}
-                            className="h-7 w-7 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900"
-                          >
-                            <X className="w-4 h-4 text-gray-500" />
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-neutral-400 flex-shrink-0">
-                          Customers and staff select from these named areas. Each zone has a flat delivery fee.
-                        </p>
-
-                        <form onSubmit={handleDeliveryZonesSave} className="flex flex-col gap-4 overflow-hidden flex-1 min-h-0">
-                          <div className="space-y-3 overflow-y-auto flex-1 pr-1">
-                            {deliveryZonesEditList.length === 0 ? (
-                              <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 p-4 text-center">
-                                <p className="text-sm text-gray-600 dark:text-neutral-300 font-medium">
-                                  No delivery zones configured.
-                                </p>
-                                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
-                                  Add areas like &quot;Bahria Phase 4&quot;, &quot;DHA Phase 2&quot;, etc. with flat fees.
+                    <div
+                      className="fixed inset-0 z-40 flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-[2px]"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="delivery-zones-modal-title"
+                    >
+                      <div className="w-full max-w-2xl max-h-[min(92vh,720px)] rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl shadow-black/20 flex flex-col overflow-hidden ring-1 ring-black/5 dark:ring-white/10">
+                        <div className="flex-shrink-0 px-5 sm:px-6 pt-5 pb-3 border-b border-gray-100 dark:border-neutral-800/80 bg-gradient-to-b from-gray-50/80 to-transparent dark:from-neutral-900/50">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
+                              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/15 to-secondary/10 flex items-center justify-center flex-shrink-0 border border-primary/20">
+                                <Truck className="w-5 h-5 text-primary" />
+                              </div>
+                              <div className="min-w-0">
+                                <h3
+                                  id="delivery-zones-modal-title"
+                                  className="text-base font-bold text-gray-900 dark:text-white tracking-tight"
+                                >
+                                  Delivery zones
+                                </h3>
+                                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5 truncate">
+                                  Branch:{" "}
+                                  <span className="font-semibold text-gray-700 dark:text-neutral-300">
+                                    {deliveryZonesBranch.name}
+                                  </span>
                                 </p>
                               </div>
-                            ) : (
-                              deliveryZonesEditList.map((z, idx) => (
-                                <div
-                                  key={z._id || z.id || idx}
-                                  className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)_auto] gap-3 items-end"
+                            </div>
+                            <button
+                              type="button"
+                              onClick={closeDeliveryZonesModal}
+                              className="h-9 w-9 rounded-xl flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-900 border border-transparent hover:border-gray-200 dark:hover:border-neutral-700 flex-shrink-0"
+                              aria-label="Close"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 mt-3 leading-relaxed">
+                            Named areas with a flat delivery fee. Used at checkout and on the rider app. Max{" "}
+                            {MAX_DELIVERY_ZONES} zones.
+                          </p>
+                        </div>
+
+                        <form
+                          onSubmit={handleDeliveryZonesSave}
+                          className="flex flex-col flex-1 min-h-0"
+                        >
+                          <div className="flex-shrink-0 px-5 sm:px-6 py-3 space-y-3 border-b border-gray-100 dark:border-neutral-800/80 bg-white/80 dark:bg-neutral-950/80">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                              <input
+                                type="search"
+                                value={deliveryZonesSearch}
+                                onChange={(e) => setDeliveryZonesSearch(e.target.value)}
+                                placeholder="Search by area name or fee…"
+                                className={`${inp} pl-10 h-9 text-sm`}
+                                autoComplete="off"
+                              />
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                ref={deliveryZonesCsvInputRef}
+                                type="file"
+                                accept=".csv,text/csv"
+                                className="hidden"
+                                onChange={handleDeliveryZonesCsvImport}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => deliveryZonesCsvInputRef.current?.click()}
+                                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                Import CSV
+                              </button>
+                              <button
+                                type="button"
+                                onClick={exportDeliveryZonesCsv}
+                                disabled={deliveryZonesEditList.length === 0}
+                                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Export CSV
+                              </button>
+                              <span className="text-[10px] text-gray-400 dark:text-neutral-500 ml-auto tabular-nums">
+                                {deliveryZonesEditList.length} / {MAX_DELIVERY_ZONES} zones
+                                {deliveryZonesSearch.trim()
+                                  ? ` · ${deliveryZonesFilteredRows.length} shown`
+                                  : ""}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div
+                            ref={deliveryZonesListRef}
+                            className="flex-1 min-h-[min(200px,35vh)] max-h-[42vh] sm:max-h-[46vh] overflow-y-auto overscroll-contain px-5 sm:px-6 py-4 space-y-2.5"
+                          >
+                            {deliveryZonesEditList.length === 0 ? (
+                              <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 p-8 text-center bg-gray-50/50 dark:bg-neutral-900/30">
+                                <p className="text-sm font-medium text-gray-700 dark:text-neutral-200">
+                                  No delivery zones yet
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-2 max-w-sm mx-auto">
+                                  Add rows manually, or import a CSV with columns{" "}
+                                  <code className="text-[10px] bg-gray-200/80 dark:bg-neutral-800 px-1 rounded">
+                                    name,fee
+                                  </code>
+                                  .
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={addDeliveryZone}
+                                  className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-white text-xs font-semibold hover:opacity-95"
                                 >
-                                  <div className="space-y-1.5">
-                                    {idx === 0 && <label className={labelCls}>Area name</label>}
-                                    <input
-                                      type="text"
-                                      value={z.name || ""}
-                                      onChange={(e) => updateDeliveryZone(idx, "name", e.target.value)}
-                                      placeholder="e.g. Bahria Phase 7"
-                                      className={inp}
-                                    />
-                                  </div>
-                                  <div className="space-y-1.5">
-                                    {idx === 0 && <label className={labelCls}>Fee (Rs)</label>}
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      step={1}
-                                      value={z.fee ?? ""}
-                                      onChange={(e) =>
-                                        updateDeliveryZone(idx, "fee", Number.parseFloat(e.target.value) || 0)
-                                      }
-                                      className={inp}
-                                    />
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeDeliveryZone(idx)}
-                                    className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-red-500 hover:border-red-200 flex-shrink-0"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  <Plus className="w-3.5 h-3.5" />
+                                  Add first zone
+                                </button>
+                              </div>
+                            ) : deliveryZonesFilteredRows.length === 0 ? (
+                              <div className="rounded-xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 p-4 text-center">
+                                <p className="text-sm text-amber-900 dark:text-amber-200/90">
+                                  No zones match &quot;{deliveryZonesSearch.trim()}&quot;
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeliveryZonesSearch("")}
+                                  className="mt-2 text-xs font-semibold text-primary hover:underline"
+                                >
+                                  Clear search
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_100px_44px] gap-3 px-1 pb-1">
+                                  <span className={labelCls}>Area name</span>
+                                  <span className={labelCls}>
+                                    Fee ({feeCurrencyLabel(restaurantSettings?.currencyCode)})
+                                  </span>
+                                  <span className="sr-only">Remove</span>
                                 </div>
-                              ))
+                                {deliveryZonesFilteredRows.map(({ z, idx }) => (
+                                  <div
+                                    key={z._id || z.id || `row-${idx}`}
+                                    className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_100px_44px] gap-2 sm:gap-3 items-end p-3 rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/40 dark:bg-neutral-900/40 hover:border-gray-200 dark:hover:border-neutral-700 transition-colors"
+                                  >
+                                    <div className="space-y-1 sm:space-y-0">
+                                      <label className={`${labelCls} sm:hidden`}>Area name</label>
+                                      <input
+                                        type="text"
+                                        value={z.name || ""}
+                                        onChange={(e) =>
+                                          updateDeliveryZone(idx, "name", e.target.value)
+                                        }
+                                        placeholder="e.g. Bahria Phase 7"
+                                        className={inp}
+                                      />
+                                    </div>
+                                    <div className="space-y-1 sm:space-y-0">
+                                      <label className={`${labelCls} sm:hidden`}>
+                                        Fee ({feeCurrencyLabel(restaurantSettings?.currencyCode)})
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        value={z.fee ?? ""}
+                                        onChange={(e) =>
+                                          updateDeliveryZone(
+                                            idx,
+                                            "fee",
+                                            Number.parseFloat(e.target.value) || 0,
+                                          )
+                                        }
+                                        className={inp}
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeDeliveryZone(idx)}
+                                      className="h-10 w-full sm:w-10 inline-flex items-center justify-center rounded-xl border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900/50 flex-shrink-0 justify-self-end sm:justify-self-center"
+                                      aria-label="Remove zone"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                                <div ref={deliveryZonesListEndRef} className="h-1 w-full flex-shrink-0" aria-hidden />
+                              </>
                             )}
                           </div>
 
-                          <div className="flex items-center justify-between gap-3 flex-shrink-0 pt-1">
+                          <div className="flex-shrink-0 px-5 sm:px-6 py-4 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/90 dark:bg-neutral-900/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <button
                               type="button"
                               onClick={addDeliveryZone}
-                              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl border border-dashed border-gray-300 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                              disabled={deliveryZonesEditList.length >= MAX_DELIVERY_ZONES}
+                              className="inline-flex items-center justify-center gap-1.5 h-10 px-4 rounded-xl border-2 border-dashed border-primary/35 text-xs font-semibold text-primary hover:bg-primary/5 dark:hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed order-2 sm:order-1"
                             >
-                              <Plus className="w-3.5 h-3.5" />
+                              <Plus className="w-4 h-4" />
                               Add zone
                             </button>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-end gap-2 order-1 sm:order-2">
                               <button
                                 type="button"
                                 onClick={closeDeliveryZonesModal}
-                                className="h-9 px-4 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                                className="h-10 px-4 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-white dark:hover:bg-neutral-950"
                               >
                                 Cancel
                               </button>
                               <button
                                 type="submit"
                                 disabled={deliveryZonesSaving}
-                                className="inline-flex items-center gap-2 h-9 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                                className="inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold hover:shadow-lg hover:shadow-primary/25 transition-all disabled:opacity-60 disabled:cursor-not-allowed min-w-[120px]"
                               >
                                 {deliveryZonesSaving ? (
                                   <>
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    Saving...
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Saving…
                                   </>
                                 ) : (
-                                  "Save Zones"
+                                  "Save zones"
                                 )}
                               </button>
                             </div>

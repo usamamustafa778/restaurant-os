@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   login,
   verifyEmail,
+  resendVerificationOtp,
   requestPasswordReset,
   resetPassword,
   getStoredAuth,
@@ -46,6 +47,9 @@ export default function LoginPage() {
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [verifyError, setVerifyError] = useState("");
+  const [verifyResendCooldown, setVerifyResendCooldown] = useState(0);
+  const [verifyResendLoading, setVerifyResendLoading] = useState(false);
+  const [verifyDevOtpHint, setVerifyDevOtpHint] = useState(null);
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotStep, setForgotStep] = useState(1); // 1: email, 2: otp
@@ -112,6 +116,20 @@ export default function LoginPage() {
     clearStoredAuth();
     setCheckingStoredAuth(false);
   }, [router.isReady, router.query.from]);
+
+  useEffect(() => {
+    if (!showVerifyModal) return;
+    const id = setInterval(() => {
+      setVerifyResendCooldown((s) => (s <= 0 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [showVerifyModal]);
+
+  function formatVerifyCooldown(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
 
   function openForgotModal() {
     setForgotEmail(email || "");
@@ -206,6 +224,12 @@ export default function LoginPage() {
         setVerifyEmailAddress(email);
         setVerifyCode("");
         setVerifyError("");
+        setVerifyDevOtpHint(
+          err.devOtp != null && err.devOtp !== ""
+            ? String(err.devOtp)
+            : null,
+        );
+        setVerifyResendCooldown(60);
         setShowVerifyModal(true);
         return;
       }
@@ -227,6 +251,29 @@ export default function LoginPage() {
     } catch (err) {
       setVerifyError(err.message || "Verification failed");
       setVerifyLoading(false);
+    }
+  }
+
+  async function handleVerifyResend() {
+    if (verifyResendCooldown > 0 || verifyResendLoading) return;
+    setVerifyResendLoading(true);
+    setVerifyError("");
+    try {
+      const data = await resendVerificationOtp(
+        verifyEmailAddress.trim(),
+        password,
+      );
+      if (data.devOtp != null && data.devOtp !== "") {
+        setVerifyDevOtpHint(String(data.devOtp));
+        toast.success(`New code (dev): ${data.devOtp}`);
+      } else {
+        toast.success("We sent a new code to your email.");
+      }
+      setVerifyResendCooldown(60);
+    } catch (err) {
+      toast.error(err.message || "Could not resend code");
+    } finally {
+      setVerifyResendLoading(false);
     }
   }
 
@@ -574,6 +621,17 @@ export default function LoginPage() {
               </span>
               . Enter it below to complete sign‑in.
             </p>
+            <p className="auth-verify-meta">
+              This code is valid for <strong>10 minutes</strong>.
+            </p>
+            {verifyDevOtpHint ? (
+              <div className="auth-verify-dev-hint" role="status">
+                <span className="auth-verify-dev-hint-label">
+                  Local / dev — email not configured:
+                </span>{" "}
+                use code <strong className="auth-verify-dev-code">{verifyDevOtpHint}</strong>
+              </div>
+            ) : null}
             <form onSubmit={handleVerifySubmit} className="space-y-3">
               <div>
                 <label className="auth-label">Verification code</label>
@@ -591,6 +649,22 @@ export default function LoginPage() {
                   placeholder="••••••"
                 />
               </div>
+              <div className="auth-verify-resend-row">
+                <button
+                  type="button"
+                  className="auth-link-text auth-verify-resend-btn"
+                  disabled={
+                    verifyResendCooldown > 0 || verifyResendLoading
+                  }
+                  onClick={handleVerifyResend}
+                >
+                  {verifyResendLoading
+                    ? "Sending…"
+                    : verifyResendCooldown > 0
+                      ? `Resend code (${formatVerifyCooldown(verifyResendCooldown)})`
+                      : "Resend code"}
+                </button>
+              </div>
               {verifyError && (
                 <p className="auth-error-text">{verifyError}</p>
               )}
@@ -601,6 +675,8 @@ export default function LoginPage() {
                     setShowVerifyModal(false);
                     setVerifyCode("");
                     setVerifyError("");
+                    setVerifyDevOtpHint(null);
+                    setVerifyResendCooldown(0);
                   }}
                   className="auth-btn-ghost"
                 >

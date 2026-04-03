@@ -1636,7 +1636,7 @@ export default function OverviewPage() {
                               {row.accountName}
                             </span>
                             <span className="text-gray-900 dark:text-white font-semibold">
-                              Rs {Number(row.amount || 0).toLocaleString()}
+                              {currencySymbol} {Number(row.amount || 0).toLocaleString()}
                             </span>
                           </div>
                         ))}
@@ -1947,16 +1947,23 @@ export default function OverviewPage() {
               ) : plData ? (
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Revenue",    value: plData.grossRevenue,  color: "text-emerald-600 dark:text-emerald-400" },
-                    { label: "Expenses",   value: plData.totalExpenses,  color: "text-gray-700 dark:text-neutral-300" },
-                    { label: "Net Profit", value: plData.netProfit,      color: plData.netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400" },
+                    { label: "Revenue",  value: plData.grossRevenue,  color: "text-emerald-600 dark:text-emerald-400" },
+                    { label: "Expenses", value: plData.totalExpenses, color: "text-gray-700 dark:text-neutral-300" },
+                    {
+                      label: plData.netProfit >= 0 ? "Net Profit" : "Net Loss",
+                      value: plData.netProfit,
+                      color:
+                        plData.netProfit >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-red-600 dark:text-red-400",
+                    },
                   ].map((c) => (
                     <div key={c.label} className="rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 p-3">
                       <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">{c.label}</p>
                       <p className={`text-sm font-bold tabular-nums ${c.color}`}>
                         {c.value < 0
-                          ? `(Rs ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })})`
-                          : `Rs ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                          ? `(${currencySymbol} ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })})`
+                          : `${currencySymbol} ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
                       </p>
                     </div>
                   ))}

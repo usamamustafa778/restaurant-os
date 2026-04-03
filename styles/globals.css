@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .text-muted-foreground {
+    @apply text-gray-600 dark:text-neutral-400;
+  }
+}
+
 /* Light Theme (Default) */
 :root,
 :root[data-theme="light"] {

@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { getOrders, getStoredAuth } from "../../lib/apiClient";
+import { getOrders, getStoredAuth, getCurrencySymbol } from "../../lib/apiClient";
 import toast from "react-hot-toast";
 import { Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 
@@ -30,6 +30,7 @@ function getCurrentBranchId() {
 }
 
 export default function MigratePendingPage() {
+  const sym = getCurrencySymbol();
   const [step, setStep] = useState("idle");
   const [affected, setAffected] = useState([]);
   const [totalAmount, setTotalAmount] = useState(0);
@@ -152,7 +153,7 @@ export default function MigratePendingPage() {
                 </div>
                 <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 text-center">
                   <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase font-semibold mb-1">Total Amount</p>
-                  <p className="text-2xl font-black text-gray-900 dark:text-white">Rs {Math.round(totalAmount).toLocaleString()}</p>
+                  <p className="text-2xl font-black text-gray-900 dark:text-white">{sym} {Math.round(totalAmount).toLocaleString()}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 text-center">
                   <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase font-semibold mb-1">Target Account</p>
@@ -177,7 +178,7 @@ export default function MigratePendingPage() {
                           <td className="px-3 py-1.5 font-medium">{o.orderNumber || o.id || o._id}</td>
                           <td className="px-3 py-1.5">{o.status}</td>
                           <td className="px-3 py-1.5 text-amber-600 dark:text-amber-400">{o.paymentMethod || "—"}</td>
-                          <td className="px-3 py-1.5 text-right font-semibold">Rs {Number(o.total || 0).toLocaleString()}</td>
+                          <td className="px-3 py-1.5 text-right font-semibold">{sym} {Number(o.total || 0).toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>

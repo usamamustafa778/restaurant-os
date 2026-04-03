@@ -78,6 +78,7 @@ function buildEscPos(o) {
     ln(it.name || "");
     const detail = `${unit.toFixed(2)}  ${String(qty).padStart(3)}  ${lineTotal.toFixed(2)}`;
     ln(pad("", detail));
+    if (it.note) ln(`  > ${it.note}`);
   }
 
   ln(DASH_LINE);

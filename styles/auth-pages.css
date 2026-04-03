@@ -803,3 +803,50 @@ select.auth-input option {
   color: #00c896;
   margin-bottom: 8px;
 }
+
+.auth-verify-meta {
+  font-size: 12px;
+  color: var(--gray-4);
+  margin-top: -8px;
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+
+.auth-verify-meta strong {
+  color: var(--gray-5);
+  font-weight: 600;
+}
+
+.auth-verify-dev-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--gray-4);
+  background: rgba(255, 84, 0, 0.12);
+  border: 1px solid rgba(255, 84, 0, 0.35);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.auth-verify-dev-hint-label {
+  color: var(--orange, #ff5400);
+  font-weight: 600;
+}
+
+.auth-verify-dev-code {
+  color: var(--white);
+  font-size: 15px;
+  letter-spacing: 0.12em;
+}
+
+.auth-verify-resend-row {
+  display: flex;
+  justify-content: center;
+  margin-top: -4px;
+  margin-bottom: 4px;
+}
+
+.auth-verify-resend-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -16,6 +16,7 @@ import {
   createDeal,
   updateDeal,
   deleteDeal,
+  getCurrencySymbol,
 } from "../../lib/apiClient";
 import {
   Plus,
@@ -43,6 +44,7 @@ function getEmptyForm() {
 }
 
 export default function DealsPage() {
+  const sym = getCurrencySymbol();
   const { currentBranch } = useBranch() || {};
   const { confirm } = useConfirmDialog();
   const { viewMode, setViewMode } = useViewMode("table");
@@ -314,7 +316,7 @@ export default function DealsPage() {
                       {deal.description || itemsSummary}
                     </p>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-bold text-primary">Rs {deal.comboPrice}</span>
+                      <span className="text-sm font-bold text-primary">{sym} {deal.comboPrice}</span>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
                         isActive
                           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
@@ -386,7 +388,7 @@ export default function DealsPage() {
                   header: "Price",
                   render: (value) => (
                     <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold">
-                      Rs {value}
+                      {sym} {value}
                     </span>
                   ),
                 },
@@ -557,7 +559,7 @@ export default function DealsPage() {
                           <span className="text-sm text-gray-800 dark:text-neutral-200 truncate">
                             {item.name}{" "}
                             <span className="text-xs text-gray-400 dark:text-neutral-500">
-                              (Rs {item.price})
+                              ({sym} {item.price})
                             </span>
                           </span>
                         </label>

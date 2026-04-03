@@ -10,7 +10,7 @@ import DataTable from "../../components/ui/DataTable";
 import {
   getInventory, createInventoryItem, updateInventoryItem,
   deleteInventoryItem, getStoredAuth, getSourceBranchInventory,
-  copyInventoryFromBranch, SubscriptionInactiveError,
+  copyInventoryFromBranch, SubscriptionInactiveError, getCurrencySymbol,
 } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -127,6 +127,7 @@ function SortHeader({ label, colKey, sortKey, sortDir, onSort }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
+  const sym = getCurrencySymbol();
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({
     id: null, name: "", unit: "gram",
@@ -584,7 +585,7 @@ export default function InventoryPage() {
         <td>${ALL_UNITS.find((u) => u.value === item.unit)?.label ?? item.unit}</td>
         <td style="font-weight:700">${item.currentStock ?? 0} ${unitAbbr(item.unit)}</td>
         <td>${item.lowStockThreshold ? `${item.lowStockThreshold} ${unitAbbr(item.unit)}` : "—"}</td>
-        <td>${item.costPrice > 0 ? `Rs ${item.costPrice.toLocaleString()}` : "—"}</td>
+        <td>${item.costPrice > 0 ? `${getCurrencySymbol()} ${item.costPrice.toLocaleString()}` : "—"}</td>
         <td><span style="font-weight:700;padding:2px 8px;border-radius:4px;font-size:11px;${statusStyle}">${status}</span></td>
       </tr>`;
     }).join("");
@@ -961,7 +962,7 @@ export default function InventoryPage() {
                 align: "right",
                 render: (val, item) => val > 0 ? (
                   <div className="text-right">
-                    <div className="font-semibold text-primary">Rs {val.toLocaleString()}</div>
+                    <div className="font-semibold text-primary">{sym} {val.toLocaleString()}</div>
                     <div className="text-[10px] text-gray-400 dark:text-neutral-500">{costPriceLabel(item.unit)}</div>
                   </div>
                 ) : (

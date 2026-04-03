@@ -1,3 +1,5 @@
+import { cloneElement, isValidElement } from "react";
+
 export default function DataTable({
   columns,
   rows = [],
@@ -7,6 +9,12 @@ export default function DataTable({
   variant = "default", // "default" or "card"
   loading = false,
   showSno = false,
+  /** Merged onto the inner table element (e.g. print CSS hooks). */
+  tableClassName = "",
+  /** Appended to each default data row tr (ignored when renderRow returns a row). */
+  getRowClassName,
+  /** Return a custom tr for this row, or null/undefined for normal column cells (e.g. colspan rows). */
+  renderRow,
 }) {
   const resolvedRows = data ?? rows;
   const resolveRowId =
@@ -27,7 +35,7 @@ export default function DataTable({
 
   const tableContent = (
     <div className="overflow-x-auto">
-      <table className="w-full">
+      <table className={`w-full ${tableClassName}`.trim()}>
         <thead className="bg-gray-50 dark:bg-neutral-900/50 border-b border-gray-200 dark:border-neutral-800">
           <tr>
             {allColumns.map((col) => (
@@ -88,35 +96,43 @@ export default function DataTable({
               </td>
             </tr>
           ) : (
-            resolvedRows.map((row, rowIndex) => (
-              <tr
-                key={resolveRowId(row, rowIndex)}
-                className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors whitespace-nowrap"
-              >
-                {allColumns.map((col) => {
-                  const value = row[col.key];
-                  const content = col.sno
-                    ? rowIndex + 1
-                    : col.render
-                      ? col.render(value, row, rowIndex)
-                      : value ?? "—";
-                  return (
-                    <td
-                      key={col.key || col.header}
-                      className={`px-4 py-2.5 text-sm ${
-                        col.align === "right"
-                          ? "text-right"
-                          : col.align === "center"
-                            ? "text-center"
-                            : "text-left"
-                      } ${col.className || ""} ${col.cellClassName || ""} ${col.hideOnMobile ? "hidden md:table-cell" : ""} ${col.hideOnTablet ? "hidden lg:table-cell" : ""}`}
-                    >
-                      {content}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))
+            resolvedRows.map((row, rowIndex) => {
+              const custom = renderRow?.(row, rowIndex, allColumns);
+              if (custom != null && isValidElement(custom)) {
+                const k = resolveRowId(row, rowIndex);
+                return cloneElement(custom, { key: k });
+              }
+              const extraRowCls = getRowClassName?.(row, rowIndex) || "";
+              return (
+                <tr
+                  key={resolveRowId(row, rowIndex)}
+                  className={`hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors whitespace-nowrap ${extraRowCls}`.trim()}
+                >
+                  {allColumns.map((col) => {
+                    const value = row[col.key];
+                    const content = col.sno
+                      ? rowIndex + 1
+                      : col.render
+                        ? col.render(value, row, rowIndex)
+                        : value ?? "—";
+                    return (
+                      <td
+                        key={col.key || col.header}
+                        className={`px-4 py-2.5 text-sm ${
+                          col.align === "right"
+                            ? "text-right"
+                            : col.align === "center"
+                              ? "text-center"
+                              : "text-left"
+                        } ${col.className || ""} ${col.cellClassName || ""} ${col.hideOnMobile ? "hidden md:table-cell" : ""} ${col.hideOnTablet ? "hidden lg:table-cell" : ""}`}
+                      >
+                        {content}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

@@ -11,6 +11,7 @@ import {
   getStoredAuth,
   clearStoredAuth,
   SubscriptionInactiveError,
+  getCurrencySymbol,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -120,6 +121,7 @@ function isDeliveryPaymentNotSubmitted(order) {
 }
 
 export default function RiderPortalPage() {
+  const sym = getCurrencySymbol();
   const { socket } = useSocket() || {};
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { theme, toggleTheme } = useTheme() || {
@@ -1298,7 +1300,7 @@ export default function RiderPortalPage() {
                               <option value="">Select area</option>
                               {deliveryZones.map((z) => (
                                 <option key={z.id} value={z.id}>
-                                  {z.name} — Rs {z.fee.toFixed(2)}
+                                  {z.name} — {sym} {z.fee.toFixed(2)}
                                 </option>
                               ))}
                             </select>

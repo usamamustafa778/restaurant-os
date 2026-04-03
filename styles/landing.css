@@ -1078,45 +1078,31 @@ body:has(.eatsdesk-landing) {
   background: var(--dark);
 }
 
-.eatsdesk-landing .pricing-section .country-pills {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  justify-content: center;
+.eatsdesk-landing .pricing-section .country-toggle-row {
+  margin-top: 2px;
+  margin-bottom: 2px;
 }
 
-.eatsdesk-landing .pricing-section .country-pill {
+.eatsdesk-landing .pricing-section .country-dropdown {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
+  padding: 6px 14px;
   border-radius: 100px;
-  border: 1px solid #2A2A28;
-  background: #1A1A18;
-  color: #6B6B67;
-  font-family: 'Instrument Sans', sans-serif;
+  background: var(--dark-3);
+}
+
+.eatsdesk-landing .pricing-section .country-select {
   font-size: 13px;
-  font-weight: 500;
+  background: transparent;
+  border: none;
+  color: var(--gray-4);
+  outline: none;
   cursor: none;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.eatsdesk-landing .pricing-section .country-pill.active {
-  background: #FF5400;
-  border-color: transparent;
-  color: #fff;
-}
-
-.eatsdesk-landing .pricing-section .country-pill:hover:not(.active) {
-  border-color: #3A3A38;
-  color: var(--gray-5);
 }
 
 .eatsdesk-landing .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-top: 56px;
 }
@@ -1350,6 +1336,10 @@ body:has(.eatsdesk-landing) {
   display: block;
 }
 
+.eatsdesk-landing .pricing-billing-wrap--enterprise .pc-price-tier--enterprise {
+  display: block;
+}
+
 .eatsdesk-landing .pc-features-label {
   font-size: 11px;
   letter-spacing: 1.5px;
@@ -1379,39 +1369,99 @@ body:has(.eatsdesk-landing) {
   font-size: 12px;
 }
 
-.eatsdesk-landing .pc-price--custom {
-  font-size: 42px;
+.eatsdesk-landing .pc-feat-dash-only {
+  color: #6B6B67;
+  font-size: 13px;
+  gap: 0;
 }
 
-.eatsdesk-landing .accounting-callout {
+.eatsdesk-landing .pc-feat-dash-only .dot {
+  display: none;
+}
+
+.eatsdesk-landing .pc-section-heading {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #6B6B67;
+  margin-top: 16px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.eatsdesk-landing .price-card > .pc-cta + .pc-section-heading {
+  margin-top: 0;
+}
+
+.eatsdesk-landing .pc-section-heading--inline {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.eatsdesk-landing .pc-accounting-toggle {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 16px;
-  background: #1A1A18;
-  border: 1px solid #2A2A28;
-  border-radius: 12px;
-  padding: 20px 28px;
-  margin-top: 24px;
-  margin-bottom: 56px;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
-.eatsdesk-landing .accounting-callout-icon {
-  font-size: 20px;
-  color: #FF5400;
-  flex-shrink: 0;
+.eatsdesk-landing .pc-accounting-toggle:hover .pc-section-heading--inline {
+  color: var(--gray-5);
+}
+
+.eatsdesk-landing .pc-pricing-chevron {
+  display: inline-flex;
+  font-size: 12px;
   line-height: 1;
+  color: #6B6B67;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
 }
 
-.eatsdesk-landing .accounting-callout-text {
-  font-size: 14px;
-  color: #9A9A95;
-  line-height: 1.55;
-  margin: 0;
+.eatsdesk-landing .pc-pricing-chevron.is-open {
+  transform: rotate(180deg);
 }
 
-.eatsdesk-landing .accounting-callout-text strong {
-  font-weight: 600;
-  color: #FAFAF6;
+.eatsdesk-landing .pc-accounting-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.eatsdesk-landing .pc-accounting-panel.is-open {
+  max-height: 320px;
+}
+
+.eatsdesk-landing .pc-accounting-panel .pc-features {
+  padding-top: 8px;
+}
+
+.eatsdesk-landing .price-card--enterprise .pc-price {
+  font-size: 52px;
+}
+
+.eatsdesk-landing .pc-unit--enterprise {
+  color: var(--gray-3);
+  margin-bottom: 10px;
+}
+
+.eatsdesk-landing .pc-enterprise-pill {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--gray-4);
+  background: var(--dark-4);
+  padding: 3px 10px;
+  border-radius: 100px;
+  margin-bottom: 28px;
 }
 
 .eatsdesk-landing .pricing-detail-title {
@@ -1946,7 +1996,7 @@ body:has(.eatsdesk-landing) {
   }
 
   .eatsdesk-landing .pricing-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .eatsdesk-landing .hiw-steps {
@@ -2149,11 +2199,6 @@ body:has(.eatsdesk-landing) {
     padding: 8px 14px;
     font-size: 12px;
   }
-
-  .eatsdesk-landing .pricing-section .country-pill {
-    padding: 7px 14px;
-    font-size: 12px;
-  }
 }
 
 @media(max-width:900px) and (min-width:721px) {
@@ -2169,17 +2214,6 @@ body:has(.eatsdesk-landing) {
 @media(max-width:480px) {
   .eatsdesk-landing .pricing-grid {
     grid-template-columns: 1fr;
-  }
-
-  .eatsdesk-landing .pricing-section .country-pills {
-    flex-wrap: wrap;
-  }
-
-  .eatsdesk-landing .accounting-callout {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 16px 20px;
   }
 }
 

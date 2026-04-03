@@ -1084,6 +1084,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         items: cart.map((item) => ({
           menuItemId: item.id,
           quantity: item.quantity,
+          note: itemNotes[item.id] || undefined,
         })),
         orderType,
         paymentMethod: "PENDING",
@@ -1128,6 +1129,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           qty,
           unitPrice: unit,
           lineTotal: unit * qty,
+          note: itemNotes[it.id] || undefined,
         };
       });
 
@@ -1182,6 +1184,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           quantity: item.quantity,
           unitPrice: item.price,
           name: item.name,
+          note: itemNotes[item.id] || undefined,
         })),
         discountAmount: totalDiscount,
         customerName: customerName.trim(),
@@ -1237,6 +1240,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         name: it.name,
         qty: it.quantity,
         unitPrice: it.price,
+        note: itemNotes[it.id] || undefined,
       })),
       ...overrides,
     };

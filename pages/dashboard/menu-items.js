@@ -1,13 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
-import PageLoader from "../../components/ui/PageLoader";
 import ViewToggle from "../../components/ui/ViewToggle";
 import ActionDropdown from "../../components/ui/ActionDropdown";
 import {
   getMenu,
-  getBranchMenu,
   getInventory,
   createItem,
   updateItem,
@@ -16,9 +14,10 @@ import {
   getStoredAuth,
   getSourceBranchMenu,
   copyMenuFromBranch,
-  updateBranchMenuItem
+  updateBranchMenuItem,
+  getCurrencySymbol,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2 } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -29,7 +28,34 @@ import toast from "react-hot-toast";
 
 const isAdminRole = (role) => role === "restaurant_admin" || role === "admin";
 
+const selectBaseCls =
+  "h-9 pl-2.5 pr-7 rounded-xl border-2 border-gray-200 bg-white text-xs font-semibold text-gray-700 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300";
+const filterSelectCls = `${selectBaseCls} min-w-[7.5rem]`;
+const sortSelectCls = `${selectBaseCls} w-[5.75rem] min-w-0 shrink-0`;
+
+function parseCSVLine(line) {
+  const out = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQ = !inQ;
+      continue;
+    }
+    if (!inQ && c === ",") {
+      out.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  out.push(cur.trim());
+  return out.map((s) => s.replace(/^"|"$/g, "").replace(/""/g, '"'));
+}
+
 export default function MenuItemsPage() {
+  const sym = getCurrencySymbol();
   const { currentBranch, branches } = useBranch() || {};
   const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
   const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
@@ -82,7 +108,12 @@ export default function MenuItemsPage() {
   const [filterAvailability, setFilterAvailability] = useState("all");
   const [filterDietary, setFilterDietary] = useState("all");
   const [sortBy, setSortBy] = useState("name_asc");
-  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const exportMenuRef = useRef(null);
+  const importMenuRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [modalError, setModalError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -105,6 +136,28 @@ export default function MenuItemsPage() {
   const [copySourceLoading, setCopySourceLoading] = useState(false);
   const [copySelectedItemIds, setCopySelectedItemIds] = useState([]);
   const [copySubmitting, setCopySubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    function handleDown(e) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setExportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [exportMenuOpen]);
+
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    function handleDown(e) {
+      if (importMenuRef.current && !importMenuRef.current.contains(e.target)) {
+        setImportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [importMenuOpen]);
 
   // Single branch: fetch that branch's menu
   useEffect(() => {
@@ -646,7 +699,7 @@ export default function MenuItemsPage() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("CSV exported — open in Excel");
-    setShowExportMenu(false);
+    setExportMenuOpen(false);
   }
 
   function buildMenuHTML(title, extraStyle = "") {
@@ -666,7 +719,7 @@ export default function MenuItemsPage() {
       return `<tr>
         <td><strong>${item.name}</strong>${item.description ? `<br><span style="font-size:11px;color:#6b7280">${item.description}</span>` : ""}</td>
         <td>${cat}</td>
-        <td style="font-weight:700">Rs ${Number(price).toLocaleString()}</td>
+        <td style="font-weight:700">${getCurrencySymbol()} ${Number(price).toLocaleString()}</td>
         <td>${dietary}</td>
         <td><span style="font-weight:700;padding:2px 8px;border-radius:4px;font-size:11px;${availStyle}">${available ? "Available" : "Unavailable"}</span></td>
       </tr>`;
@@ -708,140 +761,502 @@ export default function MenuItemsPage() {
     win.document.write(buildMenuHTML("Menu Items – PDF", "@media print{@page{size:A4 landscape}}"));
     win.document.close();
     setTimeout(() => { win.print(); }, 300);
-    setShowExportMenu(false);
+    setExportMenuOpen(false);
   }
 
   function printMenu() {
-    const win = window.open("", "_blank");
-    if (!win) { toast.error("Pop-up blocked — please allow pop-ups."); return; }
-    win.document.write(buildMenuHTML("Menu Items – Print"));
-    win.document.close();
-    setTimeout(() => win.print(), 300);
-    setShowExportMenu(false);
+    setExportMenuOpen(false);
+    window.print();
+  }
+
+  const canImportFromBranch =
+    !!currentBranch?.id &&
+    (sourceBranches.length > 0 || isAdmin);
+
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!currentBranch?.id) {
+      toast.error("Select a branch in the header before importing.");
+      return;
+    }
+    if (!categories.length) {
+      toast.error("Create at least one category before importing menu items.");
+      return;
+    }
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      toast.error("Could not read file");
+      return;
+    }
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trimEnd())
+      .filter((l) => l.trim());
+    if (!lines.length) {
+      toast.error("CSV is empty");
+      return;
+    }
+
+    const normHeader = (h) =>
+      String(h ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+    const rowLooksLikeHeader = (cells) => {
+      const set = new Set(cells.map((c) => normHeader(c)));
+      return set.has("name") && set.has("category") && set.has("price");
+    };
+
+    const buildColMap = (cells) => {
+      const col = {};
+      cells.forEach((raw, i) => {
+        const k = normHeader(raw);
+        if (k === "name" || k === "item") col.name = i;
+        else if (k === "category") col.category = i;
+        else if (k === "price") col.price = i;
+        else if (k === "dietary") col.dietary = i;
+        else if (k === "available") col.available = i;
+        else if (k === "trending" || k === "is trending") col.trending = i;
+        else if (k === "must try" || k === "musttry") col.mustTry = i;
+        else if (k === "description") col.description = i;
+      });
+      return col;
+    };
+
+    const isStopRow = (cells) => {
+      const a = normHeader(cells[0]);
+      return (
+        a === "summary" ||
+        a === "total items" ||
+        a === "available" ||
+        a === "unavailable" ||
+        a === "menu items report" ||
+        a === "branch" ||
+        a === "generated"
+      );
+    };
+
+    let headerIdx = -1;
+    let col = null;
+    for (let i = 0; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i]);
+      if (rowLooksLikeHeader(cells)) {
+        headerIdx = i;
+        col = buildColMap(cells);
+        break;
+      }
+    }
+
+    if (col == null) {
+      col = { name: 0, category: 1, price: 2 };
+      headerIdx = -1;
+    }
+
+    if (col.name == null || col.category == null || col.price == null) {
+      toast.error(
+        "CSV needs columns: name, category, price (or export from this page).",
+      );
+      return;
+    }
+
+    const dataStart = headerIdx < 0 ? 0 : headerIdx + 1;
+    const rows = [];
+    for (let i = dataStart; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i]);
+      if (!cells.some((c) => String(c).trim())) continue;
+      if (isStopRow(cells)) break;
+      const name = String(cells[col.name] ?? "").trim();
+      if (!name) continue;
+      rows.push({
+        name,
+        categoryLabel: String(cells[col.category] ?? "").trim(),
+        priceRaw: cells[col.price],
+        dietaryRaw: col.dietary != null ? cells[col.dietary] : undefined,
+        availableRaw: col.available != null ? cells[col.available] : undefined,
+        trendingRaw: col.trending != null ? cells[col.trending] : undefined,
+        mustTryRaw: col.mustTry != null ? cells[col.mustTry] : undefined,
+        description:
+          col.description != null
+            ? String(cells[col.description] ?? "").trim()
+            : "",
+      });
+    }
+
+    if (!rows.length) {
+      toast.error("No menu item rows found in CSV");
+      return;
+    }
+
+    const parseDietaryCell = (s) => {
+      const t = String(s ?? "")
+        .trim()
+        .toLowerCase();
+      if (!t) return "non_veg";
+      if (t === "veg" || t === "vegetarian") return "veg";
+      if (t === "vegan") return "veg";
+      if (t === "egg") return "egg";
+      if (t === "non-veg" || t === "non veg" || t === "non_veg") return "non_veg";
+      return "non_veg";
+    };
+
+    const parseYesNoCell = (s) => {
+      const t = String(s ?? "").trim().toLowerCase();
+      return t === "yes" || t === "true" || t === "1" || t === "y";
+    };
+
+    const parsePriceCell = (raw) => {
+      let t = String(raw ?? "").trim().replace(/,/g, "");
+      if (sym) {
+        const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        t = t.replace(new RegExp(esc, "g"), "").trim();
+      }
+      const n = parseFloat(t);
+      return Number.isFinite(n) && n >= 0 ? n : NaN;
+    };
+
+    const catByLower = new Map(
+      categories.map((c) => [c.name.trim().toLowerCase(), c]),
+    );
+    const existingNames = new Set(
+      items.map((it) => (it.name || "").trim().toLowerCase()),
+    );
+
+    setImportLoading(true);
+    const newItems = [];
+    let created = 0;
+    let skipped = 0;
+    const failReasons = [];
+
+    try {
+      for (const row of rows) {
+        const key = row.name.toLowerCase();
+        if (existingNames.has(key)) {
+          skipped++;
+          continue;
+        }
+        const cat = catByLower.get(row.categoryLabel.toLowerCase());
+        if (!cat) {
+          skipped++;
+          failReasons.push(`Unknown category “${row.categoryLabel}” (${row.name})`);
+          continue;
+        }
+        const price = parsePriceCell(row.priceRaw);
+        if (Number.isNaN(price)) {
+          skipped++;
+          failReasons.push(`Invalid price (${row.name})`);
+          continue;
+        }
+        try {
+          const createdItem = await createItem({
+            name: row.name,
+            price,
+            categoryId: cat.id,
+            dietaryType: parseDietaryCell(row.dietaryRaw),
+            description: row.description || "",
+            isTrending:
+              row.trendingRaw !== undefined && row.trendingRaw !== ""
+                ? parseYesNoCell(row.trendingRaw)
+                : false,
+            isMustTry:
+              row.mustTryRaw !== undefined && row.mustTryRaw !== ""
+                ? parseYesNoCell(row.mustTryRaw)
+                : false,
+            branchId: currentBranch.id,
+          });
+          existingNames.add(key);
+          let merged = createdItem;
+          if (
+            row.availableRaw !== undefined &&
+            row.availableRaw !== "" &&
+            !parseYesNoCell(row.availableRaw)
+          ) {
+            await updateBranchMenuItem(createdItem.id, { available: false });
+            merged = {
+              ...createdItem,
+              finalAvailable: false,
+              branchAvailable: false,
+            };
+          }
+          newItems.push(merged);
+          created++;
+        } catch (err) {
+          skipped++;
+          const msg = err?.message || String(err);
+          if (/already exists/i.test(msg)) existingNames.add(key);
+          failReasons.push(`${row.name}: ${msg}`);
+        }
+      }
+    } finally {
+      setImportLoading(false);
+    }
+
+    if (newItems.length) {
+      setData((prev) => ({
+        ...prev,
+        items: [...prev.items, ...newItems],
+      }));
+    }
+
+    if (created > 0) {
+      toast.success(
+        `Imported ${created} item${created === 1 ? "" : "s"}${
+          skipped ? ` · ${skipped} skipped` : ""
+        }`,
+      );
+      if (failReasons.length) {
+        toast(failReasons.slice(0, 3).join(" · "), { duration: 5000 });
+      }
+    } else if (skipped > 0) {
+      toast.error(
+        failReasons.length
+          ? failReasons.slice(0, 2).join(" · ") +
+              (failReasons.length > 2 ? " …" : "")
+          : "No rows imported (duplicates or invalid data).",
+      );
+    } else {
+      toast.error("Nothing to import");
+    }
   }
 
   return (
     <AdminLayout title="Menu Items" suspended={suspended}>
+      <style>{`@media print { .menu-items-no-print { display: none !important; } }`}</style>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={handleImportFile}
+      />
       {error && !pageLoading && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+        <div className="menu-items-no-print mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
 
-      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        {/* Search */}
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search items..."
-          className="flex-1 min-w-[160px] h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-        />
+      {/* Toolbar: search grows; filters + view + export + import + add */}
+      <div className="menu-items-no-print mb-6 flex w-full min-w-0 flex-wrap items-center gap-2">
+        <label className="sr-only" htmlFor="menu-items-search">
+          Search menu items
+        </label>
+        <div className="relative min-w-0 w-full flex-1 basis-full sm:basis-0 sm:min-w-[12rem]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            id="menu-items-search"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search items…"
+            className="h-9 w-full rounded-xl border-2 border-gray-200 bg-white pl-8 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+          />
+        </div>
 
-        {/* Category */}
         <select
           value={filterCategory}
-          onChange={e => setFilterCategory(e.target.value)}
-          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+          onChange={(e) => setFilterCategory(e.target.value)}
+          className={`${filterSelectCls} w-fit`}
+          title="Category"
         >
-          <option value="all">All Categories</option>
-          {categories.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+          <option value="all">All categories</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
           ))}
         </select>
 
-        {/* Status */}
         <select
           value={filterAvailability}
-          onChange={e => setFilterAvailability(e.target.value)}
-          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+          onChange={(e) => setFilterAvailability(e.target.value)}
+          className={`${filterSelectCls} w-fit`}
+          title="Availability"
         >
-          <option value="all">All Status</option>
+          <option value="all">All status</option>
           <option value="available">Available</option>
           <option value="unavailable">Unavailable</option>
         </select>
 
-        {/* Dietary */}
         <select
           value={filterDietary}
-          onChange={e => setFilterDietary(e.target.value)}
-          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+          onChange={(e) => setFilterDietary(e.target.value)}
+          className={`${filterSelectCls} w-fit`}
+          title="Dietary"
         >
-          <option value="all">All Dietary</option>
-          <option value="non_veg">Non-Veg</option>
+          <option value="all">All dietary</option>
+          <option value="non_veg">Non-veg</option>
           <option value="veg">Veg</option>
           <option value="vegan">Vegan</option>
         </select>
 
-        {/* Sort */}
         <select
           value={sortBy}
-          onChange={e => setSortBy(e.target.value)}
-          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit"
+          onChange={(e) => setSortBy(e.target.value)}
+          className={sortSelectCls}
+          title="Sort"
         >
           <option value="name_asc">A → Z</option>
           <option value="name_desc">Z → A</option>
-          <option value="price_asc">Low → High</option>
-          <option value="price_desc">High → Low</option>
+          <option value="price_asc">Price ↑</option>
+          <option value="price_desc">Price ↓</option>
         </select>
 
-        {/* Clear */}
-        {(filterCategory !== "all" || filterAvailability !== "all" || filterDietary !== "all" || search.trim()) && (
+        {(filterCategory !== "all" ||
+          filterAvailability !== "all" ||
+          filterDietary !== "all" ||
+          search.trim()) && (
           <button
             type="button"
-            onClick={() => { setFilterCategory("all"); setFilterAvailability("all"); setFilterDietary("all"); setSearch(""); }}
-            className="inline-flex items-center gap-1 h-10 px-3 rounded-xl bg-gray-100 dark:bg-neutral-800 text-sm font-semibold text-gray-600 dark:text-neutral-300 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            onClick={() => {
+              setFilterCategory("all");
+              setFilterAvailability("all");
+              setFilterDietary("all");
+              setSearch("");
+            }}
+            className="inline-flex h-9 items-center gap-1 rounded-xl bg-gray-100 px-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-red-500/10 dark:hover:text-red-400"
           >
-            <X className="w-3.5 h-3.5" /> Clear
+            <X className="h-3.5 w-3.5" /> Clear
           </button>
         )}
 
-        <div className="flex items-center gap-2 ml-auto">
-          <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+        <span
+          className="hidden h-6 w-px bg-gray-200 sm:block dark:bg-neutral-700"
+          aria-hidden
+        />
 
-          {/* Export */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowExportMenu((v) => !v)}
-              className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border-2 border-gray-300 dark:border-neutral-600 text-gray-700 dark:text-neutral-300 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all whitespace-nowrap"
-            >
-              <FileDown className="w-4 h-4" /> Export <ChevronDown className="w-3.5 h-3.5 opacity-60" />
-            </button>
-            {showExportMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
-                <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 shadow-xl overflow-hidden">
-                  <button type="button" onClick={exportCSV}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
-                    <FileDown className="w-4 h-4 text-green-600" /> Export Excel (CSV)
-                  </button>
-                  <button type="button" onClick={exportPDF}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">
-                    <FileText className="w-4 h-4 text-red-500" /> Export PDF
-                  </button>
-                  <button type="button" onClick={printMenu}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors border-t border-gray-100 dark:border-neutral-800">
-                    <Printer className="w-4 h-4 text-gray-500" /> Print
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+        <ViewToggle viewMode={viewMode} onChange={setViewMode} />
 
+        <div className="relative" ref={exportMenuRef}>
           <button
             type="button"
-            onClick={startCreate}
-            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap"
+            onClick={() => setExportMenuOpen((v) => !v)}
+            disabled={!filtered.length}
+            title="Export"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
           >
-            <Plus className="w-4 h-4" /> Add New Item
+            <FileDown className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">Export</span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${exportMenuOpen ? "rotate-180" : ""}`}
+            />
           </button>
+          {exportMenuOpen && (
+            <div
+              className="absolute right-0 top-full z-[100] mt-1.5 w-56 overflow-hidden rounded-xl border-2 border-gray-200 bg-white py-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={exportCSV}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <FileDown className="h-4 w-4 shrink-0 text-gray-400" />
+                Download CSV
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={exportPDF}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                Export PDF…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={printMenu}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <Printer className="h-4 w-4 shrink-0 text-gray-400" />
+                Print
+              </button>
+            </div>
+          )}
         </div>
+
+        <div className="relative" ref={importMenuRef}>
+          <button
+            type="button"
+            onClick={() => setImportMenuOpen((o) => !o)}
+            disabled={importLoading || !currentBranch?.id}
+            title={
+              !currentBranch?.id
+                ? "Select a branch in the header first"
+                : "Import menu items"
+            }
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          >
+            {importLoading ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4 shrink-0" />
+            )}
+            <span className="hidden sm:inline">Import</span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${importMenuOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {importMenuOpen && (
+            <div
+              className="absolute right-0 top-full z-[100] mt-1.5 w-56 overflow-hidden rounded-xl border-2 border-gray-200 bg-white py-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!canImportFromBranch}
+                title={
+                  !canImportFromBranch
+                    ? "No other branches available"
+                    : undefined
+                }
+                onClick={() => {
+                  setImportMenuOpen(false);
+                  setCopySourceBranchId("");
+                  setCopyModalOpen(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <Building2 className="h-4 w-4 shrink-0 text-gray-400" />
+                Import from a branch
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!currentBranch?.id || importLoading}
+                onClick={() => {
+                  setImportMenuOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <Upload className="h-4 w-4 shrink-0 text-gray-400" />
+                Upload from device
+              </button>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={startCreate}
+          className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gradient-to-r from-primary to-secondary px-4 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/30"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Add item</span>
+          <span className="sm:hidden">Add</span>
+        </button>
       </div>
 
       {pageLoading ? (
-        <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+        <div className="menu-items-no-print bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
               <ShoppingBag className="w-10 h-10 text-primary animate-pulse" />
@@ -933,7 +1348,7 @@ export default function MenuItemsPage() {
                         {category ? category.name : "Uncategorized"}
                       </span>
                       <div className="text-right">
-                        <div className="font-bold text-gray-900 dark:text-white">Rs {displayPrice?.toFixed(0)}</div>
+                        <div className="font-bold text-gray-900 dark:text-white">{sym} {displayPrice?.toFixed(0)}</div>
                         {/* Branch-specific special price UI removed */}
                       </div>
                     </div>
@@ -1025,7 +1440,7 @@ export default function MenuItemsPage() {
                 const displayPrice = item.finalPrice ?? item.price;
                 return (
                   <div>
-                    <div className="font-bold text-gray-900 dark:text-white">Rs {displayPrice?.toFixed(0)}</div>
+                    <div className="font-bold text-gray-900 dark:text-white">{sym} {displayPrice?.toFixed(0)}</div>
                   </div>
                 );
               }
@@ -1167,7 +1582,7 @@ export default function MenuItemsPage() {
 
       {/* Item Create/Edit Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+        <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5 text-xs max-h-[90vh] overflow-y-auto">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
               {form.id ? "Edit menu item" : "New menu item"}
@@ -1395,7 +1810,7 @@ export default function MenuItemsPage() {
           !term || inv.name.toLowerCase().includes(term)
         );
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
             <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col max-h-[85vh]">
 
               {/* Header */}
@@ -1513,7 +1928,7 @@ export default function MenuItemsPage() {
 
       {/* Copy from branch modal */}
       {copyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">Copy items from branch</h2>
@@ -1594,7 +2009,7 @@ export default function MenuItemsPage() {
                           className="rounded border-gray-300 text-primary"
                         />
                         <span className="text-sm text-gray-900 dark:text-white flex-1">{i.name}</span>
-                        <span className="text-xs text-gray-500">Rs {Number(i.price).toFixed(0)} · {i.sourceBranchName}</span>
+                        <span className="text-xs text-gray-500">{sym} {Number(i.price).toFixed(0)} · {i.sourceBranchName}</span>
                       </label>
                     ))}
                     {copyAllBranchesData.items.length === 0 && (
@@ -1636,7 +2051,7 @@ export default function MenuItemsPage() {
                           className="rounded border-gray-300 text-primary"
                         />
                         <span className="text-sm text-gray-900 dark:text-white flex-1">{i.name}</span>
-                        <span className="text-xs text-gray-500">Rs {Number(i.price).toFixed(0)} · {i.categoryName || ""}</span>
+                        <span className="text-xs text-gray-500">{sym} {Number(i.price).toFixed(0)} · {i.categoryName || ""}</span>
                       </label>
                     ))}
                     {(copySourceData.items || []).length === 0 && (

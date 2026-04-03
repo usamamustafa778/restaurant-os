@@ -20,6 +20,7 @@ import {
   getCurrentDaySession,
   endDaySession,
   updateBranch,
+  getCurrencySymbol,
 } from "../../lib/apiClient";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import {
@@ -290,6 +291,7 @@ function getActionLabel(primaryNext, order) {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function OrdersPage() {
+  const sym = getCurrencySymbol();
   const router = useRouter();
   const { socket } = useSocket() || {};
   const { currentBranch, setCurrentBranch } = useBranch() || {};
@@ -577,7 +579,7 @@ export default function OrdersPage() {
       const received = Number(amountReceived);
       const billTotal = getOrderTotal(paymentOrder);
       if (isNaN(received) || received < billTotal) {
-        setPaymentError(`Amount received must be at least Rs ${billTotal}`);
+        setPaymentError(`Amount received must be at least ${sym} ${billTotal}`);
         return;
       }
     }
@@ -598,7 +600,7 @@ export default function OrdersPage() {
       }
       if (Math.abs(splitTotal - billTotal) > 0.01) {
         setPaymentError(
-          `Split amounts must equal bill total (Rs ${billTotal.toFixed(2)}).`,
+          `Split amounts must equal bill total (${sym} ${billTotal.toFixed(2)}).`,
         );
         return;
       }
@@ -713,7 +715,7 @@ export default function OrdersPage() {
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
       if (isNaN(received) || received < billTotal) {
-        setPaymentError(`Amount received must be at least Rs ${billTotal}`);
+        setPaymentError(`Amount received must be at least ${sym} ${billTotal}`);
         return;
       }
     }
@@ -735,7 +737,7 @@ export default function OrdersPage() {
         (isNaN(onlinePart) ? 0 : onlinePart);
       if (Math.abs(splitTotal - billTotal) > 0.01) {
         setPaymentError(
-          `Split amounts must equal bill total (Rs ${billTotal.toFixed(2)}).`,
+          `Split amounts must equal bill total (${sym} ${billTotal.toFixed(2)}).`,
         );
         return;
       }
@@ -1337,7 +1339,7 @@ export default function OrdersPage() {
                     : "Bill Total"}
                 </p>
                 <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
-                  Rs {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
+                  {sym} {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
                 </p>
                 {getOrderTotal(paymentOrder) % 1 !== 0 && (
                   <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
@@ -1481,7 +1483,7 @@ export default function OrdersPage() {
                               : "text-amber-600 dark:text-amber-400"
                           }`}
                         >
-                          Rs {diff.toFixed(2)}
+                          {sym} {diff.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1602,7 +1604,7 @@ export default function OrdersPage() {
                             </span>
                           </div>
                           <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
-                            Rs {(receivedNum - orderTotal).toFixed(2)}
+                            {sym} {(receivedNum - orderTotal).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -1615,7 +1617,7 @@ export default function OrdersPage() {
                             </span>
                           </div>
                           <span className="text-xl font-black text-red-700 dark:text-red-400 tabular-nums">
-                            Rs {(orderTotal - receivedNum).toFixed(2)}
+                            {sym} {(orderTotal - receivedNum).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -1848,7 +1850,7 @@ export default function OrdersPage() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <div className="text-sm font-bold text-gray-900 dark:text-white">
-                          Rs {(s.totalSales || 0).toLocaleString()}
+                          {sym} {(s.totalSales || 0).toLocaleString()}
                         </div>
                         <div className="text-[10px] text-gray-500 dark:text-neutral-400">
                           {s.totalOrders || 0} orders
@@ -1939,7 +1941,7 @@ export default function OrdersPage() {
                         Revenue
                       </p>
                       <p className="text-base font-bold text-gray-900 dark:text-white">
-                        Rs {(currentSession.totalSales || 0).toLocaleString()}
+                        {sym} {(currentSession.totalSales || 0).toLocaleString()}
                       </p>
                     </div>
                     <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
@@ -2057,6 +2059,7 @@ function OrderCard({
   onEdit,
 }) {
   const [expanded, setExpanded] = useState(false);
+  const sym = getCurrencySymbol();
   const orderId = order.id || order._id;
   const isUpdating = updatingId === orderId;
   const orderType = order.type || order.orderType || "";
@@ -2332,7 +2335,7 @@ function OrderCard({
       <div className="px-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-lg font-black text-gray-900 dark:text-white tabular-nums">
-            Rs {Math.round(getOrderTotal(order)).toLocaleString()}
+            {sym} {Math.round(getOrderTotal(order)).toLocaleString()}
           </span>
           {status !== "CANCELLED" && (
             <span
