@@ -81,15 +81,21 @@ function buildEscPos(o) {
     if (it.note) ln(`  > ${it.note}`);
   }
 
+  const isDelivery = String(o.type || "").toLowerCase().includes("delivery");
+  const deliveryCharges = isDelivery ? Number(o.deliveryCharges || 0) : 0;
+  const grandTotal = Number(o.total || 0) + deliveryCharges;
+
   ln(DASH_LINE);
   ln(pad("Total Items:", String(totalItems)));
   ln(pad("Total Qty:", String(totalQty)));
   ln(pad("Subtotal:", Number(o.subtotal || o.total || 0).toFixed(2)));
   if (o.discount > 0)
     ln(pad("Discount:", "- " + Number(o.discount).toFixed(2)));
+  if (deliveryCharges > 0)
+    ln(pad("Delivery Charges:", deliveryCharges.toFixed(2)));
 
   b.push(CMD.BOLD_ON, CMD.DOUBLE_H);
-  ln(pad("GRAND TOTAL:", Number(o.total || 0).toFixed(2)));
+  ln(pad("GRAND TOTAL:", grandTotal.toFixed(2)));
   b.push(CMD.NORMAL, CMD.BOLD_OFF);
 
   ln(DASH_LINE);
