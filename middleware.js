@@ -24,6 +24,8 @@ const DASHBOARD_PAGES = new Set([
   "website-content", "integrations", "ai-agents",
   "subscription", "profile", "day-report",
   "order-taker", "rider", "migrate-pending",
+  "sales-report",
+  "accounting", "vouchers",
 ]);
 
 // Routes that should only be visible to non-authenticated users

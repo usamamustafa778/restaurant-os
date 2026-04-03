@@ -463,6 +463,37 @@ export default function OverviewPage() {
     new Date().getFullYear(),
   );
 
+  // ─── Accounting P&L widget ───────────────────────────────────────────────
+  const [plData, setPlData]         = useState(null);
+  const [plLoading, setPlLoading]   = useState(true);
+  const [plSetup, setPlSetup]       = useState(true); // assume set up; hide widget if not
+
+  useEffect(() => {
+    const now  = new Date();
+    const from = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
+    const to   = now.toISOString().split("T")[0];
+    const auth = getStoredAuth();
+    const headers = { "Content-Type": "application/json" };
+    if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
+    const slug = auth?.user?.tenantSlug || auth?.tenantSlug;
+    if (slug) headers["x-tenant-slug"] = slug;
+
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ""}/api/accounting/reports/profit-loss?dateFrom=${from}&dateTo=${to}`, { headers })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.message && d.message.toLowerCase().includes("not found")) { setPlSetup(false); return; }
+        if (d.grossRevenue !== undefined || d.netProfit !== undefined) {
+          setPlData(d);
+          setPlSetup(true);
+        } else {
+          setPlSetup(false);
+        }
+      })
+      .catch(() => setPlSetup(false))
+      .finally(() => setPlLoading(false));
+  }, []);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDate = getBusinessDate(new Date(), cutoffHour);
 
@@ -1881,6 +1912,59 @@ export default function OverviewPage() {
                 )}
               </>
             )}
+          </div>
+
+          {/* ─── Accounting P&L widget ────────────────────────────────────── */}
+          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden mb-5">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center">
+                  <TrendingUp className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-gray-900 dark:text-white">This Month — P&amp;L</h3>
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">Profit & Loss from accounting ledger</p>
+                </div>
+              </div>
+              {plSetup && (
+                <a href="/accounting/reports/profit-loss"
+                  className="text-[11px] font-semibold text-orange-500 dark:text-orange-400 hover:underline flex items-center gap-0.5">
+                  View Full Report →
+                </a>
+              )}
+            </div>
+            <div className="px-4 py-4">
+              {plLoading ? (
+                <div className="grid grid-cols-3 gap-3">
+                  {[1,2,3].map((i) => (
+                    <div key={i} className="h-12 rounded-lg bg-gray-100 dark:bg-neutral-800 animate-pulse" />
+                  ))}
+                </div>
+              ) : !plSetup ? (
+                <a href="/accounting" className="flex items-center gap-2 text-sm text-orange-500 dark:text-orange-400 hover:underline">
+                  Set up Accounting to see P&amp;L →
+                </a>
+              ) : plData ? (
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Revenue",    value: plData.grossRevenue,  color: "text-emerald-600 dark:text-emerald-400" },
+                    { label: "Expenses",   value: plData.totalExpenses,  color: "text-gray-700 dark:text-neutral-300" },
+                    { label: "Net Profit", value: plData.netProfit,      color: plData.netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400" },
+                  ].map((c) => (
+                    <div key={c.label} className="rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 p-3">
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">{c.label}</p>
+                      <p className={`text-sm font-bold tabular-nums ${c.color}`}>
+                        {c.value < 0
+                          ? `(Rs ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })})`
+                          : `Rs ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 dark:text-neutral-500 py-2">No accounting data for this month yet.</p>
+              )}
+            </div>
           </div>
 
           {/* ─── Currency Counter ─────────────────────────────────────────── */}

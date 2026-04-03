@@ -1078,31 +1078,45 @@ body:has(.eatsdesk-landing) {
   background: var(--dark);
 }
 
-.eatsdesk-landing .pricing-section .country-toggle-row {
-  margin-top: 2px;
-  margin-bottom: 2px;
-}
-
-.eatsdesk-landing .pricing-section .country-dropdown {
+.eatsdesk-landing .pricing-section .country-pills {
   display: inline-flex;
   align-items: center;
-  padding: 6px 14px;
-  border-radius: 100px;
-  background: var(--dark-3);
+  gap: 8px;
+  margin-bottom: 16px;
+  justify-content: center;
 }
 
-.eatsdesk-landing .pricing-section .country-select {
+.eatsdesk-landing .pricing-section .country-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 100px;
+  border: 1px solid #2A2A28;
+  background: #1A1A18;
+  color: #6B6B67;
+  font-family: 'Instrument Sans', sans-serif;
   font-size: 13px;
-  background: transparent;
-  border: none;
-  color: var(--gray-4);
-  outline: none;
+  font-weight: 500;
   cursor: none;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.eatsdesk-landing .pricing-section .country-pill.active {
+  background: #FF5400;
+  border-color: transparent;
+  color: #fff;
+}
+
+.eatsdesk-landing .pricing-section .country-pill:hover:not(.active) {
+  border-color: #3A3A38;
+  color: var(--gray-5);
 }
 
 .eatsdesk-landing .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-top: 56px;
 }
@@ -1363,6 +1377,41 @@ body:has(.eatsdesk-landing) {
 .eatsdesk-landing .pc-feat.subtle {
   color: var(--gray-3);
   font-size: 12px;
+}
+
+.eatsdesk-landing .pc-price--custom {
+  font-size: 42px;
+}
+
+.eatsdesk-landing .accounting-callout {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #1A1A18;
+  border: 1px solid #2A2A28;
+  border-radius: 12px;
+  padding: 20px 28px;
+  margin-top: 24px;
+  margin-bottom: 56px;
+}
+
+.eatsdesk-landing .accounting-callout-icon {
+  font-size: 20px;
+  color: #FF5400;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.eatsdesk-landing .accounting-callout-text {
+  font-size: 14px;
+  color: #9A9A95;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.eatsdesk-landing .accounting-callout-text strong {
+  font-weight: 600;
+  color: #FAFAF6;
 }
 
 .eatsdesk-landing .pricing-detail-title {
@@ -1892,9 +1941,12 @@ body:has(.eatsdesk-landing) {
   }
 
   .eatsdesk-landing .pain-grid,
-  .eatsdesk-landing .pricing-grid,
   .eatsdesk-landing .testi-grid {
     grid-template-columns: 1fr;
+  }
+
+  .eatsdesk-landing .pricing-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .eatsdesk-landing .hiw-steps {
@@ -2097,6 +2149,11 @@ body:has(.eatsdesk-landing) {
     padding: 8px 14px;
     font-size: 12px;
   }
+
+  .eatsdesk-landing .pricing-section .country-pill {
+    padding: 7px 14px;
+    font-size: 12px;
+  }
 }
 
 @media(max-width:900px) and (min-width:721px) {
@@ -2106,6 +2163,23 @@ body:has(.eatsdesk-landing) {
 
   .eatsdesk-landing .nav-trial-short {
     display: none;
+  }
+}
+
+@media(max-width:480px) {
+  .eatsdesk-landing .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eatsdesk-landing .pricing-section .country-pills {
+    flex-wrap: wrap;
+  }
+
+  .eatsdesk-landing .accounting-callout {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 16px 20px;
   }
 }
 

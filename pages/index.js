@@ -167,27 +167,27 @@ export default function Home() {
   };
 
   const countryOptions = [
-    { code: "PK", label: "PK", flag: "🇵🇰" },
-    { code: "IN", label: "IN", flag: "🇮🇳" },
-    { code: "INTL", label: "US", flag: "🌍" },
+    { code: "PK", label: "Pakistan", flag: "🇵🇰" },
+    { code: "IN", label: "India", flag: "🇮🇳" },
+    { code: "INTL", label: "International", flag: "🌍" },
   ];
 
   const getPrice = (plan, mode) => {
     const table = {
       PK: {
-        starter: { daily: "Rs 100", monthly: "Rs 2,900", yearly: "Rs 29,000" },
-        growth: { daily: "Rs 250", monthly: "Rs 7,000", yearly: "Rs 70,000" },
-        pro: { daily: "Rs 400", monthly: "Rs 11,000", yearly: "Rs 1,10,000" },
+        starter: { daily: "Rs 150", monthly: "Rs 4,500", yearly: "Rs 45,000" },
+        growth: { daily: "Rs 350", monthly: "Rs 10,000", yearly: "Rs 1,00,000" },
+        pro: { daily: "Rs 550", monthly: "Rs 16,000", yearly: "Rs 1,60,000" },
       },
       IN: {
-        starter: { daily: "₹ 80", monthly: "₹ 2,400", yearly: "₹ 24,000" },
-        growth: { daily: "₹ 150", monthly: "₹ 4,500", yearly: "₹ 45,000" },
-        pro: { daily: "₹ 250", monthly: "₹ 7,500", yearly: "₹ 75,000" },
+        starter: { daily: "₹ 120", monthly: "₹ 3,500", yearly: "₹ 35,000" },
+        growth: { daily: "₹ 280", monthly: "₹ 8,000", yearly: "₹ 80,000" },
+        pro: { daily: "₹ 450", monthly: "₹ 13,000", yearly: "₹ 1,30,000" },
       },
       INTL: {
-        starter: { daily: "$0.5", monthly: "$14", yearly: "$140" },
-        growth: { daily: "$1", monthly: "$30", yearly: "$300" },
-        pro: { daily: "$1.50", monthly: "$50", yearly: "$500" },
+        starter: { daily: "$0.70", monthly: "$20", yearly: "$200" },
+        growth: { daily: "$1.50", monthly: "$42", yearly: "$420" },
+        pro: { daily: "$2.50", monthly: "$70", yearly: "$700" },
       },
     };
     return table[country][plan][mode];
@@ -196,19 +196,19 @@ export default function Home() {
   const getMonthlyEquivalent = (plan) => {
     const table = {
       PK: {
-        starter: "~Rs 3,000 / month",
-        growth: "~Rs 7,500 / month",
-        pro: "~Rs 12,000 / month",
+        starter: "~Rs 4,500 / month",
+        growth: "~Rs 10,500 / month",
+        pro: "~Rs 16,500 / month",
       },
       IN: {
-        starter: "~₹ 2,400 / month",
-        growth: "~₹ 4,500 / month",
-        pro: "~₹ 7,500 / month",
+        starter: "~₹ 3,600 / month",
+        growth: "~₹ 8,400 / month",
+        pro: "~₹ 13,500 / month",
       },
       INTL: {
-        starter: "~$14 / month",
-        growth: "~$30 / month",
-        pro: "~$50 / month",
+        starter: "~$21 / month",
+        growth: "~$45 / month",
+        pro: "~$75 / month",
       },
     };
     return table[country][plan];
@@ -217,17 +217,17 @@ export default function Home() {
   const getMonthlySavingsCopy = (plan) => {
     const table = {
       PK: {
-        starter: "Save Rs 100 vs daily",
+        starter: "Billed once a month",
         growth: "Save Rs 500 vs daily",
-        pro: "Save Rs 1,000 vs daily",
+        pro: "Save Rs 500 vs daily",
       },
       IN: {
-        starter: "Save ₹ 80 vs daily",
-        growth: "Save ₹ 300 vs daily",
+        starter: "Save ₹ 100 vs daily",
+        growth: "Save ₹ 400 vs daily",
         pro: "Save ₹ 500 vs daily",
       },
       INTL: {
-        starter: "Save $1.00 vs daily",
+        starter: "Save $1 vs daily",
         growth: "Save $3 vs daily",
         pro: "Save $5 vs daily",
       },
@@ -238,19 +238,19 @@ export default function Home() {
   const getYearlySavingsCopy = (plan) => {
     const table = {
       PK: {
-        starter: "Save Rs 6,000 · 2 months free",
-        growth: "Save Rs 20,000 · 2.5 months free",
-        pro: "Save Rs 34,000 · 3 months free",
+        starter: "Save Rs 9,000 · 2 months free",
+        growth: "Save Rs 20,000 · 2 months free",
+        pro: "Save Rs 32,000 · 2 months free",
       },
       IN: {
-        starter: "Save ₹ 6,000 · 2 months free",
-        growth: "Save ₹ 20,000 · 2.5 months free",
-        pro: "Save ₹ 34,000 · 3 months free",
+        starter: "Save ₹ 7,000 · 2 months free",
+        growth: "Save ₹ 16,000 · 2 months free",
+        pro: "Save ₹ 26,000 · 2 months free",
       },
       INTL: {
-        starter: "Save $60 · 2 months free",
-        growth: "Save $200 · 2.5 months free",
-        pro: "Save $340 · 3 months free",
+        starter: "Save $40 · 2 months free",
+        growth: "Save $84 · 2 months free",
+        pro: "Save $140 · 2 months free",
       },
     };
     return table[country][plan];
@@ -258,9 +258,9 @@ export default function Home() {
 
   const getComparisonDailyLabel = (plan) => {
     const base = {
-      PK: { starter: "Rs 100/day", growth: "Rs 250/day", pro: "Rs 400/day" },
-      IN: { starter: "₹ 80/day", growth: "₹ 150/day", pro: "₹ 250/day" },
-      INTL: { starter: "$0.5/day", growth: "$1/day", pro: "$1.50/day" },
+      PK: { starter: "Rs 150/day", growth: "Rs 350/day", pro: "Rs 550/day" },
+      IN: { starter: "₹ 120/day", growth: "₹ 280/day", pro: "₹ 450/day" },
+      INTL: { starter: "$0.70/day", growth: "$1.50/day", pro: "$2.50/day" },
     };
     return base[country][plan];
   };
@@ -268,19 +268,19 @@ export default function Home() {
   const getSavingsStripAmount = (plan) => {
     const table = {
       PK: {
-        starter: "Rs 6,000",
+        starter: "Rs 9,000",
         growth: "Rs 20,000",
-        pro: "Rs 34,000",
+        pro: "Rs 32,000",
       },
       IN: {
-        starter: "₹ 6,000",
-        growth: "₹ 20,000",
-        pro: "₹ 34,000",
+        starter: "₹ 7,000",
+        growth: "₹ 16,000",
+        pro: "₹ 26,000",
       },
       INTL: {
-        starter: "$60",
-        growth: "$200",
-        pro: "$340",
+        starter: "$40",
+        growth: "$84",
+        pro: "$140",
       },
     };
     return table[country][plan];
@@ -847,10 +847,10 @@ export default function Home() {
               <br />
               <span className="orange">
                 {country === "PK"
-                  ? "from Rs 100 a day"
+                  ? "from Rs 150 a day"
                   : country === "IN"
-                    ? "from ₹ 80 a day"
-                    : "from $0.5 a day"}
+                    ? "from ₹ 120 a day"
+                    : "from $0.70 a day"}
               </span>
             </h2>
             <p className="section-sub">
@@ -862,6 +862,18 @@ export default function Home() {
               className="pricing-billing-wrap"
               style={{ textAlign: "center" }}
             >
+              <div className="country-pills">
+                {countryOptions.map((opt) => (
+                  <button
+                    key={opt.code}
+                    type="button"
+                    className={`country-pill${country === opt.code ? " active" : ""}`}
+                    onClick={() => handleCountrySelect(opt.code)}
+                  >
+                    {opt.flag} {opt.label}
+                  </button>
+                ))}
+              </div>
               <div className="billing-toggle">
                 <button
                   type="button"
@@ -885,21 +897,6 @@ export default function Home() {
                   Yearly
                   <span className="save-badge">−17%</span>
                 </button>
-              </div>
-              <div className="country-toggle-row">
-                <div className="country-dropdown">
-                  <select
-                    className="country-select"
-                    value={country}
-                    onChange={(e) => handleCountrySelect(e.target.value)}
-                  >
-                    {countryOptions.map((opt) => (
-                      <option key={opt.code} value={opt.code}>
-                        {opt.flag} {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
             </div>
 
@@ -1001,6 +998,19 @@ export default function Home() {
                   </li>
                   <li className="pc-feat no">
                     <span className="dot">–</span>Foodpanda integration
+                  </li>
+                </ul>
+                <div className="pc-divider" />
+                <div className="pc-section-label">Accounting</div>
+                <ul className="pc-features">
+                  <li className="pc-feat no">
+                    <span className="dot">–</span>Basic income &amp; expense tracking
+                  </li>
+                  <li className="pc-feat no">
+                    <span className="dot">–</span>Daily cash summary
+                  </li>
+                  <li className="pc-feat no">
+                    <span className="dot">–</span>Sales ledger (auto from POS)
                   </li>
                 </ul>
               </div>
@@ -1108,6 +1118,37 @@ export default function Home() {
                     <span className="dot">✓</span>Export to CSV
                   </li>
                 </ul>
+                <div className="pc-divider" />
+                <div className="pc-section-label">Accounting</div>
+                <ul className="pc-features">
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Full double-entry bookkeeping
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Chart of accounts (restaurant template)
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Auto-posting from POS sales
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Cash, bank &amp; journal vouchers
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Supplier &amp; expense management
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Profit &amp; Loss report
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Balance Sheet
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Trial Balance
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Day Book &amp; Ledger reports
+                  </li>
+                </ul>
               </div>
 
               <div className="price-card">
@@ -1188,7 +1229,72 @@ export default function Home() {
                     <span className="dot">✓</span>AI agents (coming soon)
                   </li>
                 </ul>
+                <div className="pc-divider" />
+                <div className="pc-section-label">Accounting</div>
+                <ul className="pc-features">
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Everything in Growth accounting
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Multi-branch consolidated accounts
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Custom financial reports
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Accountant access role
+                  </li>
+                </ul>
               </div>
+
+              <div className="price-card">
+                <div className="pc-name">Enterprise</div>
+                <p className="pc-tagline">Large chains &amp; enterprise groups</p>
+                <div className="pc-price-content" style={{ opacity: 1, transition: "opacity 0.15s ease" }}>
+                  <div className="pc-price-tier" style={{ display: "block", marginBottom: 24 }}>
+                    <div className="pc-price pc-price--custom">Custom</div>
+                    <div className="pc-unit">pricing</div>
+                    <div className="pc-equiv">Tailored to your scale</div>
+                  </div>
+                </div>
+                <a href={WHATSAPP_DEMO_URL} className="pc-cta">
+                  Contact us →
+                </a>
+                <div className="pc-features-label">Everything in Pro, plus</div>
+                <ul className="pc-features">
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Unlimited locations
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Dedicated account manager
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Custom integrations &amp; API
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>White-label option
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>SLA guarantee
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>On-site training &amp; onboarding
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Custom AI agents
+                  </li>
+                  <li className="pc-feat yes">
+                    <span className="dot">✓</span>Annual contract pricing
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="accounting-callout">
+              <span className="accounting-callout-icon">⚡</span>
+              <p className="accounting-callout-text">
+                Accounting module included in <strong>Growth and Pro</strong> plans — auto-posts your POS sales, manages expenses, and generates P&amp;L and Balance Sheet reports automatically.
+              </p>
             </div>
 
             <h3 className="pricing-detail-title">Save more, worry less</h3>
