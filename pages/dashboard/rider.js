@@ -178,6 +178,11 @@ export default function RiderPortalPage() {
   const [deliveryZones, setDeliveryZones] = useState([]);
   const [deliveryLocationId, setDeliveryLocationId] = useState("");
 
+  const [showCustomerEdit, setShowCustomerEdit] = useState(false);
+  const [zoneQuery, setZoneQuery] = useState("");
+  const [zoneOpen, setZoneOpen] = useState(false);
+  const zoneRef = useRef(null);
+
   // UI
   const [showBranchModal, setShowBranchModal] = useState(false);
 
@@ -275,6 +280,14 @@ export default function RiderPortalPage() {
   useEffect(() => {
     if (step === STEPS.CART) loadCustomers();
   }, [step]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (zoneRef.current && !zoneRef.current.contains(e.target)) setZoneOpen(false);
+    }
+    if (zoneOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [zoneOpen]);
 
   // ── Derived data ──────────────────────────────────────────────────────
   const activeOrders = orders.filter((o) => {
@@ -482,6 +495,7 @@ export default function RiderPortalPage() {
     setCustomerSearch("");
     setQuickCustomerName("");
     setQuickCustomerAddress("");
+    setShowCustomerEdit(false);
   }
 
   async function handleQuickAddCustomer() {
@@ -1266,7 +1280,7 @@ export default function RiderPortalPage() {
                       {/* Compact cart items */}
                       <div className="space-y-1.5 mb-3">
                         {cart.map((item) => (
-                          <div key={item.id} className="flex items-center gap-2.5 bg-white dark:bg-neutral-950 rounded-xl p-2.5 shadow-sm">
+                          <div key={item.id} className="flex items-center gap-2.5 bg-white dark:bg-neutral-950 rounded-xl p-1.5">
                             {item.imageUrl ? (
                               <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
                             ) : (
@@ -1292,41 +1306,79 @@ export default function RiderPortalPage() {
                       </div>
 
                       {/* Customer section */}
-                      <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm overflow-hidden">
+                      <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm">
                         {/* Section header */}
-                        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2">
+                        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2 rounded-t-2xl">
                           <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-black transition-colors ${customerPhone ? "bg-emerald-500 text-white" : "bg-gray-200 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400"}`}>
                             {customerPhone ? <Check className="w-3 h-3" /> : "2"}
                           </div>
-                          <p className="text-xs font-bold text-gray-700 dark:text-neutral-300">Customer Details</p>
+                          <p className="text-xs font-bold dark:text-neutral-300">Customer Details</p>
                           {customerPhone && (
                             <span className="ml-auto text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Selected</span>
                           )}
                         </div>
 
                         <div className="p-3 space-y-3">
-                          {/* Delivery area — prominent at the top */}
-                          {deliveryZones.length > 0 && (
-                            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-colors ${deliveryLocationId ? "bg-primary/5 dark:bg-primary/10 border-primary/25 dark:border-primary/20" : "bg-gray-50 dark:bg-neutral-900 border-gray-200 dark:border-neutral-800"}`}>
-                              <MapPin className={`w-4 h-4 flex-shrink-0 ${deliveryLocationId ? "text-primary" : "text-gray-400"}`} />
-                              <select
-                                value={deliveryLocationId}
-                                onChange={(e) => setDeliveryLocationId(e.target.value)}
-                                className="flex-1 bg-transparent text-sm font-medium text-gray-900 dark:text-white outline-none"
-                              >
-                                <option value="">Select delivery area *</option>
-                                {deliveryZones.map((z) => (
-                                  <option key={z.id} value={z.id}>
-                                    {z.name} — {sym} {z.fee.toFixed(2)}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
+                          {/* Delivery area combobox */}
+                          {deliveryZones.length > 0 && (() => {
+                            const selectedZone = deliveryZones.find((z) => z.id === deliveryLocationId);
+                            const filteredZones = deliveryZones.filter((z) =>
+                              !zoneQuery.trim() || z.name.toLowerCase().includes(zoneQuery.trim().toLowerCase())
+                            );
+                            return (
+                              <div ref={zoneRef} className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => { setZoneOpen((v) => !v); setZoneQuery(""); }}
+                                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-colors text-left ${deliveryLocationId ? "bg-primary/5 dark:bg-primary/10 border-primary/25 dark:border-primary/20" : "bg-gray-50 dark:bg-neutral-900 border-gray-200 dark:border-neutral-800"}`}
+                                >
+                                  <MapPin className={`w-4 h-4 flex-shrink-0 ${deliveryLocationId ? "text-primary" : "text-gray-400"}`} />
+                                  <span className={`flex-1 text-sm font-medium truncate ${selectedZone ? "text-gray-900 dark:text-white" : "text-gray-400 dark:text-neutral-500"}`}>
+                                    {selectedZone ? `${selectedZone.name} — ${sym} ${selectedZone.fee.toFixed(2)}` : "Select delivery area *"}
+                                  </span>
+                                  <ChevronDown className={`w-4 h-4 flex-shrink-0 text-gray-400 transition-transform duration-200 ${zoneOpen ? "rotate-180" : ""}`} />
+                                </button>
+
+                                {zoneOpen && (
+                                  <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white dark:bg-neutral-950 rounded-xl shadow-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+                                    <div className="p-2 border-b border-gray-100 dark:border-neutral-800">
+                                      <div className="relative">
+                                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                        <input
+                                          autoFocus
+                                          type="text"
+                                          value={zoneQuery}
+                                          onChange={(e) => setZoneQuery(e.target.value)}
+                                          placeholder="Search area…"
+                                          className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none border-0"
+                                        />
+                                      </div>
+                                    </div>
+                                    <ul className="max-h-44 overflow-y-auto rider-no-scrollbar py-1">
+                                      {filteredZones.length === 0 ? (
+                                        <li className="px-3 py-3 text-xs text-gray-400 dark:text-neutral-500 text-center">No areas match</li>
+                                      ) : filteredZones.map((z) => (
+                                        <li key={z.id}>
+                                          <button
+                                            type="button"
+                                            onClick={() => { setDeliveryLocationId(z.id); setZoneOpen(false); setZoneQuery(""); }}
+                                            className={`w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors text-left ${z.id === deliveryLocationId ? "bg-primary/10 dark:bg-primary/20 text-primary font-bold" : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900 font-medium"}`}
+                                          >
+                                            <span>{z.name}</span>
+                                            <span className={`text-xs tabular-nums ${z.id === deliveryLocationId ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}>{sym} {z.fee.toFixed(2)}</span>
+                                          </button>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* ── Customer selected state ── */}
                           {customerPhone && !customerSearch ? (
-                            <div className="space-y-2.5">
+                            <div className="space-y-2">
                               {/* Selected customer card */}
                               <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
                                 <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
@@ -1334,20 +1386,37 @@ export default function RiderPortalPage() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{customerName || "—"}</p>
-                                  <p className="text-xs text-gray-500 dark:text-neutral-400">{customerPhone}</p>
+                                  <p className="text-xs text-gray-500 dark:text-neutral-400">{customerPhone}{deliveryAddress ? ` · ${deliveryAddress}` : ""}</p>
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => { setCustomerName(""); setCustomerPhone(""); setDeliveryAddress(""); setCustomersLoaded(false); }}
-                                  className="text-[11px] font-bold text-gray-400 hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                                  onClick={() => { setCustomerName(""); setCustomerPhone(""); setDeliveryAddress(""); setCustomersLoaded(false); setShowCustomerEdit(false); }}
+                                  className="text-[11px] font-bold text-gray-400 hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex-shrink-0"
                                 >
                                   Change
                                 </button>
                               </div>
-                              {/* Editable fields */}
-                              <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
-                              <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
-                              <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder={deliveryZonesActive ? "Address / notes (optional)" : "Delivery address *"} rows={2} className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0 resize-none" />
+
+                              {/* Edit toggle */}
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCustomerEdit((v) => !v)}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 dark:text-neutral-500 hover:text-primary dark:hover:text-primary transition-colors py-0.5 px-1 rounded"
+                                >
+                                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showCustomerEdit ? "rotate-180" : ""}`} />
+                                  {showCustomerEdit ? "Hide details" : "Edit customer details"}
+                                </button>
+                              </div>
+
+                              {/* Collapsible editable fields */}
+                              {showCustomerEdit && (
+                                <div className="space-y-2 pt-1">
+                                  <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
+                                  <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
+                                  <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder={deliveryZonesActive ? "Address / notes (optional)" : "Delivery address *"} rows={2} className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0 resize-none" />
+                                </div>
+                              )}
                             </div>
                           ) : (
                             /* ── Search / Add flow ── */
