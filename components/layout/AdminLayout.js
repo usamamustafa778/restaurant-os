@@ -157,6 +157,12 @@ const tenantNav = [
     exact: true,
   },
   {
+    path: "/sales-report",
+    label: "Sales",
+    icon: BarChart3,
+    roles: ["restaurant_admin", "admin", "manager"],
+  },
+  {
     label: "Vouchers",
     icon: Receipt,
     path: "/accounting/vouchers",
@@ -196,12 +202,6 @@ const tenantNav = [
     path: "/accounting/reports/day-book",
     roles: ["restaurant_admin", "admin", "manager"],
     children: [
-      {
-        path: "/sales-report",
-        label: "Sales",
-        icon: BarChart3,
-        roles: ["restaurant_admin", "admin", "manager"],
-      },
       {
         path: "/accounting/reports/day-book",
         label: "Day Book",

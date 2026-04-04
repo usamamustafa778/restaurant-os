@@ -319,11 +319,28 @@ function getCalendarDates(preset) {
   }
 }
 
-/** When an OPEN session exists, reports must use daySessionId (same source as Business Day Report). */
+/**
+ * Build the query params for the sales report.
+ *
+ * For "today": if there is exactly ONE session today (the open one), scope by
+ * daySessionId so the report aligns with the Business Day Report.
+ * If there are MULTIPLE sessions today (e.g. a session was closed mid-day and a
+ * new one opened), we must NOT restrict to just the open session — that would
+ * silently drop all orders from the earlier closed session. Fall back to the
+ * smart date-range in that case so the backend returns all of today's orders.
+ */
 function getSalesReportQuery(preset, sessions) {
   if (preset === "today" && sessions && sessions.length > 0) {
     const open = sessions.find((s) => s.status === "OPEN");
-    if (open?.id) return { daySessionId: open.id };
+    if (open?.id) {
+      // Count how many sessions started on the same calendar day as the open session
+      const openDate = open.startAt ? new Date(open.startAt).toDateString() : null;
+      const todaySessions = openDate
+        ? sessions.filter((s) => s.startAt && new Date(s.startAt).toDateString() === openDate)
+        : [open];
+      // Only session-scope when it is the sole session for today to avoid gaps
+      if (todaySessions.length === 1) return { daySessionId: open.id };
+    }
   }
   return getSmartDates(preset, sessions);
 }

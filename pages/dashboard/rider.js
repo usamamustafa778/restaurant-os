@@ -12,6 +12,7 @@ import {
   clearStoredAuth,
   SubscriptionInactiveError,
   getCurrencySymbol,
+  getCurrentDaySession,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -186,6 +187,10 @@ export default function RiderPortalPage() {
   // UI
   const [showBranchModal, setShowBranchModal] = useState(false);
 
+  // Session gate
+  const [sessionGateChecked, setSessionGateChecked] = useState(false);
+  const [noActiveSession, setNoActiveSession] = useState(false);
+
   // ── Init ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const auth = getStoredAuth();
@@ -206,6 +211,25 @@ export default function RiderPortalPage() {
   }
 
   useEffect(() => { loadOrders(); }, []);
+
+  // ── Session gate check ────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    setSessionGateChecked(false);
+    getCurrentDaySession(currentBranch?.id)
+      .then((session) => {
+        if (cancelled) return;
+        setNoActiveSession(!session);
+        setSessionGateChecked(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNoActiveSession(false);
+          setSessionGateChecked(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [currentBranch?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1160,7 +1184,23 @@ export default function RiderPortalPage() {
           )}
 
           {/* ══════ NEW ORDER TAB ══════ */}
-          {tab === TABS.NEW_ORDER && (
+          {tab === TABS.NEW_ORDER && sessionGateChecked && noActiveSession && (
+            <div className="flex flex-col h-full items-center justify-center p-8 text-center gap-5">
+              <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center">
+                <Sun className="w-8 h-8 text-amber-500" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
+                  Session Not Started
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-neutral-400 leading-relaxed">
+                  The business day has not been started yet. You cannot place new orders until a manager or admin starts the session.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {tab === TABS.NEW_ORDER && (!sessionGateChecked || !noActiveSession) && (
             <>
               {/* MENU STEP */}
               {step === STEPS.MENU && (
@@ -1528,7 +1568,7 @@ export default function RiderPortalPage() {
         </div>
 
         {/* ── Floating Action Bars ───────────────────────────────────── */}
-        {tab === TABS.NEW_ORDER && step === STEPS.MENU && cartBadge > 0 && (
+        {tab === TABS.NEW_ORDER && !noActiveSession && step === STEPS.MENU && cartBadge > 0 && (
           <div className="fixed bottom-16 inset-x-0 z-20">
             <div className="px-4 pb-3 pt-2">
               <button
@@ -1545,7 +1585,7 @@ export default function RiderPortalPage() {
           </div>
         )}
 
-        {tab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
+        {tab === TABS.NEW_ORDER && !noActiveSession && step === STEPS.CART && cart.length > 0 && (
           <div className="fixed bottom-16 inset-x-0 z-20">
             <div className="bg-white dark:bg-neutral-950 border-t border-gray-100 dark:border-neutral-900 px-3 pt-2.5 pb-2.5">
               <div className="flex items-center justify-between mb-2">

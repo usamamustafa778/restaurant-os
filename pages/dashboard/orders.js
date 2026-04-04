@@ -18,6 +18,7 @@ import {
   collectDeliveryPayment,
   getDaySessions,
   getCurrentDaySession,
+  startDaySession,
   endDaySession,
   updateBranch,
   getCurrencySymbol,
@@ -59,6 +60,8 @@ import {
   Power,
   Plus,
   Wallet,
+  PlayCircle,
+  Coffee,
 } from "lucide-react";
 
 // ─── Board configuration ────────────────────────────────────────────────────
@@ -338,6 +341,11 @@ export default function OrdersPage() {
   const [currentSession, setCurrentSession] = useState(null);
   const [loadingSession, setLoadingSession] = useState(false);
   const [endingDay, setEndingDay] = useState(false);
+
+  // ── Session gate ─────────────────────────────────────────────────────────
+  const [sessionGateChecked, setSessionGateChecked] = useState(false);
+  const [noActiveSession, setNoActiveSession] = useState(false);
+  const [startingSession, setStartingSession] = useState(false);
   const [savingCutoff, setSavingCutoff] = useState(false);
   const [showSessionHistoryModal, setShowSessionHistoryModal] = useState(false);
   const [sessionHistory, setSessionHistory] = useState([]);
@@ -652,6 +660,20 @@ export default function OrdersPage() {
     }
   }
 
+  async function handleStartSession() {
+    setStartingSession(true);
+    try {
+      await startDaySession(currentBranch?.id);
+      setNoActiveSession(false);
+      toast.success("Business day started!");
+      loadOrders(dateRange);
+    } catch (err) {
+      toast.error(err.message || "Failed to start session");
+    } finally {
+      setStartingSession(false);
+    }
+  }
+
   async function openEndDayModal() {
     setCurrentSession(null);
     setShowEndDayModal(true);
@@ -846,6 +868,27 @@ export default function OrdersPage() {
   useEffect(() => {
     loadOrders(dateRange);
   }, [dateRangeKey]);
+
+  // ── Session gate check ───────────────────────────────────────────────────
+  // Runs on mount and whenever the branch changes.
+  // Order takers and admins both need an active session; riders are handled in rider.js.
+  useEffect(() => {
+    let cancelled = false;
+    setSessionGateChecked(false);
+    getCurrentDaySession(currentBranch?.id)
+      .then((session) => {
+        if (cancelled) return;
+        setNoActiveSession(!session);
+        setSessionGateChecked(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNoActiveSession(false); // fail-open so a network error doesn't block forever
+          setSessionGateChecked(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [currentBranch?.id]);
 
   const baseFiltered = useMemo(() => {
     const base = Array.isArray(cashierBaseOrders) ? cashierBaseOrders : [];
@@ -2005,6 +2048,49 @@ export default function OrdersPage() {
         </div>
       )}
       </div>
+
+      {/* ── Start Session Gate Modal ─────────────────────────────────────────
+          Shown when no active session exists. Non-dismissable.
+      ─────────────────────────────────────────────────────────────────────── */}
+      {sessionGateChecked && noActiveSession && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-5">
+            <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center">
+              <Coffee className="w-8 h-8 text-amber-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
+                No Active Session
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-neutral-400 leading-relaxed">
+                {isAdmin || isCashier
+                  ? "Start a business day session to begin accepting orders. Orders cannot be placed until a session is open."
+                  : "A session has not been started yet. Please ask your manager or admin to start the business day."}
+              </p>
+            </div>
+            {(isAdmin || isCashier) ? (
+              <button
+                type="button"
+                onClick={handleStartSession}
+                disabled={startingSession}
+                className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {startingSession ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <PlayCircle className="w-4 h-4" />
+                )}
+                {startingSession ? "Starting…" : "Start Business Day"}
+              </button>
+            ) : (
+              <p className="text-xs text-gray-400 dark:text-neutral-500 font-medium">
+                Contact your manager or admin to start the session.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
     </AdminLayout>
   );
 }

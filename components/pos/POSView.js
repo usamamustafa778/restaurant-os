@@ -44,6 +44,7 @@ import {
   Minus,
   Trash2,
   Receipt,
+  ClipboardList,
   CreditCard,
   Banknote,
   ChevronUp,
@@ -4254,7 +4255,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 px-6 pb-6 pt-2">
+            <div className="grid grid-cols-2 gap-2 px-6 pb-6 pt-2">
               <button
                 type="button"
                 onClick={() => {
@@ -4302,7 +4303,6 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   openPrintBill(
                     {
                       ...orderConfirmation,
-                      // Ensure we always have an items array for the template.
                       items: orderConfirmation.items || [],
                     },
                     "bill",
@@ -4312,6 +4312,14 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               >
                 <Printer className="w-3.5 h-3.5" />
                 Print
+              </button>
+              <button
+                type="button"
+                onClick={() => { setOrderConfirmation(null); onClose?.(); }}
+                className="px-3 py-2.5 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-sm font-bold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                View Orders
               </button>
               <button
                 type="button"
