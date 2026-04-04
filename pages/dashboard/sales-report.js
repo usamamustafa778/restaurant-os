@@ -351,11 +351,22 @@ function getSmartDates(preset, sessions) {
   const now = new Date();
   if (sessions && sessions.length > 0) {
     if (preset === "today") {
-      // Prefer the current OPEN session
       const openSess = sessions.find((s) => s.status === "OPEN");
-      if (openSess?.startAt)
-        return { from: openSess.startAt, to: now.toISOString() };
-      // Fall back to most recent session that started today (local time)
+      if (openSess?.startAt) {
+        // Find ALL sessions from the same calendar day as the open session.
+        // Using the earliest start ensures orders from a previously-closed session
+        // earlier that day are not silently excluded.
+        const openDateStr = new Date(openSess.startAt).toDateString();
+        const todaySessions = sessions.filter(
+          (s) => s.startAt && new Date(s.startAt).toDateString() === openDateStr,
+        );
+        const earliestStart = todaySessions.reduce(
+          (min, s) => (new Date(s.startAt) < new Date(min) ? s.startAt : min),
+          openSess.startAt,
+        );
+        return { from: earliestStart, to: now.toISOString() };
+      }
+      // No open session — fall back to most recent session that started today (local time)
       const todayStr = now.toDateString();
       const todaySess = sessions.find(
         (s) => new Date(s.startAt).toDateString() === todayStr,
@@ -1029,12 +1040,21 @@ export default function HistoryPage() {
         to: customTo ? new Date(customTo + "T23:59:59.999") : null,
       };
     }
-    // Today with OPEN session: match daySession report (session start → now), not calendar midnight.
+    // Today with OPEN session: include orders from ALL sessions that started today,
+    // not just the current open session — so a prior closed session's orders are visible.
     if (preset === "today" && sessions?.length) {
       const open = sessions.find((s) => s.status === "OPEN");
       if (open?.startAt) {
+        const openDateStr = new Date(open.startAt).toDateString();
+        const todaySessions = sessions.filter(
+          (s) => s.startAt && new Date(s.startAt).toDateString() === openDateStr,
+        );
+        const earliestStart = todaySessions.reduce(
+          (min, s) => (new Date(s.startAt) < new Date(min) ? s.startAt : min),
+          open.startAt,
+        );
         return {
-          from: new Date(open.startAt),
+          from: new Date(earliestStart),
           to: new Date(),
         };
       }

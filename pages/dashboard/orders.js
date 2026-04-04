@@ -2049,23 +2049,24 @@ export default function OrdersPage() {
       )}
       </div>
 
-      {/* ── Start Session Gate Modal ─────────────────────────────────────────
-          Shown when no active session exists. Non-dismissable.
+      {/* ── Start Session Gate ───────────────────────────────────────────────
+          z-20 keeps the overlay below the sidebar (z-40) and header (z-30),
+          so both remain visible and clickable while blocking the content area.
       ─────────────────────────────────────────────────────────────────────── */}
       {sessionGateChecked && noActiveSession && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-5">
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-white/80 dark:bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-5 border border-gray-200 dark:border-neutral-700">
             <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center">
               <Coffee className="w-8 h-8 text-amber-500" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-                No Active Session
+                Business Day Not Started
               </h2>
               <p className="text-sm text-gray-500 dark:text-neutral-400 leading-relaxed">
                 {isAdmin || isCashier
-                  ? "Start a business day session to begin accepting orders. Orders cannot be placed until a session is open."
-                  : "A session has not been started yet. Please ask your manager or admin to start the business day."}
+                  ? "Open the business day to start accepting orders. No orders can be placed until the day is started."
+                  : "The business day hasn't been opened yet. Ask your manager or admin to start it."}
               </p>
             </div>
             {(isAdmin || isCashier) ? (

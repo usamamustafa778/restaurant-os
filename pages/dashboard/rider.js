@@ -1191,10 +1191,10 @@ export default function RiderPortalPage() {
               </div>
               <div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
-                  Session Not Started
+                  Business Day Not Started
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-neutral-400 leading-relaxed">
-                  The business day has not been started yet. You cannot place new orders until a manager or admin starts the session.
+                  The business day hasn't been opened yet. You can't place new orders until a manager starts it.
                 </p>
               </div>
             </div>
