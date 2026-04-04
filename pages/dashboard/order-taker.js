@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   getMenu,
-  getBranchMenu,
+  getDeals,
   createPosOrder,
   getTables,
   getOrders,
@@ -43,6 +43,7 @@ import {
   Wallet,
   Sun,
   Moon,
+  Tag,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -80,7 +81,7 @@ function getPaymentStatus(order) {
 }
 
 export default function OrderTakerPage() {
-  const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
+  const { currentBranch, branches, setCurrentBranch, loading: branchLoading } = useBranch() || {};
   const { socket } = useSocket() || {};
   const { theme, toggleTheme } = useTheme() || {
     theme: "light",
@@ -90,6 +91,7 @@ export default function OrderTakerPage() {
   const [activeTab, setActiveTab] = useState(TABS.HOME);
   const [step, setStep] = useState(STEPS.TABLE);
   const [menu, setMenu] = useState({ categories: [], items: [] });
+  const [availableDeals, setAvailableDeals] = useState([]);
   const [tables, setTables] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
   const [cart, setCart] = useState([]);
@@ -101,6 +103,8 @@ export default function OrderTakerPage() {
   const [userName, setUserName] = useState("");
   const searchRef = useRef(null);
   const categoryScrollRef = useRef(null);
+  const menuLoadSeqRef = useRef(0);
+  const dealsLoadSeqRef = useRef(0);
   const cartBadge = cart.reduce((sum, i) => sum + i.quantity, 0);
 
   // Active orders state
@@ -117,32 +121,58 @@ export default function OrderTakerPage() {
   }, []);
 
   useEffect(() => {
+    if (branchLoading) return;
+    if (branches.length > 0 && !currentBranch) return;
+
+    let cancelled = false;
+    const menuSeq = ++menuLoadSeqRef.current;
+    const dealsSeq = ++dealsLoadSeqRef.current;
+
     async function load() {
       setLoading(true);
       try {
-        const auth = getStoredAuth();
-        const restaurantId = auth?.user?.restaurantId;
-        let data;
-        if (currentBranch?.id && restaurantId) {
-          data = await getBranchMenu(currentBranch.id, restaurantId);
-        } else {
-          data = await getMenu();
+        const branchId = currentBranch?.id;
+        const menuData = await getMenu(branchId && branchId !== "all" ? branchId : undefined);
+        if (cancelled || menuSeq !== menuLoadSeqRef.current) return;
+        setMenu(menuData || { categories: [], items: [] });
+
+        try {
+          const allDeals = await getDeals(false);
+          if (cancelled || dealsSeq !== dealsLoadSeqRef.current) return;
+          const deals = Array.isArray(allDeals)
+            ? allDeals.filter((d) => {
+                if (!d.isActive) return false;
+                if (d.endDate && new Date(d.endDate) < new Date()) return false;
+                if (branchId && d.branches?.length > 0) {
+                  return d.branches.some((b) => String(b._id || b) === String(branchId));
+                }
+                return true;
+              })
+            : [];
+          setAvailableDeals(deals);
+        } catch {
+          if (!cancelled && dealsSeq === dealsLoadSeqRef.current) setAvailableDeals([]);
         }
-        setMenu(data);
+
         const tbl = await getTables();
+        if (cancelled || menuSeq !== menuLoadSeqRef.current) return;
         setTables(Array.isArray(tbl) ? tbl : []);
       } catch (err) {
+        if (cancelled || menuSeq !== menuLoadSeqRef.current) return;
         if (err instanceof SubscriptionInactiveError) {
           toast.error("Subscription inactive");
         } else {
           toast.error(err.message || "Failed to load data");
         }
       } finally {
-        setLoading(false);
+        if (!cancelled && menuSeq === menuLoadSeqRef.current) setLoading(false);
       }
     }
     load();
-  }, [currentBranch]);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch?.id, branchLoading, branches.length]);
 
   // Fetch orders created by this user (active + history)
   const fetchActiveOrders = useCallback(async () => {
@@ -179,15 +209,59 @@ export default function OrderTakerPage() {
     window.location.href = "/login";
   }
 
-  const filteredItems = menu.items.filter((item) => {
-    const matchCat =
-      selectedCategory === "all" || item.categoryId === selectedCategory;
-    const matchSearch =
-      !searchQuery ||
-      item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const isAvailable = item.finalAvailable ?? item.available;
-    return matchCat && matchSearch && isAvailable;
-  });
+  const dealMenuItems = useMemo(
+    () =>
+      (availableDeals || [])
+        .filter((d) => d.dealType === "COMBO" && d.showOnPOS !== false)
+        .map((d) => ({
+          id: `deal-${d._id || d.id}`,
+          _id: `deal-${d._id || d.id}`,
+          name: d.name,
+          price: d.comboPrice || 0,
+          finalPrice: d.comboPrice || 0,
+          imageUrl: d.imageUrl || "",
+          isDeal: true,
+          categoryId: null,
+          available: true,
+          finalAvailable: true,
+          inventorySufficient: true,
+        })),
+    [availableDeals],
+  );
+
+  const allMenuItems = useMemo(
+    () => [...(menu.items || []), ...dealMenuItems],
+    [menu.items, dealMenuItems],
+  );
+
+  const visibleCategories = useMemo(() => {
+    const catIds = new Set(
+      allMenuItems
+        .filter((i) => i.categoryId && !i.isDeal)
+        .map((i) => String(i.categoryId)),
+    );
+    return (menu.categories || []).filter((c) => catIds.has(String(c.id || c._id)));
+  }, [menu.categories, allMenuItems]);
+
+  const filteredItems = useMemo(() => {
+    return allMenuItems.filter((item) => {
+      if (item.available === false || item.finalAvailable === false) return false;
+      const matchCat =
+        selectedCategory === "all" ||
+        (selectedCategory === "deals" ? item.isDeal : item.categoryId === selectedCategory);
+      const matchSearch =
+        !searchQuery ||
+        item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const isAvailable = item.finalAvailable ?? item.available;
+      return matchCat && matchSearch && isAvailable !== false;
+    });
+  }, [allMenuItems, selectedCategory, searchQuery]);
+
+  useEffect(() => {
+    if (selectedCategory === "deals" && dealMenuItems.length === 0) {
+      setSelectedCategory("all");
+    }
+  }, [selectedCategory, dealMenuItems.length]);
 
   const getCartQty = useCallback(
     (itemId) => cart.find((c) => c.id === itemId)?.quantity || 0,
@@ -195,6 +269,10 @@ export default function OrderTakerPage() {
   );
 
   function addToCart(item, qty = 1) {
+    if (!item.isDeal && (item.inventorySufficient === false || item.inventorySufficient === "false")) {
+      toast.error(`${item.name} is out of stock`);
+      return;
+    }
     setCart((prev) => {
       const idx = prev.findIndex((c) => c.id === item.id);
       if (idx >= 0) {
@@ -202,14 +280,18 @@ export default function OrderTakerPage() {
         next[idx] = { ...next[idx], quantity: next[idx].quantity + qty };
         return next;
       }
+      const unit = item.isDeal
+        ? item.price ?? 0
+        : item.effectivePrice ?? item.finalPrice ?? item.price ?? 0;
       return [
         ...prev,
         {
           id: item.id,
           name: item.name,
-          price: item.finalPrice ?? item.price ?? 0,
+          price: unit,
           quantity: qty,
           imageUrl: item.imageUrl || "",
+          isDeal: !!item.isDeal,
         },
       ];
     });
@@ -1234,7 +1316,14 @@ export default function OrderTakerPage() {
                         onClick={() => setSelectedCategory("all")}
                         label="All"
                       />
-                      {menu.categories.map((cat) => (
+                      {dealMenuItems.length > 0 && (
+                        <CategoryPill
+                          active={selectedCategory === "deals"}
+                          onClick={() => setSelectedCategory("deals")}
+                          label={`Deals (${dealMenuItems.length})`}
+                        />
+                      )}
+                      {visibleCategories.map((cat) => (
                         <CategoryPill
                           key={cat.id || cat._id}
                           active={selectedCategory === (cat.id || cat._id)}
@@ -1262,43 +1351,85 @@ export default function OrderTakerPage() {
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-2.5">
                         {filteredItems.map((item) => {
                           const qty = getCartQty(item.id);
-                          const price = item.finalPrice ?? item.price ?? 0;
+                          const price = item.isDeal
+                            ? item.price ?? 0
+                            : item.effectivePrice ?? item.finalPrice ?? item.price ?? 0;
+                          const outOfStock =
+                            !item.isDeal &&
+                            (item.inventorySufficient === false ||
+                              item.inventorySufficient === "false");
                           return (
                             <div
                               key={item.id || item._id}
-                              className="relative bg-white dark:bg-neutral-950 rounded-2xl md:rounded-xl overflow-hidden shadow-sm active:scale-[0.97] transition-transform"
+                              className={`relative rounded-2xl md:rounded-xl overflow-hidden shadow-sm transition-transform ${
+                                outOfStock
+                                  ? "bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800"
+                                  : "bg-white dark:bg-neutral-950 active:scale-[0.97]"
+                              }`}
                             >
                               <button
-                                onClick={() => addToCart(item)}
-                                className="w-full text-left"
+                                type="button"
+                                onClick={() => !outOfStock && addToCart(item)}
+                                disabled={outOfStock}
+                                className="w-full text-left disabled:cursor-not-allowed"
+                                aria-disabled={outOfStock}
                               >
-                                {item.imageUrl ? (
-                                  <div className="w-full aspect-[4/3] md:aspect-square bg-gray-100 dark:bg-neutral-900 overflow-hidden">
-                                    <img
-                                      src={item.imageUrl}
-                                      alt={item.name}
-                                      className="w-full h-full object-cover"
-                                      loading="lazy"
-                                    />
+                                <div className="relative w-full aspect-[4/3] md:aspect-square bg-gray-100 dark:bg-neutral-900 overflow-hidden">
+                                  <div
+                                    className={`absolute inset-0 ${outOfStock ? "opacity-60" : ""}`}
+                                    aria-hidden
+                                  >
+                                    {item.isDeal && !outOfStock && (
+                                      <div className="absolute top-1.5 left-1.5 z-[2] flex items-center gap-0.5 rounded-md bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
+                                        <Tag className="w-2.5 h-2.5" />
+                                        Deal
+                                      </div>
+                                    )}
+                                    {item.imageUrl ? (
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 dark:from-neutral-900 dark:to-neutral-950 flex items-center justify-center">
+                                        <Utensils className="w-8 h-8 md:w-7 md:h-7 text-gray-200 dark:text-neutral-800" />
+                                      </div>
+                                    )}
                                   </div>
-                                ) : (
-                                  <div className="w-full aspect-[4/3] md:aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-neutral-900 dark:to-neutral-950 flex items-center justify-center">
-                                    <Utensils className="w-8 h-8 md:w-7 md:h-7 text-gray-200 dark:text-neutral-800" />
-                                  </div>
-                                )}
-                                <div className="px-2.5 md:px-2 pt-1.5 md:pt-1 pb-2 md:pb-1.5">
-                                  <p className="text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 pb-0.5">
+                                  {outOfStock && (
+                                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 pointer-events-none">
+                                      <span className="px-2.5 py-1 rounded-md bg-red-600 text-white text-[10px] md:text-[11px] font-bold shadow-md">
+                                        Out of Stock
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div
+                                  className={`px-2.5 md:px-2 pt-1.5 md:pt-1 pb-2 md:pb-1.5 ${outOfStock ? "opacity-60" : ""}`}
+                                >
+                                  <p
+                                    className={`text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 pb-0.5 ${
+                                      outOfStock ? "text-gray-400 dark:text-neutral-500" : ""
+                                    }`}
+                                  >
                                     {item.name}
                                   </p>
-                                  <p className="text-xs md:text-[11px] font-extrabold text-primary">
+                                  <p
+                                    className={`text-xs md:text-[11px] font-extrabold ${
+                                      outOfStock ? "text-gray-400" : "text-primary"
+                                    }`}
+                                  >
                                     Rs. {price.toLocaleString()}
                                   </p>
                                 </div>
                               </button>
 
-                              {qty > 0 && (
+                              {qty > 0 && !outOfStock && (
                                 <div className="absolute top-2 md:top-1.5 right-2 md:right-1.5 flex items-center gap-0.5 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm rounded-xl md:rounded-lg shadow-lg border border-gray-200/50 dark:border-neutral-700/50 px-1 py-0.5">
                                   <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       updateQty(item.id, -1);
@@ -1311,6 +1442,7 @@ export default function OrderTakerPage() {
                                     {qty}
                                   </span>
                                   <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       addToCart(item);
@@ -1322,8 +1454,9 @@ export default function OrderTakerPage() {
                                 </div>
                               )}
 
-                              {qty === 0 && (
+                              {qty === 0 && !outOfStock && (
                                 <button
+                                  type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     addToCart(item);
