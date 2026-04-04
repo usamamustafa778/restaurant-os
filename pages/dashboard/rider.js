@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   getRiderOrders,
   collectOrderByRider,
@@ -13,6 +13,7 @@ import {
   SubscriptionInactiveError,
   getCurrencySymbol,
   getCurrentDaySession,
+  getDeals,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -49,6 +50,7 @@ import {
   Wallet,
   Sun,
   Moon,
+  Tag,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -125,12 +127,15 @@ function isDeliveryPaymentNotSubmitted(order) {
 export default function RiderPortalPage() {
   const sym = getCurrencySymbol();
   const { socket } = useSocket() || {};
-  const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
+  const { currentBranch, branches, setCurrentBranch, loading: branchLoading } = useBranch() || {};
   const { theme, toggleTheme } = useTheme() || {
     theme: "light",
     toggleTheme: () => {},
   };
   const searchRef = useRef(null);
+  /** Ignore stale menu responses if branch changes quickly or an early unscoped request finishes late. */
+  const menuLoadSeqRef = useRef(0);
+  const dealsLoadSeqRef = useRef(0);
 
   // Auth
   const [userName, setUserName] = useState("");
@@ -158,6 +163,8 @@ export default function RiderPortalPage() {
   // New order
   const [step, setStep] = useState(STEPS.MENU);
   const [menu, setMenu] = useState({ categories: [], items: [] });
+  /** Active COMBO deals for current branch (same rules as POS grid). */
+  const [availableDeals, setAvailableDeals] = useState([]);
   const [menuLoading, setMenuLoading] = useState(false);
   const [cart, setCart] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -269,22 +276,53 @@ export default function RiderPortalPage() {
     };
   }, [socket]);
 
-  async function loadMenu() {
+  const loadMenu = useCallback(async () => {
+    const seq = ++menuLoadSeqRef.current;
     setMenuLoading(true);
     try {
-      const data = await getRiderMenu();
+      const data = await getRiderMenu(currentBranch?.id);
+      if (seq !== menuLoadSeqRef.current) return;
       setMenu(data || { categories: [], items: [] });
     } catch (err) {
+      if (seq !== menuLoadSeqRef.current) return;
       if (err instanceof SubscriptionInactiveError) toast.error("Subscription inactive");
       else toast.error(err.message || "Failed to load menu");
     } finally {
-      setMenuLoading(false);
+      if (seq === menuLoadSeqRef.current) setMenuLoading(false);
     }
-  }
+  }, [currentBranch?.id]);
+
+  const loadDeals = useCallback(async () => {
+    const seq = ++dealsLoadSeqRef.current;
+    try {
+      const allDeals = await getDeals(false);
+      if (seq !== dealsLoadSeqRef.current) return;
+      const branchId = currentBranch?.id;
+      const deals = Array.isArray(allDeals)
+        ? allDeals.filter((d) => {
+            if (!d.isActive) return false;
+            if (d.endDate && new Date(d.endDate) < new Date()) return false;
+            if (branchId && d.branches?.length > 0) {
+              return d.branches.some((b) => String(b._id || b) === String(branchId));
+            }
+            return true;
+          })
+        : [];
+      setAvailableDeals(deals);
+    } catch {
+      if (seq !== dealsLoadSeqRef.current) return;
+      setAvailableDeals([]);
+    }
+  }, [currentBranch?.id]);
 
   useEffect(() => {
-    if (tab === TABS.NEW_ORDER && menu.items.length === 0) loadMenu();
-  }, [tab]);
+    if (tab !== TABS.NEW_ORDER) return;
+    // Wait for branch context so we don't call /menu without a branch while localStorage already has x-branch-id (matches POS inventory).
+    if (branchLoading) return;
+    if (branches.length > 0 && !currentBranch) return;
+    loadMenu();
+    loadDeals();
+  }, [tab, loadMenu, loadDeals, branchLoading, branches.length, currentBranch?.id]);
 
   async function loadCustomers() {
     if (customersLoaded) return;
@@ -408,12 +446,46 @@ export default function RiderPortalPage() {
           ? "ready"
           : "out for delivery";
 
-  const filteredItems = menu.items.filter((item) => {
-    const matchCat = selectedCategory === "all" || item.categoryId === selectedCategory;
+  const dealMenuItems = useMemo(
+    () =>
+      (availableDeals || [])
+        .filter((d) => d.dealType === "COMBO" && d.showOnPOS !== false)
+        .map((d) => ({
+          id: `deal-${d._id || d.id}`,
+          _id: `deal-${d._id || d.id}`,
+          name: d.name,
+          price: d.comboPrice || 0,
+          finalPrice: d.comboPrice || 0,
+          imageUrl: d.imageUrl || "",
+          isDeal: true,
+          categoryId: null,
+          available: true,
+          finalAvailable: true,
+          inventorySufficient: true,
+        })),
+    [availableDeals],
+  );
+
+  const allMenuItems = useMemo(
+    () => [...(menu.items || []), ...dealMenuItems],
+    [menu.items, dealMenuItems],
+  );
+
+  const filteredItems = allMenuItems.filter((item) => {
+    if (item.available === false || item.finalAvailable === false) return false;
+    const matchCat =
+      selectedCategory === "all" ||
+      (selectedCategory === "deals" ? item.isDeal : item.categoryId === selectedCategory);
     const matchSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
     const isAvailable = item.finalAvailable ?? item.available;
-    return matchCat && matchSearch && isAvailable;
+    return matchCat && matchSearch && isAvailable !== false;
   });
+
+  useEffect(() => {
+    if (selectedCategory === "deals" && dealMenuItems.length === 0) {
+      setSelectedCategory("all");
+    }
+  }, [selectedCategory, dealMenuItems.length]);
 
   const getCartQty = useCallback((itemId) => cart.find((c) => c.id === itemId)?.quantity || 0, [cart]);
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
@@ -425,6 +497,10 @@ export default function RiderPortalPage() {
 
   // ── Cart helpers ──────────────────────────────────────────────────────
   function addToCart(item, qty = 1) {
+    if (!item.isDeal && (item.inventorySufficient === false || item.inventorySufficient === "false")) {
+      toast.error(`${item.name} is out of stock`);
+      return;
+    }
     setCart((prev) => {
       const idx = prev.findIndex((c) => c.id === item.id);
       if (idx >= 0) {
@@ -432,7 +508,17 @@ export default function RiderPortalPage() {
         next[idx] = { ...next[idx], quantity: next[idx].quantity + qty };
         return next;
       }
-      return [...prev, { id: item.id, name: item.name, price: item.finalPrice ?? item.price ?? 0, quantity: qty, imageUrl: item.imageUrl || "" }];
+      return [
+        ...prev,
+        {
+          id: item.id,
+          name: item.name,
+          price: item.finalPrice ?? item.price ?? 0,
+          quantity: qty,
+          imageUrl: item.imageUrl || "",
+          isDeal: !!item.isDeal,
+        },
+      ];
     });
   }
   function updateQty(id, delta) {
@@ -1289,6 +1375,13 @@ export default function RiderPortalPage() {
                     </div>
                     <div className="px-4 pb-2.5 flex gap-2 overflow-x-auto rider-no-scrollbar">
                       <CategoryPill active={selectedCategory === "all"} onClick={() => setSelectedCategory("all")} label="All" />
+                      {dealMenuItems.length > 0 && (
+                        <CategoryPill
+                          active={selectedCategory === "deals"}
+                          onClick={() => setSelectedCategory("deals")}
+                          label={`Deals (${dealMenuItems.length})`}
+                        />
+                      )}
                       {menu.categories.map((cat) => (
                         <CategoryPill
                           key={cat.id || cat._id}
@@ -1318,38 +1411,97 @@ export default function RiderPortalPage() {
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                         {filteredItems.map((item) => {
                           const qty = getCartQty(item.id);
-                          const price = item.finalPrice ?? item.price ?? 0;
+                          const price = item.isDeal
+                            ? item.price ?? 0
+                            : item.finalPrice ?? item.price ?? 0;
+                          const outOfStock =
+                            !item.isDeal &&
+                            (item.inventorySufficient === false || item.inventorySufficient === "false");
                           return (
-                            <div key={item.id || item._id} className="relative bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm active:scale-[0.97] transition-transform">
-                              <button onClick={() => addToCart(item)} className="w-full text-left">
-                                {item.imageUrl ? (
-                                  <div className="w-full aspect-[4/3] bg-gray-100 dark:bg-neutral-900 overflow-hidden">
-                                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" loading="lazy" />
+                            <div
+                              key={item.id || item._id}
+                              className={`group relative flex flex-col rounded-2xl overflow-hidden border shadow-sm transition-all ${
+                                outOfStock
+                                  ? "border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950"
+                                  : "border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 active:scale-[0.97]"
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => !outOfStock && addToCart(item)}
+                                disabled={outOfStock}
+                                className="w-full text-left disabled:cursor-not-allowed"
+                                aria-disabled={outOfStock}
+                              >
+                                {/* Image: match POS — grayscale photo, dim layer, centered red badge (badge stays full-opacity) */}
+                                <div
+                                  className="relative w-full aspect-[4/3] bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800 overflow-hidden"
+                                >
+                                  <div
+                                    className={`absolute inset-0 ${outOfStock ? "opacity-60" : ""}`}
+                                    aria-hidden
+                                  >
+                                    {item.isDeal && !outOfStock && (
+                                      <div className="absolute top-1.5 left-1.5 z-[2] flex items-center gap-0.5 rounded-md bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
+                                        <Tag className="w-2.5 h-2.5" />
+                                        Deal
+                                      </div>
+                                    )}
+                                    {item.imageUrl ? (
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-3xl">
+                                        <Utensils
+                                          className={`w-8 h-8 text-gray-300 dark:text-neutral-700 ${outOfStock ? "grayscale opacity-70" : ""}`}
+                                        />
+                                      </div>
+                                    )}
                                   </div>
-                                ) : (
-                                  <div className="w-full aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-neutral-900 dark:to-neutral-950 flex items-center justify-center">
-                                    <Utensils className="w-8 h-8 text-gray-200 dark:text-neutral-800" />
+                                  {outOfStock && (
+                                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 pointer-events-none">
+                                      <span className="px-2.5 py-1 rounded-md bg-red-600 text-white text-[10px] sm:text-[11px] font-bold shadow-md">
+                                        Out of Stock
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className={`p-2 flex flex-col ${outOfStock ? "opacity-60" : ""}`}>
+                                  <h3
+                                    className={`text-xs font-bold mb-1 line-clamp-2 ${
+                                      outOfStock ? "text-gray-400 dark:text-neutral-500" : "text-gray-900 dark:text-white"
+                                    }`}
+                                  >
+                                    {item.name}
+                                  </h3>
+                                  <div className="flex items-center justify-between">
+                                    <span
+                                      className={`text-sm font-bold ${outOfStock ? "text-gray-400" : "text-primary"}`}
+                                    >
+                                      Rs {price.toLocaleString()}
+                                    </span>
                                   </div>
-                                )}
-                                <div className="px-2.5 pt-1.5 pb-2">
-                                  <p className="text-[13px] font-bold leading-snug line-clamp-2 pb-0.5">{item.name}</p>
-                                  <p className="text-xs font-extrabold text-primary">Rs. {price.toLocaleString()}</p>
                                 </div>
                               </button>
 
-                              {qty > 0 && (
+                              {qty > 0 && !outOfStock && (
                                 <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200/50 dark:border-neutral-700/50 px-1 py-0.5">
-                                  <button onClick={(e) => { e.stopPropagation(); updateQty(item.id, -1); }} className="w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800">
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); updateQty(item.id, -1); }} className="w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800">
                                     <Minus className="w-3.5 h-3.5" />
                                   </button>
                                   <span className="w-5 text-center text-xs font-black text-primary">{qty}</span>
-                                  <button onClick={(e) => { e.stopPropagation(); addToCart(item); }} className="w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-primary hover:bg-primary/10">
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); addToCart(item); }} className="w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 transition-transform text-primary hover:bg-primary/10">
                                     <Plus className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               )}
-                              {qty === 0 && (
-                                <button onClick={(e) => { e.stopPropagation(); addToCart(item); }} className="absolute top-2 right-2 w-8 h-8 rounded-xl bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-md flex items-center justify-center active:scale-90 transition-transform border border-gray-200/50 dark:border-neutral-700/50">
+                              {qty === 0 && !outOfStock && (
+                                <button type="button" onClick={(e) => { e.stopPropagation(); addToCart(item); }} className="absolute top-2 right-2 w-8 h-8 rounded-xl bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-md flex items-center justify-center active:scale-90 transition-transform border border-gray-200/50 dark:border-neutral-700/50">
                                   <Plus className="w-4 h-4 text-primary" />
                                 </button>
                               )}

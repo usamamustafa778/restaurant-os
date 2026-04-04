@@ -8,7 +8,8 @@ const BranchContext = createContext(null);
 export function BranchProvider({ children }) {
   const [branches, setBranches] = useState([]);
   const [currentBranch, setCurrentBranchState] = useState(null);
-  const [loading, setLoading] = useState(false);
+  // Start true so consumers (e.g. rider menu) never fetch branch-scoped APIs before branches resolve — avoids legacy / wrong stock.
+  const [loading, setLoading] = useState(true);
 
   const setCurrentBranch = useCallback((branch) => {
     setCurrentBranchState(branch);
@@ -36,6 +37,7 @@ export function BranchProvider({ children }) {
     if (isSuperAdminWithoutTenant || !token) {
       setBranches([]);
       setCurrentBranchState(null);
+      setLoading(false);
       return;
     }
 
