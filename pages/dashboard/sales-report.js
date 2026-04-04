@@ -360,11 +360,15 @@ function getSmartDates(preset, sessions) {
         const todaySessions = sessions.filter(
           (s) => s.startAt && new Date(s.startAt).toDateString() === openDateStr,
         );
-        const earliestStart = todaySessions.reduce(
-          (min, s) => (new Date(s.startAt) < new Date(min) ? s.startAt : min),
-          openSess.startAt,
+        const earliestStartMs = todaySessions.reduce(
+          (min, s) => Math.min(min, new Date(s.startAt).getTime()),
+          new Date(openSess.startAt).getTime(),
         );
-        return { from: earliestStart, to: now.toISOString() };
+        // Subtract a 10-minute buffer to capture orders whose createdAt is right at
+        // (or marginally before) the session startAt — this happens when the session
+        // was auto-created during the very first order request of the day.
+        const fromMs = earliestStartMs - 10 * 60 * 1000;
+        return { from: new Date(fromMs).toISOString(), to: now.toISOString() };
       }
       // No open session — fall back to most recent session that started today (local time)
       const todayStr = now.toDateString();
@@ -1049,12 +1053,12 @@ export default function HistoryPage() {
         const todaySessions = sessions.filter(
           (s) => s.startAt && new Date(s.startAt).toDateString() === openDateStr,
         );
-        const earliestStart = todaySessions.reduce(
-          (min, s) => (new Date(s.startAt) < new Date(min) ? s.startAt : min),
-          open.startAt,
+        const earliestStartMs = todaySessions.reduce(
+          (min, s) => Math.min(min, new Date(s.startAt).getTime()),
+          new Date(open.startAt).getTime(),
         );
         return {
-          from: new Date(earliestStart),
+          from: new Date(earliestStartMs - 10 * 60 * 1000),
           to: new Date(),
         };
       }
