@@ -79,6 +79,55 @@ function isBranchRequiredError(msg) {
   return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
 }
 
+/**
+ * Same shape as GET /api/admin/orders/:id (mapOrder) for printBillReceipt when a follow-up fetch fails.
+ * `total` must be food total after discount (excluding delivery); grandTotal includes delivery.
+ */
+function buildFallbackPrintOrderFromPosResult(result, ctx) {
+  const {
+    orderId,
+    orderType,
+    tableName,
+    items,
+    customerName,
+    customerPhone,
+    deliveryAddress,
+    subtotal,
+    discountAmount,
+    deliveryCharges,
+  } = ctx;
+  const auth = getStoredAuth();
+  const foodTotal =
+    result.total != null && !Number.isNaN(Number(result.total))
+      ? Number(result.total)
+      : Math.max(0, (Number(subtotal) || 0) - (Number(discountAmount) || 0));
+  const del = orderType === "DELIVERY" ? Math.max(0, Number(deliveryCharges) || 0) : 0;
+  const type =
+    orderType === "DINE_IN" ? "dine-in" : orderType === "TAKEAWAY" ? "takeaway" : "delivery";
+  const due =
+    result.amountDue != null && !Number.isNaN(Number(result.amountDue))
+      ? Number(result.amountDue)
+      : foodTotal + del;
+  return {
+    id: result.orderNumber || String(orderId || ""),
+    _id: String(result.id || result._id || orderId || ""),
+    customerName: customerName || "",
+    customerPhone: customerPhone || "",
+    deliveryAddress: deliveryAddress || "",
+    tableName: orderType === "DINE_IN" && tableName ? tableName : "",
+    items,
+    subtotal,
+    discountAmount: discountAmount || 0,
+    deliveryCharges: del,
+    total: foodTotal,
+    grandTotal: due,
+    type,
+    paymentMethod: "To be paid",
+    createdAt: result.createdAt || new Date().toISOString(),
+    orderTakerName: auth?.user?.name || "",
+  };
+}
+
 export default function POSView({ editOrderId: propEditOrderId, onClose, onOrderChanged, isActive = true }) {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
@@ -1112,8 +1161,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
       toast.success("Order placed!", { id: toastId });
 
-      // Build a lightweight "order-like" object for printing the kitchen confirmation popup.
-      // This is necessary because we clear the cart immediately after placing the order.
+      // Snapshot lines + financials for the confirmation UI (cart is cleared next).
       const confirmationTypeLabel =
         orderType === "DINE_IN"
           ? tableName
@@ -1134,10 +1182,34 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         };
       });
 
+      const newOrderId = result.id || result._id || "";
+      let printOrder = null;
+      if (newOrderId) {
+        try {
+          printOrder = await getOrder(newOrderId);
+        } catch (_) {
+          /* fallback below */
+        }
+      }
+      if (!printOrder && newOrderId) {
+        printOrder = buildFallbackPrintOrderFromPosResult(result, {
+          orderId: newOrderId,
+          orderType,
+          tableName,
+          items: confirmationItems,
+          customerName: cName,
+          customerPhone: cPhone,
+          deliveryAddress: cAddress,
+          subtotal,
+          discountAmount: totalDiscount,
+          deliveryCharges: deliveryFee,
+        });
+      }
+
       setOrderConfirmation({
-        orderId: result.id || result._id || "",
-        orderNumber: result.orderNumber || result.id || "",
-        total: result.amountDue ?? result.total,
+        orderId: newOrderId,
+        orderNumber: result.orderNumber || newOrderId,
+        total: printOrder?.grandTotal ?? result.amountDue ?? result.total,
         orderType,
         customerName: cName,
         customerPhone: cPhone,
@@ -1145,6 +1217,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         type: confirmationTypeLabel,
         items: confirmationItems,
         tableName: orderType === "DINE_IN" && tableName ? tableName : "",
+        printOrder,
       });
       setCart([]);
       setCustomerName("");
@@ -1249,11 +1322,17 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
   function openPrintBill(orderLike, mode) {
     const auth = getStoredAuth();
+    const waiterFromOrder =
+      orderLike.orderTakerName ||
+      (orderLike.createdBy && typeof orderLike.createdBy === "object"
+        ? orderLike.createdBy.name
+        : "") ||
+      "";
     printBillReceipt(orderLike, {
       mode,
       logoUrl: restaurantLogoUrl,
       branchAddress: currentBranch?.address || "",
-      orderTakerName: auth?.user?.name || "",
+      orderTakerName: waiterFromOrder || auth?.user?.name || "",
       logoHeightPx: restaurantLogoHeight,
       footerMessage: restaurantBillFooter,
     });
@@ -1309,13 +1388,18 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
       const orderNum = result?.orderNumber ?? result?.id ?? "";
 
-      // Print Customer Bill using backend-generated order info
+      // Match GET /api/admin/orders/:id totals so the bill matches Orders page print.
       openPrintBill(
         buildOrderLikeFromCart({
           orderNumber: orderNum,
           id: orderNum,
           createdAt: result?.createdAt ?? new Date().toISOString(),
-          total: result?.amountDue ?? amountDue,
+          subtotal: result?.subtotal ?? subtotal,
+          discountAmount: result?.discountAmount ?? totalDiscount,
+          deliveryCharges:
+            result?.deliveryCharges ??
+            (orderType === "DELIVERY" ? deliveryFee : 0),
+          total: result?.total ?? Math.max(0, subtotal - totalDiscount),
         }),
         "bill",
       );
@@ -4300,13 +4384,12 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               <button
                 type="button"
                 onClick={() => {
-                  openPrintBill(
-                    {
-                      ...orderConfirmation,
-                      items: orderConfirmation.items || [],
-                    },
-                    "bill",
-                  );
+                  const o = orderConfirmation.printOrder;
+                  if (!o) {
+                    toast.error("Order details not available for printing");
+                    return;
+                  }
+                  openPrintBill(o, "bill");
                 }}
                 className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex items-center justify-center gap-1.5"
               >
