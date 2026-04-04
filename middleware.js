@@ -25,6 +25,7 @@ const DASHBOARD_PAGES = new Set([
   "subscription", "profile", "day-report",
   "order-taker", "rider", "migrate-pending",
   "sales-report",
+  "rider-payouts",
   "accounting", "vouchers",
 ]);
 

@@ -50,6 +50,7 @@ import {
   Wallet,
   Scale,
   Network,
+  Truck,
 } from "lucide-react";
 import {
   getToken,
@@ -161,6 +162,12 @@ const tenantNav = [
     label: "Sales",
     icon: BarChart3,
     roles: ["restaurant_admin", "admin", "manager"],
+  },
+  {
+    path: "/rider-payouts",
+    label: "Rider payouts",
+    icon: Truck,
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
   },
   {
     label: "Vouchers",
@@ -290,6 +297,7 @@ const tenantNav = [
 const DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH = [
   "/overview",
   "/sales-report",
+  "/rider-payouts",
   "/subscription",
   "/profile",
 ];

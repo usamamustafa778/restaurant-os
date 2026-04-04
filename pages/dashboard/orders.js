@@ -194,13 +194,22 @@ function isDeliveryOrder(order) {
   return type === "DELIVERY";
 }
 
+/** Online/card/third-party — no cash to hand in from rider. */
+function isDeliveryPrepaid(order) {
+  const pm = String(order.paymentMethod || "").toUpperCase();
+  return pm === "ONLINE" || pm === "CARD" || pm === "FOODPANDA";
+}
+
+/**
+ * Delivered delivery where the shop still needs to record cash handed in by the rider.
+ * Matches rider portal: deliveryPaymentCollected !== true (undefined/false = pending).
+ */
 function isDeliveryPaymentPending(order) {
   if (!isDeliveryOrder(order)) return false;
   if (order.status !== "DELIVERED" && order.status !== "COMPLETED")
     return false;
-  if (order.deliveryPaymentCollected === false) return true;
-  const pm = (order.paymentMethod || "").toUpperCase();
-  return pm === "PENDING" || pm === "TO BE PAID" || !pm;
+  if (isDeliveryPrepaid(order)) return false;
+  return order.deliveryPaymentCollected !== true;
 }
 
 function getOrderTotal(order) {
@@ -233,6 +242,8 @@ function getPaymentStatus(order) {
 function isOrderFullyClosed(order) {
   const status = orderStatusForTab(order.status);
   if (status !== "DELIVERED") return false;
+  // Customer may have paid the rider, but shop must still record hand-in — not "closed" on the board.
+  if (isDeliveryPaymentPending(order)) return false;
   return getPaymentStatus(order) === "paid";
 }
 
@@ -555,7 +566,16 @@ export default function OrdersPage() {
     setAssigningOrderId(orderId);
     const toastId = toast.loading("Assigning rider...");
     try {
-      const updated = await assignRiderToOrder(orderId, riderId, {});
+      const isDelivery =
+        String(order.orderType || order.type || "")
+          .toLowerCase()
+          .replace(/-/g, "_") === "delivery";
+      const rawFee = order.deliveryCharges ?? order.deliveryFee;
+      const extra =
+        isDelivery && rawFee != null && !Number.isNaN(Number(rawFee))
+          ? { deliveryCharges: Math.max(0, Number(rawFee)) }
+          : {};
+      const updated = await assignRiderToOrder(orderId, riderId, extra);
       updateOrderInList(orderId, updated);
       toast.success("Rider assigned!", { id: toastId });
       openPrintBill({ ...order, ...updated }, "bill");
@@ -815,7 +835,9 @@ export default function OrdersPage() {
       const isAwaitingPayment =
         (st === "DELIVERED" || st === "COMPLETED") &&
         getPaymentStatus(o) === "unpaid";
-      return isToday || isActive || isAwaitingPayment;
+      const needsRiderHandIn =
+        (st === "DELIVERED" || st === "COMPLETED") && isDeliveryPaymentPending(o);
+      return isToday || isActive || isAwaitingPayment || needsRiderHandIn;
     });
   }, [orders, isCashier, datePreset]);
 
@@ -2196,8 +2218,10 @@ function OrderCard({
   const isAwaitingPayment =
     (status === "DELIVERED" || status === "COMPLETED") &&
     paymentStatus === "unpaid";
-  const showCollectFromRider =
-    isDeliveryOrder(order) && isAwaitingPayment && !isOrderTaker;
+  /** Cash/COD delivered: show even when customer payment already recorded (rider still needs to hand in). */
+  const showCollectFromRider = isDeliveryPaymentPending(order) && !isOrderTaker;
+  const riderHandInPending =
+    showCollectFromRider && paymentStatus === "paid";
   const showTakePayment =
     isAwaitingPayment && !isOrderTaker && !isDeliveryOrder(order);
   const showEarlyPayment =
@@ -2428,17 +2452,25 @@ function OrderCard({
           {status !== "CANCELLED" && (
             <span
               className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                paymentStatus === "paid"
-                  ? "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                  : "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                riderHandInPending
+                  ? "bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                  : paymentStatus === "paid"
+                    ? "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                    : "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400"
               }`}
             >
-              {paymentStatus === "paid" ? (
+              {riderHandInPending ? (
+                <Wallet className="w-3 h-3" />
+              ) : paymentStatus === "paid" ? (
                 <CircleCheckBig className="w-3 h-3" />
               ) : (
                 <Clock className="w-3 h-3" />
               )}
-              {paymentStatus === "paid" ? "Paid" : "Unpaid"}
+              {riderHandInPending
+                ? "Hand-in pending"
+                : paymentStatus === "paid"
+                  ? "Paid"
+                  : "Unpaid"}
             </span>
           )}
         </div>

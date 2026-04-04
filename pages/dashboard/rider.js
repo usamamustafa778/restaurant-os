@@ -334,16 +334,29 @@ export default function RiderPortalPage() {
   const deliveredHistory = historyOrders.filter(
     (o) => o.status === "DELIVERED" || o.status === "COMPLETED",
   );
-  /** Revenue already accounted for (prepaid online/card or cash marked collected). */
-  const riderClearedRevenue = deliveredHistory
-    .filter((o) => !isDeliveryPaymentNotSubmitted(o))
-    .reduce((sum, o) => sum + orderGrandTotal(o), 0);
+  /** Delivered & payment cleared at shop (prepaid or cash marked collected). */
+  const clearedDeliveredPaid = deliveredHistory.filter((o) => !isDeliveryPaymentNotSubmitted(o));
+  /** Full cleared amount (items + delivery fee on the bill). */
+  const riderClearedRevenue = clearedDeliveredPaid.reduce((sum, o) => sum + orderGrandTotal(o), 0);
+  /** Delivery fee portion of cleared orders (what was charged for delivery). */
+  const riderClearedDeliveryFees = clearedDeliveredPaid.reduce(
+    (sum, o) => sum + (Number(o.deliveryCharges) || 0),
+    0,
+  );
+  /** Items / food subtotal portion (grand total minus delivery charges). */
+  const riderClearedOrderAmount = Math.max(0, riderClearedRevenue - riderClearedDeliveryFees);
+
   /** COD / PENDING still to be submitted at the shop. */
   const riderPendingPaymentOrders = deliveredHistory.filter(isDeliveryPaymentNotSubmitted);
   const riderPendingPaymentTotal = riderPendingPaymentOrders.reduce(
     (sum, o) => sum + orderGrandTotal(o),
     0,
   );
+  const riderPendingDeliveryFees = riderPendingPaymentOrders.reduce(
+    (sum, o) => sum + (Number(o.deliveryCharges) || 0),
+    0,
+  );
+  const riderPendingOrderAmount = Math.max(0, riderPendingPaymentTotal - riderPendingDeliveryFees);
 
   const deliveredCount = deliveredHistory.length;
   const cancelledCount = historyOrders.filter((o) => o.status === "CANCELLED").length;
@@ -608,11 +621,20 @@ export default function RiderPortalPage() {
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
                   {tab === TABS.HOME
-                    ? `${deliveredCount} delivered · Rs. ${Math.round(riderClearedRevenue).toLocaleString()} cleared${
-                        riderPendingPaymentTotal > 0
-                          ? ` · Rs. ${Math.round(riderPendingPaymentTotal).toLocaleString()} pending`
-                          : ""
-                      }`
+                    ? (() => {
+                        const parts = [`${deliveredCount} delivered`];
+                        if (riderClearedRevenue > 0) {
+                          parts.push(
+                            `Rs. ${Math.round(riderClearedRevenue).toLocaleString()} cleared`,
+                          );
+                        }
+                        if (riderPendingPaymentTotal > 0) {
+                          parts.push(
+                            `Rs. ${Math.round(riderPendingPaymentTotal).toLocaleString()} to submit`,
+                          );
+                        }
+                        return parts.join(" · ");
+                      })()
                     : tab === TABS.ACTIVE
                       ? activeFilter === "all"
                         ? `${readyOrders.length} ready · ${activeOrders.length} active`
@@ -708,27 +730,18 @@ export default function RiderPortalPage() {
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {/* ══════ HOME TAB ══════ */}
           {tab === TABS.HOME && (
-            <div className="p-4 pb-24 space-y-4">
-              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-2xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <BarChart3 className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
-                      Your shift
-                    </p>
-                    <p className="text-lg font-extrabold text-gray-900 dark:text-white truncate tracking-tight">
-                      {userName
-                        ? `Welcome back, ${userName.split(" ")[0]}`
-                        : "Welcome"}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1 leading-relaxed">
-                      {userName
-                        ? "Thanks for being on the road with us today."
-                        : "Sign in to see your route and deliveries."}
-                    </p>
-                  </div>
+            <div className="p-3 sm:p-4 pb-24 space-y-3">
+              <div className="flex items-center gap-3 rounded-2xl border border-gray-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3.5 py-2.5">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
+                  <Bike className="w-[18px] h-[18px] text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-extrabold text-gray-900 dark:text-white leading-tight truncate">
+                    {userName ? `Hi, ${userName.split(" ")[0]}` : "Rider"}
+                  </p>
+                  <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-0.5 leading-snug">
+                    {userName ? "Good luck on your route today." : "Sign in to continue."}
+                  </p>
                 </div>
               </div>
 
@@ -745,50 +758,89 @@ export default function RiderPortalPage() {
                         · {riderPendingPaymentOrders.length} order{riderPendingPaymentOrders.length !== 1 ? "s" : ""}
                       </span>
                     </p>
+                    <p className="text-[10px] text-amber-900/90 dark:text-amber-300/90 mt-1 tabular-nums leading-snug">
+                      Orders Rs. {Math.round(riderPendingOrderAmount).toLocaleString()} · Delivery Rs.{" "}
+                      {Math.round(riderPendingDeliveryFees).toLocaleString()}
+                    </p>
                     <p className="text-[10px] text-amber-800/80 dark:text-amber-400/80 mt-1">Cash / COD not recorded yet — use History → Pending payment</p>
                   </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cleared revenue</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">Rs. {Math.round(riderClearedRevenue).toLocaleString()}</p>
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">Prepaid + cash marked collected</p>
+              {/* Cleared today — full width; counts in one row */}
+              <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/[0.06] to-transparent dark:from-primary/10 dark:to-transparent p-3.5 sm:p-4">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-primary/90 dark:text-primary/80">
+                  Cleared today
+                </p>
+                <p className="text-2xl font-black tabular-nums text-gray-900 dark:text-white mt-0.5 tracking-tight">
+                  Rs. {Math.round(riderClearedRevenue).toLocaleString()}
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-white/80 dark:bg-neutral-950/80 border border-gray-200/60 dark:border-neutral-800 px-3 py-2">
+                    <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Orders
+                    </p>
+                    <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white mt-0.5">
+                      Rs. {Math.round(riderClearedOrderAmount).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white/80 dark:bg-neutral-950/80 border border-gray-200/60 dark:border-neutral-800 px-3 py-2">
+                    <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Delivery fees
+                    </p>
+                    <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white mt-0.5">
+                      Rs. {Math.round(riderClearedDeliveryFees).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Deliveries</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{deliveredCount}</p>
-                </div>
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Active Orders</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{activeOrders.length}</p>
-                </div>
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cancelled</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{cancelledCount}</p>
-                </div>
+                <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-2.5 leading-snug">
+                  Prepaid + cash already marked with the shop
+                </p>
               </div>
 
-              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Live status</p>
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-neutral-400">Ready to collect</span>
-                    <span className="text-sm font-bold text-primary">{readyOrders.length}</span>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Delivered", value: deliveredCount },
+                  { label: "Active", value: activeOrders.length },
+                  { label: "Cancelled", value: cancelledCount },
+                ].map((cell) => (
+                  <div
+                    key={cell.label}
+                    className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2 py-2.5 text-center"
+                  >
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500 leading-none">
+                      {cell.label}
+                    </p>
+                    <p className="text-xl font-black text-gray-900 dark:text-white mt-1.5 tabular-nums leading-none">
+                      {cell.value}
+                    </p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-neutral-400">Out for delivery</span>
-                    <span className="text-sm font-bold text-primary">{outForDeliveryOrders.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-neutral-400">Processing / Kitchen</span>
-                    <span className="text-sm font-bold text-primary">{preparingOrders.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-neutral-800">
-                    <span className="text-xs text-gray-500 dark:text-neutral-400">Active amount (sum)</span>
-                    <span className="text-sm font-bold text-gray-900 dark:text-white">Rs. {Math.round(activeRevenue).toLocaleString()}</span>
-                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3.5">
+                <div className="flex items-center justify-between gap-2 mb-2.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                    Kitchen &amp; route
+                  </p>
+                  <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 tabular-nums">
+                    Active Rs. {Math.round(activeRevenue).toLocaleString()}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    { label: "Kitchen", n: preparingOrders.length },
+                    { label: "Ready", n: readyOrders.length },
+                    { label: "Out", n: outForDeliveryOrders.length },
+                  ].map((row) => (
+                    <div
+                      key={row.label}
+                      className="rounded-xl bg-gray-50 dark:bg-neutral-900/80 py-2 px-1"
+                    >
+                      <p className="text-lg font-black text-primary tabular-nums leading-none">{row.n}</p>
+                      <p className="text-[9px] font-semibold text-gray-500 dark:text-neutral-500 mt-0.5">{row.label}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -993,7 +1045,11 @@ export default function RiderPortalPage() {
                         <p className="text-base sm:text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight mt-1">
                           Rs. {Math.round(riderClearedRevenue).toLocaleString()}
                         </p>
-                        <p className="text-[9px] text-gray-400 dark:text-neutral-500 mt-1 leading-snug">
+                        <p className="text-[9px] text-gray-500 dark:text-neutral-400 mt-1 leading-snug tabular-nums">
+                          Orders Rs. {Math.round(riderClearedOrderAmount).toLocaleString()} · Del. Rs.{" "}
+                          {Math.round(riderClearedDeliveryFees).toLocaleString()}
+                        </p>
+                        <p className="text-[9px] text-gray-400 dark:text-neutral-500 mt-0.5 leading-snug">
                           Prepaid + submitted
                         </p>
                       </div>
@@ -1020,7 +1076,11 @@ export default function RiderPortalPage() {
                         >
                           Rs. {Math.round(riderPendingPaymentTotal).toLocaleString()}
                         </p>
-                        <p className="text-[9px] text-gray-500 dark:text-neutral-500 mt-1">
+                        <p className="text-[9px] text-gray-500 dark:text-neutral-400 mt-1 leading-snug tabular-nums">
+                          Orders Rs. {Math.round(riderPendingOrderAmount).toLocaleString()} · Del. Rs.{" "}
+                          {Math.round(riderPendingDeliveryFees).toLocaleString()}
+                        </p>
+                        <p className="text-[9px] text-gray-500 dark:text-neutral-500 mt-0.5">
                           {riderPendingPaymentOrders.length} order
                           {riderPendingPaymentOrders.length !== 1 ? "s" : ""}
                         </p>

@@ -104,12 +104,50 @@ export default function VoucherForm({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
 
-  // Pre-fill from URL params (?partyId=X&partyName=NAME&suggestedAmount=N)
+  // Pre-fill from URL params:
+  // — Party flow: ?partyId=&partyName=&suggestedAmount=
+  // — Expense flow (e.g. rider payout → 602 Rider Allowances): ?expenseAccountCode=602&suggestedAmount=&notes=&riderName=
   useEffect(() => {
     if (!router.isReady || prefilled) return;
-    const { partyId, partyName, suggestedAmount, amount } = router.query;
-    if (!partyId) return;
+    const q = router.query;
+    const { partyId, partyName, suggestedAmount, amount, notes: notesParam, riderName } = q;
+    const expenseAccountCode = q.expenseAccountCode || q.expenseCode;
     const prefillAmount = suggestedAmount || amount || "";
+
+    // Cash/Bank payment: book expense to Chart of Accounts (no party), e.g. 602 Rider Allowances
+    if (!partyId && expenseAccountCode && isPayment) {
+      const code = String(expenseAccountCode).trim();
+      apiFetch(`/api/accounting/accounts?q=${encodeURIComponent(code)}`)
+        .then((d) => {
+          const list = d.accounts || [];
+          const acc =
+            list.find((a) => String(a.code) === code) ||
+            list.find((a) => String(a.code).startsWith(code)) ||
+            null;
+          const desc =
+            (notesParam && String(notesParam)) ||
+            (riderName
+              ? `Rider payout — ${decodeURIComponent(String(riderName))}`
+              : "Rider allowances");
+          setLines([
+            {
+              ...emptyLine(),
+              accountId: acc?._id || null,
+              accountObj: acc || null,
+              amount: prefillAmount ? String(prefillAmount) : "",
+              description: desc,
+            },
+          ]);
+          if (notesParam && String(notesParam).length > 3) {
+            setNotes(String(notesParam));
+          }
+        })
+        .catch(() => {});
+      setPrefilled(true);
+      return;
+    }
+
+    if (!partyId) return;
 
     // Code of the line account to pre-select based on voucher type
     const lineAccountCode = type === "cash_receipt" ? "20102" : "20101"; // 20101 = Suppliers Payable
@@ -141,7 +179,7 @@ export default function VoucherForm({
     }, 120);
 
     setPrefilled(true);
-  }, [router.isReady, router.query, prefilled, type]);
+  }, [router.isReady, router.query, prefilled, type, isPayment]);
 
   const fetchParties = useCallback(async (q) => {
     const params = new URLSearchParams({ limit: 30 });
