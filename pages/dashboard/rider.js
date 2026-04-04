@@ -29,6 +29,7 @@ import {
   RefreshCw,
   LogOut,
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Plus,
   Minus,
@@ -429,6 +430,8 @@ export default function RiderPortalPage() {
       setDeliveryAddress("");
       setDeliveryLocationId("");
       setCustomerSearch("");
+      setQuickCustomerName("");
+      setQuickCustomerAddress("");
       setStep(STEPS.MENU);
       setTab(TABS.ACTIVE);
       loadOrders();
@@ -477,6 +480,8 @@ export default function RiderPortalPage() {
     setCustomerPhone(c.phone || "");
     setDeliveryAddress(c.address || "");
     setCustomerSearch("");
+    setQuickCustomerName("");
+    setQuickCustomerAddress("");
   }
 
   async function handleQuickAddCustomer() {
@@ -1245,7 +1250,7 @@ export default function RiderPortalPage() {
 
               {/* CART STEP */}
               {step === STEPS.CART && (
-                <div className="p-4 pb-44">
+                <div className="p-3 pb-32">
                   {/* Cart items */}
                   {cart.length === 0 ? (
                     <div className="flex flex-col items-center justify-center pt-16 text-center">
@@ -1258,27 +1263,28 @@ export default function RiderPortalPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="space-y-2.5 mb-5">
+                      {/* Compact cart items */}
+                      <div className="space-y-1.5 mb-3">
                         {cart.map((item) => (
-                          <div key={item.id} className="flex items-center gap-3 bg-white dark:bg-neutral-950 rounded-2xl p-3 shadow-sm">
+                          <div key={item.id} className="flex items-center gap-2.5 bg-white dark:bg-neutral-950 rounded-xl p-2.5 shadow-sm">
                             {item.imageUrl ? (
-                              <img src={item.imageUrl} alt={item.name} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
+                              <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
                             ) : (
-                              <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
-                                <Utensils className="w-5 h-5 text-gray-300 dark:text-neutral-700" />
+                              <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
+                                <Utensils className="w-4 h-4 text-gray-300 dark:text-neutral-700" />
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold truncate leading-tight">{item.name}</p>
-                              <p className="text-xs font-bold text-primary mt-0.5">Rs. {(item.price * item.quantity).toLocaleString()}</p>
+                              <p className="text-[13px] font-bold truncate leading-tight">{item.name}</p>
+                              <p className="text-xs font-bold text-primary">{sym} {(item.price * item.quantity).toLocaleString()}</p>
                             </div>
-                            <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
-                              <button onClick={() => updateQty(item.id, -1)} className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform">
-                                {item.quantity === 1 ? <Trash2 className="w-3.5 h-3.5 text-red-400" /> : <Minus className="w-3.5 h-3.5 text-gray-500" />}
+                            <div className="flex items-center bg-gray-100 dark:bg-neutral-900 rounded-lg">
+                              <button onClick={() => updateQty(item.id, -1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
+                                {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-400" /> : <Minus className="w-3 h-3 text-gray-500" />}
                               </button>
-                              <span className="w-7 text-center text-sm font-black">{item.quantity}</span>
-                              <button onClick={() => updateQty(item.id, 1)} className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform">
-                                <Plus className="w-3.5 h-3.5 text-primary" />
+                              <span className="w-6 text-center text-sm font-black">{item.quantity}</span>
+                              <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
+                                <Plus className="w-3 h-3 text-primary" />
                               </button>
                             </div>
                           </div>
@@ -1286,102 +1292,163 @@ export default function RiderPortalPage() {
                       </div>
 
                       {/* Customer section */}
-                      <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm p-4 space-y-4">
-                        <p className="text-xs font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Customer Details</p>
-
-                        {deliveryZones.length > 0 && (
-                          <div>
-                            <label className="text-[11px] font-semibold text-gray-600 dark:text-neutral-400 block mb-1">Delivery area *</label>
-                            <select
-                              value={deliveryLocationId}
-                              onChange={(e) => setDeliveryLocationId(e.target.value)}
-                              className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium text-gray-900 dark:text-white border-0 outline-none focus:ring-2 focus:ring-primary/20"
-                            >
-                              <option value="">Select area</option>
-                              {deliveryZones.map((z) => (
-                                <option key={z.id} value={z.id}>
-                                  {z.name} — {sym} {z.fee.toFixed(2)}
-                                </option>
-                              ))}
-                            </select>
+                      <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm overflow-hidden">
+                        {/* Section header */}
+                        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2">
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-black transition-colors ${customerPhone ? "bg-emerald-500 text-white" : "bg-gray-200 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400"}`}>
+                            {customerPhone ? <Check className="w-3 h-3" /> : "2"}
                           </div>
-                        )}
-
-                        {/* Search */}
-                        <div>
-                          <div className="relative mb-2">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                              type="tel"
-                              value={customerSearch}
-                              placeholder="Search by phone..."
-                              onChange={(e) => { setCustomerSearch(e.target.value); setCustomersError(""); }}
-                              className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0"
-                            />
-                          </div>
-
-                          {customersLoading ? (
-                            <div className="flex items-center justify-center py-4">
-                              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                            </div>
-                          ) : (() => {
-                            const term = customerSearch.trim();
-                            const filtered = customersList.filter((c) => !term ? true : (c.phone || "").includes(term));
-                            if (filtered.length > 0) {
-                              return (
-                                <ul className="space-y-1 max-h-40 overflow-y-auto">
-                                  {filtered.map((c) => (
-                                    <li key={c.id}>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (!deliveryZonesActive && !c.address?.trim()) {
-                                            selectCustomerForOrder(c);
-                                            toast("No address on file — please enter one below", { icon: "📍" });
-                                          } else {
-                                            selectCustomerForOrder(c);
-                                          }
-                                        }}
-                                        className="w-full flex items-center px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 hover:bg-gray-100 dark:hover:bg-neutral-800 text-left text-sm transition-colors"
-                                      >
-                                        <div className="flex-1 min-w-0">
-                                          <span className="font-bold text-gray-900 dark:text-white">{c.name}</span>
-                                          {c.phone && <span className="text-gray-500 dark:text-neutral-400 ml-2 text-xs">{c.phone}</span>}
-                                          {c.address && <p className="text-xs text-gray-400 dark:text-neutral-500 truncate mt-0.5">{c.address}</p>}
-                                        </div>
-                                      </button>
-                                    </li>
-                                  ))}
-                                </ul>
-                              );
-                            }
-                            if (term) {
-                              return (
-                                <div className="space-y-2.5 bg-gray-50 dark:bg-neutral-900 rounded-xl p-3">
-                                  <p className="text-xs text-gray-500 dark:text-neutral-400">No customer found. Add new:</p>
-                                  <div className="px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 text-sm text-gray-900 dark:text-white font-medium">{term}</div>
-                                  <input type="text" value={quickCustomerName} onChange={(e) => setQuickCustomerName(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-sm" placeholder="Customer name *" />
-                                  <input type="text" value={quickCustomerAddress} onChange={(e) => setQuickCustomerAddress(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-sm" placeholder={deliveryZonesActive ? "Address notes (optional)" : "Delivery address *"} />
-                                  <button type="button" onClick={handleQuickAddCustomer} disabled={addingQuickCustomer} className="w-full px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50">
-                                    {addingQuickCustomer ? "Adding…" : "Add & Select Customer"}
-                                  </button>
-                                </div>
-                              );
-                            }
-                            return <p className="text-xs text-gray-400 dark:text-neutral-500 py-1">Type a phone number to search customers.</p>;
-                          })()}
-
-                          {customersError && <p className="text-xs text-red-500 mt-1">{customersError}</p>}
+                          <p className="text-xs font-bold text-gray-700 dark:text-neutral-300">Customer Details</p>
+                          {customerPhone && (
+                            <span className="ml-auto text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Selected</span>
+                          )}
                         </div>
 
-                        {/* Manual fields when customer selected */}
-                        {customerPhone && !customerSearch && (
-                          <div className="space-y-2.5 pt-2 border-t border-gray-100 dark:border-neutral-800">
-                            <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
-                            <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
-                            <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder={deliveryZonesActive ? "Address / notes (optional)" : "Delivery address *"} rows={2} className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0 resize-none" />
-                          </div>
-                        )}
+                        <div className="p-3 space-y-3">
+                          {/* Delivery area — prominent at the top */}
+                          {deliveryZones.length > 0 && (
+                            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-colors ${deliveryLocationId ? "bg-primary/5 dark:bg-primary/10 border-primary/25 dark:border-primary/20" : "bg-gray-50 dark:bg-neutral-900 border-gray-200 dark:border-neutral-800"}`}>
+                              <MapPin className={`w-4 h-4 flex-shrink-0 ${deliveryLocationId ? "text-primary" : "text-gray-400"}`} />
+                              <select
+                                value={deliveryLocationId}
+                                onChange={(e) => setDeliveryLocationId(e.target.value)}
+                                className="flex-1 bg-transparent text-sm font-medium text-gray-900 dark:text-white outline-none"
+                              >
+                                <option value="">Select delivery area *</option>
+                                {deliveryZones.map((z) => (
+                                  <option key={z.id} value={z.id}>
+                                    {z.name} — {sym} {z.fee.toFixed(2)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {/* ── Customer selected state ── */}
+                          {customerPhone && !customerSearch ? (
+                            <div className="space-y-2.5">
+                              {/* Selected customer card */}
+                              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                                  <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{customerName || "—"}</p>
+                                  <p className="text-xs text-gray-500 dark:text-neutral-400">{customerPhone}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => { setCustomerName(""); setCustomerPhone(""); setDeliveryAddress(""); setCustomersLoaded(false); }}
+                                  className="text-[11px] font-bold text-gray-400 hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                                >
+                                  Change
+                                </button>
+                              </div>
+                              {/* Editable fields */}
+                              <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer name *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
+                              <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone *" className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0" />
+                              <textarea value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder={deliveryZonesActive ? "Address / notes (optional)" : "Delivery address *"} rows={2} className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0 resize-none" />
+                            </div>
+                          ) : (
+                            /* ── Search / Add flow ── */
+                            <div>
+                              <div className="relative">
+                                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                  type="tel"
+                                  value={customerSearch}
+                                  placeholder="Search by phone number…"
+                                  onChange={(e) => { setCustomerSearch(e.target.value); setCustomersError(""); }}
+                                  className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 border-0"
+                                />
+                              </div>
+
+                              {customersLoading ? (
+                                <div className="flex items-center justify-center py-5">
+                                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                                </div>
+                              ) : (() => {
+                                const term = customerSearch.trim();
+                                const filtered = customersList.filter((c) => term ? (c.phone || "").includes(term) : false);
+
+                                if (!term) {
+                                  return (
+                                    <p className="text-xs text-gray-400 dark:text-neutral-500 text-center py-3">
+                                      Type a phone number to find or add a customer
+                                    </p>
+                                  );
+                                }
+
+                                if (filtered.length > 0) {
+                                  return (
+                                    <ul className="mt-2 space-y-1 max-h-36 overflow-y-auto rider-no-scrollbar">
+                                      {filtered.map((c) => (
+                                        <li key={c.id}>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (!deliveryZonesActive && !c.address?.trim()) {
+                                                selectCustomerForOrder(c);
+                                                toast("No address on file — please enter one below", { icon: "📍" });
+                                              } else {
+                                                selectCustomerForOrder(c);
+                                              }
+                                            }}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 hover:bg-primary/5 dark:hover:bg-primary/10 text-left transition-colors border border-transparent hover:border-primary/20"
+                                          >
+                                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                              <User className="w-3.5 h-3.5 text-primary" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{c.name}</p>
+                                              <p className="text-xs text-gray-400 dark:text-neutral-500 truncate">{c.phone}{c.address ? ` · ${c.address}` : ""}</p>
+                                            </div>
+                                            <ChevronRight className="w-4 h-4 text-gray-300 dark:text-neutral-600 flex-shrink-0" />
+                                          </button>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  );
+                                }
+
+                                /* No match — inline add form */
+                                return (
+                                  <div className="mt-2 p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-dashed border-gray-300 dark:border-neutral-700 space-y-2">
+                                    <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 flex items-center gap-1.5">
+                                      <Plus className="w-3.5 h-3.5" />
+                                      New customer · <span className="text-gray-700 dark:text-neutral-200 font-bold">{term}</span>
+                                    </p>
+                                    <input
+                                      type="text"
+                                      value={quickCustomerName}
+                                      onChange={(e) => setQuickCustomerName(e.target.value)}
+                                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-sm placeholder:text-gray-400 outline-none"
+                                      placeholder="Full name *"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={quickCustomerAddress}
+                                      onChange={(e) => setQuickCustomerAddress(e.target.value)}
+                                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-sm placeholder:text-gray-400 outline-none"
+                                      placeholder={deliveryZonesActive ? "Address notes (optional)" : "Delivery address *"}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={handleQuickAddCustomer}
+                                      disabled={addingQuickCustomer}
+                                      className="w-full py-2 rounded-lg bg-primary text-white text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                                    >
+                                      {addingQuickCustomer ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                      {addingQuickCustomer ? "Adding…" : "Add & Select"}
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+
+                              {customersError && <p className="text-xs text-red-500 mt-1.5">{customersError}</p>}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
@@ -1411,21 +1478,29 @@ export default function RiderPortalPage() {
 
         {tab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
           <div className="fixed bottom-16 inset-x-0 z-20">
-            <div className="bg-white dark:bg-neutral-950 border-t border-gray-100 dark:border-neutral-900 px-4 pt-3 pb-3">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total</p>
-                  <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Rs. {cartTotalDue.toLocaleString()}</p>
+            <div className="bg-white dark:bg-neutral-950 border-t border-gray-100 dark:border-neutral-900 px-3 pt-2.5 pb-2.5">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">{sym} {cartTotalDue.toLocaleString()}</p>
+                  </div>
+                  {deliveryFee > 0 && (
+                    <div className="text-[10px] text-gray-400 dark:text-neutral-500 leading-tight">
+                      <p>Subtotal {sym} {subtotal.toLocaleString()}</p>
+                      <p>Delivery {sym} {deliveryFee.toLocaleString()}</p>
+                    </div>
+                  )}
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Items</p>
-                  <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">{cartBadge}</p>
+                  <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Items</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">{cartBadge}</p>
                 </div>
               </div>
-              <div className="flex gap-2.5">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setStep(STEPS.MENU)}
-                  className="flex-1 py-3.5 rounded-2xl bg-gray-100 dark:bg-neutral-900 font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5 text-gray-700 dark:text-neutral-300"
+                  className="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-neutral-900 font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5 text-gray-700 dark:text-neutral-300"
                 >
                   <Plus className="w-4 h-4" />
                   Add
@@ -1433,7 +1508,7 @@ export default function RiderPortalPage() {
                 <button
                   onClick={handlePlaceOrder}
                   disabled={placing}
-                  className="flex-[2.5] py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-600/25"
+                  className="flex-[2.5] py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-600/25"
                 >
                   {placing ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</> : <>Send to Kitchen <Send className="w-4 h-4" /></>}
                 </button>

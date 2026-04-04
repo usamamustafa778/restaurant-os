@@ -17,7 +17,7 @@ import {
   updateBranchMenuItem,
   getCurrencySymbol,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2 } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -78,7 +78,17 @@ export default function MenuItemsPage() {
     };
   };
   
-  const { data, loading: pageLoading, error, suspended, setData } = usePageData(fetchData, [currentBranch?.id]);
+  const { data, loading: pageLoading, error, suspended, setData, refetch } = usePageData(fetchData, [currentBranch?.id]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }
   const categories = data?.categories || [];
   const items = data?.items || [];
   const inventoryItems = data?.inventoryItems || [];
@@ -110,9 +120,11 @@ export default function MenuItemsPage() {
   const [sortBy, setSortBy] = useState("name_asc");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const exportMenuRef = useRef(null);
   const importMenuRef = useRef(null);
+  const filtersRef = useRef(null);
   const fileInputRef = useRef(null);
   const [modalError, setModalError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -129,6 +141,8 @@ export default function MenuItemsPage() {
     consumptions: []
   });
   const [recipeSearch, setRecipeSearch] = useState("");
+  const [recipeAddOpen, setRecipeAddOpen] = useState(false);
+  const [recipeAddSearch, setRecipeAddSearch] = useState("");
 
   const [copyModalOpen, setCopyModalOpen] = useState(false);
   const [copySourceBranchId, setCopySourceBranchId] = useState("");
@@ -158,6 +172,17 @@ export default function MenuItemsPage() {
     document.addEventListener("mousedown", handleDown);
     return () => document.removeEventListener("mousedown", handleDown);
   }, [importMenuOpen]);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    function handleDown(e) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target)) {
+        setFiltersOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [filtersOpen]);
 
   // Single branch: fetch that branch's menu
   useEffect(() => {
@@ -552,6 +577,34 @@ export default function MenuItemsPage() {
     setRecipeDialog(prev => ({ ...prev, open: false }));
     setRecipeUnits({});
     setRecipeSearch("");
+    setRecipeAddOpen(false);
+    setRecipeAddSearch("");
+  }
+
+  function removeConsumption(inventoryItemId) {
+    setRecipeDialog(prev => ({
+      ...prev,
+      consumptions: prev.consumptions.filter(c => c.inventoryItemId !== inventoryItemId)
+    }));
+    setRecipeUnits(prev => {
+      const next = { ...prev };
+      delete next[inventoryItemId];
+      return next;
+    });
+  }
+
+  function addIngredient(inv) {
+    const alreadyAdded = recipeDialog.consumptions.some(c => c.inventoryItemId === inv.id);
+    if (!alreadyAdded) {
+      const displayUnit = SUB_UNITS[inv.unit] ? SUB_UNITS[inv.unit] : null;
+      if (displayUnit) setRecipeUnits(prev => ({ ...prev, [inv.id]: displayUnit }));
+      setRecipeDialog(prev => ({
+        ...prev,
+        consumptions: [...prev.consumptions, { inventoryItemId: inv.id, quantity: "" }]
+      }));
+    }
+    setRecipeAddOpen(false);
+    setRecipeAddSearch("");
   }
 
   function toggleRecipeUnit(inventoryItemId, baseUnit) {
@@ -676,19 +729,19 @@ export default function MenuItemsPage() {
       ["Branch", branchName],
       ["Generated", date],
       [],
-      ["Name", "Category", "Price", "Dietary", "Available", "Trending", "Must Try"],
+      ["Name", "Category", "Price", "Dietary", "Status", "Trending", "Must Try"],
       ...filtered.map((item) => {
         const cat = categories.find((c) => c.id === item.categoryId)?.name || "Uncategorized";
         const price = item.finalPrice ?? item.price ?? 0;
-        const available = (item.finalAvailable ?? item.available ?? true) ? "Yes" : "No";
+        const available = (item.finalAvailable ?? item.available ?? true) ? "Enabled" : "Disabled";
         const dietary = item.dietaryType === "veg" ? "Veg" : item.dietaryType === "vegan" ? "Vegan" : "Non-Veg";
         return [item.name, cat, price, dietary, available, item.isTrending ? "Yes" : "No", item.isMustTry ? "Yes" : "No"];
       }),
       [],
       ["SUMMARY"],
       ["Total Items", filtered.length],
-      ["Available", filtered.filter((i) => (i.finalAvailable ?? i.available ?? true)).length],
-      ["Unavailable", filtered.filter((i) => !(i.finalAvailable ?? i.available ?? true)).length],
+      ["Enabled", filtered.filter((i) => (i.finalAvailable ?? i.available ?? true)).length],
+      ["Disabled", filtered.filter((i) => !(i.finalAvailable ?? i.available ?? true)).length],
     ];
     const content = rows.map(toCSVRow).join("\n");
     const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
@@ -721,7 +774,7 @@ export default function MenuItemsPage() {
         <td>${cat}</td>
         <td style="font-weight:700">${getCurrencySymbol()} ${Number(price).toLocaleString()}</td>
         <td>${dietary}</td>
-        <td><span style="font-weight:700;padding:2px 8px;border-radius:4px;font-size:11px;${availStyle}">${available ? "Available" : "Unavailable"}</span></td>
+        <td><span style="font-weight:700;padding:2px 8px;border-radius:4px;font-size:11px;${availStyle}">${available ? "Enabled" : "Disabled"}</span></td>
       </tr>`;
     }).join("");
 
@@ -745,8 +798,8 @@ export default function MenuItemsPage() {
 <p class="meta">${branchName} &nbsp;·&nbsp; ${date}</p>
 <div class="summary">
   <div class="stat"><div class="stat-label">Total</div><div class="stat-value" style="color:#1d4ed8">${filtered.length}</div></div>
-  <div class="stat"><div class="stat-label">Available</div><div class="stat-value" style="color:#16a34a">${availableCount}</div></div>
-  <div class="stat"><div class="stat-label">Unavailable</div><div class="stat-value" style="color:#dc2626">${unavailableCount}</div></div>
+  <div class="stat"><div class="stat-label">Enabled</div><div class="stat-value" style="color:#16a34a">${availableCount}</div></div>
+  <div class="stat"><div class="stat-label">Disabled</div><div class="stat-value" style="color:#dc2626">${unavailableCount}</div></div>
 </div>
 <table>
   <thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Dietary</th><th>Status</th></tr></thead>
@@ -1057,72 +1110,160 @@ export default function MenuItemsPage() {
           />
         </div>
 
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className={`${filterSelectCls} w-fit`}
-          title="Category"
-        >
-          <option value="all">All categories</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filterAvailability}
-          onChange={(e) => setFilterAvailability(e.target.value)}
-          className={`${filterSelectCls} w-fit`}
-          title="Availability"
-        >
-          <option value="all">All status</option>
-          <option value="available">Available</option>
-          <option value="unavailable">Unavailable</option>
-        </select>
-
-        <select
-          value={filterDietary}
-          onChange={(e) => setFilterDietary(e.target.value)}
-          className={`${filterSelectCls} w-fit`}
-          title="Dietary"
-        >
-          <option value="all">All dietary</option>
-          <option value="non_veg">Non-veg</option>
-          <option value="veg">Veg</option>
-          <option value="vegan">Vegan</option>
-        </select>
-
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className={sortSelectCls}
-          title="Sort"
-        >
-          <option value="name_asc">A → Z</option>
-          <option value="name_desc">Z → A</option>
-          <option value="price_asc">Price ↑</option>
-          <option value="price_desc">Price ↓</option>
-        </select>
-
-        {(filterCategory !== "all" ||
-          filterAvailability !== "all" ||
-          filterDietary !== "all" ||
-          search.trim()) && (
+        {/* Filters dropdown */}
+        <div className="relative" ref={filtersRef}>
           <button
             type="button"
-            onClick={() => {
-              setFilterCategory("all");
-              setFilterAvailability("all");
-              setFilterDietary("all");
-              setSearch("");
-            }}
-            className="inline-flex h-9 items-center gap-1 rounded-xl bg-gray-100 px-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+            onClick={() => setFiltersOpen((v) => !v)}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-all ${
+              filtersOpen
+                ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            }`}
           >
-            <X className="h-3.5 w-3.5" /> Clear
+            <SlidersHorizontal className="h-4 w-4 shrink-0" />
+            Filters
+            {(() => {
+              const count = (filterCategory !== "all" ? 1 : 0) + (filterAvailability !== "all" ? 1 : 0) + (filterDietary !== "all" ? 1 : 0);
+              return count > 0 ? (
+                <span className="flex h-4.5 min-w-[1.125rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white leading-none">
+                  {count}
+                </span>
+              ) : null;
+            })()}
+            <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
           </button>
-        )}
+
+          {filtersOpen && (
+            <div className="absolute left-0 top-full z-[100] mt-1.5 w-72 overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">Filters &amp; Sort</span>
+                {(filterCategory !== "all" || filterAvailability !== "all" || filterDietary !== "all" || sortBy !== "name_asc") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterCategory("all");
+                      setFilterAvailability("all");
+                      setFilterDietary("all");
+                      setSortBy("name_asc");
+                    }}
+                    className="text-xs font-semibold text-red-500 hover:text-red-600 dark:text-red-400"
+                  >
+                    Reset all
+                  </button>
+                )}
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* Category */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">Category</label>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="h-9 w-full rounded-xl border-2 border-gray-200 bg-white pl-2.5 pr-7 text-sm font-medium text-gray-800 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                  >
+                    <option value="all">All categories</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">Status</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[["all", "All"], ["available", "Enabled"], ["unavailable", "Disabled"]].map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setFilterAvailability(val)}
+                        className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                          filterAvailability === val
+                            ? "bg-primary text-white shadow-sm"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dietary */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">Dietary</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[["all", "All"], ["non_veg", "Non-veg"], ["veg", "Veg"], ["vegan", "Vegan"]].map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setFilterDietary(val)}
+                        className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                          filterDietary === val
+                            ? "bg-primary text-white shadow-sm"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sort */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">Sort by</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[["name_asc", "A → Z"], ["name_desc", "Z → A"], ["price_asc", "Price ↑"], ["price_desc", "Price ↓"]].map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setSortBy(val)}
+                        className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                          sortBy === val
+                            ? "bg-primary text-white shadow-sm"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {(filterCategory !== "all" || filterAvailability !== "all" || filterDietary !== "all" || search.trim()) && (
+                <div className="px-4 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterCategory("all");
+                      setFilterAvailability("all");
+                      setFilterDietary("all");
+                      setSearch("");
+                      setFiltersOpen(false);
+                    }}
+                    className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-xl bg-red-50 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+                  >
+                    <X className="h-3.5 w-3.5" /> Clear all filters
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={refreshing || pageLoading}
+          title="Refresh"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border-2 border-gray-200 bg-white text-gray-600 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+        </button>
 
         <span
           className="hidden h-6 w-px bg-gray-200 sm:block dark:bg-neutral-700"
@@ -1363,12 +1504,12 @@ export default function MenuItemsPage() {
                         {isAvailable ? (
                           <>
                             <ToggleRight className="w-5 h-5 text-emerald-500" />
-                            <span className="text-emerald-600 dark:text-emerald-400">Available</span>
+                            <span className="text-emerald-600 dark:text-emerald-400">Enabled</span>
                           </>
                         ) : (
                           <>
                             <ToggleLeft className="w-5 h-5 text-gray-400" />
-                            <span className="text-gray-500">Unavailable</span>
+                            <span className="text-gray-500">Disabled</span>
                           </>
                         )}
                       </button>
@@ -1461,12 +1602,12 @@ export default function MenuItemsPage() {
                     {isAvailable ? (
                       <>
                         <ToggleRight className="w-5 h-5 text-emerald-500" />
-                        <span className="text-emerald-600 dark:text-emerald-400">Available</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">Enabled</span>
                       </>
                     ) : (
                       <>
                         <ToggleLeft className="w-5 h-5 text-gray-400" />
-                        <span className="text-gray-500">Unavailable</span>
+                        <span className="text-gray-500">Disabled</span>
                       </>
                     )}
                   </button>
@@ -1802,16 +1943,25 @@ export default function MenuItemsPage() {
       {/* Recipe / Inventory Dialog */}
       {recipeDialog.open && (() => {
         const UNIT_DISPLAY = { kg: "gram", liter: "ml", gram: "gram", ml: "ml", piece: "piece" };
-        const activeIngredients = branchFilteredInventoryItems.filter(inv =>
-          recipeDialog.consumptions.some(c => c.inventoryItemId === inv.id && Number(c.quantity) > 0)
+
+        // Ingredients already added to this recipe
+        const addedIngredients = recipeDialog.consumptions
+          .map(c => {
+            const inv = branchFilteredInventoryItems.find(i => i.id === c.inventoryItemId);
+            return inv ? { inv, consumption: c } : null;
+          })
+          .filter(Boolean);
+
+        // Items available to add (not yet in recipe)
+        const addedIds = new Set(recipeDialog.consumptions.map(c => c.inventoryItemId));
+        const addTerm = recipeAddSearch.trim().toLowerCase();
+        const availableToAdd = branchFilteredInventoryItems.filter(inv =>
+          !addedIds.has(inv.id) && (!addTerm || inv.name.toLowerCase().includes(addTerm))
         );
-        const term = recipeSearch.trim().toLowerCase();
-        const visibleItems = branchFilteredInventoryItems.filter(inv =>
-          !term || inv.name.toLowerCase().includes(term)
-        );
+
         return (
           <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-            <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col max-h-[85vh]">
 
               {/* Header */}
               <div className="px-6 pt-6 pb-4 border-b border-gray-100 dark:border-neutral-800 flex-shrink-0">
@@ -1821,14 +1971,16 @@ export default function MenuItemsPage() {
                       Recipe — {recipeDialog.itemName}
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
-                      Set how much of each ingredient is deducted per sale.
+                      Ingredients deducted from stock on each sale.
                     </p>
                   </div>
-                  {activeIngredients.length > 0 && (
-                    <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
-                      {activeIngredients.length} ingredient{activeIngredients.length !== 1 ? "s" : ""} set
-                    </span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={closeRecipeDialog}
+                    className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
                 {modalError && (
                   <div className="mt-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
@@ -1837,71 +1989,131 @@ export default function MenuItemsPage() {
                 )}
               </div>
 
-              {/* Search */}
-              <div className="px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex-shrink-0">
-                <input
-                  type="text"
-                  value={recipeSearch}
-                  onChange={e => setRecipeSearch(e.target.value)}
-                  placeholder="Search ingredients..."
-                  className="w-full h-9 px-3 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-                />
-              </div>
-
-              {/* Body */}
-              <div className="flex-1 overflow-y-auto px-6 py-2 min-h-0">
+              {/* Body — added ingredients list */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0 space-y-2">
                 {branchFilteredInventoryItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="flex flex-col items-center justify-center py-14 text-center">
                     <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
                       <ShoppingBag className="w-6 h-6 text-gray-400" />
                     </div>
                     <p className="text-sm font-medium text-gray-600 dark:text-neutral-400">No inventory items yet</p>
                     <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Create ingredients in the Inventory page first.</p>
                   </div>
-                ) : visibleItems.length === 0 ? (
-                  <div className="py-12 text-center text-sm text-gray-400 dark:text-neutral-500">
-                    No ingredients match &ldquo;{recipeSearch}&rdquo;
+                ) : addedIngredients.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
+                      <Plus className="w-5 h-5 text-gray-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">No ingredients added yet</p>
+                    <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">Click &ldquo;Add Ingredient&rdquo; below to get started.</p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-                    {visibleItems.map(inv => {
-                      const existing = recipeDialog.consumptions.find(c => c.inventoryItemId === inv.id);
-                      const displayUnit = UNIT_DISPLAY[inv.unit] || inv.unit;
-                      const hasValue = Number(existing?.quantity) > 0;
-                      return (
-                        <div key={inv.id}
-                          className={`flex items-center gap-4 py-3 rounded-lg px-2 -mx-2 transition-colors ${hasValue ? "bg-primary/5 dark:bg-primary/10" : "hover:bg-gray-50 dark:hover:bg-neutral-900/50"}`}
-                        >
-                          {/* Ingredient name + unit badge */}
-                          <div className="flex-1 min-w-0 flex items-center gap-2">
-                            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasValue ? "bg-primary" : "bg-gray-300 dark:bg-neutral-600"}`} />
-                            <span className={`text-sm font-medium truncate ${hasValue ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-neutral-300"}`}>
-                              {inv.name}
-                            </span>
-                            <span className="flex-shrink-0 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-[10px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
-                              {displayUnit}
-                            </span>
-                          </div>
-                          {/* Quantity input */}
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              value={existing?.quantity ?? ""}
-                              onChange={e => updateConsumption(inv.id, e.target.value)}
-                              placeholder="0"
-                              className={`w-24 h-8 px-2 rounded-lg border text-sm text-right font-semibold outline-none transition-all ${
-                                hasValue
-                                  ? "border-primary/50 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                  : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:border-primary focus:ring-2 focus:ring-primary/20"
-                              }`}
-                            />
-                            <span className="text-[11px] text-gray-400 dark:text-neutral-500 w-8">{displayUnit}</span>
-                          </div>
+                  addedIngredients.map(({ inv, consumption }) => {
+                    const displayUnit = recipeUnits[inv.id] || UNIT_DISPLAY[inv.unit] || inv.unit;
+                    const canToggle = !!SUB_UNITS[inv.unit];
+                    return (
+                      <div
+                        key={inv.id}
+                        className="flex items-center gap-3 px-3 py-1.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800"
+                      >
+                        {/* Name */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{inv.name}</p>
                         </div>
-                      );
-                    })}
+                        {/* Quantity input + unit */}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={consumption.quantity ?? ""}
+                            onChange={e => updateConsumption(inv.id, e.target.value)}
+                            placeholder="qty"
+                            className="w-20 h-9 px-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm text-right font-semibold text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                          />
+                          {canToggle ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleRecipeUnit(inv.id, inv.unit)}
+                              className="text-xs font-semibold text-primary hover:underline w-8 text-left"
+                            >
+                              {displayUnit}
+                            </button>
+                          ) : (
+                            <span className="text-xs font-semibold text-gray-400 dark:text-neutral-500 w-8">{displayUnit}</span>
+                          )}
+                        </div>
+                        {/* Remove */}
+                        <button
+                          type="button"
+                          onClick={() => removeConsumption(inv.id)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex-shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+
+                {/* Add Ingredient inline picker */}
+                {branchFilteredInventoryItems.length > 0 && (
+                  <div className="pt-1">
+                    {recipeAddOpen ? (
+                      <div className="rounded-xl border-2 border-primary/30 bg-white dark:bg-neutral-950 overflow-hidden">
+                        {/* Search input */}
+                        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-neutral-800">
+                          <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <input
+                            autoFocus
+                            type="text"
+                            value={recipeAddSearch}
+                            onChange={e => setRecipeAddSearch(e.target.value)}
+                            placeholder="Search ingredient to add..."
+                            className="flex-1 text-sm bg-transparent outline-none text-gray-900 dark:text-white placeholder:text-gray-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => { setRecipeAddOpen(false); setRecipeAddSearch(""); }}
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {/* Filtered list */}
+                        <div className="max-h-48 overflow-y-auto">
+                          {availableToAdd.length === 0 ? (
+                            <p className="px-3 py-4 text-sm text-center text-gray-400 dark:text-neutral-500">
+                              {addTerm ? `No results for "${recipeAddSearch}"` : "All ingredients already added"}
+                            </p>
+                          ) : (
+                            availableToAdd.map(inv => {
+                              const displayUnit = UNIT_DISPLAY[inv.unit] || inv.unit;
+                              return (
+                                <button
+                                  key={inv.id}
+                                  type="button"
+                                  onClick={() => addIngredient(inv)}
+                                  className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors text-left"
+                                >
+                                  <span className="text-sm font-medium text-gray-800 dark:text-neutral-200">{inv.name}</span>
+                                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide bg-gray-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">{displayUnit}</span>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setRecipeAddOpen(true)}
+                        className="w-full flex items-center justify-center gap-1.5 h-9 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-500 dark:text-neutral-400 hover:border-primary hover:text-primary dark:hover:border-primary dark:hover:text-primary transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Ingredient
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1909,7 +2121,7 @@ export default function MenuItemsPage() {
               {/* Footer */}
               <div className="px-6 py-4 border-t border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3 flex-shrink-0">
                 <p className="text-xs text-gray-400 dark:text-neutral-500">
-                  {visibleItems.length} of {branchFilteredInventoryItems.length} ingredient{branchFilteredInventoryItems.length !== 1 ? "s" : ""}
+                  {addedIngredients.length} ingredient{addedIngredients.length !== 1 ? "s" : ""} in recipe
                 </p>
                 <div className="flex gap-2">
                   <Button type="button" variant="ghost" className="px-4" onClick={closeRecipeDialog}>

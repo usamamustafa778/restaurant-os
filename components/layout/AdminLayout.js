@@ -1163,7 +1163,7 @@ export default function AdminLayout({
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white truncate bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-neutral-300 bg-clip-text text-transparent">
                   {title}
                 </h1>
-                <p className="text-sm text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
+                <p className="text-xs text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
                   {subtitle != null
                     ? subtitle
                     : role === "super_admin" && !actingAsSlug
