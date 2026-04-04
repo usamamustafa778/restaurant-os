@@ -398,6 +398,10 @@ export default function OrderTakerPage() {
     0,
   );
   const cancelledCount = activeOrders.filter((o) => o.status === "CANCELLED").length;
+  const clearedRevenue = Math.max(0, historyRevenue - paymentPendingTotal);
+  const completedHistoryCount = historyOrders.filter(
+    (o) => o.status === "DELIVERED" || o.status === "COMPLETED",
+  ).length;
 
   function toggleOrderDetails(orderKey) {
     setExpandedOrderIds((prev) =>
@@ -576,7 +580,7 @@ export default function OrderTakerPage() {
         <header className="flex-shrink-0 bg-white dark:bg-neutral-950 ot-safe-top">
           <div className="flex items-center justify-between px-4 h-14">
             <div className="flex items-center gap-3 min-w-0">
-              {activeTab === TABS.ORDER && step !== STEPS.TABLE ? (
+              {activeTab === TABS.NEW_ORDER && step !== STEPS.TABLE ? (
                 <button
                   onClick={() =>
                     step === STEPS.CART
@@ -608,7 +612,17 @@ export default function OrderTakerPage() {
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
                   {activeTab === TABS.HOME
-                    ? `${newOrders.length} new · ${preparingOrders.length} preparing · ${readyOrders.length} ready`
+                    ? (() => {
+                        const parts = [`${completedHistoryCount} completed`];
+                        if (clearedRevenue > 0) {
+                          parts.push(`Rs. ${Math.round(clearedRevenue).toLocaleString()} collected`);
+                        }
+                        if (paymentPendingTotal > 0) {
+                          parts.push(`Rs. ${Math.round(paymentPendingTotal).toLocaleString()} to collect`);
+                        }
+                        parts.push(`${nonCancelledOrders.length} active on floor`);
+                        return parts.join(" · ");
+                      })()
                     : activeTab === TABS.ACTIVE
                     ? `${newOrders.length} new · ${preparingOrders.length} preparing · ${readyOrders.length} ready`
                     : activeTab === TABS.HISTORY
@@ -711,25 +725,20 @@ export default function OrderTakerPage() {
 
         {/* ── Content ────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
-          {/* ════════════════ HOME TAB ════════════════ */}
+          {/* ════════════════ HOME TAB — aligned with rider overview ════════════════ */}
           {activeTab === TABS.HOME && (
-            <div className="p-4 pb-24 space-y-4">
-              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-2xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <BarChart3 className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
-                      Your station
-                    </p>
-                    <p className="text-lg font-extrabold text-gray-900 dark:text-white truncate tracking-tight">
-                      {userName ? `Welcome, ${userName.split(" ")[0]}` : "Welcome"}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1 leading-relaxed">
-                      Track your floor orders and keep service moving.
-                    </p>
-                  </div>
+            <div className="p-3 sm:p-4 pb-24 space-y-3">
+              <div className="flex items-center gap-3 rounded-2xl border border-gray-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3.5 py-2.5">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
+                  <Utensils className="w-[18px] h-[18px] text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-extrabold text-gray-900 dark:text-white leading-tight truncate">
+                    {userName ? `Hi, ${userName.split(" ")[0]}` : "Order taker"}
+                  </p>
+                  <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-0.5 leading-snug">
+                    {userName ? "Keep the floor running smoothly." : "Sign in to continue."}
+                  </p>
                 </div>
               </div>
 
@@ -740,55 +749,102 @@ export default function OrderTakerPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
-                      Collect payment
+                      Collect at counter
                     </p>
                     <p className="text-base font-black text-amber-950 dark:text-amber-100 mt-0.5">
                       Rs. {Math.round(paymentPendingTotal).toLocaleString()}
                       <span className="text-xs font-bold text-amber-700/90 dark:text-amber-400/90 ml-1.5">
-                        · {paymentPendingOrders.length} order
-                        {paymentPendingOrders.length !== 1 ? "s" : ""}
+                        · {paymentPendingOrders.length} order{paymentPendingOrders.length !== 1 ? "s" : ""}
                       </span>
                     </p>
-                    <p className="text-[10px] text-amber-800/80 dark:text-amber-400/80 mt-1">
-                      Completed orders still pending payment collection
+                    <p className="text-[10px] text-amber-800/80 dark:text-amber-400/80 mt-1 leading-snug">
+                      Completed orders still unpaid — use History → Pending payment
                     </p>
                   </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">New</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{newOrders.length}</p>
+              <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/[0.06] to-transparent dark:from-primary/10 dark:to-transparent p-3.5 sm:p-4">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-primary/90 dark:text-primary/80">
+                  Collected (completed)
+                </p>
+                <p className="text-2xl font-black tabular-nums text-gray-900 dark:text-white mt-0.5 tracking-tight">
+                  Rs. {Math.round(clearedRevenue).toLocaleString()}
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-white/80 dark:bg-neutral-950/80 border border-gray-200/60 dark:border-neutral-800 px-3 py-2">
+                    <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Completed orders
+                    </p>
+                    <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white mt-0.5">
+                      {completedHistoryCount}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white/80 dark:bg-neutral-950/80 border border-gray-200/60 dark:border-neutral-800 px-3 py-2">
+                    <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Outstanding
+                    </p>
+                    <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white mt-0.5">
+                      Rs. {Math.round(paymentPendingTotal).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Preparing</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{preparingOrders.length}</p>
+                <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-2.5 leading-snug">
+                  Prepaid + payments already recorded on completed orders
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Completed", value: completedHistoryCount },
+                  { label: "Active", value: nonCancelledOrders.length },
+                  { label: "Cancelled", value: cancelledCount },
+                ].map((cell) => (
+                  <div
+                    key={cell.label}
+                    className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2 py-2.5 text-center"
+                  >
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500 leading-none">
+                      {cell.label}
+                    </p>
+                    <p className="text-xl font-black text-gray-900 dark:text-white mt-1.5 tabular-nums leading-none">
+                      {cell.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3.5">
+                <div className="flex items-center justify-between gap-2 mb-2.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                    Kitchen &amp; floor
+                  </p>
+                  <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 tabular-nums">
+                    Active Rs. {Math.round(activeRevenue).toLocaleString()}
+                  </span>
                 </div>
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Ready</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{readyOrders.length}</p>
-                </div>
-                <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                  <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Cancelled</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white mt-1">{cancelledCount}</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    { label: "New", n: newOrders.length },
+                    { label: "Preparing", n: preparingOrders.length },
+                    { label: "Ready", n: readyOrders.length },
+                  ].map((row) => (
+                    <div key={row.label} className="rounded-xl bg-gray-50 dark:bg-neutral-900/80 py-2 px-1">
+                      <p className="text-lg font-black text-primary tabular-nums leading-none">{row.n}</p>
+                      <p className="text-[9px] font-semibold text-gray-500 dark:text-neutral-500 mt-0.5">{row.label}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 p-4">
-                <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Active value</p>
-                <p className="text-lg font-black text-gray-900 dark:text-white mt-1">
-                  Rs. {Math.round(activeRevenue).toLocaleString()}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab(TABS.NEW_ORDER)}
-                  className="mt-4 w-full h-10 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 transition-colors inline-flex items-center justify-center gap-1.5"
-                >
-                  <Utensils className="w-4 h-4" />
-                  Take New Order
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab(TABS.NEW_ORDER)}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-primary to-primary/85 text-white text-sm font-extrabold active:scale-[0.98] transition-transform shadow-lg shadow-primary/20 inline-flex items-center justify-center gap-2"
+              >
+                <Utensils className="w-4 h-4" />
+                Take New Order
+              </button>
             </div>
           )}
 
