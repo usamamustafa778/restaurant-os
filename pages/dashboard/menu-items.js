@@ -17,7 +17,7 @@ import {
   updateBranchMenuItem,
   getCurrencySymbol,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -52,6 +52,40 @@ function parseCSVLine(line) {
   }
   out.push(cur.trim());
   return out.map((s) => s.replace(/^"|"$/g, "").replace(/""/g, '"'));
+}
+
+/** Coarse volume label from a product name — used only to warn when recipe SKU size ≠ menu name. */
+function normalizeVolumeHint(name) {
+  if (!name) return null;
+  const s = String(name).toLowerCase().replace(/\s+/g, "");
+  if (/1\.5|1,5/.test(s) && /(l|ltr|liter|ml)/.test(s)) return "1.5L";
+  if (/1500/.test(s) && /(ml|l)/.test(s)) return "1.5L";
+  if (/500ml|0\.5l|0\.5ltr/.test(s)) return "500ml";
+  if (/345ml|330ml|375ml|250ml|200ml/.test(s)) return "small";
+  if ((/1l(tr)?|1000ml/.test(s) || /\b1l\b/.test(s)) && !/1\.5|1,5/.test(s)) return "1L";
+  return null;
+}
+
+/**
+ * When menu title and inventory row describe different bottle sizes, POS availability follows the
+ * linked inventory row — not the menu name. Surfaces hints so mis-linked recipes (e.g. 1L item → 1.5L SKU) are obvious.
+ */
+function getRecipeVolumeMismatchHints(menuName, ingredientNames) {
+  const menuHint = normalizeVolumeHint(menuName);
+  if (!menuHint || !ingredientNames?.length) return [];
+  const seen = new Set();
+  const hints = [];
+  for (const ing of ingredientNames) {
+    const ih = normalizeVolumeHint(ing);
+    if (!ih || ih === menuHint) continue;
+    const key = `${ih}:${ing}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hints.push(
+      `Ingredient "${ing}" looks like ${ih}, but this menu item is named like ${menuHint}. POS stock checks use the ingredient row — pick the inventory SKU that matches where you count bottles.`
+    );
+  }
+  return hints;
 }
 
 export default function MenuItemsPage() {
@@ -1959,6 +1993,11 @@ export default function MenuItemsPage() {
           !addedIds.has(inv.id) && (!addTerm || inv.name.toLowerCase().includes(addTerm))
         );
 
+        const recipeMismatchHints = getRecipeVolumeMismatchHints(
+          recipeDialog.itemName,
+          addedIngredients.map(({ inv }) => inv.name)
+        );
+
         return (
           <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
             <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col max-h-[85vh]">
@@ -1987,6 +2026,16 @@ export default function MenuItemsPage() {
                     {modalError}
                   </div>
                 )}
+                {recipeMismatchHints.length > 0 && (
+                  <div className="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                    <ul className="list-disc list-inside space-y-1.5 leading-snug">
+                      {recipeMismatchHints.map((h, i) => (
+                        <li key={i}>{h}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Body — added ingredients list */}
@@ -2011,6 +2060,9 @@ export default function MenuItemsPage() {
                   addedIngredients.map(({ inv, consumption }) => {
                     const displayUnit = recipeUnits[inv.id] || UNIT_DISPLAY[inv.unit] || inv.unit;
                     const canToggle = !!SUB_UNITS[inv.unit];
+                    const menuVol = normalizeVolumeHint(recipeDialog.itemName);
+                    const invVol = normalizeVolumeHint(inv.name);
+                    const rowVolMismatch = menuVol && invVol && menuVol !== invVol;
                     return (
                       <div
                         key={inv.id}
@@ -2019,6 +2071,11 @@ export default function MenuItemsPage() {
                         {/* Name */}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{inv.name}</p>
+                          {rowVolMismatch && (
+                            <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400/90 mt-0.5 truncate">
+                              Size label ≠ menu ({menuVol} vs {invVol})
+                            </p>
+                          )}
                         </div>
                         {/* Quantity input + unit */}
                         <div className="flex items-center gap-1.5 flex-shrink-0">
