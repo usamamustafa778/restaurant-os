@@ -40,6 +40,7 @@ import {
   Package,
   Clock,
   Eye,
+  Layers,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -463,6 +464,19 @@ function getStatusTime(order, status) {
   return entry?.at || null;
 }
 
+function isCompletedSaleOrder(order) {
+  const s = String(order?.status || "").toUpperCase();
+  return s === "DELIVERED" || s === "COMPLETED";
+}
+
+function orderGrandTotalForReport(order) {
+  return Number(order?.grandTotal ?? order?.total) || 0;
+}
+
+function orderDeliveryFeeAmount(order) {
+  return Number(order?.deliveryCharges) || 0;
+}
+
 function KpiCard({
   label,
   value,
@@ -707,6 +721,8 @@ export default function HistoryPage() {
   const [sessionsPage, setSessionsPage] = useState(0);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
+  /** "single" = one session; "day" = ?dayScope=all merged same-calendar-day sessions */
+  const [sessionDetailScope, setSessionDetailScope] = useState("single");
   const [sessionDetail, setSessionDetail] = useState(null);
   const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
   const [selectedSessionOrderIds, setSelectedSessionOrderIds] = useState([]);
@@ -732,7 +748,7 @@ export default function HistoryPage() {
     "payment",
   ]);
   const SESSIONS_PER_PAGE = 20;
-  const [sessionsViewMode, setSessionsViewMode] = useState("sessions"); // "sessions" | "daily"
+  const [sessionsViewMode, setSessionsViewMode] = useState("daily"); // "daily" | "sessions"
   const [expandedDays, setExpandedDays] = useState(new Set());
   const [sessionsDateFrom, setSessionsDateFrom] = useState("");
   const [sessionsDateTo, setSessionsDateTo] = useState("");
@@ -946,8 +962,9 @@ export default function HistoryPage() {
     }
   }
 
-  async function openSessionDetail(session) {
+  async function openSessionDetail(session, opts = {}) {
     setSelectedSession(session);
+    setSessionDetailScope(opts.dayScope === "all" ? "day" : "single");
     setSessionDetail(null);
     setSelectedSessionOrderIds([]);
     setMoveTargetSessionId("");
@@ -959,13 +976,26 @@ export default function HistoryPage() {
     setSessionCurrency({});
     setSessionDetailLoading(true);
     try {
-      const res = await getDaySessionOrders(session.id);
+      const res = await getDaySessionOrders(session.id, opts);
       setSessionDetail(res);
     } catch {
       toast.error("Failed to load session orders");
     } finally {
       setSessionDetailLoading(false);
     }
+  }
+
+  /** Combined report: all sessions on the same calendar day (uses any session as anchor). */
+  function openFullDayCombinedReport(day) {
+    const sessions = day?.sessions || [];
+    if (sessions.length === 0) return;
+    if (sessions.length === 1) {
+      openSessionDetail(sessions[0]);
+      return;
+    }
+    const rep =
+      sessions.find((s) => s.status === "OPEN") || sessions[0];
+    openSessionDetail(rep, { dayScope: "all" });
   }
 
   useEffect(() => {
@@ -1032,9 +1062,6 @@ export default function HistoryPage() {
     setActiveTab("orders");
   }
 
-  const avgTicket = report.totalOrders
-    ? Math.round(report.totalRevenue / report.totalOrders)
-    : 0;
   const periodLabel = buildPeriodLabel(preset, customFrom, customTo);
 
   const activeDateRange = useMemo(() => {
@@ -1079,6 +1106,32 @@ export default function HistoryPage() {
       return true;
     });
   }, [allOrders, activeDateRange]);
+
+  /** Split grand total into menu sales vs delivery fees (matches rider portal breakdown). */
+  const revenueBreakdown = useMemo(() => {
+    const completed = dateFilteredOrders.filter(isCompletedSaleOrder);
+    let salesAmount = 0;
+    let deliveryFees = 0;
+    for (const o of completed) {
+      const gt = orderGrandTotalForReport(o);
+      const dc = orderDeliveryFeeAmount(o);
+      deliveryFees += dc;
+      salesAmount += Math.max(0, gt - dc);
+    }
+    const grandTotal = salesAmount + deliveryFees;
+    return {
+      orderCount: completed.length,
+      salesAmount,
+      deliveryFees,
+      grandTotal,
+    };
+  }, [dateFilteredOrders]);
+
+  const avgTicket = revenueBreakdown.orderCount
+    ? Math.round(revenueBreakdown.grandTotal / revenueBreakdown.orderCount)
+    : report.totalOrders
+      ? Math.round(report.totalRevenue / report.totalOrders)
+      : 0;
 
   // All active filters applied — used by both the table UI and CSV/print export
   const ordersFiltered = useMemo(() => {
@@ -1211,6 +1264,8 @@ export default function HistoryPage() {
           name,
           deliveries: 0,
           revenue: 0,
+          salesRevenue: 0,
+          deliveryFees: 0,
           paidDeliveries: 0,
           unpaidDeliveries: 0,
           paidAmount: 0,
@@ -1222,6 +1277,8 @@ export default function HistoryPage() {
         continue;
       }
       const amount = Math.round(Number(o.grandTotal ?? o.total) || 0);
+      const dc = Math.round(Number(o.deliveryCharges) || 0);
+      const salesPart = Math.max(0, amount - dc);
 
       // Paid/Unpaid delivery orders (must match Orders tab filters).
       if (o.isPaid) {
@@ -1236,6 +1293,8 @@ export default function HistoryPage() {
       if (o.status === "DELIVERED" || o.status === "COMPLETED") {
         map[name].deliveries += 1;
         map[name].revenue += amount;
+        map[name].salesRevenue += salesPart;
+        map[name].deliveryFees += dc;
       }
     }
     return Object.values(map).sort((a, b) => b.deliveries - a.deliveries);
@@ -1344,8 +1403,10 @@ export default function HistoryPage() {
       rows.push(
         ["SUMMARY"],
         ["Metric", "Value"],
-        ["Total Revenue", fmtRs(report.totalRevenue)],
-        ["Total Orders", report.totalOrders],
+        ["Total Revenue", fmtRs(revenueBreakdown.grandTotal)],
+        ["Sales (items)", fmtRs(revenueBreakdown.salesAmount)],
+        ["Delivery Fees", fmtRs(revenueBreakdown.deliveryFees)],
+        ["Total Orders", revenueBreakdown.orderCount],
         ["Avg Ticket Size", fmtRs(avgTicket)],
         [],
         ...(paymentRows.length > 0
@@ -1401,8 +1462,10 @@ export default function HistoryPage() {
     const generated = new Date().toLocaleString("en-PK");
     const tabLabel = TABS.find((t) => t.id === activeTab)?.label || "Report";
     let bodyContent = `<div class="kpis">
-      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmtRs(report.totalRevenue)}</div></div>
-      <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">${report.totalOrders}</div></div>
+      <div class="kpi"><div class="kpi-label">Sales (items)</div><div class="kpi-value">${fmtRs(revenueBreakdown.salesAmount)}</div></div>
+      <div class="kpi"><div class="kpi-label">Delivery fees</div><div class="kpi-value">${fmtRs(revenueBreakdown.deliveryFees)}</div></div>
+      <div class="kpi"><div class="kpi-label">Total revenue</div><div class="kpi-value">${fmtRs(revenueBreakdown.grandTotal)}</div></div>
+      <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">${revenueBreakdown.orderCount}</div></div>
       <div class="kpi"><div class="kpi-label">Avg Ticket</div><div class="kpi-value">${fmtRs(avgTicket)}</div></div>
     </div>`;
     if (activeTab === "orders") {
@@ -1438,7 +1501,7 @@ export default function HistoryPage() {
     }
     win.document
       .write(`<!DOCTYPE html><html><head><title>${tabLabel} — ${periodLabel}</title>
-    <style>body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}h1{font-size:22px;font-weight:800;margin-bottom:4px}.meta{font-size:12px;color:#6b7280;margin-bottom:28px}.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px}.kpi{border:1px solid #e5e7eb;border-radius:12px;padding:16px}.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:4px}.kpi-value{font-size:24px;font-weight:800;color:#111}h2{font-size:14px;font-weight:700;margin:20px 0 12px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11px;text-transform:uppercase;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}td{padding:10px 12px;border-bottom:1px solid #f3f4f6;font-size:13px}@media print{body{padding:0}}</style></head><body>
+    <style>body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:1000px;margin:0 auto}h1{font-size:22px;font-weight:800;margin-bottom:4px}.meta{font-size:12px;color:#6b7280;margin-bottom:28px}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:28px}.kpi{border:1px solid #e5e7eb;border-radius:12px;padding:14px}.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:4px}.kpi-value{font-size:20px;font-weight:800;color:#111}h2{font-size:14px;font-weight:700;margin:20px 0 12px;padding-bottom:6px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11px;text-transform:uppercase;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}td{padding:10px 12px;border-bottom:1px solid #f3f4f6;font-size:13px}@media print{body{padding:0}}</style></head><body>
     <h1>Eats Desk — ${tabLabel}</h1>
     <p class="meta">Period: <strong>${periodLabel}</strong> · Generated: ${generated}</p>
     ${bodyContent}</body></html>`);
@@ -1451,25 +1514,41 @@ export default function HistoryPage() {
   function renderOverview() {
     return (
       <div className="space-y-5 max-w-7xl mx-auto">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <KpiCard
-            label="Total Revenue"
-            value={fmtRs(report.totalRevenue)}
-            sub="from completed orders"
-            icon={DollarSign}
-            gradient="from-primary to-secondary"
-            shadow="shadow-primary/30"
-          />
-          <KpiCard
-            label="Total Orders"
-            value={report.totalOrders.toLocaleString()}
-            sub="completed & delivered"
+            label="Sales (items)"
+            value={fmtRs(revenueBreakdown.salesAmount)}
+            sub="Menu & food, excl. delivery"
             icon={ShoppingBag}
             gradient="from-violet-500 to-violet-600"
             shadow="shadow-violet-500/30"
           />
           <KpiCard
-            label="Avg. Ticket Size"
+            label="Delivery fees"
+            value={fmtRs(revenueBreakdown.deliveryFees)}
+            sub="Rider / delivery charges"
+            icon={Bike}
+            gradient="from-sky-500 to-blue-600"
+            shadow="shadow-sky-500/30"
+          />
+          <KpiCard
+            label="Total revenue"
+            value={fmtRs(revenueBreakdown.grandTotal)}
+            sub="Sales + delivery fees"
+            icon={DollarSign}
+            gradient="from-primary to-secondary"
+            shadow="shadow-primary/30"
+          />
+          <KpiCard
+            label="Total orders"
+            value={revenueBreakdown.orderCount.toLocaleString()}
+            sub="completed & delivered"
+            icon={Package}
+            gradient="from-amber-500 to-orange-600"
+            shadow="shadow-amber-500/30"
+          />
+          <KpiCard
+            label="Avg. ticket"
             value={fmtRs(avgTicket)}
             sub="revenue per order"
             icon={TrendingUp}
@@ -1602,10 +1681,7 @@ export default function HistoryPage() {
             iconGradient="bg-gradient-to-br from-sky-500 to-blue-600 shadow-sky-500/25"
             badge={`${riderStats.length} rider${riderStats.length !== 1 ? "s" : ""} · ${riderStats.reduce((s, r) => s + r.deliveries, 0)} orders`}
             badgeValue={fmtRs(
-              riderStats.reduce(
-                (s, r) => s + Number(r.paidAmount || 0) + Number(r.unpaidAmount || 0),
-                0,
-              ),
+              riderStats.reduce((s, r) => s + Number(r.revenue || 0), 0),
             )}
             defaultOpen
           >
@@ -1629,25 +1705,28 @@ export default function HistoryPage() {
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                            {rider.name}
-                          </span>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <span className="inline-flex items-center gap-1 font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/10 px-1 py-0.5 rounded-md leading-tight">
-                              Paid: {fmtRs(rider.paidAmount)} -{" "}
-                              {rider.paidDeliveries} deliveries
+                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-2 mb-1.5">
+                          <div className="min-w-0">
+                            <span className="font-semibold text-sm text-gray-900 dark:text-white truncate block">
+                              {rider.name}
                             </span>
-                            <span className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-1 py-0.5 rounded-md leading-tight">
-                              Unpaid: {fmtRs(rider.unpaidAmount)} -{" "}
-                              {rider.unpaidDeliveries} Orders
+                            <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 mt-0.5 tabular-nums">
+                              Items {fmtRs(rider.salesRevenue)} · Delivery{" "}
+                              {fmtRs(rider.deliveryFees)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 sm:justify-end flex-shrink-0">
+                            <span className="inline-flex items-center gap-1 font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/10 px-1.5 py-0.5 rounded-md leading-tight text-[10px] sm:text-[11px]">
+                              Paid: {fmtRs(rider.paidAmount)} · {rider.paidDeliveries} del.
+                            </span>
+                            <span className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded-md leading-tight text-[10px] sm:text-[11px]">
+                              Unpaid: {fmtRs(rider.unpaidAmount)} · {rider.unpaidDeliveries}
                             </span>
                             {rider.cancelled > 0 && (
                               <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
                                 {rider.cancelled} cancelled
                               </span>
                             )}
-                            {/* <span className="text-sm font-bold text-primary min-w-[72px] text-right">{fmtRs(rider.revenue)}</span> */}
                           </div>
                         </div>
                         <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
@@ -2821,6 +2900,20 @@ export default function HistoryPage() {
                                 <span className="text-[11px] text-gray-400 dark:text-neutral-500">
                                   {day.sessions.length} session{day.sessions.length !== 1 ? "s" : ""}
                                 </span>
+                                {day.sessions.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openFullDayCombinedReport(day);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border border-primary/35 bg-primary/10 text-primary hover:bg-primary/15 dark:hover:bg-primary/20 transition-colors"
+                                    title="View one report with all sessions this day combined"
+                                  >
+                                    <Layers className="w-3 h-3 flex-shrink-0" />
+                                    Full day total
+                                  </button>
+                                )}
                                 <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700">
                                   <ShoppingBag className="w-3 h-3 text-gray-400 dark:text-neutral-500" />
                                   <span className="text-[12px] font-semibold text-gray-700 dark:text-neutral-300">{day.totalOrders.toLocaleString()}</span>
@@ -3012,44 +3105,63 @@ export default function HistoryPage() {
           <div className="fixed inset-0 z-50 flex items-stretch p-0">
             <div
               className="fixed inset-0 bg-black/50 top-0 backdrop-blur-sm"
-              onClick={() => setSelectedSession(null)}
+              onClick={() => {
+                setSelectedSession(null);
+                setSessionDetailScope("single");
+              }}
             />
             <div className="fixed top-0 inset-y-0 right-0 w-full max-w-3xl bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-neutral-800 flex-shrink-0">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-sm font-bold text-gray-900 dark:text-white">
                       Business Day Report
                     </h2>
-                    <span
-                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                        selectedSession.status === "OPEN"
-                          ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                          : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
-                      }`}
-                    >
-                      {selectedSession.status === "OPEN" && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      )}
-                      {selectedSession.status}
-                    </span>
+                    {sessionDetailScope === "day" ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary/15 dark:bg-primary/20 text-primary border border-primary/25">
+                        <Layers className="w-3 h-3" />
+                        Full day total
+                      </span>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                          selectedSession.status === "OPEN"
+                            ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                            : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
+                        }`}
+                      >
+                        {selectedSession.status === "OPEN" && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        )}
+                        {selectedSession.status}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">
-                    {fmtDate(selectedSession.startAt)}
-                    {selectedSession.endAt
-                      ? ` → ${fmtDate(selectedSession.endAt)}`
-                      : " · Ongoing"}
-                    {fmtDuration(
-                      selectedSession.startAt,
-                      selectedSession.endAt,
-                    ) &&
-                      ` · ${fmtDuration(selectedSession.startAt, selectedSession.endAt)}`}
-                  </p>
+                  {sessionDetailScope === "day" ? (
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-0.5">
+                      All sessions on this calendar day combined — same totals as the day row
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">
+                      {fmtDate(selectedSession.startAt)}
+                      {selectedSession.endAt
+                        ? ` → ${fmtDate(selectedSession.endAt)}`
+                        : " · Ongoing"}
+                      {fmtDuration(
+                        selectedSession.startAt,
+                        selectedSession.endAt,
+                      ) &&
+                        ` · ${fmtDuration(selectedSession.startAt, selectedSession.endAt)}`}
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSelectedSession(null)}
+                  onClick={() => {
+                    setSelectedSession(null);
+                    setSessionDetailScope("single");
+                  }}
                   className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -3850,18 +3962,6 @@ export default function HistoryPage() {
                   <div className="flex items-center bg-gray-100 dark:bg-neutral-800 rounded-lg p-0.5 gap-0.5">
                     <button
                       type="button"
-                      onClick={() => setSessionsViewMode("sessions")}
-                      className={`flex items-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-semibold transition-all ${
-                        sessionsViewMode === "sessions"
-                          ? "bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-sm"
-                          : "text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200"
-                      }`}
-                    >
-                      <CalendarDays className="w-3 h-3" />
-                      Sessions
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => {
                         setSessionsViewMode("daily");
                         setExpandedDays(new Set());
@@ -3874,6 +3974,18 @@ export default function HistoryPage() {
                     >
                       <BarChart3 className="w-3 h-3" />
                       Daily
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSessionsViewMode("sessions")}
+                      className={`flex items-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-semibold transition-all ${
+                        sessionsViewMode === "sessions"
+                          ? "bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-sm"
+                          : "text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200"
+                      }`}
+                    >
+                      <CalendarDays className="w-3 h-3" />
+                      All sessions
                     </button>
                   </div>
                   <button

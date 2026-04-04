@@ -531,7 +531,9 @@ export default function OverviewPage() {
       setLoadingEndOrders(true);
       try {
         if (session?.id) {
-          const res = await getDaySessionOrders(session.id);
+          const res = await getDaySessionOrders(session.id, {
+            dayScope: "all",
+          });
           const orders = Array.isArray(res?.orders) ? res.orders : [];
           const eligible = orders
             .filter((o) => o && o.status !== "CANCELLED")
