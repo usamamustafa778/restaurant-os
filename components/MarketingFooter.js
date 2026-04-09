@@ -10,6 +10,13 @@ function getWhatsAppContactHref() {
   return `${base}?text=${encodeURIComponent(WHATSAPP_CONTACT_MESSAGE)}`;
 }
 
+const SOCIAL_LINKS = [
+  { label: "X (Twitter)", href: "https://x.com/eatsdesk" },
+  { label: "Instagram", href: "https://instagram.com/eatsdesk.app" },
+  { label: "LinkedIn", href: "https://linkedin.com/eatsdesk" },
+  { label: "Facebook", href: "https://facebook.com/eatsdesk" },
+];
+
 export default function MarketingFooter() {
   const year = new Date().getFullYear();
   const whatsappHref = getWhatsAppContactHref();
@@ -81,6 +88,19 @@ export default function MarketingFooter() {
             <li>
               <Link href="/terms-and-conditions">Terms</Link>
             </li>
+          </ul>
+        </nav>
+
+        <nav className="footer-col" aria-label="Social links">
+          <h4 className="footer-col-title">Socials</h4>
+          <ul className="footer-link-list">
+            {SOCIAL_LINKS.map((social) => (
+              <li key={social.href}>
+                <a href={social.href} target="_blank" rel="noopener noreferrer">
+                  {social.label}
+                </a>
+              </li>
+            ))}
           </ul>
         </nav>
       </div>
