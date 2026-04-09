@@ -42,28 +42,77 @@ function fmt(n) {
   return n < 0 ? `(${s})` : s;
 }
 
-function exportCSV(report, year, month) {
-  const rows = [["Section", "Sub-section", "Code", "Description", "Till Prev Month", "Till Curr Month", "Curr Month"]];
+function isZeroRow(a) {
+  return Number(a?.prev || 0) === 0 && Number(a?.curr || 0) === 0 && Number(a?.month || 0) === 0;
+}
 
-  function push(section, sub, a) {
-    rows.push([section, sub, a.code || "", a.name || a.label || "", fmt(a.prev), fmt(a.curr), fmt(a.month)]);
-  }
+function exportPrintable(report, year, month, hideZeroAccounts) {
+  const assetsCurrent = hideZeroAccounts ? report.assets.current.filter((a) => !isZeroRow(a)) : report.assets.current;
+  const assetsNonCurrent = hideZeroAccounts ? report.assets.nonCurrent.filter((a) => !isZeroRow(a)) : report.assets.nonCurrent;
+  const capitalAccounts = hideZeroAccounts ? report.capital.accounts.filter((a) => !isZeroRow(a)) : report.capital.accounts;
+  const liabilityAccounts = hideZeroAccounts ? report.liabilities.current.filter((a) => !isZeroRow(a)) : report.liabilities.current;
 
-  report.assets.current.forEach((a)    => push("Assets", "Current",     a));
-  push("Assets", "Current Total",     { code: "", name: "Current Assets Total",     prev: report.assets.totals.prev,      curr: report.assets.totals.curr,      month: report.assets.totals.month });
-  report.assets.nonCurrent.forEach((a) => push("Assets", "Non-Current", a));
-  push("Assets", "Non-Current Total", { code: "", name: "Non-Current Assets Total", prev: 0,                               curr: 0,                               month: 0 });
-  report.capital.accounts.forEach((a)  => push("Capital", "",           a));
-  push("Capital", "Total",            { code: "", name: "Capital Total",             prev: report.capital.totals.prev,     curr: report.capital.totals.curr,     month: report.capital.totals.month });
-  report.liabilities.current.forEach((a) => push("Liabilities", "Current", a));
-  push("Liabilities", "Total",        { code: "", name: "Liabilities Total",         prev: report.liabilities.totals.prev, curr: report.liabilities.totals.curr, month: report.liabilities.totals.month });
+  const row = (label, prev, curr, bold = false) => `
+    <tr>
+      <td class="${bold ? "b" : ""}">${label}</td>
+      <td class="num ${bold ? "b" : ""}">${fmt(prev)}</td>
+      <td class="num ${bold ? "b" : ""}">${fmt(curr)}</td>
+    </tr>
+  `;
+  const section = (label) => `<tr class="s"><td colspan="3">${label}</td></tr>`;
+  const sub = (label) => `<tr class="sub"><td colspan="3">${label}</td></tr>`;
 
-  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Balance Sheet ${year}-${String(month).padStart(2, "0")}</title>
+<style>
+  @page { size: landscape; margin: 10mm; }
+  body { font-family: Arial, sans-serif; color: #111; }
+  h2 { margin: 0 0 2px 0; font-size: 18px; }
+  p { margin: 0 0 10px 0; color: #444; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #bbb; padding: 6px 8px; }
+  th { background: #efefef; text-align: left; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .s td { background: #e9eef8; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .sub td { background: #f4f4f4; font-weight: 700; font-style: italic; color: #444; }
+  .b { font-weight: 700; }
+</style>
+</head>
+<body>
+  <h2>Balance Sheet</h2>
+  <p>${MONTHS[month - 1]} ${year}</p>
+  <table>
+    <thead>
+      <tr><th>Account</th><th class="num">Till Previous Month</th><th class="num">Till Current Month</th></tr>
+    </thead>
+    <tbody>
+      ${section("Assets")}
+      ${sub("Current Assets")}
+      ${assetsCurrent.map((a) => row(`${a.code} ${a.name}`, a.prev, a.curr)).join("")}
+      ${row("Current Assets Total", report.assets.current.reduce((s, a) => s + a.prev, 0), report.assets.current.reduce((s, a) => s + a.curr, 0), true)}
+      ${sub("Non-Current Assets")}
+      ${assetsNonCurrent.map((a) => row(`${a.code} ${a.name}`, a.prev, a.curr)).join("")}
+      ${row("Non-Current Assets Total", report.assets.nonCurrent.reduce((s, a) => s + a.prev, 0), report.assets.nonCurrent.reduce((s, a) => s + a.curr, 0), true)}
+      ${row("Assets Total", report.assets.totals.prev, report.assets.totals.curr, true)}
+      ${section("Capital")}
+      ${capitalAccounts.map((a) => row(`${a.code} ${a.name}`, a.prev, a.curr)).join("")}
+      ${row("Capital Total", report.capital.totals.prev, report.capital.totals.curr, true)}
+      ${section("Liabilities")}
+      ${liabilityAccounts.map((a) => row(`${a.code} ${a.name}`, a.prev, a.curr)).join("")}
+      ${row("Liabilities Total", report.liabilities.totals.prev, report.liabilities.totals.curr, true)}
+    </tbody>
+  </table>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `balance-sheet-${year}-${String(month).padStart(2, "0")}.csv`;
+  a.download = `balance-sheet-print-${year}-${String(month).padStart(2, "0")}.html`;
   a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ─── Table primitives ─────────────────────────────────────────────────────────
@@ -84,27 +133,52 @@ function SubHeaderRow({ label }) {
   );
 }
 
-function AccountRow({ code, name, prev, curr, month, bold = false, italic = false }) {
+function AccountRow({ code, name, prev, curr, month, bold = false, italic = false, isAsset = false }) {
   const base = `text-sm ${bold ? "font-bold text-gray-900 dark:text-white" : "text-gray-700 dark:text-neutral-300"} ${italic ? "italic" : ""}`;
+  const hasNegativeAsset = isAsset && (Number(prev) < 0 || Number(curr) < 0 || Number(month) < 0);
+  const numClass = (v) => {
+    if (bold) return "font-bold text-gray-900 dark:text-white";
+    if (hasNegativeAsset && Number(v) < 0) return "text-red-600 dark:text-red-400 font-semibold";
+    return "text-gray-500 dark:text-neutral-400";
+  };
   return (
     <tr className="border-b border-gray-100 dark:border-neutral-800/40 hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors">
       <td className="px-4 py-2 font-mono text-[11px] text-gray-400 dark:text-neutral-600 w-20">{code}</td>
-      <td className={`px-4 py-2 ${base}`}>{name}</td>
-      <td className={`px-4 py-2 text-right tabular-nums ${bold ? "font-bold text-gray-900 dark:text-white" : "text-gray-500 dark:text-neutral-400"}`}>{fmt(prev)}</td>
-      <td className={`px-4 py-2 text-right tabular-nums ${bold ? "font-bold text-gray-900 dark:text-white" : "text-gray-500 dark:text-neutral-400"}`}>{fmt(curr)}</td>
-      <td className={`px-4 py-2 text-right tabular-nums ${bold ? "font-bold text-gray-900 dark:text-white" : "text-gray-500 dark:text-neutral-400"}`}>{fmt(month)}</td>
+      <td className={`px-4 py-2 ${base}`}>
+        <span className="inline-flex items-center gap-1.5">
+          {name}
+          {hasNegativeAsset && <AlertCircle className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />}
+        </span>
+      </td>
+      <td className={`px-4 py-2 text-right tabular-nums ${numClass(prev)}`}>{fmt(prev)}</td>
+      <td className={`px-4 py-2 text-right tabular-nums ${numClass(curr)}`}>{fmt(curr)}</td>
+      <td className={`px-4 py-2 text-right tabular-nums ${numClass(month)}`}>{fmt(month)}</td>
     </tr>
   );
 }
 
 function TotalRow({ label, prev, curr, month, large = false }) {
+  const hasNegative = Number(prev) < 0 || Number(curr) < 0 || Number(month) < 0;
+  const numClass = (v) => {
+    if (hasNegative && Number(v) < 0) {
+      return large
+        ? "text-red-600 dark:text-red-400 text-base"
+        : "text-red-600 dark:text-red-400";
+    }
+    return large
+      ? "text-gray-900 dark:text-white text-base"
+      : "text-gray-700 dark:text-neutral-300";
+  };
   return (
     <tr className="bg-gray-50 dark:bg-neutral-900/80 border-b border-gray-200 dark:border-neutral-700">
       <td className="px-4 py-2.5 w-20" />
-      <td className={`px-4 py-2.5 font-bold italic ${large ? "text-gray-900 dark:text-white text-base" : "text-gray-700 dark:text-neutral-300 text-sm"}`}>{label}</td>
-      <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${large ? "text-gray-900 dark:text-white text-base" : "text-gray-700 dark:text-neutral-300"}`}>{fmt(prev)}</td>
-      <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${large ? "text-gray-900 dark:text-white text-base" : "text-gray-700 dark:text-neutral-300"}`}>{fmt(curr)}</td>
-      <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${large ? "text-gray-900 dark:text-white text-base" : "text-gray-700 dark:text-neutral-300"}`}>{fmt(month)}</td>
+      <td className={`px-4 py-2.5 font-bold italic inline-flex items-center gap-1.5 ${large ? "text-gray-900 dark:text-white text-base" : "text-gray-700 dark:text-neutral-300 text-sm"}`}>
+        {label}
+        {hasNegative && <AlertCircle className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />}
+      </td>
+      <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${numClass(prev)}`}>{fmt(prev)}</td>
+      <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${numClass(curr)}`}>{fmt(curr)}</td>
+      <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${numClass(month)}`}>{fmt(month)}</td>
     </tr>
   );
 }
@@ -124,6 +198,7 @@ export default function BalanceSheetPage() {
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun]   = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [hideZeroAccounts, setHideZeroAccounts] = useState(true);
   const exportMenuRef = useRef(null);
 
   async function generate() {
@@ -147,7 +222,7 @@ export default function BalanceSheetPage() {
 
   function handleExportCSV() {
     if (!report) { toast.error("Run the report first"); return; }
-    exportCSV(report, year, month);
+    exportPrintable(report, year, month, hideZeroAccounts);
     setExportOpen(false);
   }
 
@@ -156,16 +231,29 @@ export default function BalanceSheetPage() {
     window.print();
   }
 
+  const shownAssetsCurrent = report
+    ? (hideZeroAccounts ? report.assets.current.filter((a) => !isZeroRow(a)) : report.assets.current)
+    : [];
+  const shownAssetsNonCurrent = report
+    ? (hideZeroAccounts ? report.assets.nonCurrent.filter((a) => !isZeroRow(a)) : report.assets.nonCurrent)
+    : [];
+  const shownCapital = report
+    ? (hideZeroAccounts ? report.capital.accounts.filter((a) => !isZeroRow(a)) : report.capital.accounts)
+    : [];
+  const shownLiabilities = report
+    ? (hideZeroAccounts ? report.liabilities.current.filter((a) => !isZeroRow(a)) : report.liabilities.current)
+    : [];
+
   const nonCurrTotals = report ? {
-    prev:  report.assets.nonCurrent.reduce((s, a) => s + a.prev,  0),
-    curr:  report.assets.nonCurrent.reduce((s, a) => s + a.curr,  0),
-    month: report.assets.nonCurrent.reduce((s, a) => s + a.month, 0),
+    prev:  shownAssetsNonCurrent.reduce((s, a) => s + a.prev,  0),
+    curr:  shownAssetsNonCurrent.reduce((s, a) => s + a.curr,  0),
+    month: shownAssetsNonCurrent.reduce((s, a) => s + a.month, 0),
   } : null;
 
   const currAssetTotals = report ? {
-    prev:  report.assets.current.reduce((s, a) => s + a.prev,  0),
-    curr:  report.assets.current.reduce((s, a) => s + a.curr,  0),
-    month: report.assets.current.reduce((s, a) => s + a.month, 0),
+    prev:  shownAssetsCurrent.reduce((s, a) => s + a.prev,  0),
+    curr:  shownAssetsCurrent.reduce((s, a) => s + a.curr,  0),
+    month: shownAssetsCurrent.reduce((s, a) => s + a.month, 0),
   } : null;
 
   return (
@@ -218,6 +306,17 @@ export default function BalanceSheetPage() {
           <div className="px-5 py-3 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-900/40 rounded-b-2xl flex flex-wrap items-center justify-end gap-2 overflow-visible relative z-10">
             <button
               type="button"
+              onClick={() => setHideZeroAccounts((v) => !v)}
+              className={`h-9 px-3 rounded-xl border text-xs font-semibold transition-colors ${
+                hideZeroAccounts
+                  ? "bg-orange-50 dark:bg-orange-500/15 border-orange-200 dark:border-orange-500/40 text-orange-700 dark:text-orange-300"
+                  : "bg-white dark:bg-neutral-900 border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300"
+              }`}
+            >
+              {hideZeroAccounts ? "Hide zero accounts: ON" : "Hide zero accounts: OFF"}
+            </button>
+            <button
+              type="button"
               onClick={generate}
               disabled={loading}
               className="flex items-center gap-2 h-9 px-4 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-sm font-semibold text-white transition-colors shadow-sm shadow-orange-500/20 disabled:opacity-50"
@@ -239,7 +338,7 @@ export default function BalanceSheetPage() {
                 <div className="absolute right-0 top-full mt-1.5 w-52 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-2xl z-[200] overflow-hidden ring-1 ring-black/5 dark:ring-white/10 py-1">
                   <button type="button" onClick={handleExportCSV}
                     className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800">
-                    <Download className="w-4 h-4 text-gray-400" /> Download CSV
+                    <Download className="w-4 h-4 text-gray-400" /> Export Printable (HTML)
                   </button>
                   <button type="button" onClick={handleExportPrint}
                     className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800">
@@ -300,11 +399,11 @@ export default function BalanceSheetPage() {
                 <table className="w-full text-sm min-w-[640px]">
                   <thead>
                     <tr className="bg-gray-50 dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-700">
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-20">Code</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Account</th>
-                      <th className="px-4 py-3 text-right text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-36">Till Prev Month</th>
-                      <th className="px-4 py-3 text-right text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-36">Till Curr Month</th>
-                      <th className="px-4 py-3 text-right text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-36">Current Month</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-20">Code</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Account</th>
+                      <th className="px-4 py-4 text-right text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-36">Till Previous Month</th>
+                      <th className="px-4 py-4 text-right text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-36">Till Current Month</th>
+                      <th className="px-4 py-4 text-right text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider w-36">Current Month</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-neutral-950 divide-y divide-gray-50 dark:divide-neutral-800/30">
@@ -312,35 +411,35 @@ export default function BalanceSheetPage() {
                     {/* ─── ASSETS ─────────────────────────────────────── */}
                     <SectionHeaderRow label="Assets" color="bg-blue-500/10 text-blue-700 dark:text-blue-300" />
                     <SubHeaderRow label="Current Assets" />
-                    {report.assets.current.map((a) => (
-                      <AccountRow key={a._id} code={a.code} name={a.name} prev={a.prev} curr={a.curr} month={a.month} />
+                    {shownAssetsCurrent.map((a) => (
+                      <AccountRow key={a._id} code={a.code} name={a.name} prev={a.prev} curr={a.curr} month={a.month} isAsset />
                     ))}
                     <TotalRow label="Current Assets Total" prev={currAssetTotals.prev} curr={currAssetTotals.curr} month={currAssetTotals.month} />
 
                     <SubHeaderRow label="Non-Current Assets" />
-                    {report.assets.nonCurrent.map((a) => (
-                      <AccountRow key={a._id} code={a.code} name={a.name} prev={a.prev} curr={a.curr} month={a.month} />
+                    {shownAssetsNonCurrent.map((a) => (
+                      <AccountRow key={a._id} code={a.code} name={a.name} prev={a.prev} curr={a.curr} month={a.month} isAsset />
                     ))}
                     <TotalRow label="Non-Current Assets Total" prev={nonCurrTotals.prev} curr={nonCurrTotals.curr} month={nonCurrTotals.month} />
-                    <TotalRow label="Assets Total" prev={report.assets.totals.prev} curr={report.assets.totals.curr} month={report.assets.totals.month} large />
+                    <TotalRow label="Assets Total" prev={currAssetTotals.prev + nonCurrTotals.prev} curr={currAssetTotals.curr + nonCurrTotals.curr} month={currAssetTotals.month + nonCurrTotals.month} large />
                     <Spacer />
 
                     {/* ─── CAPITAL ────────────────────────────────────── */}
                     <SectionHeaderRow label="Capital" color="bg-violet-500/10 text-violet-700 dark:text-violet-300" />
-                    {report.capital.accounts.map((a) => (
+                    {shownCapital.map((a) => (
                       <AccountRow key={a._id} code={a.code} name={a.name} prev={a.prev} curr={a.curr} month={a.month} />
                     ))}
-                    <TotalRow label="Capital Total" prev={report.capital.totals.prev} curr={report.capital.totals.curr} month={report.capital.totals.month} large />
+                    <TotalRow label="Capital Total" prev={shownCapital.reduce((s, a) => s + a.prev, 0)} curr={shownCapital.reduce((s, a) => s + a.curr, 0)} month={shownCapital.reduce((s, a) => s + a.month, 0)} large />
                     <Spacer />
 
                     {/* ─── LIABILITIES ────────────────────────────────── */}
                     <SectionHeaderRow label="Liabilities" color="bg-orange-500/10 text-orange-700 dark:text-orange-300" />
                     <SubHeaderRow label="Current Liabilities" />
-                    {report.liabilities.current.map((a) => (
+                    {shownLiabilities.map((a) => (
                       <AccountRow key={a._id} code={a.code} name={a.name} prev={a.prev} curr={a.curr} month={a.month} />
                     ))}
-                    <TotalRow label="Current Liabilities Total" prev={report.liabilities.totals.prev} curr={report.liabilities.totals.curr} month={report.liabilities.totals.month} />
-                    <TotalRow label="Liabilities Total" prev={report.liabilities.totals.prev} curr={report.liabilities.totals.curr} month={report.liabilities.totals.month} large />
+                    <TotalRow label="Current Liabilities Total" prev={shownLiabilities.reduce((s, a) => s + a.prev, 0)} curr={shownLiabilities.reduce((s, a) => s + a.curr, 0)} month={shownLiabilities.reduce((s, a) => s + a.month, 0)} />
+                    <TotalRow label="Liabilities Total" prev={shownLiabilities.reduce((s, a) => s + a.prev, 0)} curr={shownLiabilities.reduce((s, a) => s + a.curr, 0)} month={shownLiabilities.reduce((s, a) => s + a.month, 0)} large />
                     <Spacer />
 
                     {/* Balance row */}

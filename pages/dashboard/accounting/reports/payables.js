@@ -58,7 +58,7 @@ const dateInputCls =
   "h-9 px-3 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-500 transition-colors";
 
 function exportCSV(suppliers, asOfDate, totalPayable) {
-  const headers = ["#", "Supplier", "Phone", "Balance Payable"];
+  const headers = ["#", "Supplier", "Phone", "Last Payment", "Overdue", "Balance Payable"];
   const lines = [
     headers.join(","),
     ...suppliers.map((s, i) =>
@@ -66,10 +66,12 @@ function exportCSV(suppliers, asOfDate, totalPayable) {
         i + 1,
         `"${String(s.name || "").replace(/"/g, '""')}"`,
         `"${String(s.phone || "").replace(/"/g, '""')}"`,
+        `"${s.lastPaymentDate ? fmtDisplayDate(s.lastPaymentDate) : ""}"`,
+        s.overdue ? "Overdue" : "",
         s.balance ?? 0,
       ].join(","),
     ),
-    ["Total", "", "", totalPayable ?? 0].join(","),
+    ["Total", "", "", "", "", totalPayable ?? 0].join(","),
   ];
   const blob = new Blob([lines.join("\n")], {
     type: "text/csv;charset=utf-8",
@@ -193,58 +195,82 @@ export default function PayablesPage() {
         ),
       },
       {
+        key: "lastPaymentDate",
+        header: "Last Payment",
+        hideOnMobile: true,
+        render: (d) => (
+          <span className="text-gray-500 dark:text-neutral-400">
+            {d ? fmtDisplayDate(d) : "—"}
+          </span>
+        ),
+      },
+      {
+        key: "overdue",
+        header: "Overdue",
+        align: "center",
+        render: (overdue) =>
+          overdue ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300">
+              Overdue
+            </span>
+          ) : (
+            <span className="text-gray-300 dark:text-neutral-700">—</span>
+          ),
+      },
+      {
         key: "balance",
         header: "Balance payable",
         align: "right",
         cellClassName: "tabular-nums",
         render: (bal) => (
-          <span className="font-semibold text-orange-500 dark:text-orange-400">
+          <span
+            className={`font-semibold ${
+              Number(bal) >= 0
+                ? "text-red-500 dark:text-red-400"
+                : "text-green-500 dark:text-green-400"
+            }`}
+          >
             {sym} {fmtAmt(bal)}
           </span>
         ),
       },
       {
-        key: "_ledger",
-        header: "Ledger",
+        key: "_actions",
+        header: "Actions",
         align: "center",
         render: (_, row) => (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push(
-                `/dashboard/accounting/reports/ledger?partyId=${row._id}`,
-              );
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-orange-500 dark:hover:text-orange-400 transition-colors"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            View
-          </button>
-        ),
-      },
-      {
-        key: "_pay",
-        header: "Pay",
-        align: "center",
-        render: (_, row) => (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              const q = new URLSearchParams({
-                partyId: String(row._id),
-                partyName: String(row.name || ""),
-                suggestedAmount: String(row.balance ?? 0),
-              });
-              router.push(
-                `/dashboard/accounting/vouchers/cash-payment?${q.toString()}`,
-              );
-            }}
-            className="inline-flex items-center justify-center rounded-lg bg-orange-500 hover:bg-orange-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm shadow-orange-500/20 transition-colors"
-          >
-            Pay
-          </button>
+          <div className="inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(
+                  `/dashboard/accounting/reports/ledger?partyId=${row._id}`,
+                );
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-orange-500 dark:hover:text-orange-400 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              View
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const q = new URLSearchParams({
+                  partyId: String(row._id),
+                  partyName: String(row.name || ""),
+                  suggestedAmount: String(row.balance ?? 0),
+                });
+                router.push(
+                  `/dashboard/accounting/vouchers/cash-payment?${q.toString()}`,
+                );
+              }}
+              className="inline-flex items-center text-xs font-semibold text-orange-500 dark:text-orange-400 underline underline-offset-2 hover:text-orange-600 dark:hover:text-orange-300 transition-colors"
+            >
+              Pay
+            </button>
+          </div>
         ),
       },
     ],
@@ -500,13 +526,12 @@ export default function PayablesPage() {
                     </tfoot>
                   </table>
                 </div>
-                <div className="px-5 py-3 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-900/40 flex items-center justify-between no-print">
-                  <span className="text-sm font-medium text-gray-600 dark:text-neutral-400">
-                    {suppliers.length} suppliers
+                <div className="px-5 py-4 border-t-2 border-gray-200 dark:border-neutral-700 bg-gray-50/70 dark:bg-neutral-900/50 flex items-center justify-between no-print">
+                  <span className="text-base font-bold text-gray-900 dark:text-white">
+                    Total Balance Payable
                   </span>
-                  <span className="text-sm font-semibold tabular-nums text-gray-900 dark:text-white">
-                    Total{" "}
-                    <span className="text-orange-500 dark:text-orange-400">
+                  <span className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">
+                    <span className="text-red-500 dark:text-red-400">
                       {sym} {fmtAmt(report.totalPayable)}
                     </span>
                   </span>

@@ -114,7 +114,7 @@ function SummaryStrip({ summary, sym }) {
     {
       label: "Cash out",
       value: `${sym} ${fmtAmt(summary.cash_payment || 0)}`,
-      sub: "Payments",
+      sub: "Supplier payments",
       icon: ArrowUpRight,
       iconClass: "text-red-500 dark:text-red-400",
     },

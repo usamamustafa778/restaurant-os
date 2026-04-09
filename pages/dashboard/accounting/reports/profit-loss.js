@@ -268,6 +268,7 @@ export default function ProfitLossPage() {
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [hideZeroAccounts, setHideZeroAccounts] = useState(true);
   const exportMenuRef = useRef(null);
 
   function applyMode(next) {
@@ -338,6 +339,30 @@ export default function ProfitLossPage() {
     setExportOpen(false);
     window.print();
   }
+
+  const visibleRevenue = useMemo(
+    () =>
+      hideZeroAccounts
+        ? report?.revenue?.filter((a) => Number(a.net) !== 0) || []
+        : report?.revenue || [],
+    [report, hideZeroAccounts],
+  );
+
+  const visibleCogs = useMemo(
+    () =>
+      hideZeroAccounts
+        ? report?.cogs?.filter((a) => Number(a.net) !== 0) || []
+        : report?.cogs || [],
+    [report, hideZeroAccounts],
+  );
+
+  const visibleExpenses = useMemo(
+    () =>
+      hideZeroAccounts
+        ? report?.expenses?.filter((a) => Number(a.net) !== 0) || []
+        : report?.expenses || [],
+    [report, hideZeroAccounts],
+  );
 
   return (
     <AdminLayout title="P&L Statement">
@@ -420,6 +445,24 @@ export default function ProfitLossPage() {
           </div>
 
           <div className="px-5 py-3 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-900/40 rounded-b-2xl flex flex-wrap items-center justify-end gap-2 overflow-visible relative z-10">
+            <button
+              type="button"
+              onClick={() => setHideZeroAccounts((v) => !v)}
+              className="h-9 px-3 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-600 dark:text-neutral-300 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors inline-flex items-center gap-2"
+            >
+              <span className="text-gray-600 dark:text-neutral-300">Hide zero accounts</span>
+              <span
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  hideZeroAccounts ? "bg-gray-500 dark:bg-gray-400" : "bg-gray-300 dark:bg-neutral-700"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    hideZeroAccounts ? "translate-x-5" : "translate-x-1"
+                  }`}
+                />
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => hasRun && runReport()}
@@ -548,9 +591,9 @@ export default function ProfitLossPage() {
                 <tbody className="bg-white dark:bg-neutral-950">
                   <SectionHeader
                     label="Revenue"
-                    color="bg-emerald-100/80 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+                    color="bg-emerald-200/80 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-200"
                   />
-                  {report.revenue.map((a) => (
+                  {visibleRevenue.map((a) => (
                     <AccountRow key={a._id} account={a} />
                   ))}
                   <SubtotalRow
@@ -567,9 +610,9 @@ export default function ProfitLossPage() {
 
                   <SectionHeader
                     label="Cost of goods sold"
-                    color="bg-orange-100/80 dark:bg-orange-500/10 text-orange-800 dark:text-orange-300"
+                    color="bg-orange-200/80 dark:bg-orange-500/20 text-orange-900 dark:text-orange-200"
                   />
-                  {report.cogs.map((a) => (
+                  {visibleCogs.map((a) => (
                     <AccountRow key={a._id} account={a} />
                   ))}
                   <SubtotalRow label="Total COGS" amount={report.totalCOGS} />
@@ -587,13 +630,11 @@ export default function ProfitLossPage() {
 
                   <SectionHeader
                     label="Operating expenses"
-                    color="bg-red-100/80 dark:bg-red-500/10 text-red-800 dark:text-red-300"
+                    color="bg-red-200/80 dark:bg-red-500/20 text-red-900 dark:text-red-200"
                   />
-                  {report.expenses
-                    .filter((a) => a.net > 0)
-                    .map((a) => (
-                      <AccountRow key={a._id} account={a} />
-                    ))}
+                  {visibleExpenses.map((a) => (
+                    <AccountRow key={a._id} account={a} />
+                  ))}
                   <SubtotalRow
                     label="Total expenses"
                     amount={report.totalExpenses}
@@ -601,15 +642,15 @@ export default function ProfitLossPage() {
                   <Divider />
 
                   <tr
-                    className={`${report.netProfit >= 0 ? "bg-emerald-100/50 dark:bg-emerald-500/15" : "bg-red-100/50 dark:bg-red-500/15"}`}
+                    className={`border-t-4 border-double ${report.netProfit >= 0 ? "border-emerald-300 dark:border-emerald-500/50 bg-emerald-100/50 dark:bg-emerald-500/15" : "border-red-300 dark:border-red-500/50 bg-red-100/50 dark:bg-red-500/15"}`}
                   >
                     <td
-                      className={`px-4 sm:px-5 py-4 text-sm font-bold ${report.netProfit >= 0 ? "text-emerald-800 dark:text-emerald-300" : "text-red-800 dark:text-red-300"}`}
+                      className={`px-4 sm:px-5 py-4 text-xl font-bold ${report.netProfit >= 0 ? "text-emerald-800 dark:text-emerald-300" : "text-red-800 dark:text-red-300"}`}
                     >
                       {report.netProfit >= 0 ? "Net profit" : "Net loss"}
                     </td>
                     <td
-                      className={`px-4 sm:px-5 py-4 text-right text-lg font-bold tabular-nums ${report.netProfit >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}
+                      className={`px-4 sm:px-5 py-4 text-right text-xl font-bold tabular-nums ${report.netProfit >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}
                     >
                       {report.netProfit < 0
                         ? `(${sym} ${fmtAmt(report.netProfit)})`

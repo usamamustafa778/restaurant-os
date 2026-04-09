@@ -74,6 +74,14 @@ export default function VoucherForm({
   const hideMainPanel = isJournal;
   const mainLabel     = mainAccountLabel || (isPayment ? "Payment From" : "Received Into");
   const refLabel      = referenceLabel || "Reference No.";
+  const referencePlaceholder =
+    type === "bank_payment"
+      ? "e.g. CHQ-001, TRF-20260409"
+      : type === "bank_receipt"
+        ? "e.g. CHQ-001, IBFT ref no."
+        : referenceRequired
+          ? `Enter ${refLabel}`
+          : "Invoice / Cheque / Transfer no.";
   const filterPrefixes = accountFilter || ["301", "302", "303"];
 
   // Pick the preferred default account code based on voucher type
@@ -367,13 +375,15 @@ export default function VoucherForm({
           {/* Reference */}
           <div>
             <label className="block text-xs font-medium text-gray-500 dark:text-neutral-500 mb-1.5">
-              {refLabel}{" "}
-              {referenceRequired
-                ? <span className="text-red-400">*</span>
-                : <span className="text-gray-400 dark:text-neutral-600 font-normal">(optional)</span>}
+              {refLabel}
+              {referenceRequired ? (
+                <span className="text-red-500"> *</span>
+              ) : (
+                <span className="text-gray-400 dark:text-neutral-600 font-normal"> (optional)</span>
+              )}
             </label>
             <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)}
-              placeholder={referenceRequired ? `Enter ${refLabel}` : "Invoice / Cheque / Transfer no."}
+              placeholder={referencePlaceholder}
               className={`${inputCls} ${submitted && referenceRequired && !referenceNo.trim() ? "border-red-400 ring-1 ring-red-400/30" : ""}`} />
             {submitted && referenceRequired && !referenceNo.trim() && (
               <p className="text-red-500 text-xs mt-1">{refLabel} is required</p>

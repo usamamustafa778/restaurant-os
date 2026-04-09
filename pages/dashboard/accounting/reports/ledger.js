@@ -61,6 +61,12 @@ function fmtAmt(n) {
   return fmtMoneyPK(n);
 }
 
+function fmtBalAccounting(n, sym) {
+  if (!n && n !== 0) return "";
+  const abs = fmtAmt(Math.abs(Number(n) || 0));
+  return Number(n) < 0 ? `(${sym} ${abs})` : `${sym} ${abs}`;
+}
+
 const VOUCHER_TYPE_LABELS = {
   cash_payment: "Cash Payment",
   cash_receipt: "Cash Receipt",
@@ -199,8 +205,7 @@ function exportLedgerPDFHTML({
       else if (id === "credit")
         v = r.credit > 0 ? `${sym} ${fmtAmt(r.credit)}` : "";
       else if (id === "balance") {
-        const neg = r.balance < 0;
-        v = (neg ? "-" : "") + sym + " " + fmtAmt(r.balance);
+        v = fmtBalAccounting(r.balance, sym);
       }
       const align =
         id === "debit" || id === "credit" || id === "balance"
@@ -547,8 +552,7 @@ export default function LedgerPage() {
             <span
               className={`font-medium ${isNeg ? "text-red-500 dark:text-red-400" : "text-gray-900 dark:text-white"}`}
             >
-              {isNeg ? "-" : ""}
-              {sym} {fmtAmt(row.balance)}
+              {fmtBalAccounting(row.balance, sym)}
             </span>
           );
         return "—";
@@ -575,8 +579,7 @@ export default function LedgerPage() {
             <td
               className={`px-4 py-3 text-right text-sm font-bold tabular-nums ${isNeg ? "text-red-500 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}
             >
-              {isNeg ? "-" : ""}
-              {sym} {fmtAmt(bal)}
+              {fmtBalAccounting(bal, sym)}
             </td>
           </tr>
         );
@@ -584,7 +587,7 @@ export default function LedgerPage() {
       const combined =
         row.label +
         (!hasBal && bal !== undefined
-          ? ` — ${isNeg ? "-" : ""}${sym} ${fmtAmt(bal)}`
+          ? ` — ${fmtBalAccounting(bal, sym)}`
           : "");
       return (
         <tr className="bg-gray-50/90 dark:bg-neutral-900/80">
