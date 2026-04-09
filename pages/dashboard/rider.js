@@ -403,10 +403,7 @@ export default function RiderPortalPage() {
   });
   const historyOrders = orders
     .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED" || o.status === "CANCELLED")
-    // History must belong to the delivery handler:
-    // - If an order has an assigned rider, only that rider should see it in History.
-    // - If no rider was assigned, the creator (who is also the only one who would see it via the API) should see it.
-    .filter((o) => !o.assignedRiderId || (riderId && o.assignedRiderId === riderId))
+    .filter((o) => riderId && o.assignedRiderId === riderId)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const deliveredHistory = historyOrders.filter(
