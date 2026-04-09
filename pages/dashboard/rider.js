@@ -100,6 +100,31 @@ function getTimeAgo(createdAt) {
   return `${h}h ago`;
 }
 
+function getOrderAgeMinutes(createdAt) {
+  const created = new Date(createdAt).getTime();
+  if (!Number.isFinite(created)) return 0;
+  return Math.max(0, Math.floor((Date.now() - created) / 60000));
+}
+
+function getKitchenUrgency(order) {
+  const status = String(order?.status || "");
+  if (status !== "PROCESSING" && status !== "PREPARING" && status !== "NEW_ORDER") {
+    return "normal";
+  }
+  const mins = getOrderAgeMinutes(order?.createdAt);
+  if (mins > 30) return "delayed";
+  if (mins >= 15) return "warning";
+  return "normal";
+}
+
+function triggerHaptic(pattern = 15) {
+  if (typeof window === "undefined") return;
+  const vibrate = window.navigator?.vibrate;
+  if (typeof vibrate === "function") {
+    try { vibrate(pattern); } catch {}
+  }
+}
+
 /** Grand total for an order (rider-facing). */
 function orderGrandTotal(order) {
   return Number(order.grandTotal ?? order.total) || 0;
@@ -153,6 +178,11 @@ export default function RiderPortalPage() {
   const [historyRange, setHistoryRange] = useState("today");
   const [historyCustomFrom, setHistoryCustomFrom] = useState("");
   const [historyCustomTo, setHistoryCustomTo] = useState("");
+  const [historyBreakdown, setHistoryBreakdown] = useState({
+    today: 0,
+    yesterday: 0,
+    week: 0,
+  });
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
 
   function toggleOrderDetails(orderKey) {
@@ -244,6 +274,30 @@ export default function RiderPortalPage() {
     }
   }
 
+  const computeClearedRevenue = useCallback((list) => {
+    const rows = Array.isArray(list) ? list : [];
+    return rows
+      .filter((o) => (o.status === "DELIVERED" || o.status === "COMPLETED") && !isDeliveryPaymentNotSubmitted(o))
+      .reduce((sum, o) => sum + orderGrandTotal(o), 0);
+  }, []);
+
+  const loadHistoryBreakdown = useCallback(async () => {
+    try {
+      const [todayData, yesterdayData, weekData] = await Promise.all([
+        getRiderOrders({ range: "today" }),
+        getRiderOrders({ range: "yesterday" }),
+        getRiderOrders({ range: "week" }),
+      ]);
+      setHistoryBreakdown({
+        today: computeClearedRevenue(todayData),
+        yesterday: computeClearedRevenue(yesterdayData),
+        week: computeClearedRevenue(weekData),
+      });
+    } catch {
+      setHistoryBreakdown({ today: 0, yesterday: 0, week: 0 });
+    }
+  }, [computeClearedRevenue]);
+
   useEffect(() => {
     if (tab !== TABS.HISTORY) {
       setOrdersLoading(true);
@@ -307,14 +361,22 @@ export default function RiderPortalPage() {
 
   useEffect(() => {
     if (!socket) return;
-    const onOrderEvent = () => loadOrders(getCurrentOrdersParams());
+    const onOrderEvent = () => {
+      loadOrders(getCurrentOrdersParams());
+      if (tab === TABS.HISTORY) loadHistoryBreakdown();
+    };
     socket.on("order:updated", onOrderEvent);
     socket.on("order:created", onOrderEvent);
     return () => {
       socket.off("order:updated", onOrderEvent);
       socket.off("order:created", onOrderEvent);
     };
-  }, [socket, getCurrentOrdersParams]);
+  }, [socket, getCurrentOrdersParams, tab, loadHistoryBreakdown]);
+
+  useEffect(() => {
+    if (tab !== TABS.HISTORY) return;
+    loadHistoryBreakdown();
+  }, [tab, loadHistoryBreakdown]);
 
   const loadMenu = useCallback(async () => {
     const seq = ++menuLoadSeqRef.current;
@@ -435,6 +497,17 @@ export default function RiderPortalPage() {
 
   const deliveredCount = deliveredHistory.length;
   const cancelledCount = historyOrders.filter((o) => o.status === "CANCELLED").length;
+  const breakdownMax = Math.max(
+    historyBreakdown.today,
+    historyBreakdown.yesterday,
+    historyBreakdown.week,
+    1,
+  );
+  const historyBreakdownRows = [
+    { key: "today", label: "Today", value: historyBreakdown.today },
+    { key: "yesterday", label: "Yesterday", value: historyBreakdown.yesterday },
+    { key: "week", label: "This week", value: historyBreakdown.week },
+  ];
   const activeRevenue = activeOrders.reduce(
     (sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0),
     0,
@@ -508,15 +581,22 @@ export default function RiderPortalPage() {
     [menu.items, dealMenuItems],
   );
 
-  const filteredItems = allMenuItems.filter((item) => {
-    if (item.available === false || item.finalAvailable === false) return false;
-    const matchCat =
-      selectedCategory === "all" ||
-      (selectedCategory === "deals" ? item.isDeal : item.categoryId === selectedCategory);
-    const matchSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const isAvailable = item.finalAvailable ?? item.available;
-    return matchCat && matchSearch && isAvailable !== false;
-  });
+  const filteredItems = allMenuItems
+    .filter((item) => {
+      if (item.available === false || item.finalAvailable === false) return false;
+      const matchCat =
+        selectedCategory === "all" ||
+        (selectedCategory === "deals" ? item.isDeal : item.categoryId === selectedCategory);
+      const matchSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const isAvailable = item.finalAvailable ?? item.available;
+      return matchCat && matchSearch && isAvailable !== false;
+    })
+    .sort((a, b) => {
+      const aOut = !a.isDeal && (a.inventorySufficient === false || a.inventorySufficient === "false");
+      const bOut = !b.isDeal && (b.inventorySufficient === false || b.inventorySufficient === "false");
+      if (aOut === bOut) return 0;
+      return aOut ? 1 : -1; // push out-of-stock items to bottom
+    });
 
   useEffect(() => {
     if (selectedCategory === "deals" && dealMenuItems.length === 0) {
@@ -626,6 +706,7 @@ export default function RiderPortalPage() {
     try {
       const updated = await collectOrderByRider(orderId);
       setOrders((prev) => prev.map((o) => (o.id === orderId || o._id === orderId ? { ...o, ...updated } : o)));
+      triggerHaptic([18, 40, 18]);
       toast.success("Out for delivery!", { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to collect order", { id: toastId });
@@ -640,6 +721,7 @@ export default function RiderPortalPage() {
     try {
       const updated = await markOrderDeliveredByRider(orderId);
       setOrders((prev) => prev.map((o) => (o.id === orderId || o._id === orderId ? { ...o, ...updated } : o)));
+      triggerHaptic([24, 50, 24]);
       toast.success("Order delivered!", { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to mark delivered", { id: toastId });
@@ -961,7 +1043,12 @@ export default function RiderPortalPage() {
                       className="rounded-xl bg-gray-50 dark:bg-neutral-900/80 py-2 px-1"
                     >
                       <p className="text-lg font-black text-primary tabular-nums leading-none">{row.n}</p>
-                      <p className="text-[9px] font-semibold text-gray-500 dark:text-neutral-500 mt-0.5">{row.label}</p>
+                      <div className="mt-0.5 flex items-center justify-center gap-1">
+                        {row.label === "Kitchen" && row.n > 0 && (
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        )}
+                        <p className="text-[9px] font-semibold text-gray-500 dark:text-neutral-500">{row.label}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1033,12 +1120,19 @@ export default function RiderPortalPage() {
                     const StatusIcon = sc.icon;
                     const orderId = order.id || order._id;
                     const orderKey = String(orderId);
+                    const kitchenUrgency = getKitchenUrgency(order);
+                    const urgencyBorderClass =
+                      kitchenUrgency === "delayed"
+                        ? "border-red-300 dark:border-red-500/40"
+                        : kitchenUrgency === "warning"
+                          ? "border-yellow-300 dark:border-yellow-500/35"
+                          : sc.border;
                     const isExpanded = expandedOrderIds.includes(orderKey);
                     const totalWrapClass = isExpanded
                       ? "flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-900 mb-3"
                       : "flex items-center justify-between mb-3";
                     return (
-                      <div key={orderKey} className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${sc.border} ${sc.pulse ? "rider-pulse-border" : ""}`}>
+                      <div key={orderKey} className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${urgencyBorderClass} ${sc.pulse ? "rider-pulse-border" : ""}`}>
                         <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
                           <div className="flex items-center gap-2">
                             <StatusIcon className={`w-4 h-4 ${sc.text}`} />
@@ -1055,9 +1149,16 @@ export default function RiderPortalPage() {
                             <span className="text-base font-black text-gray-900 dark:text-white">
                               #{order.tokenNumber || getOrderId(order).toString().slice(-4)}
                             </span>
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                              Delivery
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {kitchenUrgency === "delayed" && (
+                                <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/20">
+                                  Delayed
+                                </span>
+                              )}
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                Delivery
+                              </span>
+                            </div>
                           </div>
 
                           <button
@@ -1249,6 +1350,39 @@ export default function RiderPortalPage() {
                           {riderPendingPaymentOrders.length !== 1 ? "s" : ""}
                         </p>
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 shadow-sm">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        Cleared Breakdown
+                      </p>
+                      <span className="text-[10px] text-gray-500 dark:text-neutral-400">
+                        Today vs yesterday vs week
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {historyBreakdownRows.map((row) => (
+                        <div key={row.key}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-semibold text-gray-600 dark:text-neutral-300">{row.label}</span>
+                            <span className="text-[11px] font-black tabular-nums text-gray-900 dark:text-white">
+                              Rs. {Math.round(row.value).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="h-2 rounded-full bg-gray-100 dark:bg-neutral-900 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-primary to-primary/70 transition-[width] duration-500"
+                              style={{
+                                width: row.value <= 0
+                                  ? "0%"
+                                  : `${Math.max(6, Math.round((row.value / breakdownMax) * 100))}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
