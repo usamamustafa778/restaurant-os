@@ -167,6 +167,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const [paymentAccountsLoading, setPaymentAccountsLoading] = useState(true);
   const [orderType, setOrderType] = useState("DINE_IN");
   const [discountAmount, setDiscountAmount] = useState("");
+  const [showDiscountField, setShowDiscountField] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
   const [orderConfirmation, setOrderConfirmation] = useState(null);
@@ -503,7 +504,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           order.type === "takeaway" ? "TAKEAWAY" : order.type === "delivery" ? "DELIVERY" : "DINE_IN"
         );
         setTableName(order.tableName || "");
-        setDiscountAmount(order.discountAmount ? String(order.discountAmount) : "");
+        setDiscountAmount("");
+        setShowDiscountField(false);
         setEditingOrderId(order.id || order._id);
         setEditingOrder(order);
       })
@@ -1025,6 +1027,17 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     }
   }, [filteredItems.length, focusedItemIndex]);
 
+  // Keep manual discount percentage between 0 and 100
+  useEffect(() => {
+    setDiscountAmount((prev) => {
+      if (prev === "") return prev;
+      const n = Number(prev);
+      if (!Number.isFinite(n) || n < 0) return "";
+      if (n > 100) return "100";
+      return prev;
+    });
+  }, [cart, dealDiscount]);
+
   const addToCart = (item, qty = 1) => {
     const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
     const existingItem = cart.find((i) => i.id === item.id);
@@ -1078,6 +1091,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     setSelectedDeals([]);
     setDealDiscount(0);
     setDiscountAmount("");
+    setShowDiscountField(false);
   };
 
   const addNoteToItem = (itemId) => {
@@ -1091,7 +1105,19 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     (sum, item) => sum + item.price * item.quantity,
     0,
   );
-  const manualDiscount = discountAmount ? Number(discountAmount) : 0;
+  const maxManualDiscountAllowed = Math.max(0, subtotal - dealDiscount);
+  const manualDiscountPercentRaw =
+    discountAmount === "" || discountAmount === undefined
+      ? 0
+      : Number(discountAmount);
+  const manualDiscountPercent = Math.min(
+    Math.max(0, Number.isFinite(manualDiscountPercentRaw) ? manualDiscountPercentRaw : 0),
+    100,
+  );
+  const manualDiscount = Math.min(
+    maxManualDiscountAllowed,
+    (maxManualDiscountAllowed * manualDiscountPercent) / 100,
+  );
   const totalDiscount = dealDiscount + manualDiscount;
   const total = Math.max(0, subtotal - totalDiscount);
   const selectedDeliveryZone = deliveryZones.find((z) => z.id === deliveryLocationId);
@@ -2555,50 +2581,80 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               )}
 
               {/* Payment Summary */}
-              <div className="space-y-2 bill-font">
-                <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-2">
+              <div className="space-y-0.5 bill-font leading-tight">
+                <h4 className="text-xs font-bold text-gray-900 dark:text-white mb-1">
                   Payment Summary
                 </h4>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
                   <span className="text-gray-600 dark:text-neutral-400">
                     Sub Total
                   </span>
-                  <span className="font-semibold text-gray-900 dark:text-white">
+                  <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
                     Rs {subtotal.toFixed(2)}
                   </span>
                 </div>
                 {dealDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
                     <span className="text-emerald-600 dark:text-emerald-400">
                       Deal Discount
                     </span>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                       -Rs {dealDiscount.toFixed(2)}
                     </span>
                   </div>
                 )}
-                {manualDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600 dark:text-neutral-400">
+                {showDiscountField && (
+                  <div className="flex items-center justify-between gap-2 text-xs py-0.5">
+                    <span className="text-gray-600 dark:text-neutral-400 flex items-center gap-1 shrink-0">
+                      <Percent className="w-3 h-3 opacity-80" />
                       Discount
                     </span>
-                    <span className="font-semibold text-gray-600 dark:text-neutral-400">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step="0.01"
+                        max={100}
+                        value={discountAmount}
+                        onChange={(e) => setDiscountAmount(e.target.value)}
+                        onBlur={() => {
+                          if (discountAmount === "") return;
+                          const n = Number(discountAmount);
+                          if (!Number.isFinite(n) || n < 0) {
+                            setDiscountAmount("");
+                            return;
+                          }
+                          setDiscountAmount(String(Math.min(n, 100)));
+                        }}
+                        placeholder="0"
+                        disabled={cart.length === 0 || maxManualDiscountAllowed <= 0}
+                        className="w-14 px-1.5 py-0.5 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-right text-xs font-semibold text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm text-gray-500 dark:text-neutral-500">%</span>
+                    </div>
+                  </div>
+                )}
+                {manualDiscount > 0 && (
+                  <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
+                    <span className="text-gray-600 dark:text-neutral-400">Manual off</span>
+                    <span className="font-semibold tabular-nums text-gray-700 dark:text-neutral-300">
                       -Rs {manualDiscount.toFixed(2)}
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
                   <span className="text-gray-600 dark:text-neutral-400">
                     Tax (0%)
                   </span>
-                  <span className="font-semibold text-gray-900 dark:text-white">
+                  <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
                     Rs 0
                   </span>
                 </div>
                 {orderType === "DELIVERY" && deliveryFee > 0 && (
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
                     <span className="text-gray-600 dark:text-neutral-400">Delivery</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">
+                    <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
                       Rs {deliveryFee.toFixed(2)}
                     </span>
                   </div>
@@ -2606,12 +2662,12 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               </div>
 
               {/* Amount to be Paid */}
-              <div className="pt-3 border-t border-gray-200 dark:border-neutral-800 bill-font">
-                <div className="flex justify-between items-center">
-                  <span className="text-base font-bold text-gray-900 dark:text-white">
-                    Amount to be Paid
+              <div className="pt-1.5 mt-1 border-t border-gray-200 dark:border-neutral-800 bill-font">
+                <div className="flex justify-between items-baseline gap-2">
+                  <span className="text-xs font-bold text-gray-900 dark:text-white">
+                    Total due
                   </span>
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                  <span className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">
                     Rs {amountDue.toFixed(2)}
                   </span>
                 </div>
@@ -2684,32 +2740,41 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 </button>
               )}
 
-              {/* Add Customer + Print + Take Payment */}
-              <div className="flex gap-2 mt-2">
+              {/* Add Customer + Print + Discount + Take Payment */}
+              <div className="flex gap-1.5 mt-2 items-center">
                 {showCustomerPos && (
                   <button
                     type="button"
                     onClick={openCustomerModal}
-                    title={customerName || "Add Customer"}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-gray-300 dark:hover:border-neutral-600 transition-colors flex-shrink-0"
+                    title={customerName ? `Customer: ${customerName}` : "Add customer"}
+                    aria-label={customerName ? `Customer: ${customerName}` : "Add customer"}
+                    className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-gray-300 dark:hover:border-neutral-600 transition-colors flex-shrink-0"
                   >
                     <UserPlus className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
-                    <span className="text-xs font-medium text-gray-700 dark:text-neutral-300 max-w-[72px] truncate">
-                      {customerName || "Customer"}
-                    </span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={printMenuBill}
                   disabled={printingMenu || cart.length === 0}
-                  title={printingMenu ? "Printing..." : "Print bill"}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                  title={printingMenu ? "Printing…" : "Print bill"}
+                  aria-label={printingMenu ? "Printing" : "Print bill"}
+                  className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                 >
                   <Printer className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
-                  <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    {printingMenu ? "Printing..." : "Print"}
-                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDiscountField((prev) => !prev)}
+                  disabled={cart.length === 0 || maxManualDiscountAllowed <= 0}
+                  className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 ${
+                    showDiscountField
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-300"
+                  }`}
+                >
+                  <Percent className="w-4 h-4" />
+                  <span className="text-xs font-medium">Discount</span>
                 </button>
                 <button
                   type="button"
@@ -4372,7 +4437,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                       setCustomerAddress(order.deliveryAddress || "");
                       setOrderType(order.type === "takeaway" ? "TAKEAWAY" : order.type === "delivery" ? "DELIVERY" : "DINE_IN");
                       setTableName(order.tableName || "");
-                      setDiscountAmount(order.discountAmount ? String(order.discountAmount) : "");
+                      setDiscountAmount("");
+                      setShowDiscountField(false);
                     }).catch(() => {});
                   }
                 }}
