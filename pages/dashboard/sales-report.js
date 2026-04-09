@@ -477,6 +477,14 @@ function orderDeliveryFeeAmount(order) {
   return Number(order?.deliveryCharges) || 0;
 }
 
+function Skeleton({ className = "" }) {
+  return (
+    <div
+      className={`bg-gray-200 dark:bg-neutral-800 animate-pulse rounded-lg ${className}`}
+    />
+  );
+}
+
 function KpiCard({
   label,
   value,
@@ -527,6 +535,78 @@ function KpiCard({
         >
           <Icon className={`${compact ? "w-4 h-4" : "w-5 h-5"} text-white`} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SalesReportScreenSkeleton() {
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-950/90 shadow-sm p-1.5 w-[460px] max-w-full">
+          <div className="flex items-center gap-1">
+            <Skeleton className="h-9 w-28 rounded-xl" />
+            <Skeleton className="h-9 w-28 rounded-xl" />
+            <Skeleton className="h-9 w-36 rounded-xl" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-9 w-28 rounded-xl" />
+          <Skeleton className="h-9 w-24 rounded-xl" />
+        </div>
+      </div>
+
+      <div className="space-y-5 max-w-7xl mx-auto">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={`kpi-sk-${i}`}
+              className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-2">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-8 w-28" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+                <Skeleton className="h-11 w-11 rounded-2xl" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <SectionSkeleton bodyHeightClass="h-24" />
+          <SectionSkeleton bodyHeightClass="h-24" />
+        </div>
+
+        {Array.from({ length: 4 }).map((_, i) => (
+          <SectionSkeleton key={`section-sk-${i}`} bodyHeightClass="h-28" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SectionSkeleton({ bodyHeightClass = "h-24" }) {
+  return (
+    <div className="bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+      <div className="px-5 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-9 w-9 rounded-xl" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-3 w-44" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-6 w-20 rounded-lg" />
+          <Skeleton className="h-4 w-4 rounded" />
+        </div>
+      </div>
+      <div className="border-t border-gray-100 dark:border-neutral-800 p-5">
+        <Skeleton className={`w-full ${bodyHeightClass}`} />
       </div>
     </div>
   );
@@ -713,6 +793,7 @@ export default function HistoryPage() {
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [sessions, setSessions] = useState([]);
 
   // Sessions tab state
@@ -874,6 +955,7 @@ export default function HistoryPage() {
   }
 
   async function loadOrders(dates) {
+    setOrdersLoading(true);
     try {
       const params = { limit: 2000 };
       if (dates?.from) params.from = dates.from;
@@ -895,7 +977,10 @@ export default function HistoryPage() {
         setAllOrders(Array.isArray(data) ? data : []);
       }
     } catch {
+      setAllOrders([]);
       // silently ignore — orders API might not be available or running old version
+    } finally {
+      setOrdersLoading(false);
     }
   }
 
@@ -1512,6 +1597,37 @@ export default function HistoryPage() {
   // ── Tab renderers ────────────────────────────────────────────────────────
 
   function renderOverview() {
+    if (loading) {
+      return (
+        <div className="space-y-5 max-w-7xl mx-auto">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={`overview-kpi-sk-${i}`}
+                className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-8 w-28" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                  <Skeleton className="h-11 w-11 rounded-2xl" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <SectionSkeleton bodyHeightClass="h-24" />
+            <SectionSkeleton bodyHeightClass="h-24" />
+          </div>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SectionSkeleton key={`overview-section-sk-${i}`} bodyHeightClass="h-28" />
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-5 max-w-7xl mx-auto">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -1673,7 +1789,9 @@ export default function HistoryPage() {
         />
 
         {/* Riders Overview */}
-        {riderStats.length > 0 && (
+        {ordersLoading ? (
+          <SectionSkeleton bodyHeightClass="h-32" />
+        ) : riderStats.length > 0 && (
           <Section
             title="Riders Overview"
             subtitle="Delivery performance in selected period"
@@ -1745,7 +1863,9 @@ export default function HistoryPage() {
         )}
 
         {/* Order Takers Overview */}
-        {waiterStats.length > 0 && (
+        {ordersLoading ? (
+          <SectionSkeleton bodyHeightClass="h-32" />
+        ) : waiterStats.length > 0 && (
           <Section
             title="Order Takers Overview"
             subtitle="Order taker performance in selected period"
@@ -1807,7 +1927,9 @@ export default function HistoryPage() {
         )}
 
         {/* Cashiers Overview */}
-        {cashierStats.length > 0 && (
+        {ordersLoading ? (
+          <SectionSkeleton bodyHeightClass="h-32" />
+        ) : cashierStats.length > 0 && (
           <Section
             title="Cashiers Overview"
             subtitle="Cashier performance in selected period"
@@ -1869,7 +1991,9 @@ export default function HistoryPage() {
         )}
 
         {/* Admins Overview */}
-        {adminStats.length > 0 && (
+        {ordersLoading ? (
+          <SectionSkeleton bodyHeightClass="h-32" />
+        ) : adminStats.length > 0 && (
           <Section
             title="Admins Overview"
             subtitle="Admin performance in selected period"
@@ -3751,17 +3875,7 @@ export default function HistoryPage() {
   return (
     <AdminLayout title="Sales & Reports" suspended={suspended}>
       {pageLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <BarChart3 className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">
-              Loading sales report...
-            </p>
-          </div>
-        </div>
+        <SalesReportScreenSkeleton />
       ) : (
         <div className="space-y-5">
           {/* ── Toolbar: Tabs (left) + Date & Export (right) ── */}
