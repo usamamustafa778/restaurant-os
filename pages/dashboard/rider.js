@@ -150,6 +150,9 @@ export default function RiderPortalPage() {
   const [activeFilter, setActiveFilter] = useState("all");
   /** History: all | pending_payment | cleared — default to pending so riders see what to submit first */
   const [historyFilter, setHistoryFilter] = useState("pending_payment");
+  const [historyRange, setHistoryRange] = useState("today");
+  const [historyCustomFrom, setHistoryCustomFrom] = useState("");
+  const [historyCustomTo, setHistoryCustomTo] = useState("");
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
 
   function toggleOrderDetails(orderKey) {
@@ -205,9 +208,33 @@ export default function RiderPortalPage() {
     setRiderId(auth?.user?.id || auth?.user?._id || null);
   }, []);
 
-  async function loadOrders() {
+  const getCurrentOrdersParams = useCallback(() => {
+    if (tab !== TABS.HISTORY) return { range: "today" };
+    if (historyRange === "custom") {
+      return {
+        range: "custom",
+        from: historyCustomFrom || undefined,
+        to: historyCustomTo || undefined,
+      };
+    }
+    return { range: historyRange };
+  }, [tab, historyRange, historyCustomFrom, historyCustomTo]);
+
+  const historyRangeLabel = historyRange === "today"
+    ? "today"
+    : historyRange === "yesterday"
+      ? "yesterday"
+      : historyRange === "week"
+        ? "this week"
+        : historyRange === "month"
+          ? "this month"
+          : historyCustomFrom && historyCustomTo
+            ? `${historyCustomFrom} to ${historyCustomTo}`
+            : "custom range";
+
+  async function loadOrders(params = { range: "today" }) {
     try {
-      const data = await getRiderOrders();
+      const data = await getRiderOrders(params);
       setOrders(Array.isArray(data) ? data : []);
     } catch (err) {
       if (err instanceof SubscriptionInactiveError) toast.error("Subscription inactive");
@@ -217,7 +244,20 @@ export default function RiderPortalPage() {
     }
   }
 
-  useEffect(() => { loadOrders(); }, []);
+  useEffect(() => {
+    if (tab !== TABS.HISTORY) {
+      setOrdersLoading(true);
+      loadOrders({ range: "today" });
+      return;
+    }
+    if (historyRange === "custom" && (!historyCustomFrom || !historyCustomTo)) {
+      setOrders([]);
+      setOrdersLoading(false);
+      return;
+    }
+    setOrdersLoading(true);
+    loadOrders(getCurrentOrdersParams());
+  }, [tab, historyRange, historyCustomFrom, historyCustomTo, getCurrentOrdersParams]);
 
   // ── Session gate check ────────────────────────────────────────────────────
   useEffect(() => {
@@ -267,14 +307,14 @@ export default function RiderPortalPage() {
 
   useEffect(() => {
     if (!socket) return;
-    const onOrderEvent = () => loadOrders();
+    const onOrderEvent = () => loadOrders(getCurrentOrdersParams());
     socket.on("order:updated", onOrderEvent);
     socket.on("order:created", onOrderEvent);
     return () => {
       socket.off("order:updated", onOrderEvent);
       socket.off("order:created", onOrderEvent);
     };
-  }, [socket]);
+  }, [socket, getCurrentOrdersParams]);
 
   const loadMenu = useCallback(async () => {
     const seq = ++menuLoadSeqRef.current;
@@ -570,7 +610,7 @@ export default function RiderPortalPage() {
       setQuickCustomerAddress("");
       setStep(STEPS.MENU);
       setTab(TABS.ACTIVE);
-      loadOrders();
+      loadOrders(getCurrentOrdersParams());
       toast.success("Order sent to kitchen!");
     } catch (err) {
       if (isBranchRequiredError(err.message) && branches?.length > 0) {
@@ -768,7 +808,7 @@ export default function RiderPortalPage() {
               )}
               {(tab === TABS.HOME || tab === TABS.ACTIVE || tab === TABS.HISTORY) && (
                 <button
-                  onClick={() => { setOrdersLoading(true); loadOrders(); }}
+                  onClick={() => { setOrdersLoading(true); loadOrders(getCurrentOrdersParams()); }}
                   className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
                 >
                   <RefreshCw className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
@@ -1111,13 +1151,54 @@ export default function RiderPortalPage() {
           {/* ══════ HISTORY TAB ══════ */}
           {tab === TABS.HISTORY && (
             <div className="p-4 pb-24">
+              <div className="space-y-2 mb-3">
+                <div className="flex gap-2 overflow-x-auto rider-no-scrollbar">
+                  {[
+                    { key: "today", label: "Today" },
+                    { key: "yesterday", label: "Yesterday" },
+                    { key: "week", label: "This week" },
+                    { key: "month", label: "Month" },
+                    { key: "custom", label: "Custom" },
+                  ].map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setHistoryRange(r.key)}
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                        historyRange === r.key
+                          ? "bg-primary text-white border-primary"
+                          : "bg-white dark:bg-neutral-950 text-gray-600 dark:text-neutral-300 border-gray-200 dark:border-neutral-800"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+                {historyRange === "custom" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="date"
+                      value={historyCustomFrom}
+                      onChange={(e) => setHistoryCustomFrom(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-xs text-gray-700 dark:text-neutral-200"
+                    />
+                    <input
+                      type="date"
+                      value={historyCustomTo}
+                      onChange={(e) => setHistoryCustomTo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-xs text-gray-700 dark:text-neutral-200"
+                    />
+                  </div>
+                )}
+              </div>
+
               {historyOrders.length === 0 ? (
                 <div className="flex flex-col items-center justify-center pt-16 text-center px-2">
                   <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
                     <History className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
                   </div>
                   <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No delivery history</p>
-                  <p className="text-xs text-gray-400 dark:text-neutral-600">Completed orders will appear here</p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-600">No deliveries found for {historyRangeLabel}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1229,7 +1310,7 @@ export default function RiderPortalPage() {
                       ? "Delivered orders still marked “To be paid” — hand in cash at the shop."
                       : historyFilter === "cleared"
                         ? "Paid at order, cancelled, or cash already submitted at the shop."
-                        : "Every delivery in your history for this session."}
+                        : `Every delivery in your history for ${historyRangeLabel}.`}
                   </p>
 
                   {filteredHistoryOrders.length === 0 ? (

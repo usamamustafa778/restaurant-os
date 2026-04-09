@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { buildBillHtml } from "../../lib/printBillReceipt";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
@@ -17,6 +17,8 @@ import {
   createPaymentAccount,
   updatePaymentAccount,
   deletePaymentAccount,
+  migratePaymentAccountTypes,
+  getAccountingAccounts,
   updateBranchDeliveryZones,
   setStoredCurrencyCode,
 } from "../../lib/apiClient";
@@ -46,8 +48,10 @@ import {
   Truck,
   Search,
   Download,
+  BadgeDollarSign,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import AsyncCombobox from "../../components/accounting/AsyncCombobox";
 
 const DEMO_ORDER = {
   branchName: "Demo Branch",
@@ -215,6 +219,27 @@ const CURRENCY_OPTIONS = [
 const cardCls =
   "bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm";
 
+const PAYMENT_ACCOUNT_TYPE_OPTIONS = [
+  { value: "cash", label: "Cash" },
+  { value: "easypaisa", label: "Easypaisa" },
+  { value: "jazzcash", label: "JazzCash" },
+  { value: "bank", label: "Bank Account" },
+  { value: "card", label: "Card Terminal" },
+  { value: "other", label: "Other" },
+];
+
+function paymentTypeBadge(type) {
+  if (type === "cash") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300";
+  if (type === "easypaisa" || type === "jazzcash") return "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
+  if (type === "bank") return "bg-gray-200 text-gray-700 dark:bg-neutral-800 dark:text-neutral-200";
+  if (type === "card") return "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300";
+  return "bg-gray-100 text-gray-600 dark:bg-neutral-900 dark:text-neutral-300";
+}
+
+function paymentTypeLabel(type) {
+  return PAYMENT_ACCOUNT_TYPE_OPTIONS.find((o) => o.value === type)?.label || "Other";
+}
+
 function SectionCard({ id, icon: Icon, title, subtitle, children }) {
   return (
     <div id={`section-${id}`} className={cardCls}>
@@ -296,11 +321,24 @@ export default function BusinessSettingsPage() {
   const [paymentAccounts, setPaymentAccounts] = useState([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
-  const [accountForm, setAccountForm] = useState({ id: null, name: "", description: "" });
+  const [accountForm, setAccountForm] = useState({
+    id: null,
+    name: "",
+    accountType: "other",
+    accountNumber: "",
+    bankName: "",
+    accountingAccountId: "",
+    accountingAccountObj: null,
+    description: "",
+    isActive: true,
+  });
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountModalError, setAccountModalError] = useState("");
   const [accountDeleteTarget, setAccountDeleteTarget] = useState(null);
   const [accountDeleteLoading, setAccountDeleteLoading] = useState(false);
+  const [accountingAssetsLoading, setAccountingAssetsLoading] = useState(false);
+  const [accountingAssetsAvailable, setAccountingAssetsAvailable] = useState(true);
+  const [accountEditSource, setAccountEditSource] = useState(null);
 
   // ── Fetch branches ──
   useEffect(() => {
@@ -383,20 +421,48 @@ export default function BusinessSettingsPage() {
   // ── Fetch payment accounts ──
   useEffect(() => {
     let cancelled = false;
-    setAccountsLoading(true);
-    getPaymentAccounts()
-      .then((d) => {
-        if (!cancelled) setPaymentAccounts(Array.isArray(d) ? d : d?.accounts ?? []);
-      })
-      .catch(() => {
+    async function loadPaymentAccounts() {
+      setAccountsLoading(true);
+      try {
+        let d = await getPaymentAccounts();
+        let list = Array.isArray(d) ? d : d?.accounts ?? [];
+        const needsMigration = list.some(
+          (a) => a?.accountType === null || a?.accountType === undefined || a?.accountType === ""
+        );
+        if (needsMigration) {
+          await migratePaymentAccountTypes();
+          d = await getPaymentAccounts();
+          list = Array.isArray(d) ? d : d?.accounts ?? [];
+        }
+        if (!cancelled) setPaymentAccounts(list);
+      } catch {
         if (!cancelled) setPaymentAccounts([]);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setAccountsLoading(false);
-      });
+      }
+    }
+    loadPaymentAccounts();
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAccountingAssetsLoading(true);
+    getAccountingAccounts({ type: "asset", q: "a" })
+      .then((d) => {
+        if (cancelled) return;
+        const list = Array.isArray(d?.accounts) ? d.accounts : [];
+        setAccountingAssetsAvailable(list.length > 0 || !d?.isEmpty);
+      })
+      .catch(() => {
+        if (!cancelled) setAccountingAssetsAvailable(false);
+      })
+      .finally(() => {
+        if (!cancelled) setAccountingAssetsLoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const displayList = branches.length > 0 ? branches : contextBranches ?? [];
@@ -405,15 +471,74 @@ export default function BusinessSettingsPage() {
 
   // ── Payment account helpers ──
   function openCreateAccount() {
-    setAccountForm({ id: null, name: "", description: "" });
+    setAccountEditSource(null);
+    setAccountForm({
+      id: null,
+      name: "",
+      accountType: "other",
+      accountNumber: "",
+      bankName: "",
+      accountingAccountId: "",
+      accountingAccountObj: null,
+      description: "",
+      isActive: true,
+    });
     setAccountModalError("");
     setAccountModalOpen(true);
   }
+
   function openEditAccount(acc) {
-    setAccountForm({ id: acc.id, name: acc.name, description: acc.description || "" });
+    setAccountEditSource(acc || null);
     setAccountModalError("");
     setAccountModalOpen(true);
   }
+
+  useEffect(() => {
+    if (!accountModalOpen || !accountEditSource) return;
+    const name = String(accountEditSource.name || "");
+    const lower = name.toLowerCase();
+    let detectedType = accountEditSource.accountType || "other";
+    if (!accountEditSource.accountType || accountEditSource.accountType === "other") {
+      if (lower.includes("easypaisa")) detectedType = "easypaisa";
+      else if (lower.includes("jazzcash")) detectedType = "jazzcash";
+      else if (lower.includes("bank")) detectedType = "bank";
+      else if (lower.includes("cash")) detectedType = "cash";
+      else if (lower.includes("card")) detectedType = "card";
+    }
+
+    let description = String(accountEditSource.description || "");
+    let accountNumber = String(accountEditSource.accountNumber || "");
+    if (!accountNumber && /^0\d{9,10}$/.test(description.trim())) {
+      accountNumber = description.trim();
+      description = "";
+    }
+
+    setAccountForm({
+      id: accountEditSource.id,
+      name,
+      accountType: detectedType,
+      accountNumber,
+      bankName: String(accountEditSource.bankName || ""),
+      accountingAccountId: accountEditSource.accountingAccountId || "",
+      accountingAccountObj:
+        accountEditSource.accountingAccountId && accountEditSource.accountingAccountName
+          ? {
+              _id: accountEditSource.accountingAccountId,
+              code: accountEditSource.accountingAccountCode || "",
+              name: accountEditSource.accountingAccountName,
+            }
+          : null,
+      description,
+      isActive: accountEditSource.isActive !== false,
+    });
+  }, [accountModalOpen, accountEditSource]);
+
+  const fetchAccountingAssetAccounts = useCallback(async (q) => {
+    const d = await getAccountingAccounts({ q: q || "", type: "asset" });
+    const list = Array.isArray(d?.accounts) ? d.accounts : [];
+    setAccountingAssetsAvailable(list.length > 0 || !d?.isEmpty);
+    return list;
+  }, []);
   async function handleAccountSubmit(e) {
     e.preventDefault();
     const name = accountForm.name.trim();
@@ -425,14 +550,21 @@ export default function BusinessSettingsPage() {
     setAccountModalError("");
     const toastId = toast.loading(accountForm.id ? "Saving..." : "Adding...");
     try {
-      if (accountForm.id) {
-        await updatePaymentAccount(accountForm.id, { name, description: accountForm.description.trim() });
-      } else {
-        await createPaymentAccount({ name, description: accountForm.description.trim() });
-      }
+      const payload = {
+        name,
+        accountType: accountForm.accountType,
+        accountNumber: accountForm.accountNumber.trim(),
+        bankName: accountForm.accountType === "bank" ? accountForm.bankName.trim() : "",
+        accountingAccountId: accountForm.accountingAccountId || null,
+        description: accountForm.description.trim(),
+        isActive: accountForm.isActive,
+      };
+      if (accountForm.id) await updatePaymentAccount(accountForm.id, payload);
+      else await createPaymentAccount(payload);
       const updated = await getPaymentAccounts();
       setPaymentAccounts(Array.isArray(updated) ? updated : updated?.accounts ?? []);
       setAccountModalOpen(false);
+      setAccountEditSource(null);
       toast.success(accountForm.id ? "Account updated" : "Account added", { id: toastId });
     } catch (err) {
       setAccountModalError(err.message || "Failed to save");
@@ -1818,14 +1950,26 @@ export default function BusinessSettingsPage() {
                       key={acc.id}
                       className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-neutral-800 px-4 py-3"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                          {acc.name}
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                            {acc.name}
+                          </p>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${paymentTypeBadge(acc.accountType)}`}>
+                            {paymentTypeLabel(acc.accountType)}
+                          </span>
+                        </div>
+                        {acc.accountNumber ? (
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{acc.accountNumber}</p>
+                        ) : null}
+                        <p className="text-xs text-gray-500 dark:text-neutral-400 truncate inline-flex items-center gap-1">
+                          <LinkIcon className="w-3 h-3" />
+                          {acc.accountingAccountName && acc.accountingAccountCode
+                            ? `→ ${acc.accountingAccountName} (${acc.accountingAccountCode})`
+                            : "Not linked"}
                         </p>
                         {acc.description && (
-                          <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">
-                            {acc.description}
-                          </p>
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{acc.description}</p>
                         )}
                       </div>
                       <div className="inline-flex items-center gap-2">
@@ -1852,7 +1996,7 @@ export default function BusinessSettingsPage() {
               {/* Account modal */}
               {accountModalOpen && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-                  <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-6 space-y-4">
+                  <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-6 space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                         {accountForm.id ? "Edit Account" : "Add Account"}
@@ -1861,6 +2005,7 @@ export default function BusinessSettingsPage() {
                         type="button"
                         onClick={() => {
                           setAccountModalOpen(false);
+                          setAccountEditSource(null);
                           setAccountModalError("");
                         }}
                         className="h-7 w-7 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900"
@@ -1884,6 +2029,99 @@ export default function BusinessSettingsPage() {
                           required
                         />
                       </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className={labelCls}>Account Type</label>
+                          <select
+                            value={accountForm.accountType}
+                            onChange={(e) => setAccountForm((p) => ({ ...p, accountType: e.target.value }))}
+                            className={inp}
+                            required
+                          >
+                            {PAYMENT_ACCOUNT_TYPE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className={labelCls}>Account Number</label>
+                          <input
+                            type="text"
+                            value={accountForm.accountNumber}
+                            onChange={(e) => setAccountForm((p) => ({ ...p, accountNumber: e.target.value }))}
+                            placeholder="Phone no / account no"
+                            className={inp}
+                          />
+                        </div>
+                      </div>
+
+                      {accountForm.accountType === "bank" && (
+                        <div className="space-y-1.5">
+                          <label className={labelCls}>Bank Name</label>
+                          <input
+                            type="text"
+                            value={accountForm.bankName}
+                            onChange={(e) => setAccountForm((p) => ({ ...p, bankName: e.target.value }))}
+                            className={inp}
+                          />
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <label className={`${labelCls} flex items-center gap-1.5`}>
+                          <BadgeDollarSign className="w-3.5 h-3.5 text-primary" />
+                          Accounting Account (for auto-posting)
+                        </label>
+                        <div className="space-y-2">
+                          <AsyncCombobox
+                            placeholder={
+                              accountingAssetsLoading
+                                ? "Loading accounts..."
+                                : "Search by code or name..."
+                            }
+                            fetchFn={fetchAccountingAssetAccounts}
+                            value={accountForm.accountingAccountId || null}
+                            valueObj={accountForm.accountingAccountObj || null}
+                            onChange={(v, obj) =>
+                              setAccountForm((p) => ({
+                                ...p,
+                                accountingAccountId: v || "",
+                                accountingAccountObj: obj || null,
+                              }))
+                            }
+                            displayFn={(a) => `${a.code} — ${a.name}`}
+                            keyFn={(a) => a._id}
+                          />
+                          {accountForm.accountingAccountObj && (
+                            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                              {accountForm.accountingAccountObj.code} — {accountForm.accountingAccountObj.name}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setAccountForm((p) => ({
+                                    ...p,
+                                    accountingAccountId: "",
+                                    accountingAccountObj: null,
+                                  }))
+                                }
+                                className="text-primary/70 hover:text-primary"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                          <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                            Payments received via this method will be posted to this accounting account automatically
+                          </p>
+                          {!accountingAssetsAvailable && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                              Set up Chart of Accounts first to enable this
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="space-y-1.5">
                         <label className={labelCls}>Description (optional)</label>
                         <textarea
@@ -1900,6 +2138,7 @@ export default function BusinessSettingsPage() {
                           type="button"
                           onClick={() => {
                             setAccountModalOpen(false);
+                            setAccountEditSource(null);
                             setAccountModalError("");
                           }}
                           className="h-9 px-4 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900"
