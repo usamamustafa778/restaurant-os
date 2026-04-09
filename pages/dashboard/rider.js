@@ -7,6 +7,7 @@ import {
   getRiderCustomers,
   createRiderCustomer,
   createPosOrder,
+  updateOrder,
   getWebsiteSettings,
   getStoredAuth,
   clearStoredAuth,
@@ -203,6 +204,8 @@ export default function RiderPortalPage() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [appendTargetOrder, setAppendTargetOrder] = useState(null);
+  const [appendingOrderId, setAppendingOrderId] = useState(null);
 
   // Customer
   const [customerName, setCustomerName] = useState("");
@@ -685,6 +688,7 @@ export default function RiderPortalPage() {
       setCustomerSearch("");
       setQuickCustomerName("");
       setQuickCustomerAddress("");
+      setAppendTargetOrder(null);
       setStep(STEPS.MENU);
       setTab(TABS.ACTIVE);
       loadOrders(getCurrentOrdersParams());
@@ -697,6 +701,97 @@ export default function RiderPortalPage() {
       }
     } finally {
       setPlacing(false);
+    }
+  }
+
+  async function handleAppendItemsToOrder() {
+    if (!appendTargetOrder) return;
+    if (!customerName.trim() || !customerPhone.trim()) {
+      toast.error("Customer name and phone are required");
+      return;
+    }
+    if (deliveryZonesActive && !deliveryLocationId) {
+      toast.error("Select a delivery area");
+      return;
+    }
+    if (!deliveryZonesActive && !deliveryAddress.trim()) {
+      toast.error("Delivery address is required");
+      return;
+    }
+
+    const targetOrderId = appendTargetOrder._id || appendTargetOrder.id;
+    setPlacing(true);
+    setAppendingOrderId(targetOrderId);
+    try {
+      const payload = {
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        deliveryAddress: deliveryAddress.trim(),
+      };
+
+      if (cart.length > 0) {
+        const existingItems = (appendTargetOrder.items || []).map((item) => ({
+          menuItemId: null,
+          name: item.name || "Item",
+          quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
+          unitPrice: Number(item.unitPrice) || 0,
+        }));
+        const addedItems = cart.map((c) => ({
+          menuItemId: c.id,
+          name: c.name,
+          quantity: Math.max(1, Number(c.quantity) || 1),
+          unitPrice: Number(c.price) || 0,
+        }));
+
+        const mergedMap = new Map();
+        const pushItem = (item) => {
+          const key = item.menuItemId
+            ? `menu:${item.menuItemId}`
+            : `name:${String(item.name || "").trim().toLowerCase()}|price:${Number(item.unitPrice) || 0}`;
+          const prev = mergedMap.get(key);
+          if (prev) {
+            prev.quantity += Math.max(1, Number(item.quantity) || 1);
+            return;
+          }
+          mergedMap.set(key, {
+            ...item,
+            quantity: Math.max(1, Number(item.quantity) || 1),
+          });
+        };
+        existingItems.forEach(pushItem);
+        addedItems.forEach(pushItem);
+        payload.items = Array.from(mergedMap.values());
+      }
+
+      const updated = await updateOrder(targetOrderId, payload);
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === appendTargetOrder.id || o._id === appendTargetOrder._id
+            ? { ...o, ...updated }
+            : o,
+        ),
+      );
+      setCart([]);
+      setAppendTargetOrder(null);
+      setStep(STEPS.MENU);
+      setTab(TABS.ACTIVE);
+      loadOrders(getCurrentOrdersParams());
+      toast.success(
+        cart.length > 0
+          ? "Items appended to order"
+          : "Customer details updated",
+      );
+    } catch (err) {
+      toast.error(
+        err.message ||
+          (cart.length > 0
+            ? "Failed to append items"
+            : "Failed to update customer details"),
+      );
+    } finally {
+      setPlacing(false);
+      setAppendingOrderId(null);
     }
   }
 
@@ -766,6 +861,48 @@ export default function RiderPortalPage() {
     return id;
   }
 
+  function startAppendItems(order) {
+    if (!order) return;
+    const status = String(order.status || "").toUpperCase();
+    if (["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(status)) {
+      toast.error("You can only append items before dispatch");
+      return;
+    }
+    setAppendTargetOrder(order);
+    setCart([]);
+    setSearchQuery("");
+    setSelectedCategory("all");
+    setCustomerName(String(order.customerName || "").trim());
+    setCustomerPhone(String(order.customerPhone || order.phone || "").trim());
+    setDeliveryAddress(String(order.deliveryAddress || "").trim());
+    setCustomerSearch("");
+    setShowCustomerEdit(false);
+    setCustomersError("");
+    setStep(STEPS.MENU);
+    setTab(TABS.NEW_ORDER);
+  }
+
+  function startEditCustomerDetails(order) {
+    if (!order) return;
+    const status = String(order.status || "").toUpperCase();
+    if (["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(status)) {
+      toast.error("You can only edit customer details before dispatch");
+      return;
+    }
+    setAppendTargetOrder(order);
+    setCart([]);
+    setSearchQuery("");
+    setSelectedCategory("all");
+    setCustomerName(String(order.customerName || "").trim());
+    setCustomerPhone(String(order.customerPhone || order.phone || "").trim());
+    setDeliveryAddress(String(order.deliveryAddress || "").trim());
+    setCustomerSearch("");
+    setShowCustomerEdit(true);
+    setCustomersError("");
+    setStep(STEPS.CART);
+    setTab(TABS.NEW_ORDER);
+  }
+
   // ── Loading screen ────────────────────────────────────────────────────
   if (ordersLoading) {
     return (
@@ -820,9 +957,11 @@ export default function RiderPortalPage() {
                       ? "Active Deliveries"
                       : tab === TABS.HISTORY
                         ? "Delivery History"
-                        : step === STEPS.MENU
-                          ? "New Order"
-                          : "Review Order"}
+                        : appendTargetOrder
+                          ? "Add Items"
+                          : step === STEPS.MENU
+                            ? "New Order"
+                            : "Review Order"}
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
                   {tab === TABS.HOME
@@ -855,7 +994,9 @@ export default function RiderPortalPage() {
                             return `${label} · ${filteredHistoryOrders.length} of ${historyOrders.length}`;
                           })()
                         : step === STEPS.MENU
-                          ? userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
+                          ? appendTargetOrder
+                            ? `Appending to #${appendTargetOrder.tokenNumber || getOrderId(appendTargetOrder).toString().slice(-4)}`
+                            : userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
                           : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
                 </p>
               </div>
@@ -1109,7 +1250,7 @@ export default function RiderPortalPage() {
                   <p className="text-xs text-gray-400 dark:text-neutral-600">Try another status</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {filteredActiveOrders.map((order) => {
                     // Backend may still keep some "preparing" deliveries as NEW_ORDER.
                     // In the UI we want them to look like order-taker "Processing" cards
@@ -1121,86 +1262,122 @@ export default function RiderPortalPage() {
                     const orderId = order.id || order._id;
                     const orderKey = String(orderId);
                     const kitchenUrgency = getKitchenUrgency(order);
-                    const urgencyBorderClass =
-                      kitchenUrgency === "delayed"
-                        ? "border-red-300 dark:border-red-500/40"
-                        : kitchenUrgency === "warning"
-                          ? "border-yellow-300 dark:border-yellow-500/35"
-                          : sc.border;
                     const isExpanded = expandedOrderIds.includes(orderKey);
-                    const totalWrapClass = isExpanded
-                      ? "flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-900 mb-3"
-                      : "flex items-center justify-between mb-3";
+                    const itemCount = (order.items || []).reduce(
+                      (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+                      0,
+                    );
+                    const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
+                      String(order.status || "").toUpperCase(),
+                    );
+                    const tokenLabel = `#${order.tokenNumber || getOrderId(order).toString().slice(-4)}`;
+                    const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
                     return (
-                      <div key={orderKey} className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${urgencyBorderClass} ${sc.pulse ? "rider-pulse-border" : ""}`}>
-                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
-                          <div className="flex items-center gap-2">
-                            <StatusIcon className={`w-4 h-4 ${sc.text}`} />
-                            <span className={`text-xs font-bold ${sc.text}`}>{sc.label}</span>
+                      <div key={orderKey} className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-neutral-800">
+                        <div className={`px-3.5 py-2 flex items-center justify-between ${sc.bgLight}`}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${sc.text}`} />
+                            <span className={`text-[11px] font-bold truncate ${sc.text}`}>{sc.label}</span>
                           </div>
-                          <div className={`flex items-center gap-1.5 text-[11px] ${sc.text} opacity-80`}>
+                          <div className={`flex items-center gap-1 text-[10px] shrink-0 ${sc.text} opacity-85`}>
                             <Clock className="w-3 h-3" />
                             {getTimeAgo(order.createdAt)}
                           </div>
                         </div>
 
-                        <div className="p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-base font-black text-gray-900 dark:text-white">
-                              #{order.tokenNumber || getOrderId(order).toString().slice(-4)}
-                            </span>
-                            <div className="flex items-center gap-1.5">
+                        <div className="px-3.5 py-3">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                              <span className="text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                {tokenLabel}
+                              </span>
                               {kitchenUrgency === "delayed" && (
-                                <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/20">
+                                <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200/80 dark:border-red-500/20">
                                   Delayed
                                 </span>
                               )}
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
                                 Delivery
                               </span>
                             </div>
+                            <div className="shrink-0 text-right">
+                              <span className="block text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                Rs. {totalAmt}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 mb-2.5">
+                            <p className="text-[10px] text-gray-500 dark:text-neutral-500 truncate min-w-0">
+                              <span className="font-semibold">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
+                              {(order.customerName || order.customerPhone || order.phone) && (
+                                <>
+                                  {" · "}
+                                  {order.customerName || order.customerPhone || order.phone}
+                                </>
+                              )}
+                            </p>
+                            {canAppend && (
+                              <button
+                                type="button"
+                                onClick={() => startEditCustomerDetails(order)}
+                                className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 underline underline-offset-2 decoration-gray-300 dark:decoration-neutral-600 hover:text-primary dark:hover:text-primary transition-colors inline-flex items-center gap-1 shrink-0"
+                              >
+                                <User className="w-3 h-3" />
+                                Edit customer
+                              </button>
+                            )}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => toggleOrderDetails(orderKey)}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-colors border ${
-                              isExpanded
-                                ? "bg-primary/10 border-primary/20 text-primary"
-                                : "bg-gray-50 dark:bg-neutral-900 border-gray-200/70 dark:border-neutral-800 text-gray-600 dark:text-neutral-300"
-                            }`}
-                          >
-                            <span>{isExpanded ? "Hide Details" : "View Details"}</span>
-                            <ChevronDown
-                              className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                            />
-                          </button>
+                          <div className="flex gap-2 mb-1">
+                            {canAppend && (
+                              <button
+                                type="button"
+                                onClick={() => startAppendItems(order)}
+                                className="flex-1 py-2 rounded-xl border border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add items
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleOrderDetails(orderKey)}
+                              className={`${canAppend ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+                                isExpanded
+                                  ? "bg-primary/10 border-primary/30 text-primary"
+                                  : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
+                              }`}
+                            >
+                              {isExpanded ? "Hide" : "Details"}
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                            </button>
+                          </div>
 
                           {isExpanded && (
                             <>
                               {order.customerName && (
-                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
-                                  <User className="w-3 h-3" />
+                                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
+                                  <User className="w-3 h-3 shrink-0" />
                                   {order.customerName}
                                 </div>
                               )}
                               {(order.customerPhone || order.phone) && (
-                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-1">
-                                  <Phone className="w-3 h-3" />
+                                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
+                                  <Phone className="w-3 h-3 shrink-0" />
                                   {order.customerPhone || order.phone}
                                 </div>
                               )}
                               {order.deliveryAddress && (
-                                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
-                                  <MapPin className="w-3 h-3 flex-shrink-0" />
+                                <div className="flex items-start gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
+                                  <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
                                   <span className="line-clamp-2">{order.deliveryAddress}</span>
                                 </div>
                               )}
 
-                              <div className="space-y-1 mb-3">
+                              <div className="space-y-0.5 mb-2">
                                 {order.items?.map((item, idx) => (
-                                  <div key={idx} className="flex items-center justify-between text-xs">
-                                    <span className="text-gray-700 dark:text-neutral-300 font-medium">
+                                  <div key={idx} className="flex items-center justify-between text-[11px]">
+                                    <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
                                       <span className="font-bold text-gray-900 dark:text-white">{item.quantity || item.qty}x</span>{" "}
                                       {item.name}
                                     </span>
@@ -1210,18 +1387,11 @@ export default function RiderPortalPage() {
                             </>
                           )}
 
-                          <div className={totalWrapClass}>
-                            <span className="text-xs text-gray-400 dark:text-neutral-500">Total</span>
-                            <span className="text-sm font-black text-gray-900 dark:text-white">
-                              Rs. {(order.grandTotal ?? order.total)?.toLocaleString()}
-                            </span>
-                          </div>
-
                           {order.status === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
                             <button
                               onClick={() => handleCollectOrder(orderId)}
                               disabled={collectingId === orderId}
-                              className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
+                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
                             >
                               {collectingId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
                               Collect from Kitchen
@@ -1231,7 +1401,7 @@ export default function RiderPortalPage() {
                             <button
                               onClick={() => handleMarkDelivered(orderId)}
                               disabled={deliveringId === orderId}
-                              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
+                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
                             >
                               {deliveringId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                               Mark as Delivered
@@ -1483,13 +1653,10 @@ export default function RiderPortalPage() {
                       const headerText = paymentPending
                         ? "text-amber-800 dark:text-amber-300"
                         : sc.text;
-                      const borderClass = paymentPending
-                        ? "border-amber-200 dark:border-amber-500/30"
-                        : sc.border;
                       return (
                         <div
                           key={orderId}
-                          className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${borderClass}`}
+                          className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border border-gray-200 dark:border-neutral-800"
                         >
                           <div className={`px-4 py-2 flex items-center justify-between ${headerBg}`}>
                             <div className="flex items-center gap-2 min-w-0">
@@ -1563,6 +1730,27 @@ export default function RiderPortalPage() {
               {/* MENU STEP */}
               {step === STEPS.MENU && (
                 <div className="flex flex-col h-full">
+                  {appendTargetOrder && (
+                    <div className="mx-3 mt-3 mb-1 rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-bold text-primary">
+                            Appending items to order #{appendTargetOrder.tokenNumber || getOrderId(appendTargetOrder).toString().slice(-4)}
+                          </p>
+                          <p className="text-[10px] text-primary/80">
+                            Existing items stay unchanged. New items are added on top.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAppendTargetOrder(null)}
+                          className="text-[10px] font-bold text-primary/80 hover:text-primary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="sticky top-0 z-10 bg-white dark:bg-neutral-950 shadow-sm">
                     <div className="px-4 pt-3 pb-2">
                       <div className="relative">
@@ -1730,7 +1918,7 @@ export default function RiderPortalPage() {
               {step === STEPS.CART && (
                 <div className="p-3 pb-32">
                   {/* Cart items */}
-                  {cart.length === 0 ? (
+                  {cart.length === 0 && !appendTargetOrder ? (
                     <div className="flex flex-col items-center justify-center pt-16 text-center">
                       <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
                         <ShoppingCart className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
@@ -1742,34 +1930,40 @@ export default function RiderPortalPage() {
                   ) : (
                     <>
                       {/* Compact cart items */}
-                      <div className="space-y-1.5 mb-3">
-                        {cart.map((item) => (
-                          <div key={item.id} className="flex items-center gap-2.5 bg-white dark:bg-neutral-950 rounded-xl p-1.5">
-                            {item.imageUrl ? (
-                              <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                            ) : (
-                              <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
-                                <Utensils className="w-4 h-4 text-gray-300 dark:text-neutral-700" />
+                      {cart.length > 0 ? (
+                        <div className="space-y-1.5 mb-3">
+                          {cart.map((item) => (
+                            <div key={item.id} className="flex items-center gap-2.5 bg-white dark:bg-neutral-950 rounded-xl p-1.5">
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                              ) : (
+                                <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
+                                  <Utensils className="w-4 h-4 text-gray-300 dark:text-neutral-700" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[13px] font-bold truncate leading-tight">{item.name}</p>
+                                <p className="text-xs font-bold text-primary">{sym} {(item.price * item.quantity).toLocaleString()}</p>
                               </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[13px] font-bold truncate leading-tight">{item.name}</p>
-                              <p className="text-xs font-bold text-primary">{sym} {(item.price * item.quantity).toLocaleString()}</p>
+                              <div className="flex items-center bg-gray-100 dark:bg-neutral-900 rounded-lg">
+                                <button onClick={() => updateQty(item.id, -1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
+                                  {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-400" /> : <Minus className="w-3 h-3 text-gray-500" />}
+                                </button>
+                                <span className="w-6 text-center text-sm font-black">{item.quantity}</span>
+                                <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
+                                  <Plus className="w-3 h-3 text-primary" />
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center bg-gray-100 dark:bg-neutral-900 rounded-lg">
-                              <button onClick={() => updateQty(item.id, -1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
-                                {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-400" /> : <Minus className="w-3 h-3 text-gray-500" />}
-                              </button>
-                              <span className="w-6 text-center text-sm font-black">{item.quantity}</span>
-                              <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
-                                <Plus className="w-3 h-3 text-primary" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mb-3 px-3 py-2 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[11px] text-gray-500 dark:text-neutral-400">
+                          Editing customer details for this order. Add items if needed, or save details directly.
+                        </div>
+                      )}
 
-                      {/* Customer section */}
+                      {/* Customer section — also shown when appending items so details can be edited */}
                       <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-sm">
                         {/* Section header */}
                         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2 rounded-t-2xl">
@@ -2009,14 +2203,18 @@ export default function RiderPortalPage() {
           </div>
         )}
 
-        {tab === TABS.NEW_ORDER && !noActiveSession && step === STEPS.CART && cart.length > 0 && (
+        {tab === TABS.NEW_ORDER && !noActiveSession && step === STEPS.CART && (cart.length > 0 || !!appendTargetOrder) && (
           <div className="fixed bottom-16 inset-x-0 z-20">
             <div className="bg-white dark:bg-neutral-950 border-t border-gray-100 dark:border-neutral-900 px-3 pt-2.5 pb-2.5">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
                   <div>
                     <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total</p>
-                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">{sym} {cartTotalDue.toLocaleString()}</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">
+                      {sym} {(appendTargetOrder && cart.length === 0
+                        ? Math.round(Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0)
+                        : cartTotalDue).toLocaleString()}
+                    </p>
                   </div>
                   {deliveryFee > 0 && (
                     <div className="text-[10px] text-gray-400 dark:text-neutral-500 leading-tight">
@@ -2027,7 +2225,14 @@ export default function RiderPortalPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Items</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">{cartBadge}</p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">
+                    {appendTargetOrder && cart.length === 0
+                      ? (appendTargetOrder.items || []).reduce(
+                          (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+                          0,
+                        )
+                      : cartBadge}
+                  </p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -2036,14 +2241,29 @@ export default function RiderPortalPage() {
                   className="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-neutral-900 font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5 text-gray-700 dark:text-neutral-300"
                 >
                   <Plus className="w-4 h-4" />
-                  Add
+                  {appendTargetOrder ? "Menu" : "Add"}
                 </button>
                 <button
-                  onClick={handlePlaceOrder}
-                  disabled={placing}
+                  onClick={appendTargetOrder ? handleAppendItemsToOrder : handlePlaceOrder}
+                  disabled={placing || !!appendingOrderId}
                   className="flex-[2.5] py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-600/25"
                 >
-                  {placing ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</> : <>Send to Kitchen <Send className="w-4 h-4" /></>}
+                  {placing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {appendTargetOrder ? "Appending..." : "Sending..."}
+                    </>
+                  ) : appendTargetOrder ? (
+                    <>
+                      {cart.length > 0 ? "Append Items" : "Save Customer"}
+                      {cart.length > 0 ? <Plus className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                    </>
+                  ) : (
+                    <>
+                      Send to Kitchen
+                      <Send className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -2062,7 +2282,10 @@ export default function RiderPortalPage() {
             <span className="text-[10px] font-bold">Overview</span>
           </button>
           <button
-            onClick={() => setTab(TABS.NEW_ORDER)}
+            onClick={() => {
+              setAppendTargetOrder(null);
+              setTab(TABS.NEW_ORDER);
+            }}
             className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.NEW_ORDER ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
           >
             <Utensils className="w-5 h-5" />

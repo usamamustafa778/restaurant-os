@@ -8,6 +8,7 @@ import {
   getStoredAuth,
   clearStoredAuth,
   SubscriptionInactiveError,
+  updateOrder,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
@@ -27,6 +28,7 @@ import {
   Send,
   Check,
   User,
+  Phone,
   ArrowRight,
   Coffee,
   Hash,
@@ -114,6 +116,11 @@ export default function OrderTakerPage() {
   const [historyFilter, setHistoryFilter] = useState("pending_payment");
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
+  const [appendTargetOrder, setAppendTargetOrder] = useState(null);
+  const [appendingOrderId, setAppendingOrderId] = useState(null);
+  const [otCustomerName, setOtCustomerName] = useState("");
+  const [otCustomerPhone, setOtCustomerPhone] = useState("");
+  const [otTableName, setOtTableName] = useState("");
 
   useEffect(() => {
     const auth = getStoredAuth();
@@ -340,6 +347,7 @@ export default function OrderTakerPage() {
 
   function handleNewOrder() {
     setOrderPlaced(null);
+    cancelAppendFlow();
     setSelectedTable(null);
     setSearchQuery("");
     setSelectedCategory("all");
@@ -409,6 +417,113 @@ export default function OrderTakerPage() {
         ? prev.filter((id) => id !== orderKey)
         : prev.concat(orderKey),
     );
+  }
+
+  function orderCanAppend(order) {
+    const status = String(order?.status || "").toUpperCase();
+    if (["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(status)) {
+      toast.error("You can’t change this order anymore");
+      return false;
+    }
+    return true;
+  }
+
+  function startAppendItems(order) {
+    if (!order || !orderCanAppend(order)) return;
+    setAppendTargetOrder(order);
+    setCart([]);
+    setOtCustomerName(String(order.customerName || "").trim());
+    setOtCustomerPhone(String(order.customerPhone || order.phone || "").trim());
+    setOtTableName(String(order.tableName || "").trim());
+    setSearchQuery("");
+    setSelectedCategory("all");
+    setStep(STEPS.MENU);
+    setActiveTab(TABS.NEW_ORDER);
+  }
+
+  function startEditCustomerDetails(order) {
+    if (!order || !orderCanAppend(order)) return;
+    setAppendTargetOrder(order);
+    setCart([]);
+    setOtCustomerName(String(order.customerName || "").trim());
+    setOtCustomerPhone(String(order.customerPhone || order.phone || "").trim());
+    setOtTableName(String(order.tableName || "").trim());
+    setStep(STEPS.CART);
+    setActiveTab(TABS.NEW_ORDER);
+  }
+
+  function cancelAppendFlow() {
+    setAppendTargetOrder(null);
+    setAppendingOrderId(null);
+    setCart([]);
+    setOtCustomerName("");
+    setOtCustomerPhone("");
+    setOtTableName("");
+  }
+
+  async function handleAppendOrUpdateOrder() {
+    if (!appendTargetOrder) return;
+    const hadNewItems = cart.length > 0;
+    const targetOrderId = appendTargetOrder._id || appendTargetOrder.id;
+    setPlacing(true);
+    setAppendingOrderId(targetOrderId);
+    try {
+      const payload = {
+        customerName: otCustomerName.trim(),
+        customerPhone: otCustomerPhone.trim(),
+        tableName: otTableName.trim(),
+      };
+      if (cart.length > 0) {
+        const existingItems = (appendTargetOrder.items || []).map((item) => ({
+          menuItemId: null,
+          name: item.name || "Item",
+          quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
+          unitPrice: Number(item.unitPrice) || 0,
+        }));
+        const addedItems = cart.map((c) => ({
+          menuItemId: c.id,
+          name: c.name,
+          quantity: Math.max(1, Number(c.quantity) || 1),
+          unitPrice: Number(c.price) || 0,
+        }));
+        const mergedMap = new Map();
+        const pushItem = (item) => {
+          const key = item.menuItemId
+            ? `menu:${item.menuItemId}`
+            : `name:${String(item.name || "").trim().toLowerCase()}|price:${Number(item.unitPrice) || 0}`;
+          const prev = mergedMap.get(key);
+          if (prev) {
+            prev.quantity += Math.max(1, Number(item.quantity) || 1);
+            return;
+          }
+          mergedMap.set(key, {
+            ...item,
+            quantity: Math.max(1, Number(item.quantity) || 1),
+          });
+        };
+        existingItems.forEach(pushItem);
+        addedItems.forEach(pushItem);
+        payload.items = Array.from(mergedMap.values());
+      }
+      const updated = await updateOrder(targetOrderId, payload);
+      setActiveOrders((prev) =>
+        prev.map((o) =>
+          o.id === appendTargetOrder.id || o._id === appendTargetOrder._id ? { ...o, ...updated } : o,
+        ),
+      );
+      cancelAppendFlow();
+      setStep(STEPS.MENU);
+      setActiveTab(TABS.ACTIVE);
+      fetchActiveOrders();
+      toast.success(hadNewItems ? "Items added to order" : "Order details updated");
+    } catch (err) {
+      toast.error(
+        err.message || (hadNewItems ? "Failed to add items" : "Failed to update order"),
+      );
+    } finally {
+      setPlacing(false);
+      setAppendingOrderId(null);
+    }
   }
 
   function getTimeAgo(createdAt) {
@@ -1007,13 +1122,10 @@ export default function OrderTakerPage() {
                       const headerText = paymentPending
                         ? "text-amber-800 dark:text-amber-300"
                         : sc.text;
-                      const borderClass = paymentPending
-                        ? "border-amber-200 dark:border-amber-500/30"
-                        : sc.border;
                     return (
                       <div
                           key={orderId}
-                          className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${borderClass}`}
+                          className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-neutral-800"
                         >
                           <div className={`px-4 py-2 flex items-center justify-between ${headerBg}`}>
                             <div className="flex items-center gap-2 min-w-0">
@@ -1121,115 +1233,146 @@ export default function OrderTakerPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {filteredActiveOrders.map((order) => {
                     const sc = getStatusConfig(order.status);
                     const StatusIcon = sc.icon;
                     const orderKey = String(order.id || order._id);
                     const isExpanded = expandedOrderIds.includes(orderKey);
-                    const totalWrapClass = isExpanded
-                      ? "flex items-center justify-between pt-3 border-t border-gray-100 dark:border-neutral-900 mb-3"
-                      : "flex items-center justify-between mb-3";
+                    const itemCount = (order.items || []).reduce(
+                      (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+                      0,
+                    );
+                    const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
+                      String(order.status || "").toUpperCase(),
+                    );
+                    const tokenLabel = `#${order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}`;
+                    const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
+                    const otLabel =
+                      order.orderType === "DINE_IN" || order.type === "dine-in"
+                        ? "Dine-in"
+                        : order.orderType === "TAKEAWAY" || order.type === "takeaway"
+                          ? "Takeaway"
+                          : "Delivery";
+                    const otBadgeClass =
+                      order.orderType === "DINE_IN" || order.type === "dine-in"
+                        ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        : "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400";
+                    const summaryLine = [order.tableName, order.customerName].filter(Boolean).join(" · ");
                     return (
                       <div
                         key={orderKey}
-                        className={`bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border ${sc.border} ${
-                          sc.pulse ? "ot-pulse-border" : ""
-                        }`}
+                        className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-neutral-800"
                       >
-                        {/* Status banner */}
-                        <div className={`px-4 py-2 flex items-center justify-between ${sc.bgLight}`}>
-                          <div className="flex items-center gap-2">
-                            <StatusIcon className={`w-4 h-4 ${sc.text}`} />
-                            <span className={`text-xs font-bold ${sc.text}`}>
-                              {sc.label}
-                            </span>
+                        <div className={`px-3.5 py-2 flex items-center justify-between ${sc.bgLight}`}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${sc.text}`} />
+                            <span className={`text-[11px] font-bold truncate ${sc.text}`}>{sc.label}</span>
                           </div>
-                          <div className={`flex items-center gap-1.5 text-[11px] ${sc.text} opacity-80`}>
+                          <div className={`flex items-center gap-1 text-[10px] shrink-0 ${sc.text} opacity-85`}>
                             <Clock className="w-3 h-3" />
                             {getTimeAgo(order.createdAt)}
                           </div>
                         </div>
 
-                        <div className="p-4">
-                          {/* Order meta */}
-                          <div className="flex items-center justify-between mb-3">
-                            <div>
-                              <span className="text-base font-black text-gray-900 dark:text-white">
-                                #{order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}
+                        <div className="px-3.5 py-3">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                              <span className="text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                {tokenLabel}
                               </span>
-                              {order.tableName && (
-                                <span className="ml-2 text-xs font-semibold text-gray-400 dark:text-neutral-500">
-                                  {order.tableName}
-                                </span>
-                              )}
+                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${otBadgeClass}`}>
+                                {otLabel}
+                              </span>
                             </div>
-                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${
-                              order.orderType === "DINE_IN" || order.type === "dine-in"
-                                ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                : "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                            }`}>
-                              {order.orderType === "DINE_IN" || order.type === "dine-in"
-                                ? "Dine-in"
-                                : order.orderType === "TAKEAWAY" || order.type === "takeaway"
-                                  ? "Takeaway"
-                                  : "Delivery"}
-                            </span>
+                            <div className="shrink-0 text-right">
+                              <span className="block text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                Rs. {totalAmt}
+                              </span>
+                            </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => toggleOrderDetails(orderKey)}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-colors border ${
-                              isExpanded
-                                ? "bg-primary/10 border-primary/20 text-primary"
-                                : "bg-gray-50 dark:bg-neutral-900 border-gray-200/70 dark:border-neutral-800 text-gray-600 dark:text-neutral-300"
-                            }`}
-                          >
-                            <span>{isExpanded ? "Hide Details" : "View Details"}</span>
-                            <ChevronDown
-                              className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                            />
-                          </button>
+                          <div className="flex items-center justify-between gap-2 mb-2.5">
+                            <p className="text-[10px] text-gray-500 dark:text-neutral-500 truncate min-w-0">
+                              <span className="font-semibold">
+                                {itemCount} item{itemCount !== 1 ? "s" : ""}
+                              </span>
+                              {summaryLine ? ` · ${summaryLine}` : ""}
+                            </p>
+                            {canAppend && (
+                              <button
+                                type="button"
+                                onClick={() => startEditCustomerDetails(order)}
+                                className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 underline underline-offset-2 decoration-gray-300 dark:decoration-neutral-600 hover:text-primary dark:hover:text-primary transition-colors inline-flex items-center gap-1 shrink-0"
+                              >
+                                <User className="w-3 h-3" />
+                                Edit customer
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2 mb-1">
+                            {canAppend && (
+                              <button
+                                type="button"
+                                onClick={() => startAppendItems(order)}
+                                className="flex-1 py-2 rounded-xl border border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add items
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleOrderDetails(orderKey)}
+                              className={`${canAppend ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+                                isExpanded
+                                  ? "bg-primary/10 border-primary/30 text-primary"
+                                  : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
+                              }`}
+                            >
+                              {isExpanded ? "Hide" : "Details"}
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                              />
+                            </button>
+                          </div>
 
                           {isExpanded && (
                             <>
-                          {/* Customer */}
-                          {order.customerName && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-neutral-400 mb-3">
-                              <User className="w-3 h-3" />
-                              {order.customerName}
-                            </div>
-                          )}
+                              {order.customerName && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
+                                  <User className="w-3 h-3 shrink-0" />
+                                  {order.customerName}
+                                </div>
+                              )}
+                              {(order.customerPhone || order.phone) && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
+                                  <Phone className="w-3 h-3 shrink-0" />
+                                  {order.customerPhone || order.phone}
+                                </div>
+                              )}
+                              {order.tableName && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
+                                  <Utensils className="w-3 h-3 shrink-0" />
+                                  {order.tableName}
+                                </div>
+                              )}
 
-                          {/* Items list */}
-                          <div className="space-y-1 mb-3">
-                            {order.items?.map((item, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-center justify-between text-xs"
-                              >
-                                <span className="text-gray-700 dark:text-neutral-300 font-medium">
-                                  <span className="font-bold text-gray-900 dark:text-white">
-                                    {item.quantity || item.qty}x
-                                  </span>{" "}
-                                  {item.name}
-                                </span>
+                              <div className="space-y-0.5 mb-2">
+                                {order.items?.map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-[11px]">
+                                    <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
+                                      <span className="font-bold text-gray-900 dark:text-white">
+                                        {item.quantity || item.qty}x
+                                      </span>{" "}
+                                      {item.name}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
                             </>
                           )}
-
-                          {/* Footer */}
-                          <div className={totalWrapClass}>
-                            <span className="text-xs text-gray-400 dark:text-neutral-500">
-                              Total
-                            </span>
-                            <span className="text-sm font-black text-gray-900 dark:text-white">
-                              Rs. {order.total?.toLocaleString()}
-                            </span>
-                          </div>
                         </div>
                       </div>
                     );
@@ -1338,6 +1481,29 @@ export default function OrderTakerPage() {
               {/* MENU */}
               {step === STEPS.MENU && (
                 <div className="flex flex-col h-full">
+                  {appendTargetOrder && (
+                    <div className="mx-3 mt-3 mb-1 rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-bold text-primary">
+                            Appending to order #
+                            {appendTargetOrder.tokenNumber ||
+                              getDisplayOrderId(appendTargetOrder).toString().slice(-4)}
+                          </p>
+                          <p className="text-[10px] text-primary/80">
+                            Existing lines stay on the ticket. New picks merge in when you confirm.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => cancelAppendFlow()}
+                          className="text-[10px] font-bold text-primary/80 hover:text-primary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="sticky top-0 z-10 bg-white dark:bg-neutral-950 shadow-sm">
                     <div className="px-4 pt-3 pb-2">
                       <div className="relative">
@@ -1534,7 +1700,27 @@ export default function OrderTakerPage() {
               {/* CART */}
               {step === STEPS.CART && (
                 <div className="p-4 pb-44">
-                  {selectedTable && (
+                  {appendTargetOrder && (
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 px-3 py-2.5 mb-4">
+                      <p className="text-[11px] font-bold text-primary">
+                        Update order #
+                        {appendTargetOrder.tokenNumber ||
+                          getDisplayOrderId(appendTargetOrder).toString().slice(-4)}
+                      </p>
+                      <p className="text-[10px] text-primary/80 mt-0.5">
+                        Change guest or table below, add items from the menu, then save or append.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => cancelAppendFlow()}
+                        className="mt-2 text-[10px] font-bold text-primary/80 hover:text-primary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {!appendTargetOrder && selectedTable && (
                     <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 dark:bg-primary/20 mb-4">
                       <Utensils className="w-3 h-3 text-primary" />
                       <span className="text-xs font-bold text-primary">
@@ -1543,7 +1729,7 @@ export default function OrderTakerPage() {
                     </div>
                   )}
 
-                  {cart.length === 0 ? (
+                  {cart.length === 0 && !appendTargetOrder ? (
                     <div className="flex flex-col items-center justify-center pt-16 text-center">
                       <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
                         <ShoppingCart className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
@@ -1562,55 +1748,91 @@ export default function OrderTakerPage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2.5">
-                      {cart.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center gap-3 bg-white dark:bg-neutral-950 rounded-2xl p-3 shadow-sm"
-                        >
-                          {item.imageUrl ? (
-                            <img
-                              src={item.imageUrl}
-                              alt={item.name}
-                              className="w-14 h-14 rounded-xl object-cover flex-shrink-0"
-                            />
-                          ) : (
-                            <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
-                              <Utensils className="w-5 h-5 text-gray-300 dark:text-neutral-700" />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold truncate leading-tight">
-                              {item.name}
-                            </p>
-                            <p className="text-xs font-bold text-primary mt-0.5">
-                              Rs. {(item.price * item.quantity).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
-                            <button
-                              onClick={() => updateQty(item.id, -1)}
-                              className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                    <>
+                      {cart.length > 0 && (
+                        <div className="space-y-2.5 mb-4">
+                          {cart.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center gap-3 bg-white dark:bg-neutral-950 rounded-2xl p-3 shadow-sm"
                             >
-                              {item.quantity === 1 ? (
-                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              {item.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  className="w-14 h-14 rounded-xl object-cover flex-shrink-0"
+                                />
                               ) : (
-                                <Minus className="w-3.5 h-3.5 text-gray-500" />
+                                <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
+                                  <Utensils className="w-5 h-5 text-gray-300 dark:text-neutral-700" />
+                                </div>
                               )}
-                            </button>
-                            <span className="w-7 text-center text-sm font-black">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => updateQty(item.id, 1)}
-                              className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
-                            >
-                              <Plus className="w-3.5 h-3.5 text-primary" />
-                            </button>
-                          </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold truncate leading-tight">
+                                  {item.name}
+                                </p>
+                                <p className="text-xs font-bold text-primary mt-0.5">
+                                  Rs. {(item.price * item.quantity).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
+                                <button
+                                  onClick={() => updateQty(item.id, -1)}
+                                  className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                                >
+                                  {item.quantity === 1 ? (
+                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                  ) : (
+                                    <Minus className="w-3.5 h-3.5 text-gray-500" />
+                                  )}
+                                </button>
+                                <span className="w-7 text-center text-sm font-black">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={() => updateQty(item.id, 1)}
+                                  className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                                >
+                                  <Plus className="w-3.5 h-3.5 text-primary" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      )}
+                      {cart.length === 0 && appendTargetOrder && (
+                        <div className="mb-4 px-3 py-2 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[11px] text-gray-500 dark:text-neutral-400">
+                          Editing guest or table for this order. Open the menu to add items, or save when
+                          you&apos;re done.
+                        </div>
+                      )}
+                      {appendTargetOrder && (
+                        <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 space-y-3">
+                          <p className="text-xs font-bold text-gray-900 dark:text-white">Guest & table</p>
+                          <input
+                            type="text"
+                            value={otCustomerName}
+                            onChange={(e) => setOtCustomerName(e.target.value)}
+                            placeholder="Guest name (optional)"
+                            className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 dark:placeholder:text-neutral-600 outline-none focus:ring-2 focus:ring-primary/20 border-0"
+                          />
+                          <input
+                            type="tel"
+                            value={otCustomerPhone}
+                            onChange={(e) => setOtCustomerPhone(e.target.value)}
+                            placeholder="Phone (optional)"
+                            className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 dark:placeholder:text-neutral-600 outline-none focus:ring-2 focus:ring-primary/20 border-0"
+                          />
+                          <input
+                            type="text"
+                            value={otTableName}
+                            onChange={(e) => setOtTableName(e.target.value)}
+                            placeholder="Table or label (e.g. Table 2)"
+                            className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 dark:placeholder:text-neutral-600 outline-none focus:ring-2 focus:ring-primary/20 border-0"
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -1641,7 +1863,7 @@ export default function OrderTakerPage() {
           </div>
         )}
 
-        {activeTab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
+        {activeTab === TABS.NEW_ORDER && step === STEPS.CART && (cart.length > 0 || !!appendTargetOrder) && (
           <div className="fixed bottom-16 inset-x-0 z-20">
             <div className="bg-white dark:bg-neutral-950 border-t border-gray-100 dark:border-neutral-900 px-4 pt-3 pb-3">
               <div className="flex items-center justify-between mb-3">
@@ -1650,7 +1872,12 @@ export default function OrderTakerPage() {
                     Total
                   </p>
                   <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                    Rs. {subtotal.toLocaleString()}
+                    Rs.{" "}
+                    {appendTargetOrder && cart.length === 0
+                      ? (
+                          Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0
+                        ).toLocaleString()
+                      : subtotal.toLocaleString()}
                   </p>
                 </div>
                 <div className="text-right">
@@ -1658,7 +1885,12 @@ export default function OrderTakerPage() {
                     Items
                   </p>
                   <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                    {cartBadge}
+                    {appendTargetOrder && cart.length === 0
+                      ? (appendTargetOrder.items || []).reduce(
+                          (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+                          0,
+                        )
+                      : cartBadge}
                   </p>
                 </div>
               </div>
@@ -1668,17 +1900,22 @@ export default function OrderTakerPage() {
                   className="flex-1 py-3.5 rounded-2xl bg-gray-100 dark:bg-neutral-900 font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5 text-gray-700 dark:text-neutral-300"
                 >
                   <Plus className="w-4 h-4" />
-                  Add
+                  {appendTargetOrder ? "Menu" : "Add"}
                 </button>
                 <button
-                  onClick={handlePlaceOrder}
-                  disabled={placing}
+                  onClick={appendTargetOrder ? handleAppendOrUpdateOrder : handlePlaceOrder}
+                  disabled={placing || !!appendingOrderId}
                   className="flex-[2.5] py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-600/25"
                 >
                   {placing ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Sending...
+                      {appendTargetOrder ? "Saving…" : "Sending..."}
+                    </>
+                  ) : appendTargetOrder ? (
+                    <>
+                      {cart.length > 0 ? "Append items" : "Save details"}
+                      {cart.length > 0 ? <Plus className="w-4 h-4" /> : <Check className="w-4 h-4" />}
                     </>
                   ) : (
                     <>
@@ -1812,8 +2049,6 @@ export default function OrderTakerPage() {
           overflow: hidden;
         }
         @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
-        @keyframes pulse-border { 0%, 100% { border-color: rgba(16, 185, 129, 0.2); } 50% { border-color: rgba(16, 185, 129, 0.6); } }
-        .ot-pulse-border { animation: pulse-border 2s ease-in-out infinite; }
       `}</style>
     </>
   );
