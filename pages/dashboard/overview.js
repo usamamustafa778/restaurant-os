@@ -778,30 +778,64 @@ export default function OverviewPage() {
   useEffect(() => {
     let cancelled = false;
     setExpectedCashLoading(true);
-    const from = currencyDateValue;
-    const toDate = new Date(`${currencyDateValue}T00:00:00`);
-    toDate.setDate(toDate.getDate() + 1);
-    const to = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, "0")}-${String(toDate.getDate()).padStart(2, "0")}`;
-    getSalesReport({ from, to })
-      .then((report) => {
+    (async () => {
+      try {
+        let from = currencyDateValue;
+        const toDate = new Date(`${currencyDateValue}T00:00:00`);
+        toDate.setDate(toDate.getDate() + 1);
+        let to = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, "0")}-${String(toDate.getDate()).padStart(2, "0")}`;
+        let daySessionId;
+
+        // Keep expected cash aligned with business-day sessions (same as report cards),
+        // otherwise midnight calendar windows can skew the difference.
+        if (currencyDate === "today" || currencyDate === "yesterday") {
+          try {
+            if (currencyDate === "today" && currentBranch?.id) {
+              const cur = await getCurrentDaySession(currentBranch.id);
+              if (cur?.id) daySessionId = cur.id;
+            }
+            const res = await getDaySessions(currentBranch?.id, { limit: 10 });
+            const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
+            if (currencyDate === "today" && !daySessionId) {
+              const openSess = sessions.find((s) => s.status === "OPEN");
+              if (openSess?.id) daySessionId = openSess.id;
+            }
+            if (currencyDate === "yesterday") {
+              const lastClosed = sessions.find((s) => s.status === "CLOSED");
+              if (lastClosed?.id) {
+                daySessionId = lastClosed.id;
+              } else if (lastClosed?.startAt && lastClosed?.endAt) {
+                from = lastClosed.startAt;
+                to = lastClosed.endAt;
+              }
+            }
+          } catch {
+            // fallback to calendar date window
+          }
+        }
+
+        const report = daySessionId
+          ? await getSalesReport({ daySessionId })
+          : await getSalesReport({ from, to });
         if (cancelled) return;
         const cash = Array.isArray(report?.paymentRows)
           ? report.paymentRows
-              .filter((r) => String(r?.method || "").trim().toUpperCase() === "CASH")
+              .filter(
+                (r) => String(r?.method || "").trim().toUpperCase() === "CASH",
+              )
               .reduce((sum, r) => sum + Number(r?.amount || 0), 0)
           : 0;
         setExpectedCashSales(cash);
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setExpectedCashSales(0);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setExpectedCashLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [currencyDateValue]);
+  }, [currencyDateValue, currencyDate, currentBranch?.id]);
 
   function handleSaveCurrency() {
     if (!isCurrencyEditable) return;
