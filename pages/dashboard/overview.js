@@ -29,7 +29,6 @@ import {
   CreditCard,
   BarChart3,
   Loader2,
-  LayoutDashboard,
   Clock,
   Wallet,
   Activity,
@@ -418,6 +417,126 @@ function computeDeliveredUnpaid(orders) {
   return { count, amount };
 }
 
+function Skeleton({ className = "" }) {
+  return (
+    <div
+      className={`bg-gray-200 dark:bg-neutral-800 animate-pulse rounded-lg ${className}`}
+    />
+  );
+}
+
+function OverviewSectionSkeleton({ bodyHeightClass = "h-24" }) {
+  return (
+    <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Skeleton className="h-8 w-8 rounded-lg flex-shrink-0" />
+          <div className="space-y-1.5 min-w-0">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3 w-44 max-w-full" />
+          </div>
+        </div>
+        <Skeleton className="h-5 w-20 rounded-md flex-shrink-0" />
+      </div>
+      <div className="border-t border-gray-100 dark:border-neutral-800 p-5">
+        <Skeleton className={`w-full ${bodyHeightClass}`} />
+      </div>
+    </div>
+  );
+}
+
+/** KPI strip + sales chart row + three summary cards (matches period report fetch). */
+function OverviewPeriodContentSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={`ov-period-kpi-${i}`}
+            className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <Skeleton className="h-9 w-9 rounded-xl" />
+            </div>
+            <Skeleton className="h-2.5 w-14 mb-2" />
+            <Skeleton className="h-6 w-24" />
+            <Skeleton className="h-2 w-16 mt-2" />
+          </div>
+        ))}
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-5 mb-5">
+        <div className="lg:col-span-2 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-3 w-52 max-w-full" />
+            </div>
+            <div className="text-right space-y-1">
+              <Skeleton className="h-7 w-28 ml-auto" />
+              <Skeleton className="h-2.5 w-20 ml-auto" />
+            </div>
+          </div>
+          <Skeleton className="w-full h-[260px] rounded-xl" />
+        </div>
+        <div className="flex flex-col gap-4">
+          <Skeleton className="h-[100px] rounded-2xl" />
+          <div className="flex-1 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5 min-h-[200px]">
+            <Skeleton className="h-3 w-24 mb-4" />
+            <Skeleton className="h-[140px] w-full rounded-xl" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-5 mb-5">
+        <OverviewSectionSkeleton bodyHeightClass="h-36" />
+        <OverviewSectionSkeleton bodyHeightClass="h-36" />
+        <OverviewSectionSkeleton bodyHeightClass="h-36" />
+      </div>
+    </>
+  );
+}
+
+function OverviewScreenSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Skeleton className="h-8 w-44 rounded-lg" />
+          <Skeleton className="h-8 w-40 rounded-lg" />
+          <Skeleton className="h-8 w-24 rounded-lg" />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Skeleton className="h-9 w-[280px] max-w-full rounded-xl" />
+        </div>
+      </div>
+
+      <OverviewPeriodContentSkeleton />
+
+      <OverviewSectionSkeleton bodyHeightClass="h-28" />
+      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="h-7 w-7 rounded-lg" />
+            <div className="space-y-1">
+              <Skeleton className="h-3 w-36" />
+              <Skeleton className="h-2.5 w-48" />
+            </div>
+          </div>
+        </div>
+        <div className="px-4 py-4">
+          <div className="grid grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-14 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </div>
+      <Skeleton className="h-40 w-full rounded-xl" />
+    </div>
+  );
+}
+
 export default function OverviewPage() {
   const { currentBranch, setCurrentBranch } = useBranch() || {};
 
@@ -455,7 +574,7 @@ export default function OverviewPage() {
     deliveredUnpaid: { count: 0, amount: 0 },
   });
   const [reportPeriod, setReportPeriod] = useState("today");
-  const [periodLoading, setPeriodLoading] = useState(false);
+  const [periodLoading, setPeriodLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(() =>
     new Date().getMonth(),
   );
@@ -1234,17 +1353,7 @@ export default function OverviewPage() {
   return (
     <AdminLayout title="Overview" suspended={suspended}>
       {pageLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <LayoutDashboard className="w-8 h-8 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">
-              Loading dashboard…
-            </p>
-          </div>
-        </div>
+        <OverviewScreenSkeleton />
       ) : (
         <>
           {/* ─── Control bar ─────────────────────────────────────────────── */}
@@ -1356,12 +1465,13 @@ export default function OverviewPage() {
                   </select>
                 </div>
               )}
-              {periodLoading && (
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              )}
             </div>
           </div>
 
+          {periodLoading ? (
+            <OverviewPeriodContentSkeleton />
+          ) : (
+            <>
           {/* ─── KPI strip ───────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
             {[
@@ -1829,6 +1939,8 @@ export default function OverviewPage() {
               )}
             </div>
           </div>
+            </>
+          )}
 
           {/* ─── Inventory Health ────────────────────────────────────────── */}
           <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5 mb-5">
@@ -1855,8 +1967,13 @@ export default function OverviewPage() {
             </div>
 
             {invLoading ? (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton
+                    key={`inv-sk-${i}`}
+                    className="h-[72px] rounded-xl"
+                  />
+                ))}
               </div>
             ) : invTotal === 0 ? (
               <p className="text-xs text-gray-400 dark:text-neutral-600 text-center py-6">
