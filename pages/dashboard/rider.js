@@ -727,6 +727,9 @@ export default function RiderPortalPage() {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: deliveryAddress.trim(),
+        deliveryCharges: deliveryZonesActive
+          ? deliveryFee
+          : Math.max(0, Number(appendTargetOrder?.deliveryCharges) || 0),
       };
 
       if (cart.length > 0) {

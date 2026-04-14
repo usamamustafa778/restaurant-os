@@ -17,7 +17,12 @@ import {
 import { getStoredAuth, getCurrencySymbol } from "../../../../lib/apiClient";
 import toast from "react-hot-toast";
 import ReportsNav from "../../../../components/accounting/ReportsNav";
-import { localToday, localISODate, fmtMoneyPK } from "../../../../lib/accountingFormat";
+import {
+  localToday,
+  localISODate,
+  fmtMoneyPK,
+  fmtDateRangeHuman,
+} from "../../../../lib/accountingFormat";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
@@ -62,13 +67,7 @@ function thisYearRange() {
 }
 
 function fmtDisplayRange(fromIso, toIso) {
-  const fmt = (iso) => {
-    if (!iso) return "";
-    const [y, m, d] = String(iso).split("T")[0].split("-");
-    if (!y || !m || !d) return iso;
-    return `${d}/${m}/${y}`;
-  };
-  return `${fmt(fromIso)} → ${fmt(toIso)}`;
+  return fmtDateRangeHuman(fromIso, toIso);
 }
 
 const dateInputCls =
@@ -572,7 +571,7 @@ export default function ProfitLossPage() {
             <div className="hidden print:block mb-4 text-center px-4">
               <h2 className="text-lg font-bold">Profit &amp; loss statement</h2>
               <p className="text-sm text-gray-600">
-                {report.dateFrom} to {report.dateTo}
+                {fmtDateRangeHuman(report.dateFrom, report.dateTo, "to")}
               </p>
             </div>
 

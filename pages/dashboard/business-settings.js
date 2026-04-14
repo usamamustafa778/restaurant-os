@@ -9,6 +9,7 @@ import {
   restoreBranch,
   updateBranch,
   getRestaurantSettings,
+  getStoredAuth,
   updateRestaurantSettings,
   getWebsiteSettings,
   updateWebsiteSettings,
@@ -18,6 +19,9 @@ import {
   updatePaymentAccount,
   deletePaymentAccount,
   migratePaymentAccountTypes,
+  getDiscountSettings,
+  saveDiscountSettings,
+  saveDiscountPin,
   getAccountingAccounts,
   updateBranchDeliveryZones,
   setStoredCurrencyCode,
@@ -49,6 +53,8 @@ import {
   Search,
   Download,
   BadgeDollarSign,
+  Percent,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import AsyncCombobox from "../../components/accounting/AsyncCombobox";
@@ -92,7 +98,13 @@ function BillPreviewPane({ logoUrl, logoHeightPx, footerMessage }) {
         <iframe
           srcDoc={html}
           title="Bill preview"
-          style={{ width: "100%", height: "750px", border: "none", background: "#fff", display: "block" }}
+          style={{
+            width: "100%",
+            height: "750px",
+            border: "none",
+            background: "#fff",
+            display: "block",
+          }}
           scrolling="yes"
         />
       </div>
@@ -111,6 +123,7 @@ const SECTIONS = [
   { id: "branding", label: "General", icon: Palette },
   { id: "branches", label: "Branches", icon: Building2 },
   { id: "bill", label: "Bill Settings", icon: FileText },
+  { id: "discounts", label: "Discounts", icon: Percent },
   { id: "payment-accounts", label: "Payment Accounts", icon: Wallet },
 ];
 
@@ -118,8 +131,6 @@ const inp =
   "w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all";
 
 const labelCls = "text-xs font-semibold text-gray-700 dark:text-neutral-300";
-
-const MAX_DELIVERY_ZONES = 40;
 
 function feeCurrencyLabel(currencyCode) {
   const c = String(currencyCode || "").toUpperCase();
@@ -180,11 +191,7 @@ function parseDeliveryZonesCsv(text) {
     if (cells.length < 2) continue;
     const feeRaw = cells[cells.length - 1];
     const fee = Number.parseFloat(feeRaw);
-    const name = cells
-      .slice(0, -1)
-      .join(",")
-      .trim()
-      .slice(0, 120);
+    const name = cells.slice(0, -1).join(",").trim().slice(0, 120);
     if (!name) continue;
     out.push({
       name,
@@ -229,15 +236,21 @@ const PAYMENT_ACCOUNT_TYPE_OPTIONS = [
 ];
 
 function paymentTypeBadge(type) {
-  if (type === "cash") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300";
-  if (type === "easypaisa" || type === "jazzcash") return "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
-  if (type === "bank") return "bg-gray-200 text-gray-700 dark:bg-neutral-800 dark:text-neutral-200";
-  if (type === "card") return "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300";
+  if (type === "cash")
+    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300";
+  if (type === "easypaisa" || type === "jazzcash")
+    return "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
+  if (type === "bank")
+    return "bg-gray-200 text-gray-700 dark:bg-neutral-800 dark:text-neutral-200";
+  if (type === "card")
+    return "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300";
   return "bg-gray-100 text-gray-600 dark:bg-neutral-900 dark:text-neutral-300";
 }
 
 function paymentTypeLabel(type) {
-  return PAYMENT_ACCOUNT_TYPE_OPTIONS.find((o) => o.value === type)?.label || "Other";
+  return (
+    PAYMENT_ACCOUNT_TYPE_OPTIONS.find((o) => o.value === type)?.label || "Other"
+  );
 }
 
 function SectionCard({ id, icon: Icon, title, subtitle, children }) {
@@ -248,7 +261,9 @@ function SectionCard({ id, icon: Icon, title, subtitle, children }) {
           <Icon className="w-4 h-4 text-white" />
         </div>
         <div>
-          <h3 className="text-base font-bold text-gray-900 dark:text-white">{title}</h3>
+          <h3 className="text-base font-bold text-gray-900 dark:text-white">
+            {title}
+          </h3>
           {subtitle && (
             <p className="text-xs text-gray-500 dark:text-neutral-400">
               {subtitle}
@@ -262,7 +277,13 @@ function SectionCard({ id, icon: Icon, title, subtitle, children }) {
 }
 
 export default function BusinessSettingsPage() {
-  const { branches: contextBranches, currentBranch, setCurrentBranch, refreshBranches, loading: contextLoading } = useBranch() || {};
+  const {
+    branches: contextBranches,
+    currentBranch,
+    setCurrentBranch,
+    refreshBranches,
+    loading: contextLoading,
+  } = useBranch() || {};
   const [activeSection, setActiveSection] = useState("branding");
 
   // Branches
@@ -276,6 +297,9 @@ export default function BusinessSettingsPage() {
     name: "",
     code: "",
     address: "",
+    contactPhone: "",
+    openTime: "",
+    closeTime: "",
     businessDayCutoffHour: 4,
   });
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -313,8 +337,17 @@ export default function BusinessSettingsPage() {
   const [logoTab, setLogoTab] = useState("link");
   const [logoDirty, setLogoDirty] = useState(false);
   const [logoHeight, setLogoHeight] = useState(100);
-  const [billFooterMessage, setBillFooterMessage] = useState("Thank you for your order!");
-  const [currencySaving, setCurrencySaving] = useState(false);
+  const [billFooterMessage, setBillFooterMessage] = useState(
+    "Thank you for your order!",
+  );
+  const [posDiscountSaving, setPosDiscountSaving] = useState(false);
+  const [discountSettingsLoading, setDiscountSettingsLoading] = useState(true);
+  const [discountSettingsSaving, setDiscountSettingsSaving] = useState(false);
+  const [discountPresets, setDiscountPresets] = useState([]);
+  const [discountReasons, setDiscountReasons] = useState([]);
+  const [discountPinIsSet, setDiscountPinIsSet] = useState(false);
+  const [discountPinNew, setDiscountPinNew] = useState("");
+  const [discountPinConfirm, setDiscountPinConfirm] = useState("");
   const logoInputRef = useRef(null);
 
   // Payment accounts
@@ -337,7 +370,8 @@ export default function BusinessSettingsPage() {
   const [accountDeleteTarget, setAccountDeleteTarget] = useState(null);
   const [accountDeleteLoading, setAccountDeleteLoading] = useState(false);
   const [accountingAssetsLoading, setAccountingAssetsLoading] = useState(false);
-  const [accountingAssetsAvailable, setAccountingAssetsAvailable] = useState(true);
+  const [accountingAssetsAvailable, setAccountingAssetsAvailable] =
+    useState(true);
   const [accountEditSource, setAccountEditSource] = useState(null);
 
   // ── Fetch branches ──
@@ -360,7 +394,8 @@ export default function BusinessSettingsPage() {
     setDeletedLoading(true);
     getDeletedBranches()
       .then((d) => {
-        if (!cancelled) setDeletedBranches(d?.branches ?? (Array.isArray(d) ? d : []));
+        if (!cancelled)
+          setDeletedBranches(d?.branches ?? (Array.isArray(d) ? d : []));
       })
       .catch(() => {
         if (!cancelled) setDeletedBranches([]);
@@ -402,7 +437,9 @@ export default function BusinessSettingsPage() {
         const d = s || {};
         setRestaurantSettings(d);
         setLogoHeight(d.restaurantLogoHeightPx || 100);
-        setBillFooterMessage(d.billFooterMessage || "Thank you for your order!");
+        setBillFooterMessage(
+          d.billFooterMessage || "Thank you for your order!",
+        );
         setLogoDirty(false);
       })
       .catch(() => {
@@ -418,6 +455,40 @@ export default function BusinessSettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setDiscountSettingsLoading(true);
+    getDiscountSettings()
+      .then((d) => {
+        if (cancelled) return;
+        setDiscountPresets(
+          Array.isArray(d?.presets)
+            ? d.presets.map((p) => ({
+                ...p,
+                requiresPin:
+                  p?.requiresPin !== undefined
+                    ? Boolean(p.requiresPin)
+                    : !Boolean(p?.cashierAllowed),
+              }))
+            : [],
+        );
+        setDiscountReasons(Array.isArray(d?.reasons) ? d.reasons : []);
+        setDiscountPinIsSet(Boolean(d?.pinIsSet));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDiscountPresets([]);
+        setDiscountReasons([]);
+        setDiscountPinIsSet(false);
+      })
+      .finally(() => {
+        if (!cancelled) setDiscountSettingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── Fetch payment accounts ──
   useEffect(() => {
     let cancelled = false;
@@ -425,14 +496,17 @@ export default function BusinessSettingsPage() {
       setAccountsLoading(true);
       try {
         let d = await getPaymentAccounts();
-        let list = Array.isArray(d) ? d : d?.accounts ?? [];
+        let list = Array.isArray(d) ? d : (d?.accounts ?? []);
         const needsMigration = list.some(
-          (a) => a?.accountType === null || a?.accountType === undefined || a?.accountType === ""
+          (a) =>
+            a?.accountType === null ||
+            a?.accountType === undefined ||
+            a?.accountType === "",
         );
         if (needsMigration) {
           await migratePaymentAccountTypes();
           d = await getPaymentAccounts();
-          list = Array.isArray(d) ? d : d?.accounts ?? [];
+          list = Array.isArray(d) ? d : (d?.accounts ?? []);
         }
         if (!cancelled) setPaymentAccounts(list);
       } catch {
@@ -462,10 +536,12 @@ export default function BusinessSettingsPage() {
       .finally(() => {
         if (!cancelled) setAccountingAssetsLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const displayList = branches.length > 0 ? branches : contextBranches ?? [];
+  const displayList = branches.length > 0 ? branches : (contextBranches ?? []);
   const isLoading = loading || contextLoading;
   const restaurantLogoUrl = restaurantSettings?.restaurantLogoUrl || "";
 
@@ -498,7 +574,10 @@ export default function BusinessSettingsPage() {
     const name = String(accountEditSource.name || "");
     const lower = name.toLowerCase();
     let detectedType = accountEditSource.accountType || "other";
-    if (!accountEditSource.accountType || accountEditSource.accountType === "other") {
+    if (
+      !accountEditSource.accountType ||
+      accountEditSource.accountType === "other"
+    ) {
       if (lower.includes("easypaisa")) detectedType = "easypaisa";
       else if (lower.includes("jazzcash")) detectedType = "jazzcash";
       else if (lower.includes("bank")) detectedType = "bank";
@@ -521,7 +600,8 @@ export default function BusinessSettingsPage() {
       bankName: String(accountEditSource.bankName || ""),
       accountingAccountId: accountEditSource.accountingAccountId || "",
       accountingAccountObj:
-        accountEditSource.accountingAccountId && accountEditSource.accountingAccountName
+        accountEditSource.accountingAccountId &&
+        accountEditSource.accountingAccountName
           ? {
               _id: accountEditSource.accountingAccountId,
               code: accountEditSource.accountingAccountCode || "",
@@ -554,7 +634,8 @@ export default function BusinessSettingsPage() {
         name,
         accountType: accountForm.accountType,
         accountNumber: accountForm.accountNumber.trim(),
-        bankName: accountForm.accountType === "bank" ? accountForm.bankName.trim() : "",
+        bankName:
+          accountForm.accountType === "bank" ? accountForm.bankName.trim() : "",
         accountingAccountId: accountForm.accountingAccountId || null,
         description: accountForm.description.trim(),
         isActive: accountForm.isActive,
@@ -562,10 +643,14 @@ export default function BusinessSettingsPage() {
       if (accountForm.id) await updatePaymentAccount(accountForm.id, payload);
       else await createPaymentAccount(payload);
       const updated = await getPaymentAccounts();
-      setPaymentAccounts(Array.isArray(updated) ? updated : updated?.accounts ?? []);
+      setPaymentAccounts(
+        Array.isArray(updated) ? updated : (updated?.accounts ?? []),
+      );
       setAccountModalOpen(false);
       setAccountEditSource(null);
-      toast.success(accountForm.id ? "Account updated" : "Account added", { id: toastId });
+      toast.success(accountForm.id ? "Account updated" : "Account added", {
+        id: toastId,
+      });
     } catch (err) {
       setAccountModalError(err.message || "Failed to save");
       toast.dismiss(toastId);
@@ -595,6 +680,9 @@ export default function BusinessSettingsPage() {
       name: "",
       code: "",
       address: "",
+      contactPhone: "",
+      openTime: "",
+      closeTime: "",
       businessDayCutoffHour: 4,
     });
   }
@@ -609,6 +697,9 @@ export default function BusinessSettingsPage() {
       name: b.name || "",
       code: b.code || "",
       address: b.address || "",
+      contactPhone: b.contactPhone || "",
+      openTime: b.openingHours?.openTime || "",
+      closeTime: b.openingHours?.closeTime || "",
       businessDayCutoffHour: b.businessDayCutoffHour ?? 4,
     });
     setBranchModalError("");
@@ -625,12 +716,22 @@ export default function BusinessSettingsPage() {
     setBranchSaving(true);
     setBranchModalError("");
     const isEdit = !!branchForm.id;
-    const toastId = toast.loading(isEdit ? "Saving changes..." : "Creating branch...");
+    const toastId = toast.loading(
+      isEdit ? "Saving changes..." : "Creating branch...",
+    );
     try {
       const payload = {
         name,
         code: branchForm.code.trim() || undefined,
         address: branchForm.address.trim() || undefined,
+        contactPhone: branchForm.contactPhone.trim() || undefined,
+        openingHours:
+          branchForm.openTime || branchForm.closeTime
+            ? {
+                openTime: branchForm.openTime || undefined,
+                closeTime: branchForm.closeTime || undefined,
+              }
+            : undefined,
         businessDayCutoffHour: branchForm.businessDayCutoffHour ?? 4,
       };
       let created = null;
@@ -645,7 +746,9 @@ export default function BusinessSettingsPage() {
       setBranches(list);
       if (!isEdit) {
         if (created?.id) setCurrentBranch(created);
-        toast.success(`Branch "${created?.name || name}" created!`, { id: toastId });
+        toast.success(`Branch "${created?.name || name}" created!`, {
+          id: toastId,
+        });
       } else {
         if (currentBranch?.id) {
           const u = list.find((b) => b.id === currentBranch.id);
@@ -668,18 +771,29 @@ export default function BusinessSettingsPage() {
     e.preventDefault();
     if (!websiteSettings) return;
     setWebsiteSaving(true);
-    const toastId = toast.loading("Saving branding...");
+    const toastId = toast.loading("Saving changes...");
     try {
-      const updated = await updateWebsiteSettings(websiteSettings);
+      const [updatedWebsite, updatedRestaurant] = await Promise.all([
+        updateWebsiteSettings(websiteSettings),
+        updateRestaurantSettings({
+          currencyCode: restaurantSettings?.currencyCode || null,
+        }),
+      ]);
+      const updated = updatedWebsite;
       setWebsiteSettings(updated);
-      toast.success("Branding saved!", { id: toastId });
+      setRestaurantSettings((prev) => ({ ...(prev || {}), ...(updatedRestaurant || {}) }));
+      if (updatedRestaurant?.currencyCode) {
+        setStoredCurrencyCode(updatedRestaurant.currencyCode);
+      }
+      toast.success("Settings saved!", { id: toastId });
     } catch (err) {
-      toast.error(err.message || "Failed to save branding", { id: toastId });
+      toast.error(err.message || "Failed to save settings", { id: toastId });
     } finally {
       setWebsiteSaving(false);
     }
   }
-  const onWebsiteChange = (f) => (e) => setWebsiteSettings((p) => ({ ...p, [f]: e.target.value }));
+  const onWebsiteChange = (f) => (e) =>
+    setWebsiteSettings((p) => ({ ...p, [f]: e.target.value }));
 
   async function handleWebsiteLogoUpload(e) {
     const file = e.target.files?.[0];
@@ -706,7 +820,8 @@ export default function BusinessSettingsPage() {
       toast.error(err.message || "Upload failed");
     } finally {
       setUploadingWebsiteBanner(false);
-      if (websiteBannerInputRef.current) websiteBannerInputRef.current.value = "";
+      if (websiteBannerInputRef.current)
+        websiteBannerInputRef.current.value = "";
     }
   }
 
@@ -716,8 +831,8 @@ export default function BusinessSettingsPage() {
     setDeliveryZonesBranch(branch);
     setDeliveryZonesEditList(
       Array.isArray(branch.deliveryLocations)
-        ? branch.deliveryLocations.map((z) => ({ ...z }))
-        : []
+        ? branch.deliveryLocations.map((z) => ({ ...z, _editing: false }))
+        : [],
     );
   }
 
@@ -737,11 +852,7 @@ export default function BusinessSettingsPage() {
 
   function addDeliveryZone() {
     setDeliveryZonesEditList((prev) => {
-      if (prev.length >= MAX_DELIVERY_ZONES) {
-        toast.error(`Maximum ${MAX_DELIVERY_ZONES} delivery zones per branch.`);
-        return prev;
-      }
-      return [...prev, { name: "", fee: 0 }];
+      return [...prev, { name: "", fee: 0, _editing: true }];
     });
     setTimeout(() => {
       deliveryZonesListEndRef.current?.scrollIntoView({
@@ -797,7 +908,6 @@ export default function BusinessSettingsPage() {
         setDeliveryZonesEditList((prev) => {
           const next = [...prev];
           for (const row of parsed) {
-            if (next.length >= MAX_DELIVERY_ZONES) break;
             next.push({ name: row.name, fee: row.fee });
           }
           const added = next.length - prev.length;
@@ -809,21 +919,14 @@ export default function BusinessSettingsPage() {
                 block: "end",
               });
             }, 0);
-          } else if (parsed.length > 0) {
-            setTimeout(
-              () =>
-                toast.error(
-                  `Cannot import more zones (max ${MAX_DELIVERY_ZONES} per branch).`,
-                ),
-              0,
-            );
           }
           return next;
         });
       } catch {
         toast.error("Could not read CSV file");
       }
-      if (deliveryZonesCsvInputRef.current) deliveryZonesCsvInputRef.current.value = "";
+      if (deliveryZonesCsvInputRef.current)
+        deliveryZonesCsvInputRef.current.value = "";
     };
     reader.readAsText(file, "UTF-8");
   }
@@ -846,15 +949,18 @@ export default function BusinessSettingsPage() {
     setDeliveryZonesSaving(true);
     const toastId = toast.loading("Saving delivery zones...");
     try {
-      const updated = await updateBranchDeliveryZones(deliveryZonesBranch.id, cleaned);
+      const updated = await updateBranchDeliveryZones(
+        deliveryZonesBranch.id,
+        cleaned,
+      );
       setBranches((prev) =>
-        prev.map((b) => (b.id === updated.id ? updated : b))
+        prev.map((b) => (b.id === updated.id ? updated : b)),
       );
       setDeliveryZonesBranch(updated);
       setDeliveryZonesEditList(
         Array.isArray(updated.deliveryLocations)
-          ? updated.deliveryLocations.map((z) => ({ ...z }))
-          : []
+          ? updated.deliveryLocations.map((z) => ({ ...z, _editing: false }))
+          : [],
       );
       refreshBranches?.();
       toast.success("Delivery zones saved", { id: toastId });
@@ -872,14 +978,15 @@ export default function BusinessSettingsPage() {
     const toastId = toast.loading("Saving bill settings...");
     try {
       const updated = await updateRestaurantSettings({
-        ...restaurantSettings,
-        restaurantLogoUrl,
+        restaurantLogoUrl: restaurantLogoUrl || "",
         restaurantLogoHeightPx: logoHeight,
         billFooterMessage,
       });
       setRestaurantSettings(updated);
       setLogoHeight(updated?.restaurantLogoHeightPx || logoHeight);
-      setBillFooterMessage(updated?.billFooterMessage || "Thank you for your order!");
+      setBillFooterMessage(
+        updated?.billFooterMessage || "Thank you for your order!",
+      );
       setLogoDirty(false);
       toast.success("Bill settings saved!", { id: toastId });
     } catch (err) {
@@ -889,24 +996,108 @@ export default function BusinessSettingsPage() {
     }
   }
 
-  async function handleCurrencySave() {
-    setCurrencySaving(true);
-    const toastId = toast.loading("Saving currency...");
+  const canManagePosDiscountPin = useMemo(() => {
+    const role = String(getStoredAuth()?.user?.role || "");
+    return ["restaurant_admin", "admin", "super_admin", "manager"].includes(
+      role,
+    );
+  }, []);
+
+  async function handleDiscountSettingsSave() {
+    setDiscountSettingsSaving(true);
+    const toastId = toast.loading("Saving discount settings...");
     try {
-      const updated = await updateRestaurantSettings({
-        currencyCode: restaurantSettings?.currencyCode || null,
+      const payloadPresets = discountPresets
+        .map((p) => ({
+          id: String(p?.id || `p-${Date.now()}`),
+          label: String(p?.label || "").trim(),
+          percent: Number(p?.percent) || 0,
+          requiresPin:
+            p?.requiresPin !== undefined
+              ? Boolean(p.requiresPin)
+              : !Boolean(p?.cashierAllowed),
+        }))
+        .filter((p) => p.label.length > 0);
+      const payloadReasons = discountReasons
+        .map((r) => String(r || "").trim())
+        .filter(Boolean);
+      const updated = await saveDiscountSettings({
+        presets: payloadPresets,
+        reasons: payloadReasons,
       });
-      setRestaurantSettings((prev) => ({ ...(prev || {}), ...updated }));
-      if (updated?.currencyCode) {
-        setStoredCurrencyCode(updated.currencyCode);
-      }
-      toast.success("Currency setting saved", { id: toastId });
+      setDiscountPresets(
+        Array.isArray(updated?.presets)
+          ? updated.presets.map((p) => ({
+              ...p,
+              requiresPin:
+                p?.requiresPin !== undefined
+                  ? Boolean(p.requiresPin)
+                  : !Boolean(p?.cashierAllowed),
+            }))
+          : [],
+      );
+      setDiscountReasons(Array.isArray(updated?.reasons) ? updated.reasons : []);
+      setDiscountPinIsSet(Boolean(updated?.pinIsSet));
+      toast.success("Discount settings saved", { id: toastId });
     } catch (err) {
-      toast.error(err.message || "Failed to save currency", { id: toastId });
+      toast.error(err.message || "Failed to save discount settings", {
+        id: toastId,
+      });
     } finally {
-      setCurrencySaving(false);
+      setDiscountSettingsSaving(false);
     }
   }
+
+  async function handlePosDiscountPinSave() {
+    if (!canManagePosDiscountPin) {
+      toast.error("Only managers can change the discount PIN");
+      return;
+    }
+    if (!discountPinNew.trim()) {
+      toast.error("Enter a new PIN");
+      return;
+    }
+    if (!/^\d{4,6}$/.test(discountPinNew.trim())) {
+      toast.error("PIN must be 4-6 digits");
+      return;
+    }
+    if (discountPinNew.trim() !== discountPinConfirm.trim()) {
+      toast.error("PIN confirmation does not match");
+      return;
+    }
+    setPosDiscountSaving(true);
+    const toastId = toast.loading("Saving discount PIN...");
+    try {
+      const updated = await saveDiscountPin({ pin: discountPinNew.trim() });
+      setDiscountPinIsSet(Boolean(updated?.pinIsSet));
+      setDiscountPinNew("");
+      setDiscountPinConfirm("");
+      toast.success("Discount PIN updated", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to save", { id: toastId });
+    } finally {
+      setPosDiscountSaving(false);
+    }
+  }
+
+  async function handleClearDiscountPin() {
+    if (!canManagePosDiscountPin) return;
+    if (!window.confirm("Clear manager discount PIN?")) return;
+    setPosDiscountSaving(true);
+    const toastId = toast.loading("Clearing discount PIN...");
+    try {
+      const updated = await saveDiscountPin({ clear: true });
+      setDiscountPinIsSet(Boolean(updated?.pinIsSet));
+      setDiscountPinNew("");
+      setDiscountPinConfirm("");
+      toast.success("Discount PIN cleared", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to clear PIN", { id: toastId });
+    } finally {
+      setPosDiscountSaving(false);
+    }
+  }
+
   async function handleLogoUploadChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -923,7 +1114,50 @@ export default function BusinessSettingsPage() {
     }
   }
 
-  function MediaToggle({ tab, setTab, onLink, linkValue, onUpload, uploading, inputRef }) {
+  function updateDiscountPresetRow(index, patch) {
+    setDiscountPresets((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }
+
+  function removeDiscountPresetRow(index) {
+    setDiscountPresets((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addDiscountPresetRow() {
+    setDiscountPresets((prev) => [
+      ...prev,
+      {
+        id: `custom-${Date.now()}`,
+        label: "",
+        percent: 0,
+        requiresPin: false,
+        cashierAllowed: true,
+      },
+    ]);
+  }
+
+  function updateDiscountReasonRow(index, value) {
+    setDiscountReasons((prev) => prev.map((row, i) => (i === index ? value : row)));
+  }
+
+  function removeDiscountReasonRow(index) {
+    setDiscountReasons((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addDiscountReasonRow() {
+    setDiscountReasons((prev) => [...prev, ""]);
+  }
+
+  function MediaToggle({
+    tab,
+    setTab,
+    onLink,
+    linkValue,
+    onUpload,
+    uploading,
+    inputRef,
+  }) {
     return (
       <div className="space-y-2">
         <div className="inline-flex rounded-xl border-2 border-gray-200 dark:border-neutral-700 overflow-hidden">
@@ -936,7 +1170,9 @@ export default function BusinessSettingsPage() {
               type="button"
               onClick={() => setTab(t)}
               className={`inline-flex items-center gap-1.5 px-3 h-8 text-xs font-semibold transition-colors ${
-                t !== "link" ? "border-l-2 border-gray-200 dark:border-neutral-700" : ""
+                t !== "link"
+                  ? "border-l-2 border-gray-200 dark:border-neutral-700"
+                  : ""
               } ${
                 tab === t
                   ? "bg-gradient-to-r from-primary to-secondary text-white"
@@ -966,7 +1202,9 @@ export default function BusinessSettingsPage() {
             ) : (
               <>
                 <Upload className="w-5 h-5 text-gray-400" />
-                <span className="text-xs text-gray-500 mt-1">Click to browse</span>
+                <span className="text-xs text-gray-500 mt-1">
+                  Click to browse
+                </span>
               </>
             )}
             <input
@@ -999,13 +1237,13 @@ export default function BusinessSettingsPage() {
                 key={id}
                 type="button"
                 onClick={() => scrollTo(id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors border-l-2 ${
                   activeSection === id
-                    ? "bg-primary/10 text-primary dark:text-primary"
-                    : "text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
+                    ? "border-l-primary text-primary bg-primary/5 dark:bg-primary/10"
+                    : "border-l-transparent text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4 text-gray-400 dark:text-neutral-500" />
                 {label}
               </button>
             ))}
@@ -1047,14 +1285,14 @@ export default function BusinessSettingsPage() {
                 </div>
               ) : (
                 <form onSubmit={handleWebsiteSubmit}>
-
                   {/* ── Two-column main body ── */}
                   <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
-
                     {/* Left column — identity + contact */}
                     <div className="space-y-5">
                       <div>
-                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">Restaurant Identity</p>
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">
+                          Restaurant Identity
+                        </p>
                         <div className="space-y-4">
                           <div className="space-y-1.5">
                             <label className={labelCls}>Restaurant Name</label>
@@ -1075,6 +1313,9 @@ export default function BusinessSettingsPage() {
                               placeholder="Tell customers about your restaurant…"
                               className="w-full px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 resize-none transition-all"
                             />
+                            <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                              Shown on your public website and online ordering page.
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -1082,10 +1323,14 @@ export default function BusinessSettingsPage() {
                       <div className="border-t border-gray-100 dark:border-neutral-800" />
 
                       <div>
-                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">Contact Details</p>
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">
+                          Contact Details
+                        </p>
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-1.5">
-                            <label className={`${labelCls} flex items-center gap-1.5`}>
+                            <label
+                              className={`${labelCls} flex items-center gap-1.5`}
+                            >
                               <Phone className="w-3.5 h-3.5 text-primary" />
                               Phone
                             </label>
@@ -1098,7 +1343,9 @@ export default function BusinessSettingsPage() {
                             />
                           </div>
                           <div className="space-y-1.5">
-                            <label className={`${labelCls} flex items-center gap-1.5`}>
+                            <label
+                              className={`${labelCls} flex items-center gap-1.5`}
+                            >
                               <Mail className="w-3.5 h-3.5 text-primary" />
                               Email
                             </label>
@@ -1117,9 +1364,10 @@ export default function BusinessSettingsPage() {
 
                       {/* ── Currency ── */}
                       <div>
-                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">Operating Currency</p>
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">
+                          Operating Currency
+                        </p>
                         <div className="space-y-1.5">
-                          <p className="text-[11px] text-gray-500 dark:text-neutral-400">Saved separately — applied across POS and all reports</p>
                           <div className="flex items-center gap-2">
                             <select
                               value={restaurantSettings?.currencyCode || ""}
@@ -1132,19 +1380,14 @@ export default function BusinessSettingsPage() {
                               className={inp}
                             >
                               {CURRENCY_OPTIONS.map((opt) => (
-                                <option key={opt.value || "none"} value={opt.value}>
+                                <option
+                                  key={opt.value || "none"}
+                                  value={opt.value}
+                                >
                                   {opt.label}
                                 </option>
                               ))}
                             </select>
-                            <button
-                              type="button"
-                              onClick={handleCurrencySave}
-                              disabled={currencySaving}
-                              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:border-primary/50 hover:text-primary transition-colors disabled:opacity-60 flex-shrink-0"
-                            >
-                              {currencySaving ? <><Loader2 className="w-3 h-3 animate-spin" />Saving…</> : <><Check className="w-3 h-3" />Save</>}
-                            </button>
                           </div>
                         </div>
                       </div>
@@ -1155,16 +1398,24 @@ export default function BusinessSettingsPage() {
                         className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
                       >
                         {websiteSaving ? (
-                          <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Saving…
+                          </>
                         ) : (
-                          <><Check className="w-4 h-4" />Save</>
+                          <>
+                            <Check className="w-4 h-4" />
+                            Save Changes
+                          </>
                         )}
                       </button>
                     </div>
 
                     {/* Right column — logo only */}
                     <div className="space-y-4">
-                      <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">Logo</p>
+                      <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest">
+                        Logo
+                      </p>
                       <div className="rounded-xl border border-gray-100 dark:border-neutral-800 p-4 space-y-3 bg-gray-50/40 dark:bg-neutral-900/30">
                         <MediaToggle
                           tab={websiteLogoTab}
@@ -1191,10 +1442,11 @@ export default function BusinessSettingsPage() {
                             </div>
                           )}
                         </div>
-                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">Shown on your public restaurant page</p>
+                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                          Shown on your public restaurant page
+                        </p>
                       </div>
                     </div>
-
                   </div>
                 </form>
               )}
@@ -1211,7 +1463,8 @@ export default function BusinessSettingsPage() {
             >
               <div className="flex justify-between items-center mb-4">
                 <p className="text-xs text-gray-500 dark:text-neutral-400">
-                  Branches control where orders are prepared and which menus / delivery zones apply.
+                  Branches control where orders are prepared and which menus /
+                  delivery zones apply.
                 </p>
                 <button
                   type="button"
@@ -1226,7 +1479,9 @@ export default function BusinessSettingsPage() {
               {isLoading ? (
                 <div className="flex items-center justify-center gap-2 py-8">
                   <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  <span className="text-sm text-gray-500 dark:text-neutral-400">Loading branches...</span>
+                  <span className="text-sm text-gray-500 dark:text-neutral-400">
+                    Loading branches...
+                  </span>
                 </div>
               ) : displayList.length === 0 ? (
                 <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 p-6 text-center">
@@ -1251,11 +1506,21 @@ export default function BusinessSettingsPage() {
                     <table className="min-w-full text-sm">
                       <thead className="bg-gray-50 dark:bg-neutral-950/60">
                         <tr className="text-xs text-gray-500 dark:text-neutral-400">
-                          <th className="px-4 py-2 text-left font-semibold">Name</th>
-                          <th className="px-4 py-2 text-left font-semibold hidden sm:table-cell">Code</th>
-                          <th className="px-4 py-2 text-left font-semibold hidden md:table-cell">Address</th>
-                          <th className="px-4 py-2 text-left font-semibold">Business Day Cutoff</th>
-                          <th className="px-4 py-2 text-right font-semibold">Actions</th>
+                          <th className="px-4 py-2 text-left font-semibold">
+                            Name
+                          </th>
+                          <th className="px-4 py-2 text-left font-semibold hidden sm:table-cell">
+                            Code
+                          </th>
+                          <th className="px-4 py-2 text-left font-semibold hidden md:table-cell">
+                            Address
+                          </th>
+                          <th className="px-4 py-2 text-left font-semibold">
+                            Business Day Cutoff
+                          </th>
+                          <th className="px-4 py-2 text-right font-semibold">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1275,9 +1540,13 @@ export default function BusinessSettingsPage() {
                                       : "bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-300"
                                   }`}
                                 >
-                                  {currentBranch?.id === b.id ? "Current" : "Switch"}
+                                  {currentBranch?.id === b.id
+                                    ? "Current"
+                                    : "Switch"}
                                 </button>
-                                <span className="font-semibold text-gray-900 dark:text-white">{b.name}</span>
+                                <span className="font-semibold text-gray-900 dark:text-white">
+                                  {b.name}
+                                </span>
                               </div>
                             </td>
                             <td className="px-4 py-2 text-gray-600 dark:text-neutral-300 hidden sm:table-cell">
@@ -1295,18 +1564,14 @@ export default function BusinessSettingsPage() {
                                   type="button"
                                   onClick={() => openDeliveryZonesModal(b)}
                                   title="Manage delivery zones"
-                                  className={`relative inline-flex items-center justify-center h-8 w-8 rounded-lg border text-gray-500 hover:text-primary hover:border-primary/40 ${
+                                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold ${
                                     b.deliveryLocations?.length > 0
-                                      ? "border-primary/30 text-primary"
-                                      : "border-gray-200 dark:border-neutral-800"
+                                      ? "border-primary/35 text-primary bg-primary/5"
+                                      : "border-gray-200 dark:border-neutral-800 text-gray-600 dark:text-neutral-300"
                                   }`}
                                 >
                                   <Truck className="w-3.5 h-3.5" />
-                                  {b.deliveryLocations?.length > 0 && (
-                                    <span className="absolute -top-1.5 -right-1.5 h-4 min-w-[16px] px-1 rounded-full bg-primary text-white text-[9px] font-bold flex items-center justify-center leading-none">
-                                      {b.deliveryLocations.length}
-                                    </span>
-                                  )}
+                                  Delivery Zones ({b.deliveryLocations?.length || 0}) →
                                 </button>
                                 <button
                                   type="button"
@@ -1333,13 +1598,13 @@ export default function BusinessSettingsPage() {
                   {/* Delivery zones modal */}
                   {deliveryZonesBranch && (
                     <div
-                      className="fixed inset-0 z-40 flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-[2px]"
+                      className="fixed inset-0 z-40 -top-6 left-0 flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-[2px]"
                       role="dialog"
                       aria-modal="true"
                       aria-labelledby="delivery-zones-modal-title"
                     >
                       <div className="w-full max-w-2xl max-h-[min(92vh,720px)] rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl shadow-black/20 flex flex-col overflow-hidden ring-1 ring-black/5 dark:ring-white/10">
-                        <div className="flex-shrink-0 px-5 sm:px-6 pt-5 pb-3 border-b border-gray-100 dark:border-neutral-800/80 bg-gradient-to-b from-gray-50/80 to-transparent dark:from-neutral-900/50">
+                        <div className="flex-shrink-0 px-5 sm:px-6 pt-5 pb-3 border-b border-gray-100 dark:border-neutral-800/80 bg-gradient-to-b from-gray-50/70 to-white dark:from-neutral-900 dark:to-neutral-950">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
                               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/15 to-secondary/10 flex items-center justify-center flex-shrink-0 border border-primary/20">
@@ -1363,15 +1628,15 @@ export default function BusinessSettingsPage() {
                             <button
                               type="button"
                               onClick={closeDeliveryZonesModal}
-                              className="h-9 w-9 rounded-xl flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-900 border border-transparent hover:border-gray-200 dark:hover:border-neutral-700 flex-shrink-0"
+                              className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-white dark:hover:bg-neutral-900 border border-transparent hover:border-gray-200 dark:hover:border-neutral-700 flex-shrink-0"
                               aria-label="Close"
                             >
                               <X className="w-4 h-4" />
                             </button>
                           </div>
-                          <p className="text-xs text-gray-500 dark:text-neutral-400 mt-3 leading-relaxed">
-                            Named areas with a flat delivery fee. Used at checkout and on the rider app. Max{" "}
-                            {MAX_DELIVERY_ZONES} zones.
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 mt-2 leading-relaxed">
+                            Named areas with a flat delivery fee. Used at
+                            checkout and on the rider app.
                           </p>
                         </div>
 
@@ -1379,13 +1644,15 @@ export default function BusinessSettingsPage() {
                           onSubmit={handleDeliveryZonesSave}
                           className="flex flex-col flex-1 min-h-0"
                         >
-                          <div className="flex-shrink-0 px-5 sm:px-6 py-3 space-y-3 border-b border-gray-100 dark:border-neutral-800/80 bg-white/80 dark:bg-neutral-950/80">
+                          <div className="flex-shrink-0 px-5 sm:px-6 py-3 space-y-2.5 border-b border-gray-100 dark:border-neutral-800/80 bg-white dark:bg-neutral-950">
                             <div className="relative">
                               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                               <input
                                 type="search"
                                 value={deliveryZonesSearch}
-                                onChange={(e) => setDeliveryZonesSearch(e.target.value)}
+                                onChange={(e) =>
+                                  setDeliveryZonesSearch(e.target.value)
+                                }
                                 placeholder="Search by area name or fee…"
                                 className={`${inp} pl-10 h-9 text-sm`}
                                 autoComplete="off"
@@ -1401,8 +1668,10 @@ export default function BusinessSettingsPage() {
                               />
                               <button
                                 type="button"
-                                onClick={() => deliveryZonesCsvInputRef.current?.click()}
-                                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                                onClick={() =>
+                                  deliveryZonesCsvInputRef.current?.click()
+                                }
+                                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:border-primary/40 hover:text-primary dark:hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 transition-all"
                               >
                                 <Upload className="w-3.5 h-3.5" />
                                 Import CSV
@@ -1411,13 +1680,13 @@ export default function BusinessSettingsPage() {
                                 type="button"
                                 onClick={exportDeliveryZonesCsv}
                                 disabled={deliveryZonesEditList.length === 0}
-                                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:border-primary/40 hover:text-primary dark:hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 <Download className="w-3.5 h-3.5" />
                                 Export CSV
                               </button>
-                              <span className="text-[10px] text-gray-400 dark:text-neutral-500 ml-auto tabular-nums">
-                                {deliveryZonesEditList.length} / {MAX_DELIVERY_ZONES} zones
+                              <span className="inline-flex items-center h-7 px-2.5 rounded-full bg-gray-100 dark:bg-neutral-900 text-[10px] text-gray-500 dark:text-neutral-400 ml-auto tabular-nums border border-gray-200/70 dark:border-neutral-800">
+                                {deliveryZonesEditList.length} zones
                                 {deliveryZonesSearch.trim()
                                   ? ` · ${deliveryZonesFilteredRows.length} shown`
                                   : ""}
@@ -1427,7 +1696,7 @@ export default function BusinessSettingsPage() {
 
                           <div
                             ref={deliveryZonesListRef}
-                            className="flex-1 min-h-[min(200px,35vh)] max-h-[42vh] sm:max-h-[46vh] overflow-y-auto overscroll-contain px-5 sm:px-6 py-4 space-y-2.5"
+                            className="flex-1 min-h-[min(220px,35vh)] max-h-[52vh] overflow-y-auto overscroll-contain px-4 sm:px-5 py-2.5"
                           >
                             {deliveryZonesEditList.length === 0 ? (
                               <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 p-8 text-center bg-gray-50/50 dark:bg-neutral-900/30">
@@ -1435,7 +1704,8 @@ export default function BusinessSettingsPage() {
                                   No delivery zones yet
                                 </p>
                                 <p className="text-xs text-gray-500 dark:text-neutral-400 mt-2 max-w-sm mx-auto">
-                                  Add rows manually, or import a CSV with columns{" "}
+                                  Add rows manually, or import a CSV with
+                                  columns{" "}
                                   <code className="text-[10px] bg-gray-200/80 dark:bg-neutral-800 px-1 rounded">
                                     name,fee
                                   </code>
@@ -1453,7 +1723,8 @@ export default function BusinessSettingsPage() {
                             ) : deliveryZonesFilteredRows.length === 0 ? (
                               <div className="rounded-xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 p-4 text-center">
                                 <p className="text-sm text-amber-900 dark:text-amber-200/90">
-                                  No zones match &quot;{deliveryZonesSearch.trim()}&quot;
+                                  No zones match &quot;
+                                  {deliveryZonesSearch.trim()}&quot;
                                 </p>
                                 <button
                                   type="button"
@@ -1465,70 +1736,146 @@ export default function BusinessSettingsPage() {
                               </div>
                             ) : (
                               <>
-                                <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_100px_44px] gap-3 px-1 pb-1">
-                                  <span className={labelCls}>Area name</span>
-                                  <span className={labelCls}>
-                                    Fee ({feeCurrencyLabel(restaurantSettings?.currencyCode)})
-                                  </span>
-                                  <span className="sr-only">Remove</span>
-                                </div>
-                                {deliveryZonesFilteredRows.map(({ z, idx }) => (
-                                  <div
-                                    key={z._id || z.id || `row-${idx}`}
-                                    className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_100px_44px] gap-2 sm:gap-3 items-end p-3 rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/40 dark:bg-neutral-900/40 hover:border-gray-200 dark:hover:border-neutral-700 transition-colors"
-                                  >
-                                    <div className="space-y-1 sm:space-y-0">
-                                      <label className={`${labelCls} sm:hidden`}>Area name</label>
-                                      <input
-                                        type="text"
-                                        value={z.name || ""}
-                                        onChange={(e) =>
-                                          updateDeliveryZone(idx, "name", e.target.value)
-                                        }
-                                        placeholder="e.g. Bahria Phase 7"
-                                        className={inp}
-                                      />
-                                    </div>
-                                    <div className="space-y-1 sm:space-y-0">
-                                      <label className={`${labelCls} sm:hidden`}>
-                                        Fee ({feeCurrencyLabel(restaurantSettings?.currencyCode)})
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        step={1}
-                                        value={z.fee ?? ""}
-                                        onChange={(e) =>
-                                          updateDeliveryZone(
-                                            idx,
-                                            "fee",
-                                            Number.parseFloat(e.target.value) || 0,
+                                <div className="rounded-lg border border-gray-200 dark:border-neutral-800 overflow-x-auto bg-white dark:bg-neutral-950">
+                                  <table className="w-full min-w-[520px] border-collapse">
+                                    <thead className="bg-gray-100 dark:bg-neutral-900">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-neutral-300 border-b border-gray-200 dark:border-neutral-800">
+                                          Area name
+                                        </th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 dark:text-neutral-300 border-b border-gray-200 dark:border-neutral-800 w-[120px]">
+                                          Fee (
+                                          {feeCurrencyLabel(
+                                            restaurantSettings?.currencyCode,
+                                          )}
                                           )
-                                        }
-                                        className={inp}
-                                      />
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeDeliveryZone(idx)}
-                                      className="h-10 w-full sm:w-10 inline-flex items-center justify-center rounded-xl border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900/50 flex-shrink-0 justify-self-end sm:justify-self-center"
-                                      aria-label="Remove zone"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                                <div ref={deliveryZonesListEndRef} className="h-1 w-full flex-shrink-0" aria-hidden />
+                                        </th>
+                                        <th className="px-2 py-2 border-b border-gray-200 dark:border-neutral-800 w-[44px]">
+                                          <span className="sr-only">
+                                            Remove
+                                          </span>
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {deliveryZonesFilteredRows.map(
+                                        ({ z, idx }) => (
+                                          <tr
+                                            key={z._id || z.id || `row-${idx}`}
+                                            className="border-b border-gray-100 dark:border-neutral-800 last:border-b-0"
+                                          >
+                                            <td className="px-2 py-1.5">
+                                              {z._editing ? (
+                                                <input
+                                                  type="text"
+                                                  value={z.name || ""}
+                                                  onChange={(e) =>
+                                                    updateDeliveryZone(
+                                                      idx,
+                                                      "name",
+                                                      e.target.value,
+                                                    )
+                                                  }
+                                                  placeholder="e.g. Bahria Phase 7"
+                                                  className={`${inp} h-8.5 text-sm rounded-md bg-white dark:bg-neutral-950 border-gray-200 dark:border-neutral-700`}
+                                                />
+                                              ) : (
+                                                <div className="h-8.5 px-2.5 flex items-center text-sm text-gray-900 dark:text-neutral-100">
+                                                  {z.name || "-"}
+                                                </div>
+                                              )}
+                                            </td>
+                                            <td className="px-2 py-1.5">
+                                              {z._editing ? (
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  step={1}
+                                                  value={z.fee ?? ""}
+                                                  onChange={(e) =>
+                                                    updateDeliveryZone(
+                                                      idx,
+                                                      "fee",
+                                                      Number.parseFloat(
+                                                        e.target.value,
+                                                      ) || 0,
+                                                    )
+                                                  }
+                                                  className={`${inp} h-8.5 text-sm text-right rounded-md bg-white dark:bg-neutral-950 border-gray-200 dark:border-neutral-700`}
+                                                />
+                                              ) : (
+                                                <div className="h-8.5 px-2.5 flex items-center justify-end text-sm tabular-nums text-gray-900 dark:text-neutral-100">
+                                                  {Number(
+                                                    z.fee || 0,
+                                                  ).toLocaleString()}
+                                                </div>
+                                              )}
+                                            </td>
+                                            <td className="px-1 py-1.5 text-center">
+                                              <div className="flex items-center justify-center gap-1">
+                                                {z._editing ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      updateDeliveryZone(
+                                                        idx,
+                                                        "_editing",
+                                                        false,
+                                                      )
+                                                    }
+                                                    className="h-8 w-8 inline-flex items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                                                    aria-label="Done editing zone"
+                                                  >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                  </button>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      updateDeliveryZone(
+                                                        idx,
+                                                        "_editing",
+                                                        true,
+                                                      )
+                                                    }
+                                                    className="h-8 w-8 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-primary hover:bg-primary/10 transition-colors"
+                                                    aria-label="Edit zone"
+                                                  >
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                  </button>
+                                                )}
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    removeDeliveryZone(idx)
+                                                  }
+                                                  className="h-8 w-8 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                  aria-label="Remove zone"
+                                                >
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        ),
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div
+                                  ref={deliveryZonesListEndRef}
+                                  className="h-1 w-full flex-shrink-0"
+                                  aria-hidden
+                                />
                               </>
                             )}
                           </div>
 
-                          <div className="flex-shrink-0 px-5 sm:px-6 py-4 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/90 dark:bg-neutral-900/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div className="flex-shrink-0 px-5 sm:px-6 py-4 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/70 dark:bg-neutral-900/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <button
                               type="button"
                               onClick={addDeliveryZone}
-                              disabled={deliveryZonesEditList.length >= MAX_DELIVERY_ZONES}
-                              className="inline-flex items-center justify-center gap-1.5 h-10 px-4 rounded-xl border-2 border-dashed border-primary/35 text-xs font-semibold text-primary hover:bg-primary/5 dark:hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed order-2 sm:order-1"
+                              className="inline-flex items-center justify-center gap-1.5 h-10 px-4 rounded-xl border-2 border-dashed border-primary/35 text-xs font-semibold text-primary hover:bg-primary/5 dark:hover:bg-primary/10 order-2 sm:order-1"
                             >
                               <Plus className="w-4 h-4" />
                               Add zone
@@ -1570,7 +1917,9 @@ export default function BusinessSettingsPage() {
                       className="text-xs font-medium text-gray-500 dark:text-neutral-400 hover:text-gray-700 dark:hover:text-neutral-200 flex items-center gap-1"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      {deletedDropdownOpen ? "Hide deleted branches" : "Show deleted branches"}
+                      {deletedDropdownOpen
+                        ? "Hide deleted branches"
+                        : "Show deleted branches"}
                       {deletedLoading ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : deletedBranches.length > 0 ? (
@@ -1607,12 +1956,23 @@ export default function BusinessSettingsPage() {
                                 try {
                                   await restoreBranch(b.id);
                                   const data = await getBranches();
-                                  setBranches(data?.branches ?? (Array.isArray(data) ? data : []));
+                                  setBranches(
+                                    data?.branches ??
+                                      (Array.isArray(data) ? data : []),
+                                  );
                                   const del = await getDeletedBranches();
-                                  setDeletedBranches(del?.branches ?? (Array.isArray(del) ? del : []));
-                                  toast.success("Branch restored", { id: toastId });
+                                  setDeletedBranches(
+                                    del?.branches ??
+                                      (Array.isArray(del) ? del : []),
+                                  );
+                                  toast.success("Branch restored", {
+                                    id: toastId,
+                                  });
                                 } catch (err) {
-                                  toast.error(err.message || "Failed to restore", { id: toastId });
+                                  toast.error(
+                                    err.message || "Failed to restore",
+                                    { id: toastId },
+                                  );
                                 } finally {
                                   setDeleteLoading(false);
                                 }
@@ -1632,7 +1992,7 @@ export default function BusinessSettingsPage() {
 
               {/* Branch modal */}
               {branchModalOpen && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+                <div className="fixed inset-0 z-40 -top-6 flex items-center justify-center bg-black/40">
                   <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-6 space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -1659,7 +2019,10 @@ export default function BusinessSettingsPage() {
                           type="text"
                           value={branchForm.name}
                           onChange={(e) =>
-                            setBranchForm((p) => ({ ...p, name: e.target.value }))
+                            setBranchForm((p) => ({
+                              ...p,
+                              name: e.target.value,
+                            }))
                           }
                           className={inp}
                           required
@@ -1671,7 +2034,10 @@ export default function BusinessSettingsPage() {
                           type="text"
                           value={branchForm.code}
                           onChange={(e) =>
-                            setBranchForm((p) => ({ ...p, code: e.target.value }))
+                            setBranchForm((p) => ({
+                              ...p,
+                              code: e.target.value,
+                            }))
                           }
                           className={inp}
                         />
@@ -1682,10 +2048,58 @@ export default function BusinessSettingsPage() {
                           rows={2}
                           value={branchForm.address}
                           onChange={(e) =>
-                            setBranchForm((p) => ({ ...p, address: e.target.value }))
+                            setBranchForm((p) => ({
+                              ...p,
+                              address: e.target.value,
+                            }))
                           }
                           className="w-full px-4 py-2 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 resize-none transition-all"
                         />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className={labelCls}>Phone</label>
+                        <input
+                          type="text"
+                          value={branchForm.contactPhone}
+                          onChange={(e) =>
+                            setBranchForm((p) => ({
+                              ...p,
+                              contactPhone: e.target.value,
+                            }))
+                          }
+                          placeholder="03XX-XXXXXXX"
+                          className={inp}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className={labelCls}>Opens at</label>
+                          <input
+                            type="time"
+                            value={branchForm.openTime}
+                            onChange={(e) =>
+                              setBranchForm((p) => ({
+                                ...p,
+                                openTime: e.target.value,
+                              }))
+                            }
+                            className={inp}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className={labelCls}>Closes at</label>
+                          <input
+                            type="time"
+                            value={branchForm.closeTime}
+                            onChange={(e) =>
+                              setBranchForm((p) => ({
+                                ...p,
+                                closeTime: e.target.value,
+                              }))
+                            }
+                            className={inp}
+                          />
+                        </div>
                       </div>
                       <div className="space-y-1.5">
                         <label className={labelCls}>Business Day Cutoff</label>
@@ -1706,7 +2120,8 @@ export default function BusinessSettingsPage() {
                           ))}
                         </select>
                         <p className="text-[11px] text-gray-500 dark:text-neutral-400">
-                          Orders after this time will count towards the next business day.
+                          Orders after this time will count towards the next
+                          business day.
                         </p>
                       </div>
                       <div className="flex justify-end gap-2 pt-2">
@@ -1725,7 +2140,9 @@ export default function BusinessSettingsPage() {
                           disabled={branchSaving}
                           className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-white text-xs font-semibold shadow-sm hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                          {branchSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          {branchSaving && (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          )}
                           {branchForm.id ? "Save changes" : "Create branch"}
                         </button>
                       </div>
@@ -1745,11 +2162,14 @@ export default function BusinessSettingsPage() {
                       </h3>
                     </div>
                     <p className="text-xs text-gray-600 dark:text-neutral-300">
-                      This will archive <span className="font-semibold">{deleteTarget.name}</span>. You
-                      can restore it later from the deleted branches list.
+                      This will archive{" "}
+                      <span className="font-semibold">{deleteTarget.name}</span>
+                      . You can restore it later from the deleted branches list.
                     </p>
                     <div className="space-y-1.5">
-                      <label className={labelCls}>Type the branch name to confirm</label>
+                      <label className={labelCls}>
+                        Type the branch name to confirm
+                      </label>
                       <input
                         type="text"
                         value={deleteConfirmName}
@@ -1782,21 +2202,31 @@ export default function BusinessSettingsPage() {
                           try {
                             await deleteBranch(deleteTarget.id);
                             const data = await getBranches();
-                            setBranches(data?.branches ?? (Array.isArray(data) ? data : []));
+                            setBranches(
+                              data?.branches ??
+                                (Array.isArray(data) ? data : []),
+                            );
                             const del = await getDeletedBranches();
-                            setDeletedBranches(del?.branches ?? (Array.isArray(del) ? del : []));
+                            setDeletedBranches(
+                              del?.branches ?? (Array.isArray(del) ? del : []),
+                            );
                             setDeleteTarget(null);
                             setDeleteConfirmName("");
                             toast.success("Branch deleted", { id: toastId });
                           } catch (err) {
-                            toast.error(err.message || "Failed to delete branch", { id: toastId });
+                            toast.error(
+                              err.message || "Failed to delete branch",
+                              { id: toastId },
+                            );
                           } finally {
                             setDeleteLoading(false);
                           }
                         }}
                         className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-red-500 text-white text-xs font-semibold shadow-sm hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        {deleteLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        {deleteLoading && (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        )}
                         Delete
                       </button>
                     </div>
@@ -1826,17 +2256,24 @@ export default function BusinessSettingsPage() {
                   ) : (
                     <div className="space-y-4 max-w-xl">
                       <div className="space-y-1.5">
-                        <label className={`${labelCls} flex items-center gap-1.5`}>
+                        <label
+                          className={`${labelCls} flex items-center gap-1.5`}
+                        >
                           <ImageIcon className="w-3.5 h-3.5" />
                           Bill Logo
                         </label>
                         <MediaToggle
                           tab={logoTab}
                           setTab={setLogoTab}
-                          linkValue={restaurantSettings?.restaurantLogoUrl || ""}
+                          linkValue={
+                            restaurantSettings?.restaurantLogoUrl || ""
+                          }
                           onLink={(e) => {
                             const v = e.target.value;
-                            setRestaurantSettings((p) => ({ ...(p || {}), restaurantLogoUrl: v }));
+                            setRestaurantSettings((p) => ({
+                              ...(p || {}),
+                              restaurantLogoUrl: v,
+                            }));
                             setLogoDirty(true);
                           }}
                           onUpload={handleLogoUploadChange}
@@ -1905,6 +2342,234 @@ export default function BusinessSettingsPage() {
             </div>
           )}
 
+          {activeSection === "discounts" && (
+            <SectionCard
+              id="discounts"
+              icon={Percent}
+              title="Discounts"
+              subtitle="Configure POS presets, manager PIN, and required reasons"
+            >
+              {discountSettingsLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm text-gray-500 dark:text-neutral-400">
+                    Loading discount settings...
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-4 space-y-3">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Discount Presets
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400">
+                      Configure the discount options cashiers can select in POS.
+                    </p>
+                    <div className="space-y-2">
+                      {discountPresets.map((preset, i) => {
+                        const requiresPin =
+                          preset?.requiresPin !== undefined
+                            ? Boolean(preset.requiresPin)
+                            : !Boolean(preset.cashierAllowed);
+                        return (
+                          <div
+                            key={preset.id || i}
+                            className="grid grid-cols-12 gap-2 items-center"
+                          >
+                            <input
+                              value={preset.label || ""}
+                              onChange={(e) =>
+                                updateDiscountPresetRow(i, {
+                                  label: e.target.value,
+                                })
+                              }
+                              placeholder="Label"
+                              className={`${inp} col-span-5`}
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={Number(preset.percent) || 0}
+                              onChange={(e) =>
+                                updateDiscountPresetRow(i, {
+                                  percent: Number(e.target.value) || 0,
+                                })
+                              }
+                              className={`${inp} col-span-2`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateDiscountPresetRow(i, {
+                                  requiresPin: !requiresPin,
+                                  cashierAllowed: requiresPin,
+                                })
+                              }
+                              className={`col-span-3 h-10 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-1.5 ${requiresPin ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300"}`}
+                            >
+                              {requiresPin && <Lock className="w-3 h-3" />}
+                              {requiresPin ? "Yes" : "No"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeDiscountPresetRow(i)}
+                              className="col-span-2 h-10 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addDiscountPresetRow}
+                      className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add preset
+                    </button>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-4 space-y-3">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Manager PIN
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400">
+                      Required for discounts marked with 🔒
+                    </p>
+                    <p className="text-xs text-gray-600 dark:text-neutral-300">
+                      Status:{" "}
+                      {discountPinIsSet ? (
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-gray-500 dark:text-neutral-400">
+                          Not set
+                        </span>
+                      )}
+                    </p>
+                    {canManagePosDiscountPin ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          value={discountPinNew}
+                          onChange={(e) =>
+                            setDiscountPinNew(
+                              e.target.value.replace(/[^\d]/g, "").slice(0, 6),
+                            )
+                          }
+                          className={inp}
+                          placeholder="New PIN"
+                        />
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          value={discountPinConfirm}
+                          onChange={(e) =>
+                            setDiscountPinConfirm(
+                              e.target.value.replace(/[^\d]/g, "").slice(0, 6),
+                            )
+                          }
+                          className={inp}
+                          placeholder="Confirm PIN"
+                        />
+                        <div className="md:col-span-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={posDiscountSaving}
+                            onClick={() => void handlePosDiscountPinSave()}
+                            className="inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold disabled:opacity-60"
+                          >
+                            {posDiscountSaving ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : null}
+                            Save PIN
+                          </button>
+                          <button
+                            type="button"
+                            disabled={posDiscountSaving}
+                            onClick={() => void handleClearDiscountPin()}
+                            className="inline-flex items-center h-9 px-4 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 dark:border-red-900/60 dark:text-red-300"
+                          >
+                            Clear PIN
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 dark:text-neutral-400">
+                        Ask a manager to update this PIN.
+                      </p>
+                    )}
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                      Cashiers can freely apply discounts without a PIN. For
+                      staff meals, complimentary, or any preset marked as
+                      PIN-required, the cashier must enter this PIN at the
+                      register.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-4 space-y-3">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Discount Reasons
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400">
+                      Reasons cashiers must select when applying any discount.
+                    </p>
+                    <div className="space-y-2">
+                      {discountReasons.map((reason, i) => (
+                        <div
+                          key={`reason-${i}`}
+                          className="grid grid-cols-12 gap-2 items-center"
+                        >
+                          <input
+                            value={reason || ""}
+                            onChange={(e) =>
+                              updateDiscountReasonRow(i, e.target.value)
+                            }
+                            className={`${inp} col-span-10`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeDiscountReasonRow(i)}
+                            className="col-span-2 h-10 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 dark:border-red-900/60 dark:text-red-300"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addDiscountReasonRow}
+                      className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add reason
+                    </button>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={discountSettingsSaving}
+                      onClick={() => void handleDiscountSettingsSave()}
+                      className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold disabled:opacity-60"
+                    >
+                      {discountSettingsSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : null}
+                      Save Discount Settings
+                    </button>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          )}
+
           {/* ════ PAYMENT ACCOUNTS ════ */}
           {activeSection === "payment-accounts" && (
             <SectionCard
@@ -1940,7 +2605,8 @@ export default function BusinessSettingsPage() {
                     No payment accounts yet.
                   </p>
                   <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
-                    Add bank accounts, mobile wallets, or &quot;Cash drawer&quot; accounts for POS.
+                    Add bank accounts, mobile wallets, or &quot;Cash
+                    drawer&quot; accounts for POS.
                   </p>
                 </div>
               ) : (
@@ -1948,31 +2614,42 @@ export default function BusinessSettingsPage() {
                   {paymentAccounts.map((acc) => (
                     <div
                       key={acc.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-neutral-800 px-4 py-3"
+                      className="group flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-neutral-800 px-4 py-3 hover:border-primary/35 hover:bg-gray-50/60 dark:hover:bg-neutral-900/50 transition-all"
                     >
                       <div className="min-w-0 space-y-1">
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
                             {acc.name}
                           </p>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${paymentTypeBadge(acc.accountType)}`}>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${paymentTypeBadge(acc.accountType)}`}
+                          >
                             {paymentTypeLabel(acc.accountType)}
                           </span>
                         </div>
                         {acc.accountNumber ? (
-                          <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{acc.accountNumber}</p>
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">
+                            {acc.accountNumber}
+                          </p>
                         ) : null}
-                        <p className="text-xs text-gray-500 dark:text-neutral-400 truncate inline-flex items-center gap-1">
-                          <LinkIcon className="w-3 h-3" />
-                          {acc.accountingAccountName && acc.accountingAccountCode
-                            ? `→ ${acc.accountingAccountName} (${acc.accountingAccountCode})`
-                            : "Not linked"}
-                        </p>
+                        {acc.accountingAccountName && acc.accountingAccountCode ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300">
+                            <LinkIcon className="w-3 h-3" />
+                            COA {acc.accountingAccountCode} · {acc.accountingAccountName}
+                          </span>
+                        ) : (
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 inline-flex items-center gap-1">
+                            <LinkIcon className="w-3 h-3" />
+                            Not linked
+                          </p>
+                        )}
                         {acc.description && (
-                          <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{acc.description}</p>
+                          <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">
+                            {acc.description}
+                          </p>
                         )}
                       </div>
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
                           onClick={() => openEditAccount(acc)}
@@ -1995,7 +2672,7 @@ export default function BusinessSettingsPage() {
 
               {/* Account modal */}
               {accountModalOpen && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+                <div className="fixed inset-0 z-40 -top-6 flex items-center justify-center bg-black/40">
                   <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-6 space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -2014,7 +2691,9 @@ export default function BusinessSettingsPage() {
                       </button>
                     </div>
                     {accountModalError && (
-                      <p className="text-xs text-red-500">{accountModalError}</p>
+                      <p className="text-xs text-red-500">
+                        {accountModalError}
+                      </p>
                     )}
                     <form onSubmit={handleAccountSubmit} className="space-y-3">
                       <div className="space-y-1.5">
@@ -2023,7 +2702,10 @@ export default function BusinessSettingsPage() {
                           type="text"
                           value={accountForm.name}
                           onChange={(e) =>
-                            setAccountForm((p) => ({ ...p, name: e.target.value }))
+                            setAccountForm((p) => ({
+                              ...p,
+                              name: e.target.value,
+                            }))
                           }
                           className={inp}
                           required
@@ -2035,12 +2717,19 @@ export default function BusinessSettingsPage() {
                           <label className={labelCls}>Account Type</label>
                           <select
                             value={accountForm.accountType}
-                            onChange={(e) => setAccountForm((p) => ({ ...p, accountType: e.target.value }))}
+                            onChange={(e) =>
+                              setAccountForm((p) => ({
+                                ...p,
+                                accountType: e.target.value,
+                              }))
+                            }
                             className={inp}
                             required
                           >
                             {PAYMENT_ACCOUNT_TYPE_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
                             ))}
                           </select>
                         </div>
@@ -2049,7 +2738,12 @@ export default function BusinessSettingsPage() {
                           <input
                             type="text"
                             value={accountForm.accountNumber}
-                            onChange={(e) => setAccountForm((p) => ({ ...p, accountNumber: e.target.value }))}
+                            onChange={(e) =>
+                              setAccountForm((p) => ({
+                                ...p,
+                                accountNumber: e.target.value,
+                              }))
+                            }
                             placeholder="Phone no / account no"
                             className={inp}
                           />
@@ -2062,14 +2756,21 @@ export default function BusinessSettingsPage() {
                           <input
                             type="text"
                             value={accountForm.bankName}
-                            onChange={(e) => setAccountForm((p) => ({ ...p, bankName: e.target.value }))}
+                            onChange={(e) =>
+                              setAccountForm((p) => ({
+                                ...p,
+                                bankName: e.target.value,
+                              }))
+                            }
                             className={inp}
                           />
                         </div>
                       )}
 
                       <div className="space-y-1.5">
-                        <label className={`${labelCls} flex items-center gap-1.5`}>
+                        <label
+                          className={`${labelCls} flex items-center gap-1.5`}
+                        >
                           <BadgeDollarSign className="w-3.5 h-3.5 text-primary" />
                           Accounting Account (for auto-posting)
                         </label>
@@ -2095,7 +2796,8 @@ export default function BusinessSettingsPage() {
                           />
                           {accountForm.accountingAccountObj && (
                             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
-                              {accountForm.accountingAccountObj.code} — {accountForm.accountingAccountObj.name}
+                              {accountForm.accountingAccountObj.code} —{" "}
+                              {accountForm.accountingAccountObj.name}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -2112,7 +2814,8 @@ export default function BusinessSettingsPage() {
                             </div>
                           )}
                           <p className="text-[11px] text-gray-500 dark:text-neutral-400">
-                            Payments received via this method will be posted to this accounting account automatically
+                            Payments received via this method will be posted to
+                            this accounting account automatically
                           </p>
                           {!accountingAssetsAvailable && (
                             <p className="text-[11px] text-amber-600 dark:text-amber-400">
@@ -2123,12 +2826,17 @@ export default function BusinessSettingsPage() {
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className={labelCls}>Description (optional)</label>
+                        <label className={labelCls}>
+                          Description (optional)
+                        </label>
                         <textarea
                           rows={2}
                           value={accountForm.description}
                           onChange={(e) =>
-                            setAccountForm((p) => ({ ...p, description: e.target.value }))
+                            setAccountForm((p) => ({
+                              ...p,
+                              description: e.target.value,
+                            }))
                           }
                           className="w-full px-4 py-2 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 resize-none transition-all"
                         />
@@ -2150,7 +2858,9 @@ export default function BusinessSettingsPage() {
                           disabled={accountSaving}
                           className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-white text-xs font-semibold shadow-sm hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                          {accountSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          {accountSaving && (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          )}
                           {accountForm.id ? "Save changes" : "Add account"}
                         </button>
                       </div>
@@ -2171,8 +2881,10 @@ export default function BusinessSettingsPage() {
                     </div>
                     <p className="text-xs text-gray-600 dark:text-neutral-300">
                       This will remove{" "}
-                      <span className="font-semibold">{accountDeleteTarget.name}</span> from future
-                      orders. Existing reports will keep using it.
+                      <span className="font-semibold">
+                        {accountDeleteTarget.name}
+                      </span>{" "}
+                      from future orders. Existing reports will keep using it.
                     </p>
                     <div className="flex justify-end gap-2 pt-1">
                       <button

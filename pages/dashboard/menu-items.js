@@ -17,7 +17,7 @@ import {
   updateBranchMenuItem,
   getCurrencySymbol,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -548,59 +548,45 @@ export default function MenuItemsPage() {
     setDeletingId(null);
   }
 
-  // Unit conversion helpers
-  // New base units: gram, ml, piece (stored directly)
-  // Legacy base units: kg, liter (with sub-unit toggle to g/ml)
-  const SUB_UNITS = { kg: "g", liter: "ml" };
-  const BASE_UNITS = { g: "kg", ml: "liter" };
+  const RECIPE_UNIT_OPTIONS = [
+    { value: "gram", label: "gram" },
+    { value: "kilogram", label: "kilogram" },
+    { value: "milliliter", label: "milliliter" },
+    { value: "liter", label: "liter" },
+    { value: "piece", label: "piece" },
+    { value: "dozen", label: "dozen" },
+  ];
 
-  // Map to preferred display: gram → gram, ml → ml, kg → g, liter → ml
-  const PREFERRED_DISPLAY = { kg: "g", liter: "ml", gram: "gram", ml: "ml", piece: "piece" };
-
-  function toBaseUnit(value, displayUnit, baseUnit) {
-    // Legacy: converting g/ml display back to kg/liter for storage
-    if (baseUnit === "kg" && displayUnit === "g") return value / 1000;
-    if (baseUnit === "liter" && displayUnit === "ml") return value / 1000;
-    return value;
+  function normalizeUnit(unit) {
+    const u = String(unit || "").trim().toLowerCase();
+    if (u === "g" || u === "gram") return "gram";
+    if (u === "kg" || u === "kilogram") return "kilogram";
+    if (u === "ml" || u === "milliliter") return "milliliter";
+    if (u === "l" || u === "liter") return "liter";
+    if (u === "pc" || u === "pcs" || u === "piece") return "piece";
+    if (u === "dozen") return "dozen";
+    return u;
   }
 
-  function fromBaseUnit(value, displayUnit, baseUnit) {
-    // Legacy: converting kg/liter storage to g/ml display
-    if (baseUnit === "kg" && displayUnit === "g") return value * 1000;
-    if (baseUnit === "liter" && displayUnit === "ml") return value * 1000;
-    return value;
+  function suggestRecipeUnit(invUnitRaw) {
+    const invUnit = normalizeUnit(invUnitRaw);
+    if (invUnit === "gram" || invUnit === "kilogram") return "gram";
+    if (invUnit === "milliliter" || invUnit === "liter") return "milliliter";
+    return "piece";
   }
-
-  // Recipe dialog
-  const [recipeUnits, setRecipeUnits] = useState({});
 
   function openRecipeDialog(item) {
     const existing = (item.inventoryConsumptions || []).map(c => ({
       inventoryItemId: c.inventoryItem,
-      quantity: String(c.quantity ?? "")
+      quantity: String(c.quantity ?? ""),
+      unit: normalizeUnit(c.unit || "")
     }));
-
-    // Auto-detect display unit
-    // For new units (gram, ml): display as-is
-    // For legacy units (kg, liter): always default to g/ml display
-    const units = {};
-    for (const c of existing) {
-      const inv = inventoryItems.find(i => i.id === c.inventoryItemId);
-      if (inv && SUB_UNITS[inv.unit]) {
-        // Legacy kg/liter — always show as g/ml
-        units[c.inventoryItemId] = SUB_UNITS[inv.unit];
-      }
-    }
-    setRecipeUnits(units);
-
-    // Convert existing values to display units
     const displayConsumptions = existing.map(c => {
       const inv = inventoryItems.find(i => i.id === c.inventoryItemId);
-      const displayUnit = units[c.inventoryItemId];
-      if (displayUnit && c.quantity && inv) {
-        return { ...c, quantity: String(fromBaseUnit(Number(c.quantity), displayUnit, inv.unit)) };
-      }
-      return c;
+      return {
+        ...c,
+        unit: c.unit || suggestRecipeUnit(inv?.unit),
+      };
     });
 
     setModalError("");
@@ -609,7 +595,6 @@ export default function MenuItemsPage() {
 
   function closeRecipeDialog() {
     setRecipeDialog(prev => ({ ...prev, open: false }));
-    setRecipeUnits({});
     setRecipeSearch("");
     setRecipeAddOpen(false);
     setRecipeAddSearch("");
@@ -620,67 +605,30 @@ export default function MenuItemsPage() {
       ...prev,
       consumptions: prev.consumptions.filter(c => c.inventoryItemId !== inventoryItemId)
     }));
-    setRecipeUnits(prev => {
-      const next = { ...prev };
-      delete next[inventoryItemId];
-      return next;
-    });
   }
 
   function addIngredient(inv) {
     const alreadyAdded = recipeDialog.consumptions.some(c => c.inventoryItemId === inv.id);
     if (!alreadyAdded) {
-      const displayUnit = SUB_UNITS[inv.unit] ? SUB_UNITS[inv.unit] : null;
-      if (displayUnit) setRecipeUnits(prev => ({ ...prev, [inv.id]: displayUnit }));
       setRecipeDialog(prev => ({
         ...prev,
-        consumptions: [...prev.consumptions, { inventoryItemId: inv.id, quantity: "" }]
+        consumptions: [...prev.consumptions, { inventoryItemId: inv.id, quantity: "", unit: suggestRecipeUnit(inv.unit) }]
       }));
     }
     setRecipeAddOpen(false);
     setRecipeAddSearch("");
   }
 
-  function toggleRecipeUnit(inventoryItemId, baseUnit) {
-    setRecipeUnits(prev => {
-      const current = prev[inventoryItemId] || baseUnit;
-      const isSubUnit = current === SUB_UNITS[baseUnit];
-      const newUnit = isSubUnit ? baseUnit : SUB_UNITS[baseUnit];
-
-      // Convert the current quantity value
-      setRecipeDialog(rd => {
-        const c = rd.consumptions.find(x => x.inventoryItemId === inventoryItemId);
-        if (c && c.quantity) {
-          const numVal = Number(c.quantity);
-          if (!isNaN(numVal) && numVal > 0) {
-            const converted = isSubUnit ? numVal / 1000 : numVal * 1000;
-            return {
-              ...rd,
-              consumptions: rd.consumptions.map(x =>
-                x.inventoryItemId === inventoryItemId
-                  ? { ...x, quantity: String(parseFloat(converted.toFixed(4))) }
-                  : x
-              )
-            };
-          }
-        }
-        return rd;
-      });
-
-      return { ...prev, [inventoryItemId]: newUnit };
-    });
-  }
-
-  function updateConsumption(inventoryItemId, quantity) {
+  function updateConsumption(inventoryItemId, patch) {
     setRecipeDialog(prev => {
       const existing = prev.consumptions.find(c => c.inventoryItemId === inventoryItemId);
       if (!existing) {
-        return { ...prev, consumptions: [...prev.consumptions, { inventoryItemId, quantity }] };
+        return { ...prev, consumptions: [...prev.consumptions, { inventoryItemId, quantity: "", unit: "gram", ...patch }] };
       }
       return {
         ...prev,
         consumptions: prev.consumptions.map(c =>
-          c.inventoryItemId === inventoryItemId ? { ...c, quantity } : c
+          c.inventoryItemId === inventoryItemId ? { ...c, ...patch } : c
         )
       };
     });
@@ -692,15 +640,12 @@ export default function MenuItemsPage() {
     
     const result = await handleAsyncAction(
       async () => {
-        // Convert display values back to base units before saving
         const payloadConsumptions = recipeDialog.consumptions
           .map(c => {
-            const inv = inventoryItems.find(i => i.id === c.inventoryItemId);
-            const displayUnit = recipeUnits[c.inventoryItemId];
             const rawQty = Number(c.quantity || "0");
-            const baseQty = displayUnit && inv ? toBaseUnit(rawQty, displayUnit, inv.unit) : rawQty;
             const id = c.inventoryItemId != null ? String(c.inventoryItemId).trim() : "";
-            return { inventoryItemId: id || undefined, quantity: parseFloat(baseQty.toFixed(6)) };
+            const unit = normalizeUnit(c.unit) || "gram";
+            return { inventoryItemId: id || undefined, quantity: parseFloat(rawQty.toFixed(6)), unit };
           })
           .filter(c => c.inventoryItemId && !Number.isNaN(c.quantity) && c.quantity > 0);
         const updated = await updateItem(recipeDialog.itemId, { inventoryConsumptions: payloadConsumptions });
@@ -1562,6 +1507,7 @@ export default function MenuItemsPage() {
 
       {/* Table View */}
       {viewMode === "table" && (
+        <>
         <DataTable
           variant="card"
           columns={[
@@ -1649,33 +1595,21 @@ export default function MenuItemsPage() {
               }
             },
             {
-              key: "tags",
-              header: "Tags",
+              key: "recipe",
+              header: "Recipe",
               align: "center",
-              render: (_, item) => (
-                    <div className="flex flex-wrap items-center justify-center gap-1.5">
-                  {item.inventorySufficient === false && (
-                    <span className="px-2.5 py-1 rounded-lg bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-[10px] font-bold" title={item.insufficientIngredients?.join(", ")}>
-                      ⚠️ Low Stock
-                    </span>
-                  )}
-                  {item.isFeatured && (
-                    <span className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
-                      ⭐ Featured
-                    </span>
-                  )}
-                  {item.isBestSeller && (
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
-                      🔥 Best Seller
-                    </span>
-                  )}
-                  {Array.isArray(item.inventoryConsumptions) && item.inventoryConsumptions.length > 0 && (
-                    <span className="px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-[10px] font-bold">
-                      📦 {item.inventoryConsumptions.length} ingredient{item.inventoryConsumptions.length > 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-              )
+              render: (_, item) => {
+                const hasRecipe = Array.isArray(item.inventoryConsumptions) && item.inventoryConsumptions.length > 0;
+                if (!hasRecipe) return null;
+                return (
+                  <span
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    title="Recipe configured"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </span>
+                );
+              }
             },
             {
               key: "actions",
@@ -1725,6 +1659,10 @@ export default function MenuItemsPage() {
               : "No items match your search"
           }
         />
+        <p className="mt-3 text-xs text-gray-500 dark:text-neutral-400">
+          Showing {filtered.length} items
+        </p>
+        </>
           )}
 
           {/* Grid View Empty State */}
@@ -1976,8 +1914,6 @@ export default function MenuItemsPage() {
 
       {/* Recipe / Inventory Dialog */}
       {recipeDialog.open && (() => {
-        const UNIT_DISPLAY = { kg: "gram", liter: "ml", gram: "gram", ml: "ml", piece: "piece" };
-
         // Ingredients already added to this recipe
         const addedIngredients = recipeDialog.consumptions
           .map(c => {
@@ -2058,8 +1994,7 @@ export default function MenuItemsPage() {
                   </div>
                 ) : (
                   addedIngredients.map(({ inv, consumption }) => {
-                    const displayUnit = recipeUnits[inv.id] || UNIT_DISPLAY[inv.unit] || inv.unit;
-                    const canToggle = !!SUB_UNITS[inv.unit];
+                    const displayUnit = consumption.unit || suggestRecipeUnit(inv.unit);
                     const menuVol = normalizeVolumeHint(recipeDialog.itemName);
                     const invVol = normalizeVolumeHint(inv.name);
                     const rowVolMismatch = menuVol && invVol && menuVol !== invVol;
@@ -2084,21 +2019,21 @@ export default function MenuItemsPage() {
                             min="0"
                             step="any"
                             value={consumption.quantity ?? ""}
-                            onChange={e => updateConsumption(inv.id, e.target.value)}
+                            onChange={e => updateConsumption(inv.id, { quantity: e.target.value })}
                             placeholder="qty"
                             className="w-20 h-9 px-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm text-right font-semibold text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                           />
-                          {canToggle ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleRecipeUnit(inv.id, inv.unit)}
-                              className="text-xs font-semibold text-primary hover:underline w-8 text-left"
-                            >
-                              {displayUnit}
-                            </button>
-                          ) : (
-                            <span className="text-xs font-semibold text-gray-400 dark:text-neutral-500 w-8">{displayUnit}</span>
-                          )}
+                          <select
+                            value={displayUnit}
+                            onChange={(e) => updateConsumption(inv.id, { unit: e.target.value })}
+                            className="h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                          >
+                            {RECIPE_UNIT_OPTIONS.map((u) => (
+                              <option key={u.value} value={u.value}>
+                                {u.label}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         {/* Remove */}
                         <button
@@ -2145,7 +2080,7 @@ export default function MenuItemsPage() {
                             </p>
                           ) : (
                             availableToAdd.map(inv => {
-                              const displayUnit = UNIT_DISPLAY[inv.unit] || inv.unit;
+                              const displayUnit = suggestRecipeUnit(inv.unit);
                               return (
                                 <button
                                   key={inv.id}

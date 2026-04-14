@@ -120,7 +120,8 @@ function getSmartDates(preset, sessions) {
       if (openSess?.startAt) {
         const openDateStr = new Date(openSess.startAt).toDateString();
         const todaySessions = sessions.filter(
-          (s) => s.startAt && new Date(s.startAt).toDateString() === openDateStr,
+          (s) =>
+            s.startAt && new Date(s.startAt).toDateString() === openDateStr,
         );
         const earliestStartMs = todaySessions.reduce(
           (min, s) => Math.min(min, new Date(s.startAt).getTime()),
@@ -174,10 +175,24 @@ function fmtRs(v) {
   return `${getCurrencySymbol()} ${Math.round(Number(v) || 0).toLocaleString()}`;
 }
 
+/** Human-readable order ref + Mongo id for deep links (mapOrder uses orderNumber or _id as `id`). */
+function getOrderDisplayFields(o) {
+  const mongoId =
+    o._id ||
+    (typeof o.id === "string" && /^[a-f0-9]{24}$/i.test(o.id) ? o.id : null);
+  const label =
+    o.orderNumber ||
+    (mongoId
+      ? `ORD-${String(mongoId).slice(-6).toUpperCase()}`
+      : o.id
+        ? String(o.id)
+        : "—");
+  return { mongoId, label };
+}
+
 function buildPeriodLabel(preset, customFrom, customTo) {
   if (preset === "custom") {
-    if (customFrom && customTo)
-      return `${customFrom} — ${customTo}`;
+    if (customFrom && customTo) return `${customFrom} — ${customTo}`;
     return "Custom range";
   }
   return PRESETS.find((p) => p.id === preset)?.label || "";
@@ -230,11 +245,7 @@ export default function RiderPayoutsPage() {
           setSessions([]);
         }
         let q;
-        if (
-          presetId === "custom" &&
-          customRange?.from &&
-          customRange?.to
-        ) {
+        if (presetId === "custom" && customRange?.from && customRange?.to) {
           q = {
             from: new Date(customRange.from + "T00:00:00").toISOString(),
             to: new Date(customRange.to + "T23:59:59.999").toISOString(),
@@ -273,7 +284,8 @@ export default function RiderPayoutsPage() {
       if (open?.startAt) {
         const openDateStr = new Date(open.startAt).toDateString();
         const todaySessions = sessions.filter(
-          (s) => s.startAt && new Date(s.startAt).toDateString() === openDateStr,
+          (s) =>
+            s.startAt && new Date(s.startAt).toDateString() === openDateStr,
         );
         const earliestStartMs = todaySessions.reduce(
           (min, s) => Math.min(min, new Date(s.startAt).getTime()),
@@ -308,9 +320,11 @@ export default function RiderPayoutsPage() {
       if (String(o.type || "").toLowerCase() !== "delivery") continue;
       if (!o.assignedRiderName) continue;
       const dc = Math.round(Number(o.deliveryCharges) || 0);
+      const { mongoId, label: orderLabel } = getOrderDisplayFields(o);
       rows.push({
-        id: o.id || o._id,
-        orderNumber: o.orderNumber || String(o.orderNumber || ""),
+        id: mongoId || o.id || o._id,
+        orderLabel,
+        orderMongoId: mongoId,
         riderName: o.assignedRiderName,
         deliveryCharges: dc,
         grandTotal: Math.round(Number(o.grandTotal ?? o.total) || 0),
@@ -376,16 +390,12 @@ export default function RiderPayoutsPage() {
 
   return (
     <AdminLayout title="Rider payouts">
-      <div className="max-w-6xl mx-auto space-y-6 pb-10">
+      <div className="space-y-6 pb-10">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Truck className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
-              Rider payouts
-            </h1>
             <p className="text-sm text-gray-500 dark:text-neutral-400 mt-1 max-w-2xl">
-              Operational totals from delivery orders. To recognise payouts in your
-              books, post a{" "}
+              Operational totals from delivery orders. To recognise payouts in
+              your books, post a{" "}
               <span className="font-medium text-gray-700 dark:text-neutral-300">
                 Cash Payment
               </span>{" "}
@@ -404,6 +414,22 @@ export default function RiderPayoutsPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {["today", "this_week", "this_month"].map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => applyPreset(id)}
+                  className={`h-8 px-2.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    preset === id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  }`}
+                >
+                  {PRESETS.find((p) => p.id === id)?.label || id}
+                </button>
+              ))}
+            </div>
             <div className="relative">
               <select
                 value={preset}
@@ -456,9 +482,11 @@ export default function RiderPayoutsPage() {
                 </p>
                 <p className="text-xs text-gray-600 dark:text-neutral-400 mt-0.5 max-w-xl">
                   Open Cash Payment with line 1 prefilled to{" "}
-                  <span className="font-mono">{DEFAULT_RIDER_EXPENSE_ACCOUNT_CODE}</span>{" "}
-                  and this period&apos;s total. Adjust the amount if your payout rule
-                  differs from fees collected.
+                  <span className="font-mono">
+                    {DEFAULT_RIDER_EXPENSE_ACCOUNT_CODE}
+                  </span>{" "}
+                  and this period&apos;s total. Adjust the amount if your payout
+                  rule differs from fees collected.
                 </p>
               </div>
             </div>
@@ -582,9 +610,9 @@ export default function RiderPayoutsPage() {
                               riderName: r.name,
                               periodLabel,
                             })}
-                            className="text-xs font-semibold text-primary hover:underline whitespace-nowrap"
+                            className="inline-flex items-center h-8 px-3 rounded-lg bg-primary/10 text-primary border border-primary/25 text-xs font-semibold hover:bg-primary/15 whitespace-nowrap"
                           >
-                            Cash payment →
+                            Mark as paid
                           </Link>
                         )}
                       </div>
@@ -602,7 +630,8 @@ export default function RiderPayoutsPage() {
                       Per-order detail
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-neutral-400">
-                      Export for your records; apply your own payout rules per rider.
+                      Export for your records; apply your own payout rules per
+                      rider.
                     </p>
                   </div>
                   <button
@@ -621,7 +650,7 @@ export default function RiderPayoutsPage() {
                             "Created (ISO)",
                           ],
                           ...riderDeliveryFeeRows.map((r) => [
-                            r.orderNumber || "",
+                            r.orderLabel || "",
                             r.riderName,
                             r.deliveryCharges,
                             r.grandTotal,
@@ -668,7 +697,16 @@ export default function RiderPayoutsPage() {
                           }
                         >
                           <td className="py-2.5 px-4 font-mono text-xs text-gray-900 dark:text-white">
-                            {r.orderNumber || "—"}
+                            {r.orderMongoId ? (
+                              <Link
+                                href={`/dashboard/orders?editOrder=${encodeURIComponent(r.orderMongoId)}`}
+                                className="text-primary font-semibold hover:underline"
+                              >
+                                {r.orderLabel}
+                              </Link>
+                            ) : (
+                              r.orderLabel || "—"
+                            )}
                           </td>
                           <td className="py-2.5 px-4 font-medium text-gray-900 dark:text-white">
                             {r.riderName}

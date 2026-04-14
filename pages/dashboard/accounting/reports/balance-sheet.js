@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { getStoredAuth, getCurrencySymbol } from "../../../../lib/apiClient";
 import toast from "react-hot-toast";
-import { fmtMoneyPK } from "../../../../lib/accountingFormat";
+import { fmtMoneyPK, fmtDateRangeHuman } from "../../../../lib/accountingFormat";
 import ReportsNav from "../../../../components/accounting/ReportsNav";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "";
@@ -386,7 +386,10 @@ export default function BalanceSheetPage() {
                   <h2 className="text-sm font-bold uppercase tracking-widest text-gray-900 dark:text-white">Balance Sheet</h2>
                   <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
                     {MONTHS[month - 1]} {year}
-                    <span className="text-gray-400 dark:text-neutral-600"> · {report.period.from} → {report.period.to}</span>
+                    <span className="text-gray-400 dark:text-neutral-600">
+                      {" "}
+                      · {fmtDateRangeHuman(report.period.from, report.period.to)}
+                    </span>
                   </p>
                 </div>
                 <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-full px-2.5 py-0.5 flex-shrink-0 ${report.balanceCheck.isBalanced ? "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-300 dark:ring-emerald-500/20" : "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400 ring-1 ring-red-300 dark:ring-red-500/20"}`}>

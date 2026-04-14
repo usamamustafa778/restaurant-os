@@ -6,7 +6,12 @@ import {
 } from "lucide-react";
 import { getStoredAuth, getCurrencySymbol } from "../../../../lib/apiClient";
 import toast from "react-hot-toast";
-import { localToday, localMonthStart, fmtMoneyPK } from "../../../../lib/accountingFormat";
+import {
+  localToday,
+  localMonthStart,
+  fmtMoneyPK,
+  fmtDateRangeHuman,
+} from "../../../../lib/accountingFormat";
 import ReportsNav from "../../../../components/accounting/ReportsNav";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "";
@@ -337,7 +342,7 @@ export default function CashStatementPage() {
         {/* Print header */}
         <div className="hidden print:block mb-4 text-center">
           <h2 className="text-lg font-bold">Cash / Bank Statement — {accountObj?.name}</h2>
-          <p className="text-sm text-gray-600">{dateFrom} to {dateTo}</p>
+          <p className="text-sm text-gray-600">{fmtDateRangeHuman(dateFrom, dateTo, "to")}</p>
         </div>
 
         {loading && (
@@ -366,7 +371,10 @@ export default function CashStatementPage() {
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Statement</h2>
               <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
                 {accountObj ? `${accountObj.code} – ${accountObj.name}` : "Account"}
-                <span className="text-gray-400 dark:text-neutral-600"> · {dateFrom} → {dateTo}</span>
+                <span className="text-gray-400 dark:text-neutral-600">
+                  {" "}
+                  · {fmtDateRangeHuman(dateFrom, dateTo)}
+                </span>
               </p>
             </div>
 

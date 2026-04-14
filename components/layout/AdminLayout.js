@@ -51,6 +51,10 @@ import {
   Scale,
   Network,
   Truck,
+  Boxes,
+  ShoppingCart,
+  PackageCheck,
+  Package,
 } from "lucide-react";
 import {
   getToken,
@@ -73,6 +77,8 @@ const tenantNav = [
     icon: LayoutDashboard,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
+
+  { type: "section", label: "ORDERS & SERVICE" },
   {
     path: "/orders",
     label: "POS",
@@ -92,13 +98,19 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
   },
   {
-    path: "/rider",
-    label: "Rider Portal",
-    icon: Bike,
-    roles: ["delivery_rider"],
+    path: "/tables",
+    label: "Tables",
+    icon: UtensilsCrossed,
+    roles: ["restaurant_admin", "admin", "manager"],
+  },
+  {
+    path: "/reservations",
+    label: "Reservations",
+    icon: History,
+    roles: ["restaurant_admin", "admin", "manager"],
   },
 
-  { type: "section", label: "MENU MANAGEMENT" },
+  { type: "section", label: "MENU" },
   {
     path: "/categories",
     label: "Categories",
@@ -118,18 +130,12 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
 
-  { type: "section", label: "OPERATIONS" },
+  { type: "section", label: "PEOPLE" },
   {
     path: "/customers",
     label: "Customers",
     icon: UserCheck,
     roles: ["restaurant_admin", "admin", "manager"],
-  },
-  {
-    path: "/inventory",
-    label: "Inventory",
-    icon: Factory,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
   {
     path: "/users",
@@ -138,17 +144,39 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
-    path: "/tables",
-    label: "Tables",
-    icon: UtensilsCrossed,
+    path: "/rider-payouts",
+    label: "Rider Payouts",
+    icon: Truck,
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
+  },
+
+  { type: "section", label: "INVENTORY" },
+  {
+    path: "/inventory",
+    label: "Stock Items",
+    icon: Boxes,
+    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    exact: true,
+  },
+  {
+    path: "/inventory/purchase-orders",
+    label: "Purchase Orders",
+    icon: ShoppingCart,
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
-    path: "/reservations",
-    label: "Reservations",
-    icon: History,
+    path: "/inventory/receive-stock",
+    label: "Receive Stock",
+    icon: PackageCheck,
     roles: ["restaurant_admin", "admin", "manager"],
   },
+  {
+    path: "/inventory/purchase-history",
+    label: "Purchase History",
+    icon: ClipboardList,
+    roles: ["restaurant_admin", "admin", "manager"],
+  },
+
   { type: "section", label: "ACCOUNTS" },
   {
     path: "/accounting",
@@ -164,42 +192,16 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
-    path: "/rider-payouts",
-    label: "Rider payouts",
-    icon: Truck,
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
-  },
-  {
     label: "Vouchers",
     icon: Receipt,
     path: "/accounting/vouchers",
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
     children: [
-      {
-        path: "/accounting/vouchers/cash-payment",
-        label: "Cash Payment",
-        icon: ArrowUpCircle,
-      },
-      {
-        path: "/accounting/vouchers/cash-receipt",
-        label: "Cash Receipt",
-        icon: ArrowDownCircle,
-      },
-      {
-        path: "/accounting/vouchers/bank-payment",
-        label: "Bank Payment",
-        icon: Building2,
-      },
-      {
-        path: "/accounting/vouchers/bank-receipt",
-        label: "Bank Receipt",
-        icon: Landmark,
-      },
-      {
-        path: "/accounting/vouchers/journal",
-        label: "Journal Voucher",
-        icon: BookOpen,
-      },
+      { path: "/accounting/vouchers/cash-payment", label: "Cash Payment", icon: ArrowUpCircle },
+      { path: "/accounting/vouchers/cash-receipt", label: "Cash Receipt", icon: ArrowDownCircle },
+      { path: "/accounting/vouchers/bank-payment", label: "Bank Payment", icon: Building2 },
+      { path: "/accounting/vouchers/bank-receipt", label: "Bank Receipt", icon: Landmark },
+      { path: "/accounting/vouchers/journal", label: "Journal Voucher", icon: BookOpen },
       { path: "/accounting/vouchers", label: "All Vouchers", icon: List },
     ],
   },
@@ -209,32 +211,12 @@ const tenantNav = [
     path: "/accounting/reports/day-book",
     roles: ["restaurant_admin", "admin", "manager"],
     children: [
-      {
-        path: "/accounting/reports/day-book",
-        label: "Day Book",
-        icon: CalendarDays,
-      },
+      { path: "/accounting/reports/day-book", label: "Day Book", icon: CalendarDays },
       { path: "/accounting/reports/ledger", label: "Ledger", icon: BookMarked },
-      {
-        path: "/accounting/reports/profit-loss",
-        label: "P&L Statement",
-        icon: TrendingDown,
-      },
-      {
-        path: "/accounting/reports/cash-statement",
-        label: "Cash Statement",
-        icon: Wallet,
-      },
-      {
-        path: "/accounting/reports/payables",
-        label: "Payables",
-        icon: FileText,
-      },
-      {
-        path: "/accounting/reports/balance-sheet",
-        label: "Balance Sheet",
-        icon: Scale,
-      },
+      { path: "/accounting/reports/profit-loss", label: "P&L Statement", icon: TrendingDown },
+      { path: "/accounting/reports/cash-statement", label: "Cash Statement", icon: Wallet },
+      { path: "/accounting/reports/payables", label: "Payables", icon: FileText },
+      { path: "/accounting/reports/balance-sheet", label: "Balance Sheet", icon: Scale },
     ],
   },
   {
@@ -243,12 +225,9 @@ const tenantNav = [
     path: "/accounting/chart-of-accounts",
     roles: ["restaurant_admin", "admin", "manager"],
     children: [
-      {
-        path: "/accounting/chart-of-accounts",
-        label: "Chart of Accounts",
-        icon: Network,
-      },
+      { path: "/accounting/chart-of-accounts", label: "Chart of Accounts", icon: Network },
       { path: "/accounting/parties", label: "Parties", icon: Users },
+      { path: "/business-settings/payment-accounts", label: "Payment Accounts", icon: CreditCard },
     ],
   },
 

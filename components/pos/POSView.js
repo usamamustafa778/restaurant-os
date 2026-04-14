@@ -28,6 +28,8 @@ import {
   updateBranch,
   getWebsiteSettings,
   getRestaurantSettings,
+  getDiscountSettings,
+  verifyDiscountPin,
   getUsers,
   getDaySessions,
   getCurrentDaySession,
@@ -70,14 +72,35 @@ import {
   Edit3,
   Power,
   X,
+  Lock,
   Smartphone,
   MapPin,
+  Search,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 function isBranchRequiredError(msg) {
-  return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
+  return (
+    typeof msg === "string" &&
+    msg.toLowerCase().includes("branchid") &&
+    msg.toLowerCase().includes("required")
+  );
 }
+
+const FALLBACK_POS_DISCOUNT_REASON_OPTIONS = [
+  { value: "Customer complaint", label: "Customer complaint" },
+  { value: "Staff meal", label: "Staff meal" },
+  { value: "Loyalty reward", label: "Loyalty reward" },
+  { value: "Manager approval", label: "Manager approval" },
+  { value: "Other", label: "Other" },
+];
+
+const FALLBACK_POS_DISCOUNT_PRESETS = [
+  { id: "10", label: "10% Off", percent: 10, cashierAllowed: true },
+  { id: "20", label: "20% Off", percent: 20, cashierAllowed: true },
+  { id: "staff50", label: "Staff Meal (50%)", percent: 50, cashierAllowed: false },
+  { id: "comp100", label: "Complimentary (100%)", percent: 100, cashierAllowed: false },
+];
 
 /**
  * Same shape as GET /api/admin/orders/:id (mapOrder) for printBillReceipt when a follow-up fetch fails.
@@ -101,9 +124,14 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
     result.total != null && !Number.isNaN(Number(result.total))
       ? Number(result.total)
       : Math.max(0, (Number(subtotal) || 0) - (Number(discountAmount) || 0));
-  const del = orderType === "DELIVERY" ? Math.max(0, Number(deliveryCharges) || 0) : 0;
+  const del =
+    orderType === "DELIVERY" ? Math.max(0, Number(deliveryCharges) || 0) : 0;
   const type =
-    orderType === "DINE_IN" ? "dine-in" : orderType === "TAKEAWAY" ? "takeaway" : "delivery";
+    orderType === "DINE_IN"
+      ? "dine-in"
+      : orderType === "TAKEAWAY"
+        ? "takeaway"
+        : "delivery";
   const due =
     result.amountDue != null && !Number.isNaN(Number(result.amountDue))
       ? Number(result.amountDue)
@@ -128,21 +156,28 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
   };
 }
 
-export default function POSView({ editOrderId: propEditOrderId, onClose, onOrderChanged, isActive = true }) {
+export default function POSView({
+  editOrderId: propEditOrderId,
+  onClose,
+  onOrderChanged,
+  isActive = true,
+  initialTableName = "",
+}) {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  /** Ref avoids React treating the callback as a functional setState updater. */
+  const pendingNavigationRef = useRef(null);
+  const [editSessionDeliveryCharges, setEditSessionDeliveryCharges] =
+    useState(0);
   const [printingMenu, setPrintingMenu] = useState(false);
   const [loadingEditOrder, setLoadingEditOrder] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
-  const [searchStep, setSearchStep] = useState("quantity"); // 'quantity' | 'itemName'
-  const searchStepRef = useRef("quantity"); // mirror for event-handler stale-closure access
-  const [searchQuantityInput, setSearchQuantityInput] = useState("");
-  const [pendingAddQuantity, setPendingAddQuantity] = useState(1);
   const [focusedItemIndex, setFocusedItemIndex] = useState(0);
   const focusedCardRef = useRef(null);
   const orderStripRef = useRef(null);
@@ -160,14 +195,31 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   /** { id, name, fee } from getWebsiteSettings → deliveryLocations (branch-scoped) */
   const [deliveryZones, setDeliveryZones] = useState([]);
   const [deliveryLocationId, setDeliveryLocationId] = useState("");
+  const [deliveryZoneQuery, setDeliveryZoneQuery] = useState("");
+  const [deliveryZoneOpen, setDeliveryZoneOpen] = useState(false);
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [onlineProvider, setOnlineProvider] = useState(null);
   const [paymentAccounts, setPaymentAccounts] = useState([]);
   const [paymentAccountsLoading, setPaymentAccountsLoading] = useState(true);
   const [orderType, setOrderType] = useState("DINE_IN");
-  const [discountAmount, setDiscountAmount] = useState("");
-  const [showDiscountField, setShowDiscountField] = useState(false);
+  const [manualDiscountPercent, setManualDiscountPercent] = useState(0);
+  const [discountReason, setDiscountReason] = useState("");
+  const [discountPresetLabel, setDiscountPresetLabel] = useState("");
+  const [managerDiscountPin, setManagerDiscountPin] = useState("");
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [posDiscountPresetsCfg, setPosDiscountPresetsCfg] = useState(null);
+  const [posDiscountReasonOptions, setPosDiscountReasonOptions] = useState(
+    FALLBACK_POS_DISCOUNT_REASON_OPTIONS,
+  );
+  const [posDiscountPinConfigured, setPosDiscountPinConfigured] = useState(false);
+  const [dmPct, setDmPct] = useState(0);
+  const [dmLabel, setDmLabel] = useState("");
+  const [dmReason, setDmReason] = useState("");
+  const [dmPin, setDmPin] = useState("");
+  const [dmPinError, setDmPinError] = useState("");
+  const [dmCustomOpen, setDmCustomOpen] = useState(false);
+  const [dmCustomStr, setDmCustomStr] = useState("");
   const [showCheckout, setShowCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
   const [orderConfirmation, setOrderConfirmation] = useState(null);
@@ -201,7 +253,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
   // Expanded cart items (for showing price details)
   const [expandedCartItems, setExpandedCartItems] = useState([]);
-  
+
   // Print receipt modal
   const [showPrintModal, setShowPrintModal] = useState(false);
 
@@ -210,19 +262,21 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const [showWaiterPos, setShowWaiterPos] = useState(true);
   const [showCustomerPos, setShowCustomerPos] = useState(true);
   const [posOptionsLoaded, setPosOptionsLoaded] = useState(false);
-  const [showPosTableSettingsModal, setShowPosTableSettingsModal] = useState(false);
+  const [showPosTableSettingsModal, setShowPosTableSettingsModal] =
+    useState(false);
   const [posTableSettingsDraft, setPosTableSettingsDraft] = useState(true);
   const [posWaiterSettingsDraft, setPosWaiterSettingsDraft] = useState(true);
-  const [posCustomerSettingsDraft, setPosCustomerSettingsDraft] = useState(true);
+  const [posCustomerSettingsDraft, setPosCustomerSettingsDraft] =
+    useState(true);
   const [posTableSettingsSaving, setPosTableSettingsSaving] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
-  
+
   // Invoice modal
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
-  
+
   // Branch selection modal (shown when branchId is required)
   const [showBranchModal, setShowBranchModal] = useState(false);
-  
+
   // Business day (computed from branch day-reset hour)
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDate = getBusinessDate(new Date(), cutoffHour);
@@ -262,17 +316,28 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerModalLoading, setCustomerModalLoading] = useState(false);
   const [customerModalError, setCustomerModalError] = useState("");
-  const [customerAddForm, setCustomerAddForm] = useState({ name: "", phone: "", address: "", notes: "" });
+  const [customerAddForm, setCustomerAddForm] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    notes: "",
+  });
   const [quickCustomerName, setQuickCustomerName] = useState("");
   const [addingQuickCustomer, setAddingQuickCustomer] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState(null);
-  const [editCustomerForm, setEditCustomerForm] = useState({ name: "", phone: "", address: "" });
+  const [editCustomerForm, setEditCustomerForm] = useState({
+    name: "",
+    phone: "",
+    address: "",
+  });
   const [savingCustomer, setSavingCustomer] = useState(false);
 
   // Restaurant logo (shared across branches, used in printed bills)
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
-  const [restaurantBillFooter, setRestaurantBillFooter] = useState("Thank you for your order!");
+  const [restaurantBillFooter, setRestaurantBillFooter] = useState(
+    "Thank you for your order!",
+  );
 
   // Client-only clock — avoids SSR/hydration mismatch for any date rendered in JSX
   const [now, setNow] = useState(null);
@@ -295,10 +360,19 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     let cancelled = false;
     setPaymentAccountsLoading(true);
     getPaymentAccounts()
-      .then((d) => { if (!cancelled) setPaymentAccounts(Array.isArray(d) ? d : (d?.accounts ?? [])); })
-      .catch(() => { if (!cancelled) setPaymentAccounts([]); })
-      .finally(() => { if (!cancelled) setPaymentAccountsLoading(false); });
-    return () => { cancelled = true; };
+      .then((d) => {
+        if (!cancelled)
+          setPaymentAccounts(Array.isArray(d) ? d : (d?.accounts ?? []));
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentAccounts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPaymentAccountsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Load shared restaurant logo (for printed bills)
@@ -309,13 +383,64 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         if (cancelled) return;
         const url = data?.restaurantLogoUrl || "";
         setRestaurantLogoUrl(url);
-        const height = typeof data?.restaurantLogoHeightPx === "number" ? data.restaurantLogoHeightPx : 100;
+        const height =
+          typeof data?.restaurantLogoHeightPx === "number"
+            ? data.restaurantLogoHeightPx
+            : 100;
         setRestaurantLogoHeight(height);
-        setRestaurantBillFooter(data?.billFooterMessage || "Thank you for your order!");
+        setRestaurantBillFooter(
+          data?.billFooterMessage || "Thank you for your order!",
+        );
+        setPosDiscountPresetsCfg(
+          Array.isArray(data?.posDiscountPresets) && data.posDiscountPresets.length
+            ? data.posDiscountPresets
+            : null,
+        );
+        setPosDiscountPinConfigured(Boolean(data?.posDiscountPinConfigured));
       })
       .catch(() => {
         // Ignore logo load errors; printing will just fall back to text
       });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDiscountSettings()
+      .then((data) => {
+        if (cancelled) return;
+        console.log(
+          "Discount presets loaded:",
+          JSON.stringify(data?.presets || [], null, 2),
+        );
+        if (Array.isArray(data?.presets) && data.presets.length > 0) {
+          setPosDiscountPresetsCfg(
+            data.presets.map((p) => {
+              const requiresPin =
+                p?.requiresPin !== undefined
+                  ? Boolean(p.requiresPin)
+                  : !Boolean(p?.cashierAllowed);
+              return {
+                ...p,
+                requiresPin,
+                cashierAllowed: !requiresPin,
+              };
+            }),
+          );
+        }
+        if (Array.isArray(data?.reasons) && data.reasons.length > 0) {
+          setPosDiscountReasonOptions(
+            data.reasons.map((label) => ({
+              value: String(label).trim(),
+              label: String(label).trim(),
+            })),
+          );
+        }
+        setPosDiscountPinConfigured(Boolean(data?.pinIsSet));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -377,7 +502,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           setPosOptionsLoaded(true);
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [currentBranch?.id]);
 
   // Derive delivery zones directly from the current branch (already loaded by BranchContext)
@@ -416,13 +543,15 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           if (u.role !== "order_taker") return false;
           if (!branchId) return true;
           return (u.branches || []).some(
-            (b) => String(b.branchId || b.branch) === String(branchId)
+            (b) => String(b.branchId || b.branch) === String(branchId),
           );
         });
         setOrderTakers(takers);
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [currentBranch?.id]);
 
   useEffect(() => {
@@ -434,7 +563,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   }, [recentOrderSearch]);
 
   useEffect(() => {
-    focusedCardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    focusedCardRef.current?.scrollIntoView({
+      block: "nearest",
+      behavior: "smooth",
+    });
   }, [focusedItemIndex]);
 
   // Until we've read sessionStorage, assume sidebar closed (5 cols). Then use sidebarOpen.
@@ -445,12 +577,58 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     const updateCols = () => {
       if (typeof window === "undefined") return;
       const xl = window.innerWidth >= 1280;
-      setGridCols(effectiveSidebarOpen ? (xl ? 4 : 3) : (xl ? 5 : 4));
+      setGridCols(effectiveSidebarOpen ? (xl ? 4 : 3) : xl ? 5 : 4);
     };
     updateCols();
     window.addEventListener("resize", updateCols);
     return () => window.removeEventListener("resize", updateCols);
   }, [effectiveSidebarOpen]);
+
+  const resetEditOrderState = () => {
+    setEditingOrderId(null);
+    setEditingOrder(null);
+    setEditSessionDeliveryCharges(0);
+    setCart([]);
+    setExpandedCartItems([]);
+    setCustomerName("");
+    setCustomerPhone("");
+    setCustomerAddress("");
+    setDeliveryLocationId("");
+    setManualDiscountPercent(0);
+    setDiscountReason("");
+    setDiscountPresetLabel("");
+    setManagerDiscountPin("");
+    setSelectedDeals([]);
+    setDealDiscount(0);
+    setShowCustomerDetails(false);
+    setTableName("");
+    setShowCheckout(false);
+  };
+
+  /** Called from the "Clear all" button in the cart sidebar. Shows a toast; wraps clearCart(). */
+  function clearAllCartItems() {
+    if (cart.length === 0) return;
+    clearCart();
+    setExpandedCartItems([]);
+    toast.success("Cart cleared");
+  }
+
+  const handleNavigateAwayFromEdit = (callback) => {
+    if (editingOrderId) {
+      pendingNavigationRef.current = callback;
+      setShowDiscardDialog(true);
+      return;
+    }
+    callback();
+  };
+
+  // Pre-fill table name when opened from Tables page via initialTableName prop
+  useEffect(() => {
+    if (isActive && initialTableName && !propEditOrderId) {
+      setTableName(initialTableName);
+      setOrderType("DINE_IN");
+    }
+  }, [isActive, initialTableName, propEditOrderId]);
 
   // Load order for edit when editOrderId prop is provided
   useEffect(() => {
@@ -459,8 +637,6 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
     let cancelled = false;
     setLoadingEditOrder(true);
-    setEditingOrderId(null);
-    setEditingOrder(null);
 
     getOrder(editId)
       .then((order) => {
@@ -473,7 +649,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           let price = it.unitPrice ?? 0;
           let imageUrl = "";
           if (!id) {
-            const byName = menuItems.find((m) => (m.name || "").toLowerCase() === (it.name || "").toLowerCase());
+            const byName = menuItems.find(
+              (m) =>
+                (m.name || "").toLowerCase() === (it.name || "").toLowerCase(),
+            );
             if (byName) {
               id = byName.id;
               price = byName.finalPrice ?? byName.price ?? price;
@@ -501,11 +680,28 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         setCustomerPhone(order.customerPhone || "");
         setCustomerAddress(order.deliveryAddress || "");
         setOrderType(
-          order.type === "takeaway" ? "TAKEAWAY" : order.type === "delivery" ? "DELIVERY" : "DINE_IN"
+          order.orderType === "TAKEAWAY" || order.type === "takeaway"
+            ? "TAKEAWAY"
+            : order.orderType === "DELIVERY" || order.type === "delivery"
+              ? "DELIVERY"
+              : "DINE_IN",
+        );
+        setDeliveryLocationId(order.deliveryLocationId || "");
+        setEditSessionDeliveryCharges(
+          Math.max(0, Number(order.deliveryCharges) || 0),
         );
         setTableName(order.tableName || "");
-        setDiscountAmount("");
-        setShowDiscountField(false);
+        const mp = Number(order.posManualDiscountPercent);
+        if (Number.isFinite(mp) && mp > 0) {
+          setManualDiscountPercent(Math.min(100, Math.max(0, mp)));
+          setDiscountReason(String(order.posDiscountReason || "").trim());
+          setDiscountPresetLabel(String(order.posDiscountPresetLabel || "").trim());
+        } else {
+          setManualDiscountPercent(0);
+          setDiscountReason("");
+          setDiscountPresetLabel("");
+        }
+        setManagerDiscountPin("");
         setEditingOrderId(order.id || order._id);
         setEditingOrder(order);
       })
@@ -518,7 +714,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         if (!cancelled) setLoadingEditOrder(false);
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [propEditOrderId, menu?.items?.length]);
 
   async function loadTables() {
@@ -612,7 +810,11 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setCustomerModalError("Enter customer name and phone to add");
       return;
     }
-    if (orderType === "DELIVERY" && deliveryZones.length > 0 && !deliveryLocationId) {
+    if (
+      orderType === "DELIVERY" &&
+      deliveryZones.length > 0 &&
+      !deliveryLocationId
+    ) {
       setCustomerModalError("Select a delivery area");
       return;
     }
@@ -665,15 +867,24 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setPaymentError("Cart is empty");
       return;
     }
+    if (!validatePosDiscountForSubmit()) return;
     if (orderType === "DELIVERY" && !customerPhone.trim()) {
       setPaymentError("Customer phone is required for delivery orders");
       return;
     }
-    if (orderType === "DELIVERY" && deliveryZonesActive && !deliveryLocationId.trim()) {
+    if (
+      orderType === "DELIVERY" &&
+      deliveryZonesActive &&
+      !deliveryLocationId.trim()
+    ) {
       setPaymentError("Select a delivery area");
       return;
     }
-    if (orderType === "DELIVERY" && !deliveryZonesActive && !customerAddress.trim()) {
+    if (
+      orderType === "DELIVERY" &&
+      !deliveryZonesActive &&
+      !customerAddress.trim()
+    ) {
       setPaymentError("Delivery address is required for delivery orders");
       return;
     }
@@ -681,7 +892,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     if (paymentMethod === "CASH") {
       const received = Number(amountReceived);
       if (isNaN(received) || received < billTotal) {
-        setPaymentError(`Amount received must be at least Rs ${billTotal.toFixed(2)}`);
+        setPaymentError(
+          `Amount received must be at least Rs ${billTotal.toFixed(2)}`,
+        );
         return;
       }
     }
@@ -701,53 +914,79 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
             name: item.name,
           })),
           discountAmount: totalDiscount,
+          ...buildPosDiscountApiFields(),
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
           deliveryAddress: customerAddress.trim(),
           orderType,
-          tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+          tableName:
+            orderType === "DINE_IN" && tableName ? tableName : undefined,
           ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
         });
-        const receivedAmt = paymentMethod === "CASH" ? Number(amountReceived) : undefined;
-        const returnedAmt = paymentMethod === "CASH" ? Math.max(0, Number(amountReceived) - amountDue) : undefined;
+        const receivedAmt =
+          paymentMethod === "CASH" ? Number(amountReceived) : undefined;
+        const returnedAmt =
+          paymentMethod === "CASH"
+            ? Math.max(0, Number(amountReceived) - amountDue)
+            : undefined;
         await recordOrderPayment(editingOrderId, {
           paymentMethod,
           ...(receivedAmt != null ? { amountReceived: receivedAmt } : {}),
           ...(returnedAmt != null ? { amountReturned: returnedAmt } : {}),
-          ...(paymentMethod === "ONLINE" && onlineProvider ? { paymentProvider: onlineProvider } : {}),
+          ...(paymentMethod === "ONLINE" && onlineProvider
+            ? { paymentProvider: onlineProvider }
+            : {}),
         });
-        orderNum = editingOrder?.orderNumber ?? editingOrder?.id ?? editingOrderId;
+        orderNum =
+          editingOrder?.orderNumber ?? editingOrder?.id ?? editingOrderId;
         toast.success("Order updated and payment recorded", { id: toastId });
       } else {
         // New order: create and pay in one shot
         const result = await createPosOrder({
-          items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
+          items: cart.map((item) => ({
+            menuItemId: item.id,
+            quantity: item.quantity,
+          })),
           orderType,
           paymentMethod,
           discountAmount: totalDiscount,
+          ...buildPosDiscountApiFields(),
           appliedDeals:
             selectedDeals.length > 0
               ? selectedDeals.map((dealId) => {
                   const deal = applicableDeals.find((d) => d.id === dealId);
-                  return { dealId, dealName: deal?.name || "", dealType: deal?.dealType || "" };
+                  return {
+                    dealId,
+                    dealName: deal?.name || "",
+                    dealType: deal?.dealType || "",
+                  };
                 })
               : undefined,
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
           deliveryAddress: customerAddress.trim(),
-          ...(orderType === "DELIVERY" && deliveryLocationId ? { deliveryLocationId } : {}),
+          ...(orderType === "DELIVERY" && deliveryLocationId
+            ? { deliveryLocationId }
+            : {}),
           branchId: currentBranch?.id ?? undefined,
-          tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
-          ...(paymentMethod === "CASH" && amountReceived !== "" ? { amountReceived: Number(amountReceived) } : {}),
-          ...(paymentMethod === "ONLINE" && onlineProvider ? { paymentProvider: onlineProvider } : {}),
+          tableName:
+            orderType === "DINE_IN" && tableName ? tableName : undefined,
+          ...(paymentMethod === "CASH" && amountReceived !== ""
+            ? { amountReceived: Number(amountReceived) }
+            : {}),
+          ...(paymentMethod === "ONLINE" && onlineProvider
+            ? { paymentProvider: onlineProvider }
+            : {}),
           ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
         });
         orderNum = result?.orderNumber ?? result?.id ?? "";
         toast.success("Order placed and payment recorded", { id: toastId });
       }
 
-      const received = paymentMethod === "CASH" ? Number(amountReceived) : billTotal;
-      const returned = paymentMethod === "CASH" ? Math.max(0, received - billTotal) : 0;
+      const received =
+        paymentMethod === "CASH" ? Number(amountReceived) : billTotal;
+      const returned =
+        paymentMethod === "CASH" ? Math.max(0, received - billTotal) : 0;
       printPaymentBill({
         orderNumber: orderNum,
         id: orderNum,
@@ -764,7 +1003,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setCustomerPhone("");
       setCustomerAddress("");
       setDeliveryLocationId("");
-      setDiscountAmount("");
+      setManualDiscountPercent(0);
+      setDiscountReason("");
+      setDiscountPresetLabel("");
+      setManagerDiscountPin("");
       setSelectedDeals([]);
       setDealDiscount(0);
       setShowCustomerDetails(false);
@@ -777,7 +1019,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         setShowBranchModal(true);
       } else {
         setPaymentError(err.message || "Failed to process payment");
-        toast.error(err.message || "Failed to process payment", { id: toastId });
+        toast.error(err.message || "Failed to process payment", {
+          id: toastId,
+        });
       }
     } finally {
       setPaymentLoading(false);
@@ -832,7 +1076,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
             // If deal has branch restrictions, only show for matching branch
             if (branchId && d.branches?.length > 0) {
               return d.branches.some(
-                (b) => String(b._id || b) === String(branchId)
+                (b) => String(b._id || b) === String(branchId),
               );
             }
             return true;
@@ -953,10 +1197,15 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const filteredItems = allItemsForGrid.filter((item) => {
     const matchesCategory =
       selectedCategory === "all" ||
-      (selectedCategory === "deals" ? item.isDeal : item.categoryId === selectedCategory);
+      (selectedCategory === "deals"
+        ? item.isDeal
+        : item.categoryId === selectedCategory);
+    const q = menuSearchQuery.trim().toLowerCase();
+    const categoryName = (
+      menu.categories.find((c) => c.id === item.categoryId)?.name || ""
+    ).toLowerCase();
     const matchesSearch =
-      searchStep !== "itemName" ||
-      item.name.toLowerCase().includes(menuSearchQuery.toLowerCase());
+      !q || item.name.toLowerCase().includes(q) || categoryName.includes(q);
 
     // Dietary filter (mock - in production, items should have a dietaryType field)
     const matchesDietary =
@@ -967,7 +1216,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       (dietaryFilter === "egg" && item.name.toLowerCase().includes("egg"));
 
     // Use finalAvailable if available (branch-aware), otherwise fall back to available
-    const isAvailable = item.isDeal ? true : item.finalAvailable ?? item.available;
+    const isAvailable = item.isDeal
+      ? true
+      : (item.finalAvailable ?? item.available);
     return matchesCategory && matchesSearch && matchesDietary && isAvailable;
   });
 
@@ -976,7 +1227,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     .filter(
       (o) =>
         !recentOrderSearch.trim() ||
-        (o.id && String(o.id).toLowerCase().includes(recentOrderSearch.trim().toLowerCase())),
+        (o.id &&
+          String(o.id)
+            .toLowerCase()
+            .includes(recentOrderSearch.trim().toLowerCase())),
     );
 
   // Focus first order when search or filter changes
@@ -987,13 +1241,17 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
   // Clamp focused order index when filtered list shrinks
   useEffect(() => {
-    if (filteredRecentOrders.length > 0 && focusedOrderIndex >= filteredRecentOrders.length) {
+    if (
+      filteredRecentOrders.length > 0 &&
+      focusedOrderIndex >= filteredRecentOrders.length
+    ) {
       setFocusedOrderIndex(Math.max(0, filteredRecentOrders.length - 1));
     }
   }, [filteredRecentOrders.length, focusedOrderIndex]);
 
   // Keep pause state in ref so animation loop doesn't need to re-run when hover/search changes
-  orderStripPausedRef.current = orderGridHovered || recentOrderSearch.trim() !== "";
+  orderStripPausedRef.current =
+    orderGridHovered || recentOrderSearch.trim() !== "";
 
   // Recent Orders visible columns: mobile ≈ 1.5 cards, desktop 4–5 cards
   useEffect(() => {
@@ -1014,8 +1272,16 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   // Scroll to focused order card when search is active
   useEffect(() => {
     const hasSearch = recentOrderSearch.trim() !== "";
-    if (!hasSearch || filteredRecentOrders.length === 0 || !orderStripRef.current) return;
-    const idx = Math.max(0, Math.min(focusedOrderIndex, filteredRecentOrders.length - 1));
+    if (
+      !hasSearch ||
+      filteredRecentOrders.length === 0 ||
+      !orderStripRef.current
+    )
+      return;
+    const idx = Math.max(
+      0,
+      Math.min(focusedOrderIndex, filteredRecentOrders.length - 1),
+    );
     const cardWidth = 164; // approx card width + gap
     orderStripRef.current.scrollLeft = idx * cardWidth;
   }, [recentOrderSearch, focusedOrderIndex, filteredRecentOrders.length]);
@@ -1026,17 +1292,6 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setFocusedItemIndex(Math.max(0, filteredItems.length - 1));
     }
   }, [filteredItems.length, focusedItemIndex]);
-
-  // Keep manual discount percentage between 0 and 100
-  useEffect(() => {
-    setDiscountAmount((prev) => {
-      if (prev === "") return prev;
-      const n = Number(prev);
-      if (!Number.isFinite(n) || n < 0) return "";
-      if (n > 100) return "100";
-      return prev;
-    });
-  }, [cart, dealDiscount]);
 
   const addToCart = (item, qty = 1) => {
     const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
@@ -1049,9 +1304,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         ),
       );
     } else {
-      const itemPrice = isDeal
-        ? item.price
-        : item.finalPrice ?? item.price;
+      const itemPrice = isDeal ? item.price : (item.finalPrice ?? item.price);
       setCart([
         ...cart,
         {
@@ -1090,8 +1343,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     setSelectedWaiter("");
     setSelectedDeals([]);
     setDealDiscount(0);
-    setDiscountAmount("");
-    setShowDiscountField(false);
+    setManualDiscountPercent(0);
+    setDiscountReason("");
+    setDiscountPresetLabel("");
+    setManagerDiscountPin("");
   };
 
   const addNoteToItem = (itemId) => {
@@ -1106,31 +1361,173 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     0,
   );
   const maxManualDiscountAllowed = Math.max(0, subtotal - dealDiscount);
-  const manualDiscountPercentRaw =
-    discountAmount === "" || discountAmount === undefined
-      ? 0
-      : Number(discountAmount);
-  const manualDiscountPercent = Math.min(
-    Math.max(0, Number.isFinite(manualDiscountPercentRaw) ? manualDiscountPercentRaw : 0),
+  const manualDiscountPercentClamped = Math.min(
     100,
+    Math.max(
+      0,
+      Number.isFinite(Number(manualDiscountPercent))
+        ? Number(manualDiscountPercent)
+        : 0,
+    ),
   );
   const manualDiscount = Math.min(
     maxManualDiscountAllowed,
-    (maxManualDiscountAllowed * manualDiscountPercent) / 100,
+    (maxManualDiscountAllowed * manualDiscountPercentClamped) / 100,
   );
   const totalDiscount = dealDiscount + manualDiscount;
   const total = Math.max(0, subtotal - totalDiscount);
-  const selectedDeliveryZone = deliveryZones.find((z) => z.id === deliveryLocationId);
+  const selectedDeliveryZone = deliveryZones.find(
+    (z) => z.id === deliveryLocationId,
+  );
+  const filteredDeliveryZones = deliveryZones.filter((z) => {
+    const q = deliveryZoneQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      String(z.name || "")
+        .toLowerCase()
+        .includes(q) || String(Number(z.fee || 0)).includes(q)
+    );
+  });
+  const selectedDeliveryZoneLabel = selectedDeliveryZone
+    ? `${selectedDeliveryZone.name} — Rs ${Number(selectedDeliveryZone.fee || 0).toFixed(2)}`
+    : "";
   const deliveryFee =
-    orderType === "DELIVERY" && selectedDeliveryZone ? Math.round(selectedDeliveryZone.fee * 100) / 100 : 0;
+    orderType !== "DELIVERY"
+      ? 0
+      : selectedDeliveryZone
+        ? Math.round(selectedDeliveryZone.fee * 100) / 100
+        : Math.max(0, Number(editSessionDeliveryCharges) || 0);
   const amountDue = Math.round((total + deliveryFee) * 100) / 100;
-  const deliveryZonesActive = orderType === "DELIVERY" && deliveryZones.length > 0;
+  const deliveryZonesActive =
+    orderType === "DELIVERY" && deliveryZones.length > 0;
+
+  const mergedDiscountPresets =
+    posDiscountPresetsCfg && posDiscountPresetsCfg.length > 0
+      ? posDiscountPresetsCfg
+      : FALLBACK_POS_DISCOUNT_PRESETS;
+
+  function getDiscountPinRequirement({ pct, label, customOpen }) {
+    if (customOpen) {
+      // Custom discounts are manager-approved when PIN is configured.
+      return pct > 0;
+    }
+    const selectedPreset = mergedDiscountPresets.find(
+      (p) =>
+        Math.round(Number(p.percent) || 0) === Math.round(Number(pct) || 0) &&
+        String(p.label || "") === String(label || ""),
+    );
+    return !Boolean(selectedPreset?.cashierAllowed);
+  }
+
+  function buildPosDiscountApiFields() {
+    const pct =
+      manualDiscountPercentClamped > 0 ? manualDiscountPercentClamped : null;
+    const pin = managerDiscountPin.trim();
+    return {
+      posDiscountReason: pct ? discountReason : "",
+      posDiscountPresetLabel: pct ? discountPresetLabel : "",
+      posManualDiscountPercent: pct,
+      ...(pin ? { managerDiscountPin: pin } : {}),
+    };
+  }
+
+  function validatePosDiscountForSubmit() {
+    if (manualDiscountPercentClamped <= 0) return true;
+    if (
+      !discountReason ||
+      !posDiscountReasonOptions.some((o) => o.value === discountReason)
+    ) {
+      toast.error("Select a discount reason (open Discount and apply)");
+      return false;
+    }
+    const requiresPin = getDiscountPinRequirement({
+      pct: manualDiscountPercentClamped,
+      label: discountPresetLabel,
+      customOpen: discountPresetLabel.startsWith("Custom ("),
+    });
+    if (
+      requiresPin &&
+      posDiscountPinConfigured &&
+      !managerDiscountPin.trim()
+    ) {
+      toast.error(
+        "Manager PIN is required for this discount. Open Discount to apply with PIN.",
+      );
+      return false;
+    }
+    return true;
+  }
+
+  function openDiscountModal() {
+    setDmPct(manualDiscountPercentClamped);
+    setDmLabel(discountPresetLabel);
+    setDmReason(discountReason);
+    setDmPin("");
+    setDmPinError("");
+    setDmCustomOpen(false);
+    setDmCustomStr("");
+    setShowDiscountModal(true);
+  }
+
+  async function commitDiscountModal() {
+    const pct = dmCustomOpen
+      ? Math.min(100, Math.max(0, Number(dmCustomStr) || 0))
+      : Math.min(100, Math.max(0, Number(dmPct) || 0));
+    const label = dmCustomOpen ? (pct ? `Custom (${pct}%)` : "") : dmLabel;
+    const requiresPin = getDiscountPinRequirement({
+      pct,
+      label,
+      customOpen: dmCustomOpen,
+    });
+
+    if (pct > 0) {
+      if (
+        !dmReason ||
+        !posDiscountReasonOptions.some((o) => o.value === dmReason)
+      ) {
+        toast.error("Select a discount reason");
+        return;
+      }
+      if (requiresPin && posDiscountPinConfigured) {
+        const pin = dmPin.trim();
+        if (!pin) {
+          toast.error("Enter manager PIN for this discount");
+          return;
+        }
+        try {
+          const out = await verifyDiscountPin(pin);
+          if (!out?.valid) {
+            setDmPinError("Incorrect PIN");
+            setDmPin("");
+            return;
+          }
+          setDmPinError("");
+        } catch (e) {
+          setDmPinError("Incorrect PIN");
+          return;
+        }
+        setManagerDiscountPin(pin);
+      } else {
+        setManagerDiscountPin("");
+      }
+    } else {
+      setManagerDiscountPin("");
+    }
+
+    setManualDiscountPercent(pct);
+    setDiscountPresetLabel(label);
+    setDiscountReason(pct > 0 ? dmReason : "");
+    setShowDiscountModal(false);
+    setDmPin("");
+    setDmPinError("");
+  }
 
   const handleCheckout = async (overrides) => {
     if (cart.length === 0) {
       toast.error("Cart is empty!");
       return;
     }
+    if (!validatePosDiscountForSubmit()) return;
     const cName = overrides?.customerName ?? customerName.trim();
     const cPhone = overrides?.customerPhone ?? customerPhone.trim();
     const cAddress = overrides?.customerAddress ?? customerAddress.trim();
@@ -1165,6 +1562,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         orderType,
         paymentMethod: "PENDING",
         discountAmount: totalDiscount,
+        ...buildPosDiscountApiFields(),
         appliedDeals:
           selectedDeals.length > 0
             ? selectedDeals.map((dealId) => {
@@ -1179,7 +1577,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         customerName: cName,
         customerPhone: cPhone,
         deliveryAddress: cAddress,
-        ...(orderType === "DELIVERY" && deliveryLocationId ? { deliveryLocationId } : {}),
+        ...(orderType === "DELIVERY" && deliveryLocationId
+          ? { deliveryLocationId }
+          : {}),
         branchId: currentBranch?.id ?? undefined,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
         ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
@@ -1250,7 +1650,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setCustomerPhone("");
       setCustomerAddress("");
       setDeliveryLocationId("");
-      setDiscountAmount("");
+      setManualDiscountPercent(0);
+      setDiscountReason("");
+      setDiscountPresetLabel("");
+      setManagerDiscountPin("");
       setSelectedDeals([]);
       setDealDiscount(0);
       setShowCustomerDetails(false);
@@ -1275,6 +1678,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       toast.error("Cart is empty");
       return;
     }
+    if (!validatePosDiscountForSubmit()) return;
     setLoading(true);
     const toastId = toast.loading("Updating order...");
     try {
@@ -1287,20 +1691,26 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           note: itemNotes[item.id] || undefined,
         })),
         discountAmount: totalDiscount,
+        ...buildPosDiscountApiFields(),
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: customerAddress.trim(),
         orderType,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
+        ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
       });
       toast.success("Order updated successfully!", { id: toastId });
       setEditingOrderId(null);
       setEditingOrder(null);
+      setEditSessionDeliveryCharges(0);
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
       setCustomerAddress("");
-      setDiscountAmount("");
+      setManualDiscountPercent(0);
+      setDiscountReason("");
+      setDiscountPresetLabel("");
+      setManagerDiscountPin("");
       setTableName("");
       setShowCheckout(false);
       loadRecentOrders();
@@ -1369,6 +1779,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       toast.error("Cart is empty");
       return;
     }
+    if (!validatePosDiscountForSubmit()) return;
 
     // If we're editing an existing order, just print the current cart as a bill
     // without creating a brand new order in the backend.
@@ -1389,10 +1800,14 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     try {
       setPrintingMenu(true);
       const result = await createPosOrder({
-        items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
+        items: cart.map((item) => ({
+          menuItemId: item.id,
+          quantity: item.quantity,
+        })),
         orderType,
         paymentMethod: "PENDING",
         discountAmount: totalDiscount,
+        ...buildPosDiscountApiFields(),
         appliedDeals:
           selectedDeals.length > 0
             ? selectedDeals.map((dealId) => {
@@ -1407,7 +1822,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: customerAddress.trim(),
-        ...(orderType === "DELIVERY" && deliveryLocationId ? { deliveryLocationId } : {}),
+        ...(orderType === "DELIVERY" && deliveryLocationId
+          ? { deliveryLocationId }
+          : {}),
         branchId: currentBranch?.id ?? undefined,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
       });
@@ -1433,9 +1850,11 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       // Open the created order in edit mode
       if (orderNum) {
         setEditingOrderId(orderNum);
-        getOrder(orderNum).then((order) => {
-          setEditingOrder(order);
-        }).catch(() => {});
+        getOrder(orderNum)
+          .then((order) => {
+            setEditingOrder(order);
+          })
+          .catch(() => {});
       }
 
       // Clear local cart and reset POS state
@@ -1443,7 +1862,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       setCustomerName("");
       setCustomerPhone("");
       setCustomerAddress("");
-      setDiscountAmount("");
+      setManualDiscountPercent(0);
+      setDiscountReason("");
+      setDiscountPresetLabel("");
+      setManagerDiscountPin("");
       setSelectedDeals([]);
       setDealDiscount(0);
       setShowCustomerDetails(false);
@@ -1483,22 +1905,21 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       }
 
       // Pressing any digit key (0-9) while NOT already typing in an input focuses
-      // the menu search bar and types that digit into the correct step field.
+      // the menu search bar and types that digit (e.g. "7up", quick codes).
       if (
         /^[0-9]$/.test(e.key) &&
-        !e.ctrlKey && !e.metaKey && !e.altKey &&
-        !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !["INPUT", "TEXTAREA", "SELECT"].includes(
+          document.activeElement?.tagName,
+        )
       ) {
         const input = menuSearchInputRef.current;
         if (input) {
           e.preventDefault();
           input.focus();
-          // Write to the correct state based on the current search step
-          if (searchStepRef.current === "quantity") {
-            setSearchQuantityInput((prev) => prev + e.key);
-          } else {
-            setMenuSearchQuery((prev) => prev + e.key);
-          }
+          setMenuSearchQuery((prev) => prev + e.key);
         }
         return;
       }
@@ -1567,7 +1988,13 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isActive, editingOrderId, cart, showTakePaymentModal, showShortcutsModal]);
+  }, [
+    isActive,
+    editingOrderId,
+    cart,
+    showTakePaymentModal,
+    showShortcutsModal,
+  ]);
 
   async function loadDrafts() {
     setLoadingDrafts(true);
@@ -1614,8 +2041,11 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     try {
       const session = await getCurrentDaySession(currentBranch?.id);
       setCurrentSession(session);
-    } catch { setCurrentSession(null); }
-    finally { setLoadingCurrentSession(false); }
+    } catch {
+      setCurrentSession(null);
+    } finally {
+      setLoadingCurrentSession(false);
+    }
   }
 
   async function handleEndDay() {
@@ -1657,7 +2087,13 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
     });
   }
 
-  const statusProgress = { NEW_ORDER: 25, PROCESSING: 50, READY: 75, DELIVERED: 100, CANCELLED: 0 };
+  const statusProgress = {
+    NEW_ORDER: 25,
+    PROCESSING: 50,
+    READY: 75,
+    DELIVERED: 100,
+    CANCELLED: 0,
+  };
 
   async function loadRecentOrders() {
     try {
@@ -1787,7 +2223,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       toast.success("Transaction deleted successfully!", { id: toastId });
       await loadTransactions();
     } catch (err) {
-      toast.error(err.message || "Failed to delete transaction", { id: toastId });
+      toast.error(err.message || "Failed to delete transaction", {
+        id: toastId,
+      });
     }
   }
 
@@ -1795,7 +2233,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   const filteredDrafts = drafts
     .filter((draft) => {
       const searchLower = searchQuery.toLowerCase();
-  return (
+      return (
         draft.customerName?.toLowerCase().includes(searchLower) ||
         draft.orderNumber?.toLowerCase().includes(searchLower) ||
         draft.ref?.toLowerCase().includes(searchLower)
@@ -1832,50 +2270,146 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
   return (
     <>
       <div className="grid gap-4 lg:grid-cols-[1fr_400px] lg:h-[calc(100vh-110px)]">
-        {/* Left Column - Recent Orders + Menu */}
         <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
-        {/* Menu Items Section */}
+          {/* Menu Items Section */}
           <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1">
-            {/* Header with Filters - Compact */}
-            <div className="p-2 border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+            {/* Header: title + search (one row) + dietary chips */}
+            <div className="border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-b from-gray-50/90 to-white dark:from-neutral-900 dark:to-neutral-950">
+              <div className="flex flex-col gap-2.5 p-3 sm:flex-row sm:items-center sm:gap-3 min-w-0">
+                <h2 className="text-lg font-extrabold tracking-tight text-gray-900 dark:text-white">
                   Menu
                 </h2>
 
-                {/* Dietary Filters - Compact */}
-                <div className="flex items-center gap-2">
-                  {[
-                    { value: "veg", label: "Veg", icon: "☑️" },
-                    { value: "non-veg", label: "Non Veg", icon: "☑️" },
-                    { value: "egg", label: "Egg", icon: "☑️" },
-                  ].map((filter) => (
-                    <label
-                      key={filter.value}
-                      className="flex items-center gap-1 cursor-pointer"
-                    >
-            <input
-                        type="checkbox"
-                        checked={dietaryFilter === filter.value}
-                        onChange={() =>
-                          setDietaryFilter(
-                            dietaryFilter === filter.value
-                              ? "all"
-                              : filter.value,
-                          )
+                {/* Search — same row as heading on sm+ */}
+                <div className="relative flex-1 min-w-0">
+                  <label htmlFor="pos-menu-search" className="sr-only">
+                    Search menu items
+                  </label>
+                  <Search
+                    className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                    aria-hidden
+                  />
+                  <input
+                    id="pos-menu-search"
+                    ref={menuSearchInputRef}
+                    type="search"
+                    inputMode="search"
+                    autoComplete="off"
+                    placeholder="Search items…"
+                    value={menuSearchQuery}
+                    onChange={(e) => {
+                      setMenuSearchQuery(e.target.value);
+                      setFocusedItemIndex(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (filteredItems.length > 0) {
+                        if (e.key === "ArrowRight") {
+                          e.preventDefault();
+                          setFocusedItemIndex((i) =>
+                            Math.min(filteredItems.length - 1, i + 1),
+                          );
+                          return;
                         }
-                        className="w-3 h-3 rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <span className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                        if (e.key === "ArrowLeft") {
+                          e.preventDefault();
+                          setFocusedItemIndex((i) => Math.max(0, i - 1));
+                          return;
+                        }
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          setFocusedItemIndex((i) =>
+                            Math.min(filteredItems.length - 1, i + gridCols),
+                          );
+                          return;
+                        }
+                        if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setFocusedItemIndex((i) => Math.max(0, i - gridCols));
+                          return;
+                        }
+                      }
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      if (!menuSearchQuery.trim()) {
+                        toast.error(
+                          "Type to search, then press Enter to add the highlighted item",
+                        );
+                        return;
+                      }
+                      if (filteredItems.length === 0) {
+                        toast.error("No matching items");
+                        return;
+                      }
+                      const idx = Math.min(
+                        Math.max(0, focusedItemIndex),
+                        filteredItems.length - 1,
+                      );
+                      const selectedItem = filteredItems[idx];
+                      if (!selectedItem) {
+                        toast.error("No matching item found");
+                        return;
+                      }
+                      if (selectedItem.inventorySufficient === false) {
+                        toast.error(`${selectedItem.name} is out of stock`);
+                        return;
+                      }
+                      addToCart(selectedItem, 1);
+                      toast.success(`1 × ${selectedItem.name} added to cart`);
+                      setMenuSearchQuery("");
+                      setFocusedItemIndex(0);
+                    }}
+                    className="h-7 w-full border-b border-gray-200 pl-9 pr-3 text-sm text-gray-900 bg-transparent outline-none transition-all placeholder:text-gray-400  focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+                  />
+                </div>
+
+                {/* Dietary — compact chips, same row on wide screens */}
+                <div
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 shrink-0 sm:justify-end"
+                  role="group"
+                  aria-label="Dietary filter"
+                >
+                  {[
+                    { value: "veg", label: "Veg" },
+                    { value: "non-veg", label: "Non-veg" },
+                    { value: "egg", label: "Egg" },
+                  ].map((filter) => {
+                    const active = dietaryFilter === filter.value;
+                    return (
+                      <label
+                        key={filter.value}
+                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all ${
+                          active
+                            ? "border-primary bg-primary/10 text-primary dark:bg-primary/15"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-primary/40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={active}
+                          onChange={() =>
+                            setDietaryFilter(active ? "all" : filter.value)
+                          }
+                          className="sr-only"
+                        />
+                        <span
+                          className={`flex h-3.5 w-3.5 items-center justify-center rounded border text-[9px] font-bold leading-none ${
+                            active
+                              ? "border-primary bg-primary text-white"
+                              : "border-gray-300 dark:border-neutral-600"
+                          }`}
+                          aria-hidden
+                        >
+                          {active ? "✓" : ""}
+                        </span>
                         {filter.label}
-                      </span>
-                    </label>
-                  ))}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Category Cards - Compact */}
-              <div className="flex gap-2 mb-2 overflow-x-auto pb-1 scrollbar-hide">
+              {/* Category tabs */}
+              <div className="flex gap-2 overflow-x-auto border-t border-gray-100/80 bg-white/60 px-3 pb-2 pt-2 scrollbar-hide dark:border-neutral-800/80 dark:bg-neutral-950/40">
                 <button
                   onClick={() => setSelectedCategory("all")}
                   className={`flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left capitalize ${
@@ -1886,7 +2420,13 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 >
                   All{" "}
                   <span className="font-normal opacity-60">
-                    {allItemsForGrid.filter((item) => item.isDeal || (item.finalAvailable ?? item.available)).length}
+                    {
+                      allItemsForGrid.filter(
+                        (item) =>
+                          item.isDeal ||
+                          (item.finalAvailable ?? item.available),
+                      ).length
+                    }
                   </span>
                 </button>
 
@@ -1900,12 +2440,14 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 >
                   Deals{" "}
                   <span className="font-normal opacity-60">
-                    {allItemsForGrid.filter(i => i.isDeal).length}
+                    {allItemsForGrid.filter((i) => i.isDeal).length}
                   </span>
                 </button>
 
                 {menu.categories.map((cat) => {
-                  const catItemCount = menu.items.filter((item) => item.categoryId === cat.id).length;
+                  const catItemCount = menu.items.filter(
+                    (item) => item.categoryId === cat.id,
+                  ).length;
                   return (
                     <button
                       key={cat.id}
@@ -1917,111 +2459,14 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                       }`}
                     >
                       <span className="whitespace-nowrap">{cat.name}</span>{" "}
-                      <span className="font-normal opacity-60">{catItemCount}</span>
+                      <span className="font-normal opacity-60">
+                        {catItemCount}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-
-              {/* Search Bar - Two-step: quantity then item name, Enter adds first match to cart */}
-              <div className="relative">
-                <input
-                  ref={menuSearchInputRef}
-                  type={searchStep === "quantity" ? "number" : "text"}
-                  inputMode={searchStep === "quantity" ? "numeric" : "text"}
-                  placeholder={
-                    searchStep === "quantity"
-                      ? "Enter quantity (then press Enter)"
-                      : pendingAddQuantity < 0
-                        ? `Enter menu item name (then Enter) — removing ${Math.abs(pendingAddQuantity)}`
-                        : `Enter menu item name (then Enter) — adding ${pendingAddQuantity}`
-                  }
-                  value={searchStep === "quantity" ? searchQuantityInput : menuSearchQuery}
-                  onChange={(e) =>
-                    searchStep === "quantity"
-                      ? (() => {
-                          const raw = e.target.value.replace(/[^\d-]/g, "");
-                          const hasLeadingMinus = raw.startsWith("-");
-                          const digits = raw.replace(/-/g, "").slice(0, 4);
-                          setSearchQuantityInput(hasLeadingMinus ? "-" + digits : digits);
-                        })()
-                      : (setMenuSearchQuery(e.target.value), setFocusedItemIndex(0))
-                  }
-                  onKeyDown={(e) => {
-                    if (searchStep === "itemName" && filteredItems.length > 0) {
-                      if (e.key === "ArrowRight") {
-                        e.preventDefault();
-                        setFocusedItemIndex((i) => Math.min(filteredItems.length - 1, i + 1));
-                        return;
-                      }
-                      if (e.key === "ArrowLeft") {
-                        e.preventDefault();
-                        setFocusedItemIndex((i) => Math.max(0, i - 1));
-                        return;
-                      }
-                      if (e.key === "ArrowDown") {
-                        e.preventDefault();
-                        setFocusedItemIndex((i) => Math.min(filteredItems.length - 1, i + gridCols));
-                        return;
-                      }
-                      if (e.key === "ArrowUp") {
-                        e.preventDefault();
-                        setFocusedItemIndex((i) => Math.max(0, i - gridCols));
-                        return;
-                      }
-                    }
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    if (searchStep === "quantity") {
-                      const raw = searchQuantityInput.trim();
-                      const num = parseInt(raw, 10);
-                      if (raw === "-" || Number.isNaN(num) || num === 0) return;
-                      setPendingAddQuantity(num);
-                      setSearchStep("itemName");
-                      searchStepRef.current = "itemName";
-                      setSearchQuantityInput("");
-                      setMenuSearchQuery("");
-                      setFocusedItemIndex(0);
-                    } else {
-                      // Add the focused item (orange border), not the first search result
-                      if (filteredItems.length === 0) {
-                        toast.error("No items to add");
-                        return;
-                      }
-                      const idx = Math.min(Math.max(0, focusedItemIndex), filteredItems.length - 1);
-                      const selectedItem = filteredItems[idx];
-                      if (selectedItem) {
-                        if (pendingAddQuantity < 0) {
-                          const inCart = cart.find((c) => c.id === selectedItem.id);
-                          if (inCart) {
-                            updateQuantity(selectedItem.id, pendingAddQuantity);
-                          }
-                        } else {
-                          if (selectedItem.inventorySufficient === false) {
-                            toast.error(`${selectedItem.name} is out of stock`);
-                            return;
-                          }
-                          addToCart(selectedItem, pendingAddQuantity);
-                          toast.success(`${pendingAddQuantity} × ${selectedItem.name} added to cart`);
-                        }
-                      } else {
-                        toast.error("No matching item found");
-                      }
-                      setSearchStep("quantity");
-                      searchStepRef.current = "quantity";
-                      setSearchQuantityInput("");
-                      setMenuSearchQuery("");
-                      setPendingAddQuantity(1);
-                      setFocusedItemIndex(0);
-                    }
-                  }}
-                  className="w-full px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
-                />
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
-                  {searchStep === "quantity" ? "#" : "🔍"}
-                </div>
             </div>
-          </div>
 
             {/* Menu Grid - Compact */}
             <div className="flex-1 overflow-y-auto p-2 bg-gray-50 dark:bg-neutral-900/50">
@@ -2038,163 +2483,165 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   </div>
                 </div>
               ) : (
-              <>
-              <div
-                className={`grid gap-2 ${effectiveSidebarOpen ? "grid-cols-3 xl:grid-cols-4" : "grid-cols-4 xl:grid-cols-5"}`}
-              >
-                {filteredItems.map((item, idx) => {
-                  const inCart = cart.find((c) => c.id === item.id);
-                  const outOfStock = item.inventorySufficient === false;
-                  const category = menu.categories.find(
-                    (c) => c.id === item.categoryId,
-                  );
-                  const isTrending = item.isTrending === true;
-                  const isMustTry = item.isMustTry === true;
-
-                return (
+                <>
                   <div
-                    key={item.id}
-                    ref={idx === focusedItemIndex ? focusedCardRef : null}
-                    onClick={() => setFocusedItemIndex(idx)}
-                      className={`group relative flex flex-col rounded-lg overflow-hidden transition-all ${
-                        outOfStock
-                          ? "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 opacity-60"
-                          : "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 hover:shadow-md cursor-pointer"
-                      } ${searchStep === "itemName" && idx === focusedItemIndex ? "ring-2 ring-primary ring-offset-2 shadow-lg" : ""}`}
-                    >
-                      {/* Image - Compact */}
-                      <div
-                        className="relative h-32 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800"
-                        onClick={() =>
-                          !outOfStock && !inCart && addToCart(item)
-                        }
-                      >
-                        {/* Badges */}
-                        {!outOfStock && (
-                          <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
-                            {isTrending && (
-                              <span className="px-1.5 py-0.5 rounded bg-red-500 text-white text-[9px] font-bold flex items-center gap-0.5">
-                                <Flame className="w-2.5 h-2.5" />
-                                Trending
-                              </span>
-                            )}
-                            {isMustTry && (
-                              <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white text-[9px] font-bold flex items-center gap-0.5">
-                                <Star className="w-2.5 h-2.5" />
-                                Must Try
-                              </span>
-                            )}
-                          </div>
-                        )}
+                    className={`grid gap-2 ${effectiveSidebarOpen ? "grid-cols-3 xl:grid-cols-4" : "grid-cols-4 xl:grid-cols-5"}`}
+                  >
+                    {filteredItems.map((item, idx) => {
+                      const inCart = cart.find((c) => c.id === item.id);
+                      const outOfStock = item.inventorySufficient === false;
+                      const category = menu.categories.find(
+                        (c) => c.id === item.categoryId,
+                      );
+                      const isTrending = item.isTrending === true;
+                      const isMustTry = item.isMustTry === true;
 
-                        {item.imageUrl ? (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                            className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-3xl">
-                            🍽️
-                          </div>
-                        )}
-
-                        {outOfStock && (
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">
-                              Out of Stock
-                            </span>
-                          </div>
-                        )}
-
-                        {inCart && !outOfStock && (
-                          <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">
-                            {inCart.quantity}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Content - Compact */}
-                      <div className="p-2 flex flex-col">
-                        {/* Category and Dietary Info */}
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] text-gray-500 dark:text-neutral-500 truncate">
-                            {category?.name || "Uncategorized"}
-                          </span>
-                          <span className="text-[10px]">
-                            {item.name.toLowerCase().includes("veg")
-                              ? "🥗"
-                              : "🍗"}
-                          </span>
-                        </div>
-
-                        {/* Item Name */}
-                        <h3
-                          className={`text-xs font-bold mb-1 line-clamp-1 ${outOfStock ? "text-gray-400 dark:text-neutral-500" : "text-gray-900 dark:text-white"}`}
+                      return (
+                        <div
+                          key={item.id}
+                          ref={idx === focusedItemIndex ? focusedCardRef : null}
+                          onClick={() => setFocusedItemIndex(idx)}
+                          className={`group relative flex flex-col rounded-lg overflow-hidden transition-all ${
+                            outOfStock
+                              ? "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 opacity-60"
+                              : "border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 hover:shadow-md cursor-pointer"
+                          } ${menuSearchQuery.trim() && idx === focusedItemIndex ? "ring-2 ring-primary ring-offset-2 shadow-lg" : ""}`}
                         >
-                          {item.name}
-                        </h3>
-
-                        {/* Price and Add to Cart */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span
-                              className={`text-sm font-bold ${outOfStock ? "text-gray-400" : "text-primary"}`}
-                            >
-                              Rs {item.finalPrice ?? item.price}
-                            </span>
-                          </div>
-
-                          {!outOfStock &&
-                            (inCart ? (
-                              <div
-                                className="flex items-center gap-0.5 bg-gray-100 dark:bg-neutral-800 rounded p-0.5"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                            <button
-                              onClick={() => updateQuantity(item.id, -1)}
-                                  className="w-5 h-5 flex items-center justify-center rounded hover:bg-white dark:hover:bg-neutral-700 transition-colors"
-                            >
-                              <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
-                            </button>
-                                <span className="w-6 text-center text-xs font-bold text-gray-900 dark:text-white">
-                                  {inCart.quantity}
-                                </span>
-                            <button
-                              onClick={() => updateQuantity(item.id, 1)}
-                                  className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => addToCart(item)}
-                                className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
+                          {/* Image - Compact */}
+                          <div
+                            className="relative h-32 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800"
+                            onClick={() =>
+                              !outOfStock && !inCart && addToCart(item)
+                            }
                           >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                            ))}
+                            {/* Badges */}
+                            {!outOfStock && (
+                              <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
+                                {isTrending && (
+                                  <span className="px-1.5 py-0.5 rounded bg-red-500 text-white text-[9px] font-bold flex items-center gap-0.5">
+                                    <Flame className="w-2.5 h-2.5" />
+                                    Trending
+                                  </span>
+                                )}
+                                {isMustTry && (
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white text-[9px] font-bold flex items-center gap-0.5">
+                                    <Star className="w-2.5 h-2.5" />
+                                    Must Try
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-3xl">
+                                🍽️
+                              </div>
+                            )}
+
+                            {outOfStock && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">
+                                  Out of Stock
+                                </span>
+                              </div>
+                            )}
+
+                            {inCart && !outOfStock && (
+                              <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">
+                                {inCart.quantity}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Content - Compact */}
+                          <div className="p-2 flex flex-col">
+                            {/* Category and Dietary Info */}
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] text-gray-500 dark:text-neutral-500 truncate">
+                                {category?.name || "Uncategorized"}
+                              </span>
+                              <span className="text-[10px]">
+                                {item.name.toLowerCase().includes("veg")
+                                  ? "🥗"
+                                  : "🍗"}
+                              </span>
+                            </div>
+
+                            {/* Item Name */}
+                            <h3
+                              className={`text-xs font-bold mb-1 line-clamp-1 ${outOfStock ? "text-gray-400 dark:text-neutral-500" : "text-gray-900 dark:text-white"}`}
+                            >
+                              {item.name}
+                            </h3>
+
+                            {/* Price and Add to Cart */}
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span
+                                  className={`text-sm font-bold ${outOfStock ? "text-gray-400" : "text-primary"}`}
+                                >
+                                  Rs {item.finalPrice ?? item.price}
+                                </span>
+                              </div>
+
+                              {!outOfStock &&
+                                (inCart ? (
+                                  <div
+                                    className="flex items-center gap-0.5 bg-gray-100 dark:bg-neutral-800 rounded p-0.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      onClick={() =>
+                                        updateQuantity(item.id, -1)
+                                      }
+                                      className="w-5 h-5 flex items-center justify-center rounded hover:bg-white dark:hover:bg-neutral-700 transition-colors"
+                                    >
+                                      <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
+                                    </button>
+                                    <span className="w-6 text-center text-xs font-bold text-gray-900 dark:text-white">
+                                      {inCart.quantity}
+                                    </span>
+                                    <button
+                                      onClick={() => updateQuantity(item.id, 1)}
+                                      className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => addToCart(item)}
+                                    className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {filteredItems.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full py-20">
+                      <div className="w-24 h-24 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+                        <ShoppingCart className="w-12 h-12 text-gray-300 dark:text-neutral-700" />
                       </div>
+                      <p className="text-sm font-medium text-gray-600 dark:text-neutral-400">
+                        No items found
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
+                        Try a different search or category
+                      </p>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-            {filteredItems.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full py-20">
-                  <div className="w-24 h-24 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
-                    <ShoppingCart className="w-12 h-12 text-gray-300 dark:text-neutral-700" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-neutral-400">
-                    No items found
-                  </p>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-1">
-                    Try a different search or category
-                  </p>
-              </div>
-            )}
-              </>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -2210,9 +2657,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               <button
                 type="button"
                 onClick={() => {
-                  setEditingOrderId(null);
-                  setEditingOrder(null);
-                  setCart([]);
+                  handleNavigateAwayFromEdit(() => {
+                    resetEditOrderState();
+                    onClose?.();
+                  });
                 }}
                 className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
               >
@@ -2231,7 +2679,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
             <div className="flex items-center justify-between mb-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => handleNavigateAwayFromEdit(() => onClose?.())}
                 className="flex items-center gap-1.5 text-base font-bold text-gray-900 dark:text-white hover:text-primary dark:hover:text-primary transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -2242,7 +2690,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   #{editingOrder?.orderNumber || editingOrderId}
                 </span>
               )}
-          </div>
+            </div>
 
             {/* Order Type Buttons + Settings (beside Delivery) */}
             <div className="flex gap-2 mb-2">
@@ -2289,52 +2737,74 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
             </div>
 
             {/* Table + Order Taker in one row */}
-            {posOptionsLoaded && orderType === "DINE_IN" && (showTablePos || showWaiterPos) && (
-              <div className="flex gap-2 mb-2">
-                {orderType === "DINE_IN" && showTablePos && (
-                  <select
-                    value={tableName}
-                    onChange={(e) => setTableName(e.target.value)}
-                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
-                  >
-                    <option value="">No table</option>
-                    {tables.filter((t) => t.isAvailable).map((t) => (
-                      <option key={t.id} value={t.name}>{t.name}</option>
-                    ))}
-                    {tables.filter((t) => !t.isAvailable).map((t) => (
-                      <option key={t.id} value={t.name}>{t.name} (occupied)</option>
-                    ))}
-                  </select>
-                )}
-                {showWaiterPos && orderType === "DINE_IN" && (
-                  <select
-                    value={selectedWaiter}
-                    onChange={(e) => setSelectedWaiter(e.target.value)}
-                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
-                  >
-                    <option value="">Order Taker</option>
-                    {orderTakers.map((u) => (
-                      <option key={u.id} value={u.name}>{u.name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            )}
-
+            {posOptionsLoaded &&
+              orderType === "DINE_IN" &&
+              (showTablePos || showWaiterPos) && (
+                <div className="flex gap-2 mb-2">
+                  {orderType === "DINE_IN" && showTablePos && (
+                    <select
+                      value={tableName}
+                      onChange={(e) => setTableName(e.target.value)}
+                      className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
+                    >
+                      <option value="">No table</option>
+                      {tables
+                        .filter((t) => t.isAvailable)
+                        .map((t) => (
+                          <option key={t.id} value={t.name}>
+                            {t.name}
+                          </option>
+                        ))}
+                      {tables
+                        .filter((t) => !t.isAvailable)
+                        .map((t) => (
+                          <option key={t.id} value={t.name}>
+                            {t.name} (occupied)
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  {showWaiterPos && orderType === "DINE_IN" && (
+                    <select
+                      value={selectedWaiter}
+                      onChange={(e) => setSelectedWaiter(e.target.value)}
+                      className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
+                    >
+                      <option value="">Order Taker</option>
+                      {orderTakers.map((u) => (
+                        <option key={u.id} value={u.name}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
           </div>
 
           {/* Ordered Items Header */}
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                 Ordered Menus
               </h3>
-              <span className="text-xs text-gray-500 dark:text-neutral-400">
-                Total:{" "}
-                <span className="font-bold text-gray-900 dark:text-white">
-                  {cart.length}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {cart.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearAllCartItems}
+                    className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
+                <span className="text-xs text-gray-500 dark:text-neutral-400 whitespace-nowrap">
+                  Total:{" "}
+                  <span className="font-bold text-gray-900 dark:text-white">
+                    {cart.length}
+                  </span>
                 </span>
-              </span>
+              </div>
             </div>
           </div>
 
@@ -2353,8 +2823,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               cart.map((item) => {
                 const isExpanded = expandedCartItems.includes(item.id);
                 return (
-                <div
-                  key={item.id}
+                  <div
+                    key={item.id}
                     onClick={() => {
                       setExpandedCartItems((prev) =>
                         prev.includes(item.id)
@@ -2393,7 +2863,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                               </span>
                             </h4>
                           </div>
-                    <button
+                          <button
                             onClick={(e) => {
                               e.stopPropagation();
                               removeFromCart(item.id);
@@ -2401,8 +2871,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                             className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
                           >
                             <span className="text-lg">✕</span>
-                    </button>
-                  </div>
+                          </button>
+                        </div>
 
                         {/* Quantity and Add Note Row */}
                         <div className="flex items-center justify-between gap-2">
@@ -2410,7 +2880,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                             className="flex items-center gap-1 bg-gray-100 dark:bg-neutral-900 rounded-md p-0.5"
                             onClick={(e) => e.stopPropagation()}
                           >
-                      <button
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 updateQuantity(item.id, -1);
@@ -2418,11 +2888,11 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                               className="w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors"
                             >
                               <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-400" />
-                      </button>
+                            </button>
                             <span className="w-8 scale-105 text-center text-xs font-semibold text-gray-900 dark:text-white">
                               {item.quantity}
                             </span>
-                      <button
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 updateQuantity(item.id, 1);
@@ -2430,8 +2900,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                               className="w-4 h-4 flex items-center justify-center bg-primary hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors"
                             >
                               <Plus className="w-3 h-3 dark:text-neutral-400" />
-                      </button>
-                    </div>
+                            </button>
+                          </div>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2450,8 +2920,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                       <div className="mt-3 p-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
                         <p className="text-xs text-blue-700 dark:text-blue-400">
                           📝 {itemNotes[item.id]}
-                    </p>
-                  </div>
+                        </p>
+                      </div>
                     )}
 
                     {/* Price Grid - Only shown when expanded */}
@@ -2461,7 +2931,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                           <div>
                             <div className="text-gray-500 dark:text-neutral-500 mb-1.5">
                               Item Rate
-                </div>
+                            </div>
                             <div className="font-semibold text-gray-900 dark:text-white">
                               Rs {item.price}
                             </div>
@@ -2505,7 +2975,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     <span className="flex items-center gap-2">
                       <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-emerald-500/10 to-emerald-600/10 flex items-center justify-center">
                         <Tag className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                </div>
+                      </div>
                       <span className="flex items-center gap-2">
                         Deals
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
@@ -2551,13 +3021,13 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                       {deal.badgeText}
                                     </span>
                                   )}
-                </div>
+                                </div>
                                 {deal.description && (
                                   <p className="text-xs text-gray-600 dark:text-neutral-400 line-clamp-1">
                                     {deal.description}
                                   </p>
                                 )}
-              </div>
+                              </div>
                               <div className="text-right shrink-0">
                                 {isSelected && (
                                   <CircleCheckBig className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mb-1" />
@@ -2603,44 +3073,17 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     </span>
                   </div>
                 )}
-                {showDiscountField && (
-                  <div className="flex items-center justify-between gap-2 text-xs py-0.5">
-                    <span className="text-gray-600 dark:text-neutral-400 flex items-center gap-1 shrink-0">
-                      <Percent className="w-3 h-3 opacity-80" />
-                      Discount
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step="0.01"
-                        max={100}
-                        value={discountAmount}
-                        onChange={(e) => setDiscountAmount(e.target.value)}
-                        onBlur={() => {
-                          if (discountAmount === "") return;
-                          const n = Number(discountAmount);
-                          if (!Number.isFinite(n) || n < 0) {
-                            setDiscountAmount("");
-                            return;
-                          }
-                          setDiscountAmount(String(Math.min(n, 100)));
-                        }}
-                        placeholder="0"
-                        disabled={cart.length === 0 || maxManualDiscountAllowed <= 0}
-                        className="w-14 px-1.5 py-0.5 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-right text-xs font-semibold text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <span className="text-sm text-gray-500 dark:text-neutral-500">%</span>
+                {manualDiscountPercentClamped > 0 && (
+                  <div className="flex flex-col gap-0.5 text-xs py-0.5">
+                    <div className="flex justify-between items-baseline gap-2">
+                      <span className="text-gray-600 dark:text-neutral-400 flex items-center gap-1">
+                        <Percent className="w-3 h-3 opacity-80" />
+                        {discountPresetLabel || "Discount"}
+                      </span>
+                      <span className="font-semibold tabular-nums text-gray-700 dark:text-neutral-300">
+                        -Rs {manualDiscount.toFixed(2)}
+                      </span>
                     </div>
-                  </div>
-                )}
-                {manualDiscount > 0 && (
-                  <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
-                    <span className="text-gray-600 dark:text-neutral-400">Manual off</span>
-                    <span className="font-semibold tabular-nums text-gray-700 dark:text-neutral-300">
-                      -Rs {manualDiscount.toFixed(2)}
-                    </span>
                   </div>
                 )}
                 <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
@@ -2653,7 +3096,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 </div>
                 {orderType === "DELIVERY" && deliveryFee > 0 && (
                   <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
-                    <span className="text-gray-600 dark:text-neutral-400">Delivery</span>
+                    <span className="text-gray-600 dark:text-neutral-400">
+                      Delivery
+                    </span>
                     <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
                       Rs {deliveryFee.toFixed(2)}
                     </span>
@@ -2677,18 +3122,66 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               {orderType === "DELIVERY" && (
                 <div className="mb-2">
                   {deliveryZones.length > 0 ? (
-                    <select
-                      value={deliveryLocationId}
-                      onChange={(e) => setDeliveryLocationId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
-                    >
-                      <option value="">— Select delivery area —</option>
-                      {deliveryZones.map((z) => (
-                        <option key={z.id} value={z.id}>
-                          {z.name} — Rs {z.fee.toFixed(2)}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={
+                          deliveryZoneOpen
+                            ? deliveryZoneQuery
+                            : selectedDeliveryZoneLabel
+                        }
+                        onFocus={() => {
+                          setDeliveryZoneOpen(true);
+                          setDeliveryZoneQuery("");
+                        }}
+                        onBlur={() =>
+                          setTimeout(() => setDeliveryZoneOpen(false), 120)
+                        }
+                        onChange={(e) => {
+                          setDeliveryZoneQuery(e.target.value);
+                          setDeliveryZoneOpen(true);
+                        }}
+                        placeholder="Search delivery area..."
+                        className="w-full px-3 pr-8 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
+                      />
+                      <ChevronDown
+                        className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 transition-transform ${deliveryZoneOpen ? "rotate-180" : ""}`}
+                      />
+                      {deliveryZoneOpen && (
+                        <div className="absolute z-30 bottom-full mb-1 w-full max-h-72 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeliveryLocationId("");
+                              setDeliveryZoneQuery("");
+                              setDeliveryZoneOpen(false);
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                          >
+                            — Select delivery area —
+                          </button>
+                          {filteredDeliveryZones.map((z) => (
+                            <button
+                              key={z.id}
+                              type="button"
+                              onClick={() => {
+                                setDeliveryLocationId(z.id);
+                                setDeliveryZoneQuery("");
+                                setDeliveryZoneOpen(false);
+                              }}
+                              className="w-full px-3 py-2 text-left text-xs text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-neutral-800"
+                            >
+                              {z.name} — Rs {Number(z.fee || 0).toFixed(2)}
+                            </button>
+                          ))}
+                          {filteredDeliveryZones.length === 0 && (
+                            <div className="px-3 py-2 text-xs text-gray-500 dark:text-neutral-400">
+                              No matching area
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <textarea
                       value={customerAddress}
@@ -2746,9 +3239,17 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   <button
                     type="button"
                     onClick={openCustomerModal}
-                    title={customerName ? `Customer: ${customerName}` : "Add customer"}
-                    aria-label={customerName ? `Customer: ${customerName}` : "Add customer"}
-                    className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-gray-300 dark:hover:border-neutral-600 transition-colors flex-shrink-0"
+                    title={
+                      customerName
+                        ? `Customer: ${customerName}`
+                        : "Add customer"
+                    }
+                    aria-label={
+                      customerName
+                        ? `Customer: ${customerName}`
+                        : "Add customer"
+                    }
+                    className="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-gray-300 dark:hover:border-neutral-600 transition-colors flex-shrink-0"
                   >
                     <UserPlus className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
                   </button>
@@ -2759,16 +3260,16 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   disabled={printingMenu || cart.length === 0}
                   title={printingMenu ? "Printing…" : "Print bill"}
                   aria-label={printingMenu ? "Printing" : "Print bill"}
-                  className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                 >
                   <Printer className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowDiscountField((prev) => !prev)}
+                  onClick={openDiscountModal}
                   disabled={cart.length === 0 || maxManualDiscountAllowed <= 0}
                   className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 ${
-                    showDiscountField
+                    manualDiscountPercentClamped > 0
                       ? "border-primary/40 bg-primary/10 text-primary"
                       : "border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-300"
                   }`}
@@ -2780,7 +3281,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   type="button"
                   onClick={() => openTakePaymentModal("CASH")}
                   disabled={cart.length === 0}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-sm font-medium text-gray-700 dark:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-xs font-medium text-gray-700 dark:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Receipt className="w-4 h-4" />
                   Take Payment
@@ -2913,8 +3414,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
             <div className="px-6 py-4 border-b border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50">
               <div className="flex items-center gap-4">
                 <div className="flex-1 relative">
-                        <input
-                          type="text"
+                  <input
+                    type="text"
                     placeholder="Search"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -2922,8 +3423,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   />
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     🔍
-                      </div>
-                    </div>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-600 dark:text-neutral-400">
                     Sort by :
@@ -2936,7 +3437,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     <option value="newest">Newest</option>
                     <option value="oldest">Oldest</option>
                   </select>
-                  </div>
+                </div>
               </div>
             </div>
 
@@ -2955,7 +3456,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                         <Receipt className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
                       </div>
                       <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-                        {searchQuery ? "No transactions found" : "No transactions yet"}
+                        {searchQuery
+                          ? "No transactions found"
+                          : "No transactions yet"}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-neutral-500 mt-1">
                         {searchQuery
@@ -2992,23 +3495,31 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                               className="hover:bg-gray-50 dark:hover:bg-neutral-900/50 transition-colors"
                             >
                               <td className="px-6 py-4 text-sm text-gray-600 dark:text-neutral-400">
-                                {new Date(transaction.createdAt).toLocaleDateString(
-                                  "en-US",
-                                  {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                  },
-                                )}
+                                {new Date(
+                                  transaction.createdAt,
+                                ).toLocaleDateString("en-US", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric",
+                                })}
                               </td>
                               <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                                #{transaction.ref || transaction.orderNumber || transaction.id?.slice(-6) || transaction._id?.slice(-6)}
+                                #
+                                {transaction.ref ||
+                                  transaction.orderNumber ||
+                                  transaction.id?.slice(-6) ||
+                                  transaction._id?.slice(-6)}
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
                                 {transaction.customerName || "Walk-in Customer"}
                               </td>
                               <td className="px-6 py-4 text-sm font-semibold text-right text-gray-900 dark:text-white">
-                                ${(transaction.total || transaction.subtotal || 0).toFixed(2)}
+                                $
+                                {(
+                                  transaction.total ||
+                                  transaction.subtotal ||
+                                  0
+                                ).toFixed(2)}
                               </td>
                               <td className="px-6 py-4">
                                 <div className="flex items-center justify-center gap-2">
@@ -3020,7 +3531,11 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                     <Receipt className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
                                   </button>
                                   <button
-                                    onClick={() => removeTransaction(transaction.id || transaction._id)}
+                                    onClick={() =>
+                                      removeTransaction(
+                                        transaction.id || transaction._id,
+                                      )
+                                    }
                                     className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                                     title="Delete Transaction"
                                   >
@@ -3097,13 +3612,20 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                 )}
                               </td>
                               <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                                #{draft.ref || draft.orderNumber || draft.id?.slice(-6) || draft._id?.slice(-6)}
+                                #
+                                {draft.ref ||
+                                  draft.orderNumber ||
+                                  draft.id?.slice(-6) ||
+                                  draft._id?.slice(-6)}
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
                                 {draft.customerName || "Walk-in Customer"}
                               </td>
                               <td className="px-6 py-4 text-sm font-semibold text-right text-gray-900 dark:text-white">
-                                ${(draft.total || draft.subtotal || 0).toFixed(2)}
+                                $
+                                {(draft.total || draft.subtotal || 0).toFixed(
+                                  2,
+                                )}
                               </td>
                               <td className="px-6 py-4">
                                 <div className="flex items-center justify-center gap-2">
@@ -3125,7 +3647,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                     <Receipt className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
                                   </button>
                                   <button
-                                    onClick={() => removeDraft(draft.id || draft._id)}
+                                    onClick={() =>
+                                      removeDraft(draft.id || draft._id)
+                                    }
                                     className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                                     title="Delete Draft"
                                   >
@@ -3320,9 +3844,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                         </span>
                         <span className="text-sm font-semibold text-red-600 dark:text-red-400">
                           -${totalDiscount.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
+                        </span>
+                      </div>
+                    )}
                     <div className="pt-3 border-t border-gray-200 dark:border-neutral-800">
                       <div className="flex justify-between items-center">
                         <span className="text-base font-bold text-gray-900 dark:text-white">
@@ -3340,7 +3864,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-200 dark:border-neutral-800 flex gap-3 bg-gray-50 dark:bg-neutral-900/50">
-                    <button
+              <button
                 onClick={() => {
                   // Download PDF logic here
                   alert("Download PDF functionality to be implemented");
@@ -3349,8 +3873,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               >
                 <FileText className="w-4 h-4" />
                 Download PDF
-                    </button>
-                    <button
+              </button>
+              <button
                 onClick={() => {
                   window.print();
                 }}
@@ -3358,8 +3882,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               >
                 <Receipt className="w-4 h-4" />
                 Print Invoice
-                    </button>
-                  </div>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3373,12 +3897,12 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                 Print Reciept
               </h2>
-                    <button
+              <button
                 onClick={() => setShowPrintModal(false)}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
               >
                 <span className="text-2xl">×</span>
-                    </button>
+              </button>
             </div>
 
             {/* Modal Body */}
@@ -3394,16 +3918,20 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                       Date & Time
                     </span>
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {now ? now.toLocaleDateString("en-US", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      }) : ""}{" "}
-                      {now ? `- ${now.toLocaleTimeString("en-US", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                      })}` : ""}
+                      {now
+                        ? now.toLocaleDateString("en-US", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                          })
+                        : ""}{" "}
+                      {now
+                        ? `- ${now.toLocaleTimeString("en-US", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}`
+                        : ""}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -3436,7 +3964,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     </span>
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
                       {orderType === "DINE_IN"
-                        ? (tableName ? `Dine In (${tableName})` : "Dine In")
+                        ? tableName
+                          ? `Dine In (${tableName})`
+                          : "Dine In"
                         : orderType === "TAKEAWAY"
                           ? "Take Away"
                           : "Delivery"}
@@ -3510,7 +4040,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-200 dark:border-neutral-800 flex gap-3">
-                    <button
+              <button
                 onClick={() => setShowPrintModal(false)}
                 className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
               >
@@ -3523,8 +4053,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 className="flex-1 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors"
               >
                 Print
-                    </button>
-                  </div>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3533,14 +4063,15 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       {showTakePaymentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
                   <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 </div>
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Take Payment</h2>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                  Take Payment
+                </h2>
               </div>
               <button
                 type="button"
@@ -3554,27 +4085,38 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
             {/* Bill total hero */}
             <div className="px-5 pt-5">
               <div className="text-center py-4 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">Bill Total</p>
+                <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">
+                  Bill Total
+                </p>
                 <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
                   Rs {Math.round(total).toLocaleString()}
                 </p>
                 {total % 1 !== 0 && (
-                  <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">{total.toFixed(2)}</p>
+                  <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
+                    {total.toFixed(2)}
+                  </p>
                 )}
               </div>
             </div>
 
-            <form onSubmit={handleTakePaymentSubmit} className="px-5 pt-4 pb-5 space-y-4">
+            <form
+              onSubmit={handleTakePaymentSubmit}
+              className="px-5 pt-4 pb-5 space-y-4"
+            >
               {paymentError && (
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
-                  <p className="text-xs font-medium text-red-600 dark:text-red-400">{paymentError}</p>
+                  <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                    {paymentError}
+                  </p>
                 </div>
               )}
 
               {/* Payment method tiles */}
               <div>
-                <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Payment method</label>
+                <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                  Payment method
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
@@ -3602,7 +4144,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setPaymentMethod("ONLINE"); setOnlineProvider(null); }}
+                    onClick={() => {
+                      setPaymentMethod("ONLINE");
+                      setOnlineProvider(null);
+                    }}
                     className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${
                       paymentMethod === "ONLINE"
                         ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400"
@@ -3618,15 +4163,23 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               {/* Online provider sub-options — dynamic from Business Settings */}
               {paymentMethod === "ONLINE" && (
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Paid to</label>
+                  <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                    Paid to
+                  </label>
                   {paymentAccountsLoading ? (
                     <div className="flex items-center justify-center gap-2 py-4">
                       <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
-                      <span className="text-xs text-gray-400 dark:text-neutral-500">Loading accounts…</span>
+                      <span className="text-xs text-gray-400 dark:text-neutral-500">
+                        Loading accounts…
+                      </span>
                     </div>
                   ) : paymentAccounts.length === 0 ? (
                     <div className="px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
-                      No payment accounts configured. Go to <span className="font-semibold">Business Settings → Payment Accounts</span> to add them.
+                      No payment accounts configured. Go to{" "}
+                      <span className="font-semibold">
+                        Business Settings → Payment Accounts
+                      </span>{" "}
+                      to add them.
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
@@ -3641,95 +4194,123 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                               : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"
                           }`}
                         >
-                          <p className={`text-xs font-semibold truncate ${onlineProvider === acc.name ? "text-violet-700 dark:text-violet-400" : "text-gray-700 dark:text-neutral-300"}`}>{acc.name}</p>
-                          {acc.description && <p className="text-[10px] text-gray-400 dark:text-neutral-500 truncate mt-0.5">{acc.description}</p>}
+                          <p
+                            className={`text-xs font-semibold truncate ${onlineProvider === acc.name ? "text-violet-700 dark:text-violet-400" : "text-gray-700 dark:text-neutral-300"}`}
+                          >
+                            {acc.name}
+                          </p>
+                          {acc.description && (
+                            <p className="text-[10px] text-gray-400 dark:text-neutral-500 truncate mt-0.5">
+                              {acc.description}
+                            </p>
+                          )}
                         </button>
                       ))}
                     </div>
                   )}
                   {paymentAccounts.length > 0 && !onlineProvider && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">Please select an account to continue.</p>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">
+                      Please select an account to continue.
+                    </p>
                   )}
                 </div>
               )}
 
               {/* Cash-specific fields */}
-              {paymentMethod === "CASH" && (() => {
-                const exactAmt = Math.ceil(total);
-                const roundDenominations = [100, 200, 500, 1000, 2000, 5000, 10000];
-                const quickAmounts = [exactAmt, ...roundDenominations.filter((v) => v > exactAmt)].slice(0, 4);
-                const receivedNum = Number(amountReceived);
-                const isUnderpaid = amountReceived !== "" && !isNaN(receivedNum) && receivedNum < total;
-                const isOverpaid  = amountReceived !== "" && !isNaN(receivedNum) && receivedNum >= total;
-                return (
-                  <>
-                    {/* Quick-amount presets */}
-                    <div>
-                      <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Quick amount</label>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {quickAmounts.map((amt) => (
-                          <button
-                            key={amt}
-                            type="button"
-                            onClick={() => setAmountReceived(String(amt))}
-                            className={`py-2 rounded-lg text-xs font-bold transition-all border ${
-                              receivedNum === amt
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                            }`}
-                          >
-                            {amt.toLocaleString()}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Amount received input */}
-                    <div>
-                      <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
-                        Amount received (Rs)
-                      </label>
-                      <input
-                        ref={amountReceivedInputRef}
-                        type="number"
-                        min="0"
-                        step="1"
-                        required={paymentMethod === "CASH"}
-                        value={amountReceived}
-                        onChange={(e) => setAmountReceived(e.target.value)}
-                        placeholder={`Min. ${Math.ceil(total).toLocaleString()}`}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                      />
-                    </div>
-
-                    {/* Change */}
-                    {isOverpaid && (
-                      <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Change</span>
+              {paymentMethod === "CASH" &&
+                (() => {
+                  const exactAmt = Math.ceil(total);
+                  const roundDenominations = [
+                    100, 200, 500, 1000, 2000, 5000, 10000,
+                  ];
+                  const quickAmounts = [
+                    exactAmt,
+                    ...roundDenominations.filter((v) => v > exactAmt),
+                  ].slice(0, 4);
+                  const receivedNum = Number(amountReceived);
+                  const isUnderpaid =
+                    amountReceived !== "" &&
+                    !isNaN(receivedNum) &&
+                    receivedNum < total;
+                  const isOverpaid =
+                    amountReceived !== "" &&
+                    !isNaN(receivedNum) &&
+                    receivedNum >= total;
+                  return (
+                    <>
+                      {/* Quick-amount presets */}
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                          Quick amount
+                        </label>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {quickAmounts.map((amt) => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => setAmountReceived(String(amt))}
+                              className={`py-2 rounded-lg text-xs font-bold transition-all border ${
+                                receivedNum === amt
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                              }`}
+                            >
+                              {amt.toLocaleString()}
+                            </button>
+                          ))}
                         </div>
-                        <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
-                          Rs {(receivedNum - total).toFixed(2)}
-                        </span>
                       </div>
-                    )}
 
-                    {/* Short-by warning */}
-                    {isUnderpaid && (
-                      <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-red-500" />
-                          <span className="text-xs font-semibold text-red-700 dark:text-red-400">Short by</span>
-                        </div>
-                        <span className="text-xl font-black text-red-700 dark:text-red-400 tabular-nums">
-                          Rs {(total - receivedNum).toFixed(2)}
-                        </span>
+                      {/* Amount received input */}
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                          Amount received (Rs)
+                        </label>
+                        <input
+                          ref={amountReceivedInputRef}
+                          type="number"
+                          min="0"
+                          step="1"
+                          required={paymentMethod === "CASH"}
+                          value={amountReceived}
+                          onChange={(e) => setAmountReceived(e.target.value)}
+                          placeholder={`Min. ${Math.ceil(total).toLocaleString()}`}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                        />
                       </div>
-                    )}
-                  </>
-                );
-              })()}
+
+                      {/* Change */}
+                      {isOverpaid && (
+                        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                              Change
+                            </span>
+                          </div>
+                          <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            Rs {(receivedNum - total).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Short-by warning */}
+                      {isUnderpaid && (
+                        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-red-500" />
+                            <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+                              Short by
+                            </span>
+                          </div>
+                          <span className="text-xl font-black text-red-700 dark:text-red-400 tabular-nums">
+                            Rs {(total - receivedNum).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
               {/* Actions */}
               <div className="flex gap-2 pt-1">
@@ -3744,15 +4325,22 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   type="submit"
                   disabled={
                     paymentLoading ||
-                    (paymentMethod === "CASH" && (amountReceived === "" || Number(amountReceived) < total)) ||
+                    (paymentMethod === "CASH" &&
+                      (amountReceived === "" ||
+                        Number(amountReceived) < total)) ||
                     (paymentMethod === "ONLINE" && !onlineProvider)
                   }
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
                 >
-                  {paymentLoading
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-                    : <><CircleCheckBig className="w-4 h-4" /> Record Payment</>
-                  }
+                  {paymentLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Processing…
+                    </>
+                  ) : (
+                    <>
+                      <CircleCheckBig className="w-4 h-4" /> Record Payment
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -3765,7 +4353,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">POS options</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                POS options
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowPosTableSettingsModal(false)}
@@ -3804,7 +4394,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 <input
                   type="checkbox"
                   checked={posCustomerSettingsDraft}
-                  onChange={(e) => setPosCustomerSettingsDraft(e.target.checked)}
+                  onChange={(e) =>
+                    setPosCustomerSettingsDraft(e.target.checked)
+                  }
                   className="rounded border-gray-300 text-primary focus:ring-primary"
                 />
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
@@ -3837,7 +4429,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                       toast.success("POS options saved");
                       setShowPosTableSettingsModal(false);
                     })
-                    .catch((err) => toast.error(err?.message || "Failed to update"))
+                    .catch((err) =>
+                      toast.error(err?.message || "Failed to update"),
+                    )
                     .finally(() => setPosTableSettingsSaving(false));
                 }}
                 className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
@@ -3851,24 +4445,26 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
       {/* Select / Add Customer Modal (search by phone, quick add if not found) */}
       {showCustomerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-neutral-900/80 p-4">
           <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                 Select Customer
               </h2>
-                  <button
+              <button
                 type="button"
                 onClick={closeCustomerModal}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
               >
                 <span className="text-2xl">×</span>
-                  </button>
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
               {customerModalError && (
-                <p className="mb-3 text-sm text-red-600 dark:text-red-400">{customerModalError}</p>
+                <p className="mb-3 text-sm text-red-600 dark:text-red-400">
+                  {customerModalError}
+                </p>
               )}
 
               <>
@@ -3891,7 +4487,7 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     {(() => {
                       const term = customerSearch.trim();
                       const filtered = customersList.filter((c) =>
-                        !term ? true : (c.phone || "").includes(term)
+                        !term ? true : (c.phone || "").includes(term),
                       );
                       if (filtered.length > 0) {
                         return (
@@ -3903,22 +4499,42 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                     <input
                                       type="text"
                                       value={editCustomerForm.name}
-                                      onChange={(e) => setEditCustomerForm((prev) => ({ ...prev, name: e.target.value }))}
+                                      onChange={(e) =>
+                                        setEditCustomerForm((prev) => ({
+                                          ...prev,
+                                          name: e.target.value,
+                                        }))
+                                      }
                                       placeholder="Name"
                                       className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                     />
                                     <input
                                       type="text"
                                       value={editCustomerForm.phone}
-                                      onChange={(e) => setEditCustomerForm((prev) => ({ ...prev, phone: e.target.value }))}
+                                      onChange={(e) =>
+                                        setEditCustomerForm((prev) => ({
+                                          ...prev,
+                                          phone: e.target.value,
+                                        }))
+                                      }
                                       placeholder="Phone"
                                       className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                     />
                                     <input
                                       type="text"
                                       value={editCustomerForm.address}
-                                      onChange={(e) => setEditCustomerForm((prev) => ({ ...prev, address: e.target.value }))}
-                                      placeholder={orderType === "DELIVERY" && !deliveryZonesActive ? "Address *" : "Address"}
+                                      onChange={(e) =>
+                                        setEditCustomerForm((prev) => ({
+                                          ...prev,
+                                          address: e.target.value,
+                                        }))
+                                      }
+                                      placeholder={
+                                        orderType === "DELIVERY" &&
+                                        !deliveryZonesActive
+                                          ? "Address *"
+                                          : "Address"
+                                      }
                                       className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                     />
                                     <div className="flex gap-2">
@@ -3926,19 +4542,41 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                         type="button"
                                         disabled={savingCustomer}
                                         onClick={async () => {
-                                          if (!editCustomerForm.name.trim()) return;
-                                          if (orderType === "DELIVERY" && !deliveryZonesActive && !editCustomerForm.address.trim()) {
-                                            toast.error("Address is required for delivery orders");
+                                          if (!editCustomerForm.name.trim())
+                                            return;
+                                          if (
+                                            orderType === "DELIVERY" &&
+                                            !deliveryZonesActive &&
+                                            !editCustomerForm.address.trim()
+                                          ) {
+                                            toast.error(
+                                              "Address is required for delivery orders",
+                                            );
                                             return;
                                           }
                                           setSavingCustomer(true);
                                           try {
-                                            const updated = await updateCustomer(c.id, { name: editCustomerForm.name, phone: editCustomerForm.phone, address: editCustomerForm.address });
-                                            setCustomersList((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...updated } : x)));
+                                            const updated =
+                                              await updateCustomer(c.id, {
+                                                name: editCustomerForm.name,
+                                                phone: editCustomerForm.phone,
+                                                address:
+                                                  editCustomerForm.address,
+                                              });
+                                            setCustomersList((prev) =>
+                                              prev.map((x) =>
+                                                x.id === c.id
+                                                  ? { ...x, ...updated }
+                                                  : x,
+                                              ),
+                                            );
                                             setEditingCustomerId(null);
                                             toast.success("Customer updated");
                                           } catch (err) {
-                                            toast.error(err.message || "Failed to update customer");
+                                            toast.error(
+                                              err.message ||
+                                                "Failed to update customer",
+                                            );
                                           } finally {
                                             setSavingCustomer(false);
                                           }
@@ -3949,7 +4587,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => setEditingCustomerId(null)}
+                                        onClick={() =>
+                                          setEditingCustomerId(null)
+                                        }
                                         className="px-3 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 text-xs text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"
                                       >
                                         Cancel
@@ -3961,14 +4601,30 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (orderType === "DELIVERY" && deliveryZonesActive && !deliveryLocationId) {
-                                          toast.error("Select a delivery area first");
+                                        if (
+                                          orderType === "DELIVERY" &&
+                                          deliveryZonesActive &&
+                                          !deliveryLocationId
+                                        ) {
+                                          toast.error(
+                                            "Select a delivery area first",
+                                          );
                                           return;
                                         }
-                                        if (orderType === "DELIVERY" && !deliveryZonesActive && !c.address?.trim()) {
+                                        if (
+                                          orderType === "DELIVERY" &&
+                                          !deliveryZonesActive &&
+                                          !c.address?.trim()
+                                        ) {
                                           setEditingCustomerId(c.id);
-                                          setEditCustomerForm({ name: c.name || "", phone: c.phone || "", address: c.address || "" });
-                                          toast.error("Please add an address for delivery");
+                                          setEditCustomerForm({
+                                            name: c.name || "",
+                                            phone: c.phone || "",
+                                            address: c.address || "",
+                                          });
+                                          toast.error(
+                                            "Please add an address for delivery",
+                                          );
                                           return;
                                         }
                                         selectCustomerForOrder(c);
@@ -3986,14 +4642,20 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                                         )}
                                       </div>
                                       {c.address && (
-                                        <p className="text-xs text-gray-400 dark:text-neutral-500 truncate mt-0.5">{c.address}</p>
+                                        <p className="text-xs text-gray-400 dark:text-neutral-500 truncate mt-0.5">
+                                          {c.address}
+                                        </p>
                                       )}
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => {
                                         setEditingCustomerId(c.id);
-                                        setEditCustomerForm({ name: c.name || "", phone: c.phone || "", address: c.address || "" });
+                                        setEditCustomerForm({
+                                          name: c.name || "",
+                                          phone: c.phone || "",
+                                          address: c.address || "",
+                                        });
                                       }}
                                       className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-gray-400 hover:text-primary transition-all flex-shrink-0"
                                       title="Edit customer"
@@ -4024,7 +4686,8 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                       return (
                         <div className="space-y-3">
                           <p className="text-sm text-gray-500 dark:text-neutral-400">
-                            No customer found for this phone. Add a new customer.
+                            No customer found for this phone. Add a new
+                            customer.
                           </p>
                           <div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
@@ -4041,30 +4704,85 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                             <input
                               type="text"
                               value={quickCustomerName}
-                              onChange={(e) => setQuickCustomerName(e.target.value)}
+                              onChange={(e) =>
+                                setQuickCustomerName(e.target.value)
+                              }
                               className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                               placeholder="Customer name"
                             />
                           </div>
-                          {orderType === "DELIVERY" && deliveryZones.length > 0 && (
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                                Delivery area *
-                              </label>
-                              <select
-                                value={deliveryLocationId}
-                                onChange={(e) => setDeliveryLocationId(e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                              >
-                                <option value="">— Select delivery area —</option>
-                                {deliveryZones.map((z) => (
-                                  <option key={z.id} value={z.id}>
-                                    {z.name} — Rs {z.fee.toFixed(2)}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
+                          {orderType === "DELIVERY" &&
+                            deliveryZones.length > 0 && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                                  Delivery area *
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    value={
+                                      deliveryZoneOpen
+                                        ? deliveryZoneQuery
+                                        : selectedDeliveryZoneLabel
+                                    }
+                                    onFocus={() => {
+                                      setDeliveryZoneOpen(true);
+                                      setDeliveryZoneQuery("");
+                                    }}
+                                    onBlur={() =>
+                                      setTimeout(
+                                        () => setDeliveryZoneOpen(false),
+                                        120,
+                                      )
+                                    }
+                                    onChange={(e) => {
+                                      setDeliveryZoneQuery(e.target.value);
+                                      setDeliveryZoneOpen(true);
+                                    }}
+                                    placeholder="Search delivery area..."
+                                    className="w-full px-3 pr-8 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                                  />
+                                  <ChevronDown
+                                    className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${deliveryZoneOpen ? "rotate-180" : ""}`}
+                                  />
+                                  {deliveryZoneOpen && (
+                                    <div className="absolute z-40 bottom-full mb-1 w-full max-h-52 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setDeliveryLocationId("");
+                                          setDeliveryZoneQuery("");
+                                          setDeliveryZoneOpen(false);
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-sm text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                      >
+                                        — Select delivery area —
+                                      </button>
+                                      {filteredDeliveryZones.map((z) => (
+                                        <button
+                                          key={z.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setDeliveryLocationId(z.id);
+                                            setDeliveryZoneQuery("");
+                                            setDeliveryZoneOpen(false);
+                                          }}
+                                          className="w-full px-3 py-2 text-left text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                        >
+                                          {z.name} — Rs{" "}
+                                          {Number(z.fee || 0).toFixed(2)}
+                                        </button>
+                                      ))}
+                                      {filteredDeliveryZones.length === 0 && (
+                                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-neutral-400">
+                                          No matching area
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           <button
                             type="button"
                             onClick={handleQuickAddCustomer}
@@ -4099,7 +4817,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Keyboard shortcuts</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                Keyboard shortcuts
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowShortcutsModal(false)}
@@ -4114,56 +4834,114 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               </p>
               <div className="space-y-2">
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Focus menu search &amp; type</span>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Focus menu search &amp; filter items
+                  </span>
                   <span className="flex items-center gap-1">
-                    <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">0–9</kbd>
+                    <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                      0–9
+                    </kbd>
                     <span className="text-gray-400 text-xs">or</span>
-                    <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+M</kbd>
+                    <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                      Ctrl+Shift+M
+                    </kbd>
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Focus order search</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+O</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Add highlighted search result
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Enter
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Save / Place order</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+S</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Focus order search
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+O
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Payment by Cash</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+C</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Save / Place order
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+S
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Payment by Card</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+D</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Payment by Cash
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+C
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Payment by Online</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+N</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Payment by Card
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+D
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Print menu bill</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+B</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Payment by Online
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+N
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Print payment bill</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+R</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Print menu bill
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+B
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Order type: Dine In</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+E</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Print payment bill
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+R
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Order type: Take</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+A</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Order type: Dine In
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+E
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Order type: Delivery</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Ctrl+Shift+L</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Order type: Take
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+A
+                  </kbd>
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
-                  <span className="text-gray-700 dark:text-neutral-300">Close modal or clear cart</span>
-                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">Esc</kbd>
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Order type: Delivery
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Ctrl+Shift+L
+                  </kbd>
+                </div>
+                <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
+                  <span className="text-gray-700 dark:text-neutral-300">
+                    Close modal or clear cart
+                  </span>
+                  <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
+                    Esc
+                  </kbd>
                 </div>
               </div>
             </div>
@@ -4186,15 +4964,22 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
           <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
               <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Past Sessions</h2>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Past Sessions
+                </h2>
                 <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
-                  {currentBranch ? `History for ${currentBranch.name}` : "All branches"} — sessions before the day reset time
+                  {currentBranch
+                    ? `History for ${currentBranch.name}`
+                    : "All branches"}{" "}
+                  — sessions before the day reset time
                 </p>
               </div>
               <button
                 onClick={() => setShowDayHistoryModal(false)}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors text-3xl leading-none"
-              >&times;</button>
+              >
+                &times;
+              </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {loadingDayHistory ? (
@@ -4202,14 +4987,23 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
                 </div>
               ) : daySessionHistory.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 dark:text-neutral-400 text-sm">No past sessions found</div>
+                <div className="text-center py-12 text-gray-500 dark:text-neutral-400 text-sm">
+                  No past sessions found
+                </div>
               ) : (
                 daySessionHistory.map((s) => (
-                  <div key={s.id} className="p-4 rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900">
+                  <div
+                    key={s.id}
+                    className="p-4 rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900"
+                  >
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${s.status === "OPEN" ? "bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
-                          {s.status === "OPEN" && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />}
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${s.status === "OPEN" ? "bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}
+                        >
+                          {s.status === "OPEN" && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
+                          )}
                           {s.status}
                         </span>
                         {!currentBranch && s.branchName && (
@@ -4219,19 +5013,41 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                         )}
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-bold text-gray-900 dark:text-white">Rs {(s.totalSales || 0).toLocaleString()}</div>
-                        <div className="text-xs text-gray-500 dark:text-neutral-400">{s.totalOrders || 0} orders</div>
+                        <div className="text-sm font-bold text-gray-900 dark:text-white">
+                          Rs {(s.totalSales || 0).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-neutral-400">
+                          {s.totalOrders || 0} orders
+                        </div>
                       </div>
                     </div>
                     <div className="text-xs text-gray-600 dark:text-neutral-400 space-y-1">
                       <div className="flex justify-between">
                         <span className="font-medium">Started:</span>
-                        <span>{new Date(s.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                        <span>
+                          {new Date(s.startAt).toLocaleString("en-PK", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}
+                        </span>
                       </div>
                       {s.endAt && (
                         <div className="flex justify-between">
                           <span className="font-medium">Ended:</span>
-                          <span>{new Date(s.endAt).toLocaleString("en-PK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                          <span>
+                            {new Date(s.endAt).toLocaleString("en-PK", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: true,
+                            })}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -4247,7 +5063,10 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
       {showEndDayModal && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={(e) => { if (e.target === e.currentTarget && !endingDay) setShowEndDayModal(false); }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !endingDay)
+              setShowEndDayModal(false);
+          }}
         >
           <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
@@ -4256,12 +5075,18 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                   <Power className="w-4 h-4 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">End Business Day</h2>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">This action cannot be undone</p>
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                    End Business Day
+                  </h2>
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                    This action cannot be undone
+                  </p>
                 </div>
               </div>
               <button
-                onClick={() => { if (!endingDay) setShowEndDayModal(false); }}
+                onClick={() => {
+                  if (!endingDay) setShowEndDayModal(false);
+                }}
                 className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -4276,27 +5101,47 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
               ) : currentSession ? (
                 <div className="space-y-3">
                   <p className="text-sm text-gray-600 dark:text-neutral-400">
-                    Are you sure you want to end today&apos;s session? Here&apos;s the current summary:
+                    Are you sure you want to end today&apos;s session?
+                    Here&apos;s the current summary:
                   </p>
                   <div className="grid grid-cols-2 gap-2.5">
                     <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">Revenue</p>
-                      <p className="text-base font-bold text-gray-900 dark:text-white">Rs {(currentSession.totalSales || 0).toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">
+                        Revenue
+                      </p>
+                      <p className="text-base font-bold text-gray-900 dark:text-white">
+                        Rs {(currentSession.totalSales || 0).toLocaleString()}
+                      </p>
                     </div>
                     <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">Orders</p>
-                      <p className="text-base font-bold text-gray-900 dark:text-white">{currentSession.totalOrders || 0}</p>
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">
+                        Orders
+                      </p>
+                      <p className="text-base font-bold text-gray-900 dark:text-white">
+                        {currentSession.totalOrders || 0}
+                      </p>
                     </div>
                   </div>
                   {currentSession.startAt && (
                     <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                      Session started {new Date(currentSession.startAt).toLocaleString("en-PK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                      Session started{" "}
+                      {new Date(currentSession.startAt).toLocaleString(
+                        "en-PK",
+                        {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: true,
+                        },
+                      )}
                     </p>
                   )}
                 </div>
               ) : (
                 <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
-                  Are you sure you want to end the current business day? New orders will start a fresh session.
+                  Are you sure you want to end the current business day? New
+                  orders will start a fresh session.
                 </p>
               )}
             </div>
@@ -4304,7 +5149,9 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
             <div className="flex items-center gap-2.5 px-5 pb-5">
               <button
                 type="button"
-                onClick={() => { if (!endingDay) setShowEndDayModal(false); }}
+                onClick={() => {
+                  if (!endingDay) setShowEndDayModal(false);
+                }}
                 disabled={endingDay}
                 className="flex-1 h-9 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
               >
@@ -4316,9 +5163,226 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                 disabled={endingDay}
                 className="flex-1 h-9 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                {endingDay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+                {endingDay ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Power className="w-3.5 h-3.5" />
+                )}
                 {endingDay ? "Ending…" : "End Now"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDiscountModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setShowDiscountModal(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowDiscountModal(false);
+          }}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-neutral-800"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pos-discount-modal-title"
+          >
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-neutral-800 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2
+                  id="pos-discount-modal-title"
+                  className="text-sm font-bold text-gray-900 dark:text-white"
+                >
+                  Order discount
+                </h2>
+                <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5">
+                  Presets from Business settings. Reason is required when a
+                  discount applies.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDiscountModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 max-h-[min(80vh,520px)] overflow-y-auto">
+              <div>
+                <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide mb-1.5">
+                  Preset
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {mergedDiscountPresets.map((p) => {
+                    const pct = Number(p.percent) || 0;
+                    const pinRequired = !Boolean(p.cashierAllowed);
+                    const sel =
+                      !dmCustomOpen &&
+                      Math.round(dmPct) === Math.round(Number(p.percent) || 0) &&
+                      dmLabel === p.label;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setDmCustomOpen(false);
+                          setDmCustomStr("");
+                          setDmPct(Number(p.percent) || 0);
+                          setDmLabel(String(p.label || ""));
+                        }}
+                        className={`px-2.5 py-2 rounded-lg border text-left text-xs font-semibold transition-colors ${
+                          sel
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                        }`}
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          {p.label}
+                          {pinRequired ? (
+                            <Lock className="w-3 h-3 text-amber-500" />
+                          ) : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDmCustomOpen(true);
+                      setDmLabel("");
+                      setDmPct(0);
+                    }}
+                    className={`px-2.5 py-2 rounded-lg border text-left text-xs font-semibold transition-colors ${
+                      dmCustomOpen
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      Custom %
+                      <Lock className="w-3 h-3 text-amber-500" />
+                    </span>
+                  </button>
+                </div>
+              </div>
+              {dmCustomOpen && (
+                <div>
+                  <label className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400">
+                    Custom percent (0–100)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={dmCustomStr}
+                    onChange={(e) => setDmCustomStr(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                    placeholder="e.g. 15"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400">
+                  Reason
+                </label>
+                <select
+                  value={dmReason}
+                  onChange={(e) => setDmReason(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="">Select reason…</option>
+                  {posDiscountReasonOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {(() => {
+                const previewPct = dmCustomOpen
+                  ? Math.min(100, Math.max(0, Number(dmCustomStr) || 0))
+                  : Math.min(100, Math.max(0, Number(dmPct) || 0));
+                const previewLabel = dmCustomOpen
+                  ? (previewPct ? `Custom (${previewPct}%)` : "")
+                  : dmLabel;
+                const requiresPin = getDiscountPinRequirement({
+                  pct: previewPct,
+                  label: previewLabel,
+                  customOpen: dmCustomOpen,
+                });
+                const showPin = requiresPin && posDiscountPinConfigured;
+                if (!showPin) return null;
+                return (
+                  <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-900/20 p-3">
+                    <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                      <Lock className="w-3 h-3" />
+                      Manager PIN Required
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={dmPin}
+                      onChange={(e) => {
+                        setDmPin(e.target.value.replace(/[^\d]/g, "").slice(0, 6));
+                        if (dmPinError) setDmPinError("");
+                      }}
+                      className="mt-1 w-full px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                      placeholder="Enter PIN"
+                    />
+                    {dmPinError ? (
+                      <p className="mt-1 text-xs text-red-500">{dmPinError}</p>
+                    ) : null}
+                  </div>
+                );
+              })()}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDmPct(0);
+                    setDmLabel("");
+                    setDmReason("");
+                    setDmPin("");
+                    setDmPinError("");
+                    setDmCustomOpen(false);
+                    setDmCustomStr("");
+                  }}
+                  className="flex-1 h-10 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void commitDiscountModal()}
+                  disabled={(() => {
+                    const previewPct = dmCustomOpen
+                      ? Math.min(100, Math.max(0, Number(dmCustomStr) || 0))
+                      : Math.min(100, Math.max(0, Number(dmPct) || 0));
+                    const previewLabel = dmCustomOpen
+                      ? (previewPct ? `Custom (${previewPct}%)` : "")
+                      : dmLabel;
+                    const requiresPin = getDiscountPinRequirement({
+                      pct: previewPct,
+                      label: previewLabel,
+                      customOpen: dmCustomOpen,
+                    });
+                    const mustPin = requiresPin && posDiscountPinConfigured;
+                    return mustPin && !dmPin.trim();
+                  })()}
+                  className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+                >
+                  Apply
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -4334,11 +5398,19 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     <MapPin className="w-4.5 h-4.5 text-primary" />
                   </div>
                   <div>
-                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">Select Branch</h2>
-                    <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5">Choose a branch to continue</p>
+                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                      Select Branch
+                    </h2>
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5">
+                      Choose a branch to continue
+                    </p>
                   </div>
                 </div>
-                <button type="button" onClick={() => setShowBranchModal(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setShowBranchModal(false)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -4359,8 +5431,14 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
                     <MapPin className="w-4 h-4 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{b.name}</p>
-                    {b.address && <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate">{b.address}</p>}
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                      {b.name}
+                    </p>
+                    {b.address && (
+                      <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate">
+                        {b.address}
+                      </p>
+                    )}
                   </div>
                 </button>
               ))}
@@ -4371,109 +5449,184 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
 
       {/* ── Order Confirmation Popup ─────────────────────────────── */}
       {orderConfirmation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden text-center">
-            <div className="pt-8 pb-4 px-6">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center mx-auto mb-4">
-                <CircleCheckBig className="w-9 h-9 text-emerald-500" />
-              </div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Order Sent to Kitchen</h2>
-              <div className="flex items-center justify-center gap-3 text-sm text-gray-500 dark:text-neutral-400">
-                {orderConfirmation.orderNumber && (
-                  <span>Order <span className="font-bold text-gray-900 dark:text-white">#{orderConfirmation.orderNumber}</span></span>
-                )}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-gray-200/70 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-2xl shadow-black/20">
+            <div className="px-6 pt-6 pb-5 border-b border-gray-100 dark:border-neutral-800 bg-gradient-to-b from-white to-gray-50/60 dark:from-neutral-950 dark:to-neutral-900/30">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center shadow-inner">
+                  <CircleCheckBig className="w-7 h-7 text-emerald-500" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-xl font-extrabold tracking-tight text-gray-900 dark:text-white leading-tight">
+                    Order Sent to Kitchen
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-neutral-400">
+                    {orderConfirmation.orderNumber
+                      ? `#${orderConfirmation.orderNumber}`
+                      : "Order created"}
+                  </p>
+                </div>
               </div>
               {orderConfirmation.total && (
-                <p className="text-2xl font-black text-gray-900 dark:text-white mt-3 tabular-nums">
-                  Rs {Math.round(Number(orderConfirmation.total)).toLocaleString()}
-                </p>
+                <div className="mt-4 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 px-4 py-3 shadow-sm">
+                  <p className="text-[10px] uppercase tracking-[0.14em] font-semibold text-gray-500 dark:text-neutral-400 text-center">
+                    Bill Total
+                  </p>
+                  <p className="text-4xl font-black text-gray-900 dark:text-white mt-1 tabular-nums leading-none text-center">
+                    Rs{" "}
+                    {Math.round(
+                      Number(orderConfirmation.total),
+                    ).toLocaleString()}
+                  </p>
+                </div>
               )}
-              <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+              <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
                 {orderConfirmation.orderType && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400">
-                    {orderConfirmation.orderType === "DINE_IN" ? "Dine In" : orderConfirmation.orderType === "DELIVERY" ? "Delivery" : "Takeaway"}
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400">
+                    {orderConfirmation.orderType === "DINE_IN"
+                      ? "Dine In"
+                      : orderConfirmation.orderType === "DELIVERY"
+                        ? "Delivery"
+                        : "Takeaway"}
                   </span>
                 )}
                 {orderConfirmation.tableName && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400">
                     {orderConfirmation.tableName}
                   </span>
                 )}
                 {orderConfirmation.customerName && (
-                  <span className="text-xs font-medium text-gray-400 dark:text-neutral-500">{orderConfirmation.customerName}</span>
+                  <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-50 dark:bg-neutral-900 text-gray-500 dark:text-neutral-400">
+                    {orderConfirmation.customerName}
+                  </span>
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 px-6 pb-6 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const id = orderConfirmation.orderId;
-                  setOrderConfirmation(null);
-                  if (id) {
-                    setEditingOrderId(id);
-                    getOrder(id).then((order) => {
-                      setEditingOrder(order);
-                      const items = order.items || [];
-                      const menuItems = menu.items || [];
-                      const cartItems = items.map((it) => {
-                        const menuItemId = it.menuItemId || null;
-                        let itemId = menuItemId;
-                        let price = it.unitPrice ?? 0;
-                        let imageUrl = "";
-                        if (!itemId) {
-                          const byName = menuItems.find((m) => (m.name || "").toLowerCase() === (it.name || "").toLowerCase());
-                          if (byName) { itemId = byName.id; price = byName.finalPrice ?? byName.price ?? price; imageUrl = byName.imageUrl || ""; }
-                          else { itemId = `edit-${it.name}-${Math.random().toString(36).slice(2)}`; }
-                        } else {
-                          const mi = menuItems.find((m) => (m.id || m._id) === itemId);
-                          if (mi) { imageUrl = mi.imageUrl || ""; price = mi.finalPrice ?? mi.price ?? price; }
-                        }
-                        return { id: itemId, name: it.name, price, quantity: it.qty ?? 1, imageUrl };
-                      });
-                      setCart(cartItems);
-                      setCustomerName(order.customerName || "");
-                      setCustomerPhone(order.customerPhone || "");
-                      setCustomerAddress(order.deliveryAddress || "");
-                      setOrderType(order.type === "takeaway" ? "TAKEAWAY" : order.type === "delivery" ? "DELIVERY" : "DINE_IN");
-                      setTableName(order.tableName || "");
-                      setDiscountAmount("");
-                      setShowDiscountField(false);
-                    }).catch(() => {});
-                  }
-                }}
-                className="px-3 py-2.5 rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-bold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const o = orderConfirmation.printOrder;
-                  if (!o) {
-                    toast.error("Order details not available for printing");
-                    return;
-                  }
-                  openPrintBill(o, "bill");
-                }}
-                className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Print
-              </button>
-              <button
-                type="button"
-                onClick={() => { setOrderConfirmation(null); onClose?.(); }}
-                className="px-3 py-2.5 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-sm font-bold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <ClipboardList className="w-3.5 h-3.5" />
-                View Orders
-              </button>
+            <div className="px-6 pb-6 pt-4 space-y-3 bg-white dark:bg-neutral-950">
+              <div className="grid grid-cols-3 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = orderConfirmation.orderId;
+                    const openEditOrder = () => {
+                      setOrderConfirmation(null);
+                      if (!id) return;
+                      setEditingOrderId(id);
+                      getOrder(id)
+                        .then((order) => {
+                          setEditingOrder(order);
+                          const items = order.items || [];
+                          const menuItems = menu.items || [];
+                          const cartItems = items.map((it) => {
+                            const menuItemId = it.menuItemId || null;
+                            let itemId = menuItemId;
+                            let price = it.unitPrice ?? 0;
+                            let imageUrl = "";
+                            if (!itemId) {
+                              const byName = menuItems.find(
+                                (m) =>
+                                  (m.name || "").toLowerCase() ===
+                                  (it.name || "").toLowerCase(),
+                              );
+                              if (byName) {
+                                itemId = byName.id;
+                                price =
+                                  byName.finalPrice ?? byName.price ?? price;
+                                imageUrl = byName.imageUrl || "";
+                              } else {
+                                itemId = `edit-${it.name}-${Math.random().toString(36).slice(2)}`;
+                              }
+                            } else {
+                              const mi = menuItems.find(
+                                (m) => (m.id || m._id) === itemId,
+                              );
+                              if (mi) {
+                                imageUrl = mi.imageUrl || "";
+                                price = mi.finalPrice ?? mi.price ?? price;
+                              }
+                            }
+                            return {
+                              id: itemId,
+                              name: it.name,
+                              price,
+                              quantity: it.qty ?? 1,
+                              imageUrl,
+                            };
+                          });
+                          setCart(cartItems);
+                          setCustomerName(order.customerName || "");
+                          setCustomerPhone(order.customerPhone || "");
+                          setCustomerAddress(order.deliveryAddress || "");
+                          setOrderType(
+                            order.orderType === "TAKEAWAY" ||
+                              order.type === "takeaway"
+                              ? "TAKEAWAY"
+                              : order.orderType === "DELIVERY" ||
+                                  order.type === "delivery"
+                                ? "DELIVERY"
+                                : "DINE_IN",
+                          );
+                          setDeliveryLocationId(order.deliveryLocationId || "");
+                          setEditSessionDeliveryCharges(
+                            Math.max(0, Number(order.deliveryCharges) || 0),
+                          );
+                          setTableName(order.tableName || "");
+                          const mp2 = Number(order.posManualDiscountPercent);
+                          if (Number.isFinite(mp2) && mp2 > 0) {
+                            setManualDiscountPercent(Math.min(100, Math.max(0, mp2)));
+                            setDiscountReason(
+                              String(order.posDiscountReason || "").trim(),
+                            );
+                            setDiscountPresetLabel(
+                              String(order.posDiscountPresetLabel || "").trim(),
+                            );
+                          } else {
+                            setManualDiscountPercent(0);
+                            setDiscountReason("");
+                            setDiscountPresetLabel("");
+                          }
+                          setManagerDiscountPin("");
+                        })
+                        .catch(() => {});
+                    };
+                    handleNavigateAwayFromEdit(openEditOrder);
+                  }}
+                  className="h-10 rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const o = orderConfirmation.printOrder;
+                    if (!o) {
+                      toast.error("Order details not available for printing");
+                      return;
+                    }
+                    openPrintBill(o, "bill");
+                  }}
+                  className="h-10 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderConfirmation(null);
+                    handleNavigateAwayFromEdit(() => onClose?.());
+                  }}
+                  className="h-10 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-white dark:bg-neutral-950 text-blue-700 dark:text-blue-400 text-sm font-semibold hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <ClipboardList className="w-3.5 h-3.5" />
+                  View Orders
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setOrderConfirmation(null)}
-                className="px-3 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors"
+                className="h-11 w-full rounded-xl bg-primary text-white text-base font-bold hover:bg-primary/90 transition-colors shadow-sm shadow-primary/20"
               >
                 Close
               </button>
@@ -4482,6 +5635,47 @@ export default function POSView({ editOrderId: propEditOrderId, onClose, onOrder
         </div>
       )}
 
+      {showDiscardDialog && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                You have unsaved changes
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-neutral-400 mt-1">
+                You are editing order #
+                {editingOrder?.orderNumber || editingOrderId}. Leave and discard
+                current edits?
+              </p>
+            </div>
+            <div className="px-5 py-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDiscardDialog(false);
+                  pendingNavigationRef.current = null;
+                }}
+                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
+              >
+                Continue Editing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const runAfter = pendingNavigationRef.current;
+                  pendingNavigationRef.current = null;
+                  setShowDiscardDialog(false);
+                  resetEditOrderState();
+                  if (typeof runAfter === "function") runAfter();
+                }}
+                className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold"
+              >
+                Discard & Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

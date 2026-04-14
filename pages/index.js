@@ -1,7 +1,16 @@
 import { Fragment, useEffect, useState } from "react";
+import { Gift, Wrench, Smartphone, DoorOpen } from "lucide-react";
 import Head from "next/head";
 import Link from "next/link";
-import { COMPARISON_SECTIONS, FAQ_ITEMS } from "../lib/landingPricingData";
+import { FAQ_ITEMS } from "../lib/landingPricingData";
+import {
+  PRICING_COPY,
+  PRICING_COUNTRIES,
+  PLAN_DEFINITIONS,
+  VALUE_COMPARISON,
+  FEATURE_COMPARISON_GROUPS,
+  formatMoney,
+} from "../lib/pricingConfig";
 import MarketingFooter from "../components/MarketingFooter";
 
 const WHATSAPP_DEMO_URL =
@@ -99,6 +108,9 @@ function parseFaqBold(text) {
 
 function CmpCell({ value, col }) {
   if (typeof value === "string") {
+    if (value === "Soon") {
+      return <span className="cmp-support-starter">Soon</span>;
+    }
     const cls =
       value === "Priority"
         ? "cmp-text-priority"
@@ -118,16 +130,9 @@ function CmpCell({ value, col }) {
 export default function Home() {
   const [activeTab, setActiveTab] = useState("kds");
   const [billingMode, setBillingMode] = useState("daily");
-  const [country, setCountry] = useState("PK"); // PK | IN | INTL
+  const [country, setCountry] = useState("PK"); // PK | US
   const [hasManualCountry, setHasManualCountry] = useState(false);
-  const [isPriceFading, setIsPriceFading] = useState(false);
-  const [growthAccountingOpen, setGrowthAccountingOpen] = useState(false);
-
-  useEffect(() => {
-    setIsPriceFading(true);
-    const t = setTimeout(() => setIsPriceFading(false), 10);
-    return () => clearTimeout(t);
-  }, [country, billingMode]);
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
 
   useEffect(() => {
     if (hasManualCountry) return;
@@ -141,13 +146,8 @@ export default function Home() {
       .then((res) => res.json())
       .then((data) => {
         if (!data || !data.country_code || hasManualCountry) return;
-        if (data.country_code === "PK") {
-          setCountry("PK");
-        } else if (data.country_code === "IN") {
-          setCountry("IN");
-        } else {
-          setCountry("INTL");
-        }
+        if (data.country_code === "PK") setCountry("PK");
+        else setCountry("US");
       })
       .catch(() => {
         if (!hasManualCountry) {
@@ -169,125 +169,31 @@ export default function Home() {
     setCountry(code);
   };
 
-  const countryOptions = [
-    { code: "PK", label: "Pakistan", flag: "🇵🇰" },
-    { code: "IN", label: "India", flag: "🇮🇳" },
-    { code: "INTL", label: "International", flag: "🌍" },
+  const countryOptions = [PRICING_COUNTRIES.PK, PRICING_COUNTRIES.US];
+
+  const getPrice = (plan, mode = "daily") => {
+    const p = PLAN_DEFINITIONS[plan];
+    if (!p || p.custom) return "Custom pricing";
+    if (mode === "daily") return `${formatMoney(country, p.daily[country], true)}/day`;
+    return `~${formatMoney(country, p.monthlyApprox[country])}/month`;
+  };
+
+  const valueRows = VALUE_COMPARISON[country] || VALUE_COMPARISON.PK;
+  const valueTotal = valueRows.reduce((sum, row) => sum + row[1], 0);
+  const growthMonthly = PLAN_DEFINITIONS.growth.monthlyApprox[country];
+  const valueSave = valueTotal - growthMonthly;
+  const compactComparisonRows = [
+    ["POS terminal", true, true, true],
+    ["Kitchen Display System (KDS)", false, true, true],
+    ["Riders app + live tracking", false, true, true],
+    ["Inventory management", false, true, true],
+    ["Full accounting (P&L, Balance Sheet)", false, true, true],
+    ["Restaurant website + online ordering", false, true, true],
+    ["Tables & reservations", false, true, true],
+    ["Role-based staff access", false, true, true],
+    ["Advanced reports & analytics", false, true, true],
+    ["Deals & discount engine", true, true, true],
   ];
-
-  const getPrice = (plan, mode) => {
-    const table = {
-      PK: {
-        starter: { daily: "Rs 150", monthly: "Rs 4,500", yearly: "Rs 45,000" },
-        growth: { daily: "Rs 350", monthly: "Rs 10,000", yearly: "Rs 1,00,000" },
-        pro: { daily: "Rs 550", monthly: "Rs 16,000", yearly: "Rs 1,60,000" },
-      },
-      IN: {
-        starter: { daily: "₹ 120", monthly: "₹ 3,500", yearly: "₹ 35,000" },
-        growth: { daily: "₹ 280", monthly: "₹ 8,000", yearly: "₹ 80,000" },
-        pro: { daily: "₹ 450", monthly: "₹ 13,000", yearly: "₹ 1,30,000" },
-      },
-      INTL: {
-        starter: { daily: "$0.70", monthly: "$20", yearly: "$200" },
-        growth: { daily: "$1.50", monthly: "$42", yearly: "$420" },
-        pro: { daily: "$2.50", monthly: "$70", yearly: "$700" },
-      },
-    };
-    return table[country][plan][mode];
-  };
-
-  const getMonthlyEquivalent = (plan) => {
-    const table = {
-      PK: {
-        starter: "~Rs 4,500 / month",
-        growth: "~Rs 10,500 / month",
-        pro: "~Rs 16,500 / month",
-      },
-      IN: {
-        starter: "~₹ 3,600 / month",
-        growth: "~₹ 8,400 / month",
-        pro: "~₹ 13,500 / month",
-      },
-      INTL: {
-        starter: "~$21 / month",
-        growth: "~$45 / month",
-        pro: "~$75 / month",
-      },
-    };
-    return table[country][plan];
-  };
-
-  const getMonthlySavingsCopy = (plan) => {
-    const table = {
-      PK: {
-        starter: "Billed once a month",
-        growth: "Save Rs 500 vs daily",
-        pro: "Save Rs 500 vs daily",
-      },
-      IN: {
-        starter: "Save ₹ 100 vs daily",
-        growth: "Save ₹ 400 vs daily",
-        pro: "Save ₹ 500 vs daily",
-      },
-      INTL: {
-        starter: "Save $1 vs daily",
-        growth: "Save $3 vs daily",
-        pro: "Save $5 vs daily",
-      },
-    };
-    return table[country][plan];
-  };
-
-  const getYearlySavingsCopy = (plan) => {
-    const table = {
-      PK: {
-        starter: "Save Rs 9,000 · 2 months free",
-        growth: "Save Rs 20,000 · 2 months free",
-        pro: "Save Rs 32,000 · 2 months free",
-      },
-      IN: {
-        starter: "Save ₹ 7,000 · 2 months free",
-        growth: "Save ₹ 16,000 · 2 months free",
-        pro: "Save ₹ 26,000 · 2 months free",
-      },
-      INTL: {
-        starter: "Save $40 · 2 months free",
-        growth: "Save $84 · 2 months free",
-        pro: "Save $140 · 2 months free",
-      },
-    };
-    return table[country][plan];
-  };
-
-  const getComparisonDailyLabel = (plan) => {
-    const base = {
-      PK: { starter: "Rs 150/day", growth: "Rs 350/day", pro: "Rs 550/day" },
-      IN: { starter: "₹ 120/day", growth: "₹ 280/day", pro: "₹ 450/day" },
-      INTL: { starter: "$0.70/day", growth: "$1.50/day", pro: "$2.50/day" },
-    };
-    return base[country][plan];
-  };
-
-  const getSavingsStripAmount = (plan) => {
-    const table = {
-      PK: {
-        starter: "Rs 9,000",
-        growth: "Rs 20,000",
-        pro: "Rs 32,000",
-      },
-      IN: {
-        starter: "₹ 7,000",
-        growth: "₹ 16,000",
-        pro: "₹ 26,000",
-      },
-      INTL: {
-        starter: "$40",
-        growth: "$84",
-        pro: "$140",
-      },
-    };
-    return table[country][plan];
-  };
 
   useEffect(() => {
     const mqNarrow = window.matchMedia("(max-width: 900px)");
@@ -494,6 +400,14 @@ export default function Home() {
                 <Link href="/signup" className="btn btn-primary-dark">
                   Start free — 30 days →
                 </Link>
+                <a
+                  href="https://wa.me/923136224778?text=Hi, I'd like to book a demo of EatsDesk"
+                  className="btn btn-ghost"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Book a Demo
+                </a>
               </div>
               <p className="hero-note fade-up delay-4">
                 No credit card. No hardware. Setup in <span>one day.</span>
@@ -601,28 +515,20 @@ export default function Home() {
         <div className="stats-strip">
           <div className="stats-strip-inner">
             <div className="strip-stat">
-              <div className="strip-num">
-                180<span>+</span>
-              </div>
-              <div className="strip-desc">Orders tracked daily</div>
+              <div className="strip-num">3<span> mo</span></div>
+              <div className="strip-desc">Free trial</div>
             </div>
             <div className="strip-stat">
-              <div className="strip-num">
-                Rs <span>160k</span>
-              </div>
-              <div className="strip-desc">Revenue tracked in one day</div>
+              <div className="strip-num">1<span> day</span></div>
+              <div className="strip-desc">To go live</div>
             </div>
             <div className="strip-stat">
-              <div className="strip-num">
-                <span>0</span>
-              </div>
-              <div className="strip-desc">Hardware required</div>
+              <div className="strip-num">Rs <span>0</span></div>
+              <div className="strip-desc">Hardware needed</div>
             </div>
             <div className="strip-stat">
-              <div className="strip-num">
-                1<span>day</span>
-              </div>
-              <div className="strip-desc">To go fully live</div>
+              <div className="strip-num">∞</div>
+              <div className="strip-desc">No lock-in</div>
             </div>
           </div>
         </div>
@@ -846,19 +752,12 @@ export default function Home() {
           <div className="section-inner">
             <div className="section-label">Simple launch pricing</div>
             <h2 className="section-title">
-              Run your restaurant
+              Run your entire restaurant
               <br />
-              <span className="orange">
-                {country === "PK"
-                  ? "from Rs 150 a day"
-                  : country === "IN"
-                    ? "from ₹ 120 a day"
-                    : "from $0.70 a day"}
-              </span>
+              <span className="orange">from {getPrice("growth", "daily")}</span>
             </h2>
             <p className="section-sub">
-              Full restaurant OS — POS, kitchen display, riders, inventory,
-              website, and more. No hardware. No long contracts.
+              {PRICING_COPY.subheadline}
             </p>
 
             <div
@@ -895,296 +794,107 @@ export default function Home() {
                 >
                   Monthly
                 </button>
-                <button
-                  type="button"
-                  className={billingMode === "yearly" ? "active" : ""}
-                  onClick={() => setBillingMode("yearly")}
-                >
-                  Yearly
-                  <span className="save-badge">−17%</span>
-                </button>
               </div>
             </div>
 
             <div className="pricing-grid">
               <div className="price-card">
-                <div className="pc-name">Starter</div>
-                <p className="pc-tagline">Small café or takeaway counter</p>
-                <div className={`pricing-billing-wrap billing-${billingMode}`}>
-                  <div
-                    className="pc-price-content"
-                    style={{
-                      opacity: isPriceFading ? 0 : 1,
-                      transition: "opacity 0.15s ease",
-                    }}
-                  >
-                    <div className="pc-price-tier pc-price-tier--daily">
-                      <div className="pc-price">
-                        {getPrice("starter", "daily")}
-                      </div>
-                      <div className="pc-unit">per day</div>
-                      <div className="pc-equiv">
-                        {getMonthlyEquivalent("starter")}
-                      </div>
-                    </div>
-                    <div className="pc-price-tier pc-price-tier--monthly">
-                      <div className="pc-price">
-                        {getPrice("starter", "monthly")}
-                      </div>
-                      <div className="pc-unit">per month</div>
-                      <div className="pc-equiv">
-                        {getMonthlySavingsCopy("starter")}
-                      </div>
-                    </div>
-                    <div className="pc-price-tier pc-price-tier--yearly">
-                      <div className="pc-price">
-                        {getPrice("starter", "yearly")}
-                      </div>
-                      <div className="pc-unit">per year</div>
-                      <div className="pc-equiv">
-                        {getYearlySavingsCopy("starter")}
-                      </div>
-                    </div>
-                  </div>
+                <div className="pc-name">{PLAN_DEFINITIONS.starter.name}</div>
+                <p className="pc-tagline">{PLAN_DEFINITIONS.starter.target}</p>
+                <div className="pc-price">{getPrice("starter", billingMode)}</div>
+                <div className="pc-equiv">
+                  {billingMode === "daily" ? getPrice("starter", "monthly") : "30 day equivalent shown above"}
                 </div>
-                <Link href="/signup" className="pc-cta">
-                  Start free trial
-                </Link>
+                <p className="pc-year-note">or Rs 45,000/year (save 2 months)</p>
+                <Link href="/signup" className="pc-cta">Start free trial</Link>
                 <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Point of Sale (POS)
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Order management
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Menu management
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Dine-in, takeaway, delivery
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Customer database
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Easypaisa / JazzCash
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Daily sales reports
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Deals &amp; discounts
-                  </li>
-                  <li className="pc-feat pc-feat-dash-only">
-                    — No Kitchen Display
-                  </li>
-                  <li className="pc-feat pc-feat-dash-only">
-                    — No Riders app
-                  </li>
-                  <li className="pc-feat pc-feat-dash-only">
-                    — No Accounting
-                  </li>
+                  {[
+                    "Full POS system",
+                    "Menu & order management",
+                    "Customer database",
+                    "Daily sales reports",
+                    "Free website subdomain",
+                    "WhatsApp support + free setup",
+                  ].map((f) => (
+                    <li key={f} className="pc-feat yes"><span className="dot">✓</span>{f}</li>
+                  ))}
                 </ul>
+                <p className="pc-feature-link">
+                  <a href="#compare">See full feature list ↓</a>
+                </p>
               </div>
 
               <div className="price-card featured">
-                <div className="pc-name">Growth</div>
-                <p className="pc-tagline">Full-service fast food restaurant</p>
-                <div className={`pricing-billing-wrap billing-${billingMode}`}>
-                  <div
-                    className="pc-price-content"
-                    style={{
-                      opacity: isPriceFading ? 0 : 1,
-                      transition: "opacity 0.15s ease",
-                    }}
-                  >
-                    <div className="pc-price-tier pc-price-tier--daily">
-                      <div className="pc-price">
-                        {getPrice("growth", "daily")}
-                      </div>
-                      <div className="pc-unit">per day</div>
-                      <div className="pc-equiv">
-                        {getMonthlyEquivalent("growth")}
-                      </div>
-                    </div>
-                    <div className="pc-price-tier pc-price-tier--monthly">
-                      <div className="pc-price">
-                        {getPrice("growth", "monthly")}
-                      </div>
-                      <div className="pc-unit">per month</div>
-                      <div className="pc-equiv">
-                        {getMonthlySavingsCopy("growth")}
-                      </div>
-                    </div>
-                    <div className="pc-price-tier pc-price-tier--yearly">
-                      <div className="pc-price">
-                        {getPrice("growth", "yearly")}
-                      </div>
-                      <div className="pc-unit">per year</div>
-                      <div className="pc-equiv">
-                        {getYearlySavingsCopy("growth")}
-                      </div>
-                    </div>
-                  </div>
+                <div className="pc-name">{PLAN_DEFINITIONS.growth.name}</div>
+                <p className="pc-tagline">{PLAN_DEFINITIONS.growth.target}</p>
+                <div className="pc-price">{getPrice("growth", billingMode)}</div>
+                <div className="pc-equiv">
+                  {billingMode === "daily" ? getPrice("growth", "monthly") : "30 day equivalent shown above"}
                 </div>
-                <Link href="/signup" className="pc-cta primary">
-                  Start free trial
-                </Link>
-                <div className="pc-section-heading">Operations</div>
+                <p className="pc-year-note">or Rs 75,000/year (save 2 months)</p>
+                <div className="pc-lock-tag">🔒 Launch pricing — locked forever</div>
+                <p className="pc-normal-price">Normally Rs 350/day after launch</p>
+                <p className="pc-save-line">
+                  Save {country === "PK" ? "Rs 11,500" : formatMoney(country, valueSave)} /month vs buying separately
+                </p>
+                <Link href="/signup" className="pc-cta primary">Start free trial</Link>
                 <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Everything in Starter
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Kitchen Display System (KDS)
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Riders app + live tracking
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Staff scheduling &amp; roles
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Inventory management
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Table &amp; reservation management
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Foodpanda integration
-                  </li>
+                  {[
+                    "Everything in Starter",
+                    "KDS + Riders app + live tracking",
+                    "Full inventory management",
+                    "Complete accounting suite",
+                    "Restaurant website + online ordering",
+                    "Tables, reservations & staff roles",
+                  ].map((f) => (
+                    <li key={f} className="pc-feat yes"><span className="dot">✓</span>{f}</li>
+                  ))}
                 </ul>
-                <div className="pc-section-heading">Growth tools</div>
-                <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Restaurant website + CMS
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Advanced analytics &amp; reports
-                  </li>
-                </ul>
-                <button
-                  type="button"
-                  className="pc-accounting-toggle"
-                  onClick={() => setGrowthAccountingOpen((o) => !o)}
-                  aria-expanded={growthAccountingOpen}
-                >
-                  <span className="pc-section-heading pc-section-heading--inline">
-                    Accounting
-                  </span>
-                  <span
-                    className={`pc-pricing-chevron${growthAccountingOpen ? " is-open" : ""}`}
-                    aria-hidden
-                  >
-                    ▾
-                  </span>
-                </button>
-                <div
-                  className={`pc-accounting-panel${growthAccountingOpen ? " is-open" : ""}`}
-                >
-                  <ul className="pc-features">
-                    <li className="pc-feat yes">
-                      <span className="dot">✓</span>Double-entry bookkeeping
-                    </li>
-                    <li className="pc-feat yes">
-                      <span className="dot">✓</span>Auto-posting from POS sales
-                    </li>
-                    <li className="pc-feat yes">
-                      <span className="dot">✓</span>P&amp;L, Balance Sheet, Trial Balance
-                    </li>
-                    <li className="pc-feat yes">
-                      <span className="dot">✓</span>Cash, bank &amp; journal vouchers
-                    </li>
-                    <li className="pc-feat yes">
-                      <span className="dot">✓</span>Supplier &amp; expense management
-                    </li>
-                  </ul>
-                </div>
+                <p className="pc-feature-link">
+                  <a href="#compare">See full feature list ↓</a>
+                </p>
               </div>
 
               <div className="price-card price-card--enterprise">
-                <div className="pc-name">Enterprise</div>
-                <p className="pc-tagline">Chains, groups &amp; large operators</p>
-                <div className="pricing-billing-wrap pricing-billing-wrap--enterprise">
-                  <div className="pc-price-content" style={{ opacity: 1 }}>
-                    <div className="pc-price-tier pc-price-tier--enterprise">
-                      <div className="pc-price">Custom</div>
-                      <div className="pc-unit pc-unit--enterprise">pricing</div>
-                      <span className="pc-enterprise-pill">Tailored to your scale</span>
-                    </div>
-                  </div>
-                </div>
-                <a
-                  href={ENTERPRISE_WHATSAPP_URL}
-                  className="pc-cta"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <div className="pc-name">{PLAN_DEFINITIONS.enterprise.name}</div>
+                <p className="pc-tagline">{PLAN_DEFINITIONS.enterprise.target}</p>
+                <div className="pc-price">Custom pricing</div>
+                <p className="pc-year-note">Tailored to your number of branches</p>
+                <a href={ENTERPRISE_WHATSAPP_URL} className="pc-cta" target="_blank" rel="noopener noreferrer">
                   Contact us →
                 </a>
                 <ul className="pc-features">
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Everything in Growth
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Multi-location dashboard
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Consolidated accounting
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Custom report builder
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>API access &amp; integrations
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>White-label option
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>Dedicated account manager
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>On-site training &amp; onboarding
-                  </li>
-                  <li className="pc-feat yes">
-                    <span className="dot">✓</span>SLA guarantee
-                  </li>
+                  {[
+                    "Everything in Growth",
+                    "Unlimited branches",
+                    "Multi-location dashboard",
+                    "API access & white-label",
+                    "Dedicated account manager",
+                    "Priority support + SLA guarantee",
+                  ].map((f) => (
+                    <li key={f} className="pc-feat yes"><span className="dot">✓</span>{f}</li>
+                  ))}
                 </ul>
+                <p className="pc-feature-link">
+                  <a href="#compare">See full feature list ↓</a>
+                </p>
               </div>
             </div>
-
-            <h3 className="pricing-detail-title">Save more, worry less</h3>
-            <p className="pricing-detail-sub">
-              Switch to yearly and get up to 3 months free — locked in at launch
-              pricing forever.
+            <p className="pricing-detail-sub" style={{ marginTop: 16 }}>
+              Pay yearly and get 2 months free — locked in at launch pricing forever.
             </p>
-            <div className="savings-strip">
-              <div className="savings-card">
-                <div className="savings-amount">
-                  {getSavingsStripAmount("starter")}
-                </div>
-                <div className="savings-label">saved per year on Starter</div>
-              </div>
-              <div className="savings-card highlight">
-                <div className="savings-amount">
-                  {getSavingsStripAmount("growth")}
-                </div>
-                <div className="savings-label">saved per year on Growth</div>
-              </div>
-              <div className="savings-card">
-                <div className="savings-amount">
-                  {getSavingsStripAmount("pro")}
-                </div>
-                <div className="savings-label">saved per year on Pro</div>
-              </div>
-            </div>
+
 
             <div id="compare">
               <h3 className="pricing-detail-title">Full feature comparison</h3>
-              <p className="pricing-detail-sub">
-                Every feature, every plan — no surprises.
-              </p>
+              <p className="pricing-detail-sub">Exact plan-level feature breakdown.</p>
+              <div
+                style={{
+                  maxHeight: showAllFeatures ? "5000px" : "620px",
+                  overflow: "hidden",
+                  transition: "max-height 420ms ease",
+                }}
+              >
               <div className="cmp-wrap">
                 <table className="cmp-table">
                   <thead>
@@ -1192,59 +902,60 @@ export default function Home() {
                       <th style={{ width: "42%" }}>Feature</th>
                       <th className="plan-col" style={{ width: "19%" }}>
                         Starter
-                        <br />
-                        <span style={{ fontSize: 10, fontWeight: 400 }}>
-                          {getComparisonDailyLabel("starter")}
-                        </span>
+                        <br /><span style={{ fontSize: 10, fontWeight: 400 }}>{getPrice("starter", "daily")}</span>
                       </th>
                       <th
                         className="plan-col featured-col"
                         style={{ width: "19%" }}
                       >
                         Growth
-                        <br />
-                        <span style={{ fontSize: 10, fontWeight: 400 }}>
-                          {getComparisonDailyLabel("growth")}
-                        </span>
+                        <br /><span style={{ fontSize: 10, fontWeight: 400 }}>{getPrice("growth", "daily")}</span>
                       </th>
                       <th className="plan-col" style={{ width: "19%" }}>
-                        Pro
-                        <br />
-                        <span style={{ fontSize: 10, fontWeight: 400 }}>
-                          {getComparisonDailyLabel("pro")}
-                        </span>
+                        Enterprise
+                        <br /><span style={{ fontSize: 10, fontWeight: 400 }}>Custom</span>
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {COMPARISON_SECTIONS.map((section) => (
-                      <Fragment key={section.title}>
-                        <tr className="cmp-cat">
-                          <td colSpan={4}>{section.title}</td>
-                        </tr>
-                        {section.rows.map((row) => (
-                          <tr key={`${section.title}-${row.name}`}>
-                            <td>
-                              <div className="cmp-feat-name">{row.name}</div>
-                              {row.desc ? (
-                                <div className="cmp-feat-desc">{row.desc}</div>
-                              ) : null}
-                            </td>
-                            <td className="center">
-                              <CmpCell value={row.s} col="starter" />
-                            </td>
-                            <td className="center">
-                              <CmpCell value={row.g} col="growth" />
-                            </td>
-                            <td className="center">
-                              <CmpCell value={row.p} col="pro" />
-                            </td>
-                          </tr>
-                        ))}
-                      </Fragment>
-                    ))}
+                    {showAllFeatures
+                      ? FEATURE_COMPARISON_GROUPS.map((section) => (
+                          <Fragment key={section.title}>
+                            <tr className="cmp-cat">
+                              <td colSpan={4}>{section.title}</td>
+                            </tr>
+                            {section.rows.map((row) => (
+                              <tr key={`${section.title}-${row[0]}`}>
+                                <td><div className="cmp-feat-name">{row[0]}</div></td>
+                                <td className="center"><CmpCell value={row[1]} col="starter" /></td>
+                                <td className="center"><CmpCell value={row[2]} col="growth" /></td>
+                                <td className="center"><CmpCell value={row[3]} col="pro" /></td>
+                              </tr>
+                            ))}
+                          </Fragment>
+                        ))
+                      : compactComparisonRows.map((match) => {
+                          return (
+                            <tr key={match[0]}>
+                              <td><div className="cmp-feat-name">{match[0]}</div></td>
+                              <td className="center"><CmpCell value={match[1]} col="starter" /></td>
+                              <td className="center"><CmpCell value={match[2]} col="growth" /></td>
+                              <td className="center"><CmpCell value={match[3]} col="pro" /></td>
+                            </tr>
+                          );
+                        })}
                   </tbody>
                 </table>
+              </div>
+              </div>
+              <div style={{ marginTop: 20, textAlign: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAllFeatures((v) => !v)}
+                  className="cmp-toggle-btn"
+                >
+                  {showAllFeatures ? "Show less ▲" : "See all 60+ features ▼"}
+                </button>
               </div>
             </div>
 
@@ -1267,66 +978,76 @@ export default function Home() {
 
         <section className="testimonials-section" id="testimonials">
           <div className="section-inner">
-            <div className="section-label" style={{ color: "var(--orange)" }}>
-              Real results
+            <div className="ea-layout">
+              <div className="ea-left">
+                <div className="section-label">Early Access</div>
+                <h2 className="section-title">
+                  Be one of our<br />
+                  first <span className="orange">restaurants.</span>
+                </h2>
+                <div className="ea-spots-row">
+                  <div className="ea-spot-dot" />
+                  <span className="ea-spots-text">Only 20 spots available</span>
+                </div>
+              </div>
+              <div className="ea-right">
+                <p className="section-sub">
+                  We&apos;re in early access. A small number of restaurants are already running on EatsDesk.
+                  We work closely with each one — setting up their system, training their staff, and
+                  improving the product based on their feedback.
+                </p>
+                <p className="section-sub ea-detail-sub">
+                  Join the first 20 and lock in launch pricing forever — plus direct access to our founding team.
+                </p>
+                <div className="ea-actions">
+                  <a
+                    href="https://wa.me/923136224778?text=Hi, I'd like to book a demo of EatsDesk"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-primary-dark"
+                  >
+                    Apply for early access →
+                  </a>
+                  <p className="hero-note" style={{ marginTop: 12 }}>
+                    Pricing locked forever · Direct founder access
+                  </p>
+                </div>
+              </div>
             </div>
-            <h2
-              className="section-title"
-              style={{ color: "var(--light-text)" }}
-            >
-              Restaurant owners
-              <br />
-              who made the switch.
+          </div>
+        </section>
+
+        <section className="guarantee-section">
+          <div className="section-inner">
+            <div className="section-label">Risk free</div>
+            <h2 className="section-title">
+              Zero risk.<br />
+              <span className="orange">Seriously.</span>
             </h2>
-            <div className="testi-grid">
-              <div className="testi-card">
-                <div className="testi-stars">★★★★★</div>
-                <p className="testi-text">
-                  &quot;We were running everything on WhatsApp and paper. First
-                  week on EatsDesk, we caught Rs 15,000 in orders that would
-                  have been missed during Friday rush. The kitchen display alone
-                  paid for itself.&quot;
-                </p>
-                <div className="testi-author">
-                  <div className="testi-avatar">MK</div>
-                  <div>
-                    <div className="testi-name">Mohsin Khan</div>
-                    <div className="testi-role">Owner, Eatout</div>
-                  </div>
+            <p className="section-sub">
+              Nothing to install, nothing to lose. You&apos;re live in one day or we set it up for you.
+            </p>
+            <div className="guarantee-grid">
+              <div className="guarantee-item">
+                  <span className="gi-icon"><Gift size={22} strokeWidth={1.75} /></span>
+                  <div className="gi-title">3 months free</div>
+                  <div className="gi-desc">No credit card. No commitment. Full access from day one.</div>
                 </div>
-              </div>
-              <div className="testi-card">
-                <div className="testi-stars">★★★★★</div>
-                <p className="testi-text">
-                  &quot;I have 4 riders and I had no idea who collected what
-                  money each day. Now I open the reports and everything is there
-                  — each rider, each delivery, paid and unpaid. No more
-                  arguments.&quot;
-                </p>
-                <div className="testi-author">
-                  <div className="testi-avatar">AR</div>
-                  <div>
-                    <div className="testi-name">Ahmed Raza</div>
-                    <div className="testi-role">Owner, Fast Bites</div>
-                  </div>
+                <div className="guarantee-item">
+                  <span className="gi-icon"><Wrench size={22} strokeWidth={1.75} /></span>
+                  <div className="gi-title">We set it up</div>
+                  <div className="gi-desc">Menu, staff, delivery zones. Done by us, same day.</div>
                 </div>
-              </div>
-              <div className="testi-card">
-                <div className="testi-stars">★★★★★</div>
-                <p className="testi-text">
-                  &quot;Setup was one day. The EatsDesk team added our entire
-                  menu and showed the kitchen staff how to use the display. We
-                  went live on a Friday — busiest day of the week — no
-                  issues.&quot;
-                </p>
-                <div className="testi-author">
-                  <div className="testi-avatar">SB</div>
-                  <div>
-                    <div className="testi-name">Sufi Biryani</div>
-                    <div className="testi-role">Restaurant owner</div>
-                  </div>
+                <div className="guarantee-item">
+                  <span className="gi-icon"><Smartphone size={22} strokeWidth={1.75} /></span>
+                  <div className="gi-title">No hardware</div>
+                  <div className="gi-desc">Runs on any phone, tablet, or laptop you already own.</div>
                 </div>
-              </div>
+                <div className="guarantee-item">
+                  <span className="gi-icon"><DoorOpen size={22} strokeWidth={1.75} /></span>
+                  <div className="gi-title">Cancel anytime</div>
+                  <div className="gi-desc">No contracts, no lock-in. Leave whenever you want.</div>
+                </div>
             </div>
           </div>
         </section>
@@ -1345,6 +1066,15 @@ export default function Home() {
             <Link href="/signup" className="btn btn-white">
               Start free — 30 days →
             </Link>
+            <a
+              href="https://wa.me/923136224778?text=Hi, I'd like to book a demo of EatsDesk"
+              className="btn btn-ghost"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ marginLeft: 10, borderColor: "rgba(255,255,255,0.45)", color: "#fff" }}
+            >
+              Book a Demo
+            </a>
             <p className="cta-note">
               No credit card · No hardware · Cancel anytime
             </p>

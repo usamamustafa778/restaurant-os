@@ -16,10 +16,47 @@ import {
   getRestaurantSettings,
   updateRestaurantSettings,
   openCashDrawer,
-  getStoredAuth,
   getCurrencySymbol,
+  getProfitLoss,
+  getTables,
+  getReservations,
+  getStoredAuth,
 } from "../../lib/apiClient";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
+import { localISODate, localToday } from "../../lib/accountingFormat";
+
+/**
+ * Derive the P&L calendar date range for a given period.
+ * For session-scoped periods, prefer the actual session boundaries so the
+ * ledger numbers cover the same window as the sales report.
+ */
+function derivePlDateRange({ reportPeriod, selectedYear, selectedMonth, reportFrom, reportTo }) {
+  const validDate = (d) => d && !Number.isNaN(d.getTime());
+
+  if (reportPeriod === "today" || reportPeriod === "yesterday") {
+    const prFrom = reportFrom ? new Date(reportFrom) : null;
+    const prTo   = reportTo   ? new Date(reportTo)   : null;
+    if (validDate(prFrom) && validDate(prTo)) {
+      return { from: localISODate(prFrom), to: localISODate(prTo) };
+    }
+    if (reportPeriod === "today") {
+      const t = localToday();
+      return { from: t, to: t };
+    }
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const yStr = localISODate(y);
+    return { from: yStr, to: yStr };
+  }
+
+  // Monthly
+  const now = new Date();
+  const isCurrent = selectedYear === now.getFullYear() && selectedMonth === now.getMonth();
+  return {
+    from: localISODate(new Date(selectedYear, selectedMonth, 1)),
+    to:   isCurrent ? localToday() : localISODate(new Date(selectedYear, selectedMonth + 1, 0)),
+  };
+}
 import { useBranch } from "../../contexts/BranchContext";
 import {
   ShoppingBag,
@@ -39,6 +76,9 @@ import {
   Banknote,
   Coins,
   Pencil,
+  Utensils,
+  CalendarClock,
+  ArrowRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -558,6 +598,13 @@ export default function OverviewPage() {
   const [invItems, setInvItems] = useState([]);
   const [invLoading, setInvLoading] = useState(true);
 
+  const [floorSummary, setFloorSummary] = useState({
+    occupied: 0,
+    available: 0,
+    todayReservations: 0,
+    nextReservationTime: null,
+  });
+
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [periodReport, setPeriodReport] = useState({
@@ -575,6 +622,8 @@ export default function OverviewPage() {
   });
   const [reportPeriod, setReportPeriod] = useState("today");
   const [periodLoading, setPeriodLoading] = useState(true);
+  /** Accounting P&L for the same calendar range as the sales period (ledger net profit). */
+  const [periodAccountingPl, setPeriodAccountingPl] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(() =>
     new Date().getMonth(),
   );
@@ -582,34 +631,31 @@ export default function OverviewPage() {
     new Date().getFullYear(),
   );
 
-  // ─── Accounting P&L widget ───────────────────────────────────────────────
-  const [plData, setPlData]         = useState(null);
-  const [plLoading, setPlLoading]   = useState(true);
-  const [plSetup, setPlSetup]       = useState(true); // assume set up; hide widget if not
+  // ─── Accounting P&L widget (this-month, refreshes when month changes) ────
+  const [plData, setPlData]       = useState(null);
+  const [plLoading, setPlLoading] = useState(true);
+  const [plSetup, setPlSetup]     = useState(true);
 
   useEffect(() => {
-    const now  = new Date();
-    const from = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
-    const to   = now.toISOString().split("T")[0];
-    const auth = getStoredAuth();
-    const headers = { "Content-Type": "application/json" };
-    if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
-    const slug = auth?.user?.tenantSlug || auth?.tenantSlug;
-    if (slug) headers["x-tenant-slug"] = slug;
-
-    fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ""}/api/accounting/reports/profit-loss?dateFrom=${from}&dateTo=${to}`, { headers })
-      .then((r) => r.json())
+    let cancelled = false;
+    setPlLoading(true);
+    const now = new Date();
+    const { from, to } = derivePlDateRange({
+      reportPeriod: "monthly",
+      selectedYear: now.getFullYear(),
+      selectedMonth: now.getMonth(),
+      reportFrom: null,
+      reportTo: null,
+    });
+    getProfitLoss({ dateFrom: from, dateTo: to })
       .then((d) => {
-        if (d.message && d.message.toLowerCase().includes("not found")) { setPlSetup(false); return; }
-        if (d.grossRevenue !== undefined || d.netProfit !== undefined) {
-          setPlData(d);
-          setPlSetup(true);
-        } else {
-          setPlSetup(false);
-        }
+        if (cancelled) return;
+        if (d) { setPlData(d); setPlSetup(true); }
+        else   { setPlSetup(false); }
       })
-      .catch(() => setPlSetup(false))
-      .finally(() => setPlLoading(false));
+      .catch(() => { if (!cancelled) setPlSetup(false); })
+      .finally(() => { if (!cancelled) setPlLoading(false); });
+    return () => { cancelled = true; };
   }, []);
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -1043,8 +1089,51 @@ export default function OverviewPage() {
   }, []);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const todayStr = (() => {
+          const d = new Date();
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        })();
+        const [tables, reservations] = await Promise.all([
+          getTables(),
+          getReservations({ date: todayStr }),
+        ]);
+        const occupied = tables.filter((t) => t.status === "occupied").length;
+        const available = tables.filter((t) => t.status === "available").length;
+        const active = reservations.filter((r) =>
+          ["pending", "confirmed", "seated"].includes(r.status)
+        );
+        const now = new Date();
+        const upcoming = active
+          .filter((r) => {
+            if (!r.time) return false;
+            const [h, m] = r.time.split(":").map(Number);
+            const rDate = new Date(r.date || todayStr);
+            rDate.setHours(h, m, 0, 0);
+            return rDate > now;
+          })
+          .sort((a, b) => a.time.localeCompare(b.time));
+        let nextReservationTime = null;
+        if (upcoming.length > 0) {
+          const [h, m] = upcoming[0].time.split(":").map(Number);
+          nextReservationTime = new Date(0, 0, 0, h, m).toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          });
+        }
+        setFloorSummary({ occupied, available, todayReservations: active.length, nextReservationTime });
+      } catch {
+        // non-critical — silently ignore
+      }
+    })();
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
     let cancelled = false;
     setPeriodLoading(true);
+    setPeriodAccountingPl(null);
     (async () => {
       const now = new Date();
       let fromStr, toStr;
@@ -1146,7 +1235,22 @@ export default function OverviewPage() {
             })
           : apiHourlySales;
 
-        if (!cancelled)
+        const { from: plFrom, to: plTo } = derivePlDateRange({
+          reportPeriod,
+          selectedYear,
+          selectedMonth,
+          reportFrom: report.from,
+          reportTo: report.to,
+        });
+
+        let accountingPlJson = null;
+        try {
+          accountingPlJson = await getProfitLoss({ dateFrom: plFrom, dateTo: plTo });
+        } catch {
+          /* ledger P&L is optional — fall back to sales-based profit */
+        }
+
+        if (!cancelled) {
           setPeriodReport({
             totalRevenue: report.totalRevenue ?? 0,
             totalProfit: report.totalProfit ?? 0,
@@ -1160,6 +1264,8 @@ export default function OverviewPage() {
             upcomingPayments: computeUpcomingPayments(ordersForMetrics),
             deliveredUnpaid: computeDeliveredUnpaid(ordersForMetrics),
           });
+          setPeriodAccountingPl(accountingPlJson);
+        }
       } catch (err) {
         if (!cancelled) console.error("Failed to load period report:", err);
       } finally {
@@ -1319,7 +1425,11 @@ export default function OverviewPage() {
 
   const viewTotalOrders = periodReport.totalOrders ?? 0;
   const viewTotalRevenue = periodReport.totalRevenue ?? 0;
-  const viewTotalProfit = periodReport.totalProfit ?? 0;
+  const viewTotalProfit =
+    periodAccountingPl != null &&
+    typeof periodAccountingPl.netProfit === "number"
+      ? periodAccountingPl.netProfit
+      : periodReport.totalProfit ?? 0;
   const viewPendingOrders = stats.pendingOrders;
   const viewAvgOrder = viewTotalOrders
     ? Math.round(viewTotalRevenue / viewTotalOrders)
@@ -1349,6 +1459,11 @@ export default function OverviewPage() {
       : reportPeriod === "monthly"
         ? `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear}`
         : "Today";
+
+  const profitSubLabel =
+    periodAccountingPl != null
+      ? `${periodLabel} · ledger P&L`
+      : periodLabel;
 
   return (
     <AdminLayout title="Overview" suspended={suspended}>
@@ -1495,7 +1610,7 @@ export default function OverviewPage() {
               },
               {
                 label: "Net Profit",
-                sub: periodLabel,
+                sub: profitSubLabel,
                 value: `${currencySymbol} ${Math.round(viewTotalProfit).toLocaleString()}`,
                 icon: TrendingUp,
                 color: "text-emerald-600 dark:text-emerald-400",
@@ -1552,6 +1667,67 @@ export default function OverviewPage() {
                 </div>
               ),
             )}
+          </div>
+
+          {/* ─── Today's Floor ───────────────────────────────────────────── */}
+          <div className="grid sm:grid-cols-2 gap-4 mb-5">
+            {/* Tables card */}
+            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center flex-shrink-0">
+                <Utensils className="w-5 h-5 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500 mb-0.5">
+                  Tables
+                </p>
+                <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
+                  <span className="text-red-500 dark:text-red-400">{floorSummary.occupied} occupied</span>
+                  <span className="text-gray-400 dark:text-neutral-600 mx-1">·</span>
+                  <span className="text-emerald-600 dark:text-emerald-400">{floorSummary.available} available</span>
+                </p>
+              </div>
+              <a
+                href="/dashboard/tables"
+                className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline whitespace-nowrap flex-shrink-0"
+              >
+                View Tables <ArrowRight className="w-3 h-3" />
+              </a>
+            </div>
+
+            {/* Reservations card */}
+            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+                <CalendarClock className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500 mb-0.5">
+                  Reservations
+                </p>
+                <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
+                  {floorSummary.todayReservations === 0 ? (
+                    <span className="text-gray-400 dark:text-neutral-600 font-normal">None today</span>
+                  ) : (
+                    <>
+                      <span>{floorSummary.todayReservations} today</span>
+                      {floorSummary.nextReservationTime && (
+                        <>
+                          <span className="text-gray-400 dark:text-neutral-600 mx-1">·</span>
+                          <span className="text-violet-600 dark:text-violet-400 font-semibold">
+                            next at {floorSummary.nextReservationTime}
+                          </span>
+                        </>
+                      )}
+                    </>
+                  )}
+                </p>
+              </div>
+              <a
+                href="/dashboard/reservations"
+                className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400 hover:underline whitespace-nowrap flex-shrink-0"
+              >
+                View <ArrowRight className="w-3 h-3" />
+              </a>
+            </div>
           </div>
 
           {/* ─── Main: chart (2/3) + breakdown (1/3) ────────────────────── */}
@@ -1634,6 +1810,7 @@ export default function OverviewPage() {
                         ? "Monthly"
                         : "Today's"}{" "}
                     Profit
+                    {periodAccountingPl != null ? " (ledger)" : ""}
                   </p>
                   <p className="text-white text-2xl font-bold leading-tight">
                     {currencySymbol} {Math.round(viewTotalProfit).toLocaleString()}

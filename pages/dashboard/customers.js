@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getCustomers,
@@ -21,8 +22,8 @@ import {
   Loader2,
   Users,
   Eye,
-  ChevronDown,
-  ChevronRight,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -105,16 +106,30 @@ export default function CustomersPage() {
   const [modalError, setModalError] = useState("");
   const [allBranches, setAllBranches] = useState(false);
 
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyCustomer, setHistoryCustomer] = useState(null);
-  const [historyData, setHistoryData] = useState(null);
-  const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailCustomer, setDetailCustomer] = useState(null);
+  const [detailHistory, setDetailHistory] = useState(null);
+  const [detailNotes, setDetailNotes] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef(null);
 
   const { confirm } = useConfirmDialog();
 
   const canCreate = !!currentBranch;
   const fetchAllBranches = !currentBranch || allBranches;
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    function handleDown(e) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target)) {
+        setFiltersOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [filtersOpen]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(searchInput.trim()), SEARCH_DEBOUNCE_MS);
@@ -265,20 +280,43 @@ export default function CustomersPage() {
     setIsModalOpen(true);
   }
 
-  async function openOrderHistory(c) {
-    setHistoryCustomer(c);
-    setHistoryOpen(true);
-    setHistoryData(null);
-    setExpandedOrderId(null);
-    setHistoryLoading(true);
+  async function openCustomerDetail(c) {
+    setDetailCustomer(c);
+    setDetailNotes(c.notes || "");
+    setDetailOpen(true);
+    setDetailHistory(null);
+    setDetailLoading(true);
     try {
       const data = await getCustomerOrderHistory(c.id);
-      setHistoryData(data);
+      setDetailHistory(data);
     } catch (err) {
       toast.error(err.message || "Failed to load order history");
-      setHistoryOpen(false);
+      setDetailOpen(false);
     } finally {
-      setHistoryLoading(false);
+      setDetailLoading(false);
+    }
+  }
+
+  async function saveCustomerNotes() {
+    if (!detailCustomer || detailCustomer.recordType === "website") return;
+    const trimmed = detailNotes.trim();
+    setNotesSaving(true);
+    const toastId = toast.loading("Saving notes…");
+    try {
+      await updateCustomer(detailCustomer.id, {
+        name: detailCustomer.name,
+        phone: detailCustomer.phone,
+        email: detailCustomer.email || undefined,
+        address: detailCustomer.address || undefined,
+        notes: trimmed || undefined,
+      });
+      setDetailCustomer((prev) => (prev ? { ...prev, notes: trimmed } : prev));
+      await loadCustomerPage();
+      toast.success("Notes saved", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to save notes", { id: toastId });
+    } finally {
+      setNotesSaving(false);
     }
   }
 
@@ -343,8 +381,8 @@ export default function CustomersPage() {
   return (
     <AdminLayout title="Customers" suspended={suspended}>
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex flex-col xl:flex-row flex-wrap gap-3 items-stretch xl:items-end">
-          <div className="flex-1 min-w-[200px]">
+        <div className="flex items-end gap-2 overflow-x-auto pb-1">
+          <div className="flex-1 min-w-[320px]">
             <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
               Search
             </label>
@@ -356,7 +394,7 @@ export default function CustomersPage() {
               className="w-full h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
             />
           </div>
-          <div className="w-full sm:w-40">
+          <div className="w-36 flex-shrink-0">
             <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
               Source
             </label>
@@ -373,7 +411,7 @@ export default function CustomersPage() {
               <option value="website">Website</option>
             </select>
           </div>
-          <div className="w-full sm:w-44">
+          <div className="w-40 flex-shrink-0">
             <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
               Sort
             </label>
@@ -390,126 +428,158 @@ export default function CustomersPage() {
               <option value="spent">Total spent</option>
             </select>
           </div>
-          <div className="w-full sm:w-28">
-            <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
-              Page size
-            </label>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-              className="w-full h-10 px-3 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary"
+
+          <div className="relative flex-shrink-0" ref={filtersRef}>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={`inline-flex h-10 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-all ${
+                filtersOpen
+                  ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
+                  : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              }`}
             >
-              {[10, 25, 50, 100].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
+              <SlidersHorizontal className="h-4 w-4 shrink-0" />
+              Filters
+              {(allBranches ||
+                verifiedOnly ||
+                hasPhone ||
+                hasEmail ||
+                minOrders ||
+                minSpent ||
+                pageSize !== 25) && (
+                <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white leading-none">
+                  •
+                </span>
+              )}
+            </button>
+            {filtersOpen && (
+              <div className="absolute left-0 top-full z-[100] mt-1.5 w-80 overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+                <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                    More filters
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerifiedOnly(false);
+                      setHasPhone(false);
+                      setHasEmail(false);
+                      setMinOrders("");
+                      setMinSpent("");
+                      setPageSize(25);
+                      setPage(1);
+                    }}
+                    className="text-xs font-semibold text-red-500 hover:text-red-600 dark:text-red-400"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="p-4 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
+                      Page size
+                    </label>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setPage(1);
+                      }}
+                      className="w-full h-9 px-3 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm"
+                    >
+                      {[10, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
+                        Min orders
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={minOrders}
+                        onChange={(e) => setMinOrders(e.target.value)}
+                        placeholder="—"
+                        className="w-full h-9 px-3 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
+                        Min spent ({sym})
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        value={minSpent}
+                        onChange={(e) => setMinSpent(e.target.value)}
+                        placeholder="—"
+                        className="w-full h-9 px-3 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    {currentBranch && (
+                      <label className="flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={allBranches}
+                          onChange={(e) => {
+                            setAllBranches(e.target.checked);
+                            setPage(1);
+                          }}
+                          className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
+                        />
+                        All branches (POS)
+                      </label>
+                    )}
+                    <label className="flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={verifiedOnly}
+                        onChange={(e) => {
+                          setVerifiedOnly(e.target.checked);
+                          setPage(1);
+                        }}
+                        className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
+                      />
+                      Website: verified only
+                    </label>
+                    <label className="flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hasPhone}
+                        onChange={(e) => {
+                          setHasPhone(e.target.checked);
+                          setPage(1);
+                        }}
+                        className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
+                      />
+                      Has phone
+                    </label>
+                    <label className="flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hasEmail}
+                        onChange={(e) => {
+                          setHasEmail(e.target.checked);
+                          setPage(1);
+                        }}
+                        className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
+                      />
+                      Has email
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="w-full sm:w-24">
-            <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
-              Min orders
-            </label>
-            <input
-              type="number"
-              min={0}
-              value={minOrders}
-              onChange={(e) => setMinOrders(e.target.value)}
-              placeholder="—"
-              className="w-full h-10 px-3 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary"
-            />
-          </div>
-          <div className="w-full sm:w-28">
-            <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1">
-              Min spent (Rs)
-            </label>
-            <input
-              type="number"
-              min={0}
-              step="1"
-              value={minSpent}
-              onChange={(e) => setMinSpent(e.target.value)}
-              placeholder="—"
-              className="w-full h-10 px-3 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary"
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          {currentBranch && (
-            <label className="inline-flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={allBranches}
-                onChange={(e) => {
-                  setAllBranches(e.target.checked);
-                  setPage(1);
-                }}
-                className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
-              />
-              All branches (POS)
-            </label>
-          )}
-          <label className="inline-flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={verifiedOnly}
-              onChange={(e) => {
-                setVerifiedOnly(e.target.checked);
-                setPage(1);
-              }}
-              className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
-            />
-            Website: verified only
-          </label>
-          <label className="inline-flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={hasPhone}
-              onChange={(e) => {
-                setHasPhone(e.target.checked);
-                setPage(1);
-              }}
-              className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
-            />
-            Has phone
-          </label>
-          <label className="inline-flex items-center gap-2 font-medium text-gray-700 dark:text-neutral-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={hasEmail}
-              onChange={(e) => {
-                setHasEmail(e.target.checked);
-                setPage(1);
-              }}
-              className="rounded border-gray-300 dark:border-neutral-600 text-primary focus:ring-primary/20"
-            />
-            Has email
-          </label>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchInput("");
-              setDebouncedQ("");
-              setSourceFilter("all");
-              setSortBy("recent");
-              setVerifiedOnly(false);
-              setHasPhone(false);
-              setHasEmail(false);
-              setMinOrders("");
-              setMinSpent("");
-              setPage(1);
-            }}
-            className="text-primary font-semibold hover:underline"
-          >
-            Clear filters
-          </button>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end">
           <button
             type="button"
             onClick={() => {
@@ -518,7 +588,7 @@ export default function CustomersPage() {
               setIsModalOpen(true);
             }}
             disabled={!canCreate}
-            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none whitespace-nowrap flex-shrink-0 sm:ml-auto"
+            className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none whitespace-nowrap flex-shrink-0 ml-auto"
             title={!canCreate ? "Select a branch to add customers" : ""}
           >
             <UserPlus className="w-4 h-4" />
@@ -668,9 +738,9 @@ export default function CustomersPage() {
                   render: (_, c) => (
                     <button
                       type="button"
-                      onClick={() => openOrderHistory(c)}
+                      onClick={() => openCustomerDetail(c)}
                       className="p-1.5 rounded-lg text-gray-500 dark:text-neutral-500 hover:bg-primary/10 hover:text-primary transition-colors"
-                      title="Order history"
+                      title="View customer"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
@@ -738,95 +808,133 @@ export default function CustomersPage() {
         )}
       </div>
 
-      {historyOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm px-3 py-6">
-          <div className="w-full max-w-3xl max-h-[90vh] flex flex-col bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 shadow-2xl rounded-2xl overflow-hidden">
-            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Order history</h2>
-                <p className="text-sm text-gray-600 dark:text-neutral-400 mt-1">
-                  {historyCustomer?.name || "Customer"}{" "}
-                  <span className="text-gray-400">
-                    · {historyCustomer?.recordType === "website" ? "Website" : "POS / branch"}
-                  </span>
-                </p>
-                {historyCustomer?.phone ? (
-                  <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">{historyCustomer.phone}</p>
-                ) : null}
-                {historyCustomer?.email ? (
-                  <p className="text-xs text-gray-500 dark:text-neutral-500">{historyCustomer.email}</p>
-                ) : null}
-              </div>
+      {/* Customer detail slide-over */}
+      {detailOpen && detailCustomer && (
+        <div className="fixed inset-0 z-[60] flex justify-end">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            aria-label="Close panel"
+            onClick={() => {
+              setDetailOpen(false);
+              setDetailHistory(null);
+            }}
+          />
+          <div className="relative w-full max-w-lg h-full bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Customer</h2>
               <button
                 type="button"
                 onClick={() => {
-                  setHistoryOpen(false);
-                  setHistoryData(null);
+                  setDetailOpen(false);
+                  setDetailHistory(null);
                 }}
-                className="text-sm font-semibold text-gray-500 hover:text-gray-800 dark:hover:text-white px-2 py-1"
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                aria-label="Close"
               >
-                Close
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {historyLoading ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  <p className="text-sm text-gray-600 dark:text-neutral-400">Loading orders…</p>
-                </div>
-              ) : !historyData?.orders?.length ? (
-                <p className="text-center text-sm text-gray-500 dark:text-neutral-500 py-12">
-                  No linked orders found for this profile.
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+              <div>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{detailCustomer.name}</p>
+                <p className="text-sm text-gray-500 dark:text-neutral-400 mt-0.5">
+                  {detailCustomer.recordType === "website" ? "Website" : "POS / branch"}
                 </p>
-              ) : (
-                <ul className="space-y-2">
-                  {historyData.orders.map((o) => {
-                    const open = expandedOrderId === o.id;
-                    return (
+              </div>
+              <div className="grid gap-3 text-sm">
+                {detailCustomer.phone ? (
+                  <div className="flex items-center gap-2 text-gray-800 dark:text-neutral-200">
+                    <Phone className="w-4 h-4 text-gray-400 shrink-0" />
+                    <span>{detailCustomer.phone}</span>
+                  </div>
+                ) : null}
+                {detailCustomer.email ? (
+                  <div className="flex items-center gap-2 text-gray-800 dark:text-neutral-200">
+                    <Mail className="w-4 h-4 text-gray-400 shrink-0" />
+                    <span>{detailCustomer.email}</span>
+                  </div>
+                ) : null}
+                {detailCustomer.address ? (
+                  <div className="flex items-start gap-2 text-gray-800 dark:text-neutral-200">
+                    <MapPin className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                    <span>{detailCustomer.address}</span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+                  <p className="text-[10px] font-bold uppercase text-gray-400">Total orders</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">{detailCustomer.totalOrders ?? 0}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+                  <p className="text-[10px] font-bold uppercase text-gray-400">Total spent</p>
+                  <p className="text-lg font-bold text-primary">
+                    {sym} {(detailCustomer.totalSpent ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+                  <p className="text-[10px] font-bold uppercase text-gray-400">Avg order</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">
+                    {sym}{" "}
+                    {(detailCustomer.totalOrders > 0
+                      ? Math.round((Number(detailCustomer.totalSpent) || 0) / detailCustomer.totalOrders)
+                      : 0
+                    ).toLocaleString()}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+                  <p className="text-[10px] font-bold uppercase text-gray-400">Last order</p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {detailCustomer.lastOrderAt
+                      ? new Date(detailCustomer.lastOrderAt).toLocaleDateString(undefined, {
+                          dateStyle: "medium",
+                        })
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Recent orders</h3>
+                {detailLoading ? (
+                  <div className="flex items-center gap-2 py-8 text-gray-500">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    Loading…
+                  </div>
+                ) : !detailHistory?.orders?.length ? (
+                  <p className="text-sm text-gray-500 dark:text-neutral-400">No linked orders yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {detailHistory.orders.slice(0, 5).map((o) => (
                       <li
                         key={o.id}
-                        className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/40 overflow-hidden"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 dark:border-neutral-800 px-3 py-2 text-sm"
                       >
-                        <button
-                          type="button"
-                          onClick={() => setExpandedOrderId(open ? null : o.id)}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100/80 dark:hover:bg-neutral-800/50 transition-colors"
-                        >
-                          {open ? (
-                            <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                            <div>
-                              <div className="text-xs text-gray-500 dark:text-neutral-500">Order</div>
-                              <div className="font-bold text-gray-900 dark:text-white">{o.orderNumber}</div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-gray-500 dark:text-neutral-500">Date</div>
-                              <div className="font-medium text-gray-800 dark:text-neutral-200">
-                                {o.createdAt
-                                  ? new Date(o.createdAt).toLocaleString(undefined, {
-                                      dateStyle: "medium",
-                                      timeStyle: "short",
-                                    })
-                                  : "—"}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-gray-500 dark:text-neutral-500">Source</div>
-                              <div className="font-medium text-gray-800 dark:text-neutral-200">
-                                {o.source === "WEBSITE" ? "Website" : o.source || "—"}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-gray-500 dark:text-neutral-500">Total</div>
-                              <div className="font-bold text-primary">{sym} {(o.total ?? 0).toLocaleString()}</div>
-                            </div>
-                          </div>
+                        <div>
+                          <Link
+                            href={`/dashboard/orders?editOrder=${encodeURIComponent(o.id)}`}
+                            className="font-mono font-semibold text-primary hover:underline"
+                          >
+                            {o.orderNumber || o.id}
+                          </Link>
+                          <p className="text-xs text-gray-500 dark:text-neutral-400">
+                            {o.createdAt
+                              ? new Date(o.createdAt).toLocaleString(undefined, {
+                                  dateStyle: "medium",
+                                  timeStyle: "short",
+                                })
+                              : "—"}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-semibold text-gray-900 dark:text-white">
+                            {sym} {(o.total ?? 0).toLocaleString()}
+                          </span>
                           <span
-                            className={`text-xs font-bold px-2 py-0.5 rounded-lg flex-shrink-0 ${
-                              o.status === "DELIVERED"
+                            className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              o.status === "DELIVERED" || o.status === "COMPLETED"
                                 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
                                 : o.status === "CANCELLED"
                                   ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
@@ -835,66 +943,57 @@ export default function CustomersPage() {
                           >
                             {o.status || "—"}
                           </span>
-                        </button>
-                        {open && (
-                          <div className="px-4 pb-4 pt-0 border-t border-gray-200 dark:border-neutral-800 text-sm space-y-2">
-                            {o.branchName ? (
-                              <p className="text-gray-600 dark:text-neutral-400">
-                                <span className="font-semibold">Branch:</span> {o.branchName}
-                              </p>
-                            ) : null}
-                            {o.deliveryAddress ? (
-                              <p className="text-gray-600 dark:text-neutral-400">
-                                <span className="font-semibold">Address:</span> {o.deliveryAddress}
-                              </p>
-                            ) : null}
-                            <p className="text-gray-600 dark:text-neutral-400">
-                              <span className="font-semibold">Payment:</span> {o.paymentMethod || "—"} ·{" "}
-                              <span className="font-semibold">Type:</span> {o.orderType || "—"}
-                            </p>
-                            <div className="rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden mt-2">
-                              <table className="w-full text-xs">
-                                <thead className="bg-gray-100 dark:bg-neutral-800">
-                                  <tr>
-                                    <th className="text-left px-3 py-2 font-semibold">Item</th>
-                                    <th className="text-right px-3 py-2 font-semibold">Qty</th>
-                                    <th className="text-right px-3 py-2 font-semibold">Line</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(o.items || []).map((it, idx) => (
-                                    <tr key={idx} className="border-t border-gray-200 dark:border-neutral-700">
-                                      <td className="px-3 py-2 text-gray-800 dark:text-neutral-200">{it.name}</td>
-                                      <td className="px-3 py-2 text-right text-gray-600 dark:text-neutral-400">
-                                        {it.quantity}
-                                      </td>
-                                      <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white">
-                                        {sym} {(it.lineTotal ?? 0).toLocaleString()}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
+                        </div>
                       </li>
-                    );
-                  })}
-                </ul>
-              )}
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-900 dark:text-white">Notes</label>
+                <textarea
+                  value={detailNotes}
+                  onChange={(e) => setDetailNotes(e.target.value)}
+                  disabled={detailCustomer.recordType === "website"}
+                  rows={3}
+                  placeholder={
+                    detailCustomer.recordType === "website"
+                      ? "Notes for website accounts are managed on the storefront."
+                      : "Internal notes"
+                  }
+                  className="mt-1 w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm disabled:opacity-60"
+                />
+                {detailCustomer.recordType !== "website" && (
+                  <button
+                    type="button"
+                    onClick={() => void saveCustomerNotes()}
+                    disabled={notesSaving}
+                    className="mt-2 inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-50"
+                  >
+                    {notesSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Save notes
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 shadow-2xl rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                <User className="w-6 h-6 text-white" />
-              </div>
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            aria-label="Close"
+            onClick={() => {
+              resetForm();
+              setIsModalOpen(false);
+            }}
+          />
+          <div className="relative w-full max-w-md h-full bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                   {form.id ? "Edit Customer" : "Add Customer"}
@@ -903,8 +1002,19 @@ export default function CustomersPage() {
                   {form.id ? "Update customer details" : `Assign to ${currentBranch?.name || "current branch"}`}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm();
+                  setIsModalOpen(false);
+                }}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
+            <div className="flex-1 overflow-y-auto px-5 py-4">
             {modalError && (
               <div className="mb-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
                 {modalError}
@@ -1004,6 +1114,7 @@ export default function CustomersPage() {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}

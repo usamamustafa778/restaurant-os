@@ -746,36 +746,6 @@ export default function CategoriesPage() {
           <span className="sm:hidden">Add</span>
         </button>
       </div>
-      <p className="categories-no-print mb-6 text-[11px] text-gray-500 dark:text-neutral-500">
-        <span className="font-medium text-gray-600 dark:text-neutral-400">
-          CSV:
-        </span>{" "}
-        columns{" "}
-        <code className="rounded bg-gray-100 px-1 text-[10px] dark:bg-neutral-800">
-          name
-        </code>
-        ,{" "}
-        <code className="rounded bg-gray-100 px-1 text-[10px] dark:bg-neutral-800">
-          description
-        </code>{" "}
-        (optional header). Export adds{" "}
-        <code className="rounded bg-gray-100 px-1 text-[10px] dark:bg-neutral-800">
-          item_count
-        </code>{" "}
-        (ignored on import).         Use{" "}
-        <span className="font-medium text-gray-600 dark:text-neutral-400">
-          Import → Upload from device
-        </span>{" "}
-        for CSV, or{" "}
-        <span className="font-medium text-gray-600 dark:text-neutral-400">
-          Import from a branch
-        </span>{" "}
-        to copy categories from another location.{" "}
-        <span className="font-medium text-gray-600 dark:text-neutral-400">
-          Export
-        </span>{" "}
-        supports CSV, PDF (print dialog → Save as PDF), and Print.
-      </p>
 
       {/* Loading state – inside content area */}
       {pageLoading ? (
@@ -872,15 +842,13 @@ export default function CategoriesPage() {
                     </div>
 
                     <div className="mb-2">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${itemCount === 0 ? "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500" : "bg-primary/10 text-primary"}`}>
                         {itemCount} items
                       </span>
                     </div>
 
                     <p className="text-sm text-gray-600 dark:text-neutral-400 line-clamp-2 min-h-[2.5rem]">
-                      {cat.description || (
-                        <span className="italic">No description provided</span>
-                      )}
+                      {cat.description || ""}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5 text-right">
                       {cat.createdAt
@@ -910,11 +878,7 @@ export default function CategoriesPage() {
                   hideOnMobile: true,
                   render: (value) => (
                     <p className="text-gray-600 dark:text-neutral-400 line-clamp-2">
-                      {value || (
-                        <span className="italic text-gray-400 dark:text-neutral-500">
-                          No description
-                        </span>
-                      )}
+                      {value || ""}
                     </p>
                   ),
                 },
@@ -923,7 +887,7 @@ export default function CategoriesPage() {
                   header: "Items",
                   align: "center",
                   render: (value) => (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${value === 0 ? "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500" : "bg-primary/10 text-primary"}`}>
                       {value}
                     </span>
                   ),
@@ -1013,6 +977,9 @@ export default function CategoriesPage() {
                   placeholder="Burgers, Drinks, Sides..."
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
+                <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                  Name will appear exactly as entered on POS and customer receipts.
+                </p>
               </div>
               <div className="space-y-1">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">

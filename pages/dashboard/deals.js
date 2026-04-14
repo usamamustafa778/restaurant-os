@@ -33,12 +33,12 @@ import {
   Tag,
   ArrowUpDown,
   RefreshCw,
+  ChevronDown,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 function getEmptyForm() {
   const today = new Date().toISOString().slice(0, 10);
-  const weekLater = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   return {
     id: null,
     name: "",
@@ -46,7 +46,7 @@ function getEmptyForm() {
     selectedItems: [],
     comboPrice: "",
     startDate: today,
-    endDate: weekLater,
+    endDate: "",
     showOnPOS: true,
     imageUrl: "",
   };
@@ -65,6 +65,7 @@ export default function DealsPage() {
   const fetchMenu = () => getMenu(currentBranch?.id);
   const { data: menuData } = usePageData(fetchMenu, [currentBranch?.id]);
   const menuItems = menuData?.items || [];
+  const menuCategories = menuData?.categories || [];
 
   const [form, setForm] = useState(getEmptyForm);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -78,6 +79,9 @@ export default function DealsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
+  const [itemSearch, setItemSearch] = useState("");
+  const [collapsedCategories, setCollapsedCategories] = useState({});
+  const [showImageFields, setShowImageFields] = useState(false);
 
   const dealsList = Array.isArray(deals) ? deals : [];
 
@@ -97,6 +101,47 @@ export default function DealsPage() {
       return 0;
     });
 
+  const menuItemById = new Map(menuItems.map((m) => [String(m.id), m]));
+  const selectedItemsMap = new Map(form.selectedItems.map((s) => [String(s.menuItemId), s]));
+  const selectedItemPills = form.selectedItems
+    .map((s) => {
+      const item = menuItemById.get(String(s.menuItemId));
+      if (!item) return null;
+      return { id: String(s.menuItemId), name: item.name };
+    })
+    .filter(Boolean);
+  const selectedItemsTotal = form.selectedItems.reduce((sum, selected) => {
+    const item = menuItemById.get(String(selected.menuItemId));
+    const price = Number(item?.price) || 0;
+    return sum + price * (Number(selected.quantity) || 1);
+  }, 0);
+  const comboPriceNum = Number(form.comboPrice) || 0;
+  const savingsAmount = Math.max(0, selectedItemsTotal - comboPriceNum);
+
+  const normalizedItemSearch = itemSearch.trim().toLowerCase();
+  const categoryNameById = new Map(
+    menuCategories.map((c) => [String(c.id || c._id), c.name]).filter(([, name]) => Boolean(name))
+  );
+  const groupedMenuItems = menuItems.reduce((acc, item) => {
+    const categoryName =
+      (item.categoryName && String(item.categoryName).trim()) ||
+      (item.category?.name && String(item.category.name).trim()) ||
+      categoryNameById.get(String(item.categoryId || "")) ||
+      "Uncategorized";
+    if (!acc[categoryName]) acc[categoryName] = [];
+    acc[categoryName].push(item);
+    return acc;
+  }, {});
+  const categoryEntries = Object.entries(groupedMenuItems)
+    .map(([categoryName, items]) => {
+      const visibleItems = items
+        .filter((item) => !normalizedItemSearch || item.name.toLowerCase().includes(normalizedItemSearch))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      return { categoryName, items: visibleItems };
+    })
+    .filter((group) => group.items.length > 0)
+    .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+
   function startCreate() {
     if (!currentBranch?.id) {
       toast.error("Please select a specific branch from the header before creating deals.");
@@ -106,6 +151,23 @@ export default function DealsPage() {
     setModalError("");
     setImageTab("link");
     setUploadError("");
+    setItemSearch("");
+    setCollapsedCategories(
+      Object.fromEntries(
+        Object.keys(
+          menuItems.reduce((acc, item) => {
+            const categoryName =
+              (item.categoryName && String(item.categoryName).trim()) ||
+              (item.category?.name && String(item.category.name).trim()) ||
+              categoryNameById.get(String(item.categoryId || "")) ||
+              "Uncategorized";
+            acc[categoryName] = true;
+            return acc;
+          }, {})
+        ).map((name) => [name, true])
+      )
+    );
+    setShowImageFields(false);
     setIsModalOpen(true);
   }
 
@@ -128,6 +190,23 @@ export default function DealsPage() {
     setModalError("");
     setImageTab("link");
     setUploadError("");
+    setItemSearch("");
+    setCollapsedCategories(
+      Object.fromEntries(
+        Object.keys(
+          menuItems.reduce((acc, item) => {
+            const categoryName =
+              (item.categoryName && String(item.categoryName).trim()) ||
+              (item.category?.name && String(item.category.name).trim()) ||
+              categoryNameById.get(String(item.categoryId || "")) ||
+              "Uncategorized";
+            acc[categoryName] = true;
+            return acc;
+          }, {})
+        ).map((name) => [name, true])
+      )
+    );
+    setShowImageFields(Boolean(deal.imageUrl));
     setIsModalOpen(true);
   }
 
@@ -197,7 +276,7 @@ export default function DealsPage() {
       })),
       comboPrice: Number(form.comboPrice),
       startDate: new Date(form.startDate || new Date()).toISOString(),
-      endDate: new Date(form.endDate || new Date(Date.now() + 7 * 86400000)).toISOString(),
+      endDate: form.endDate ? new Date(form.endDate).toISOString() : undefined,
       showOnPOS: form.showOnPOS,
       branches: currentBranch?.id ? [currentBranch.id] : [],
       imageUrl: form.imageUrl.trim() || undefined,
@@ -599,7 +678,7 @@ export default function DealsPage() {
       {/* Deal Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-neutral-800">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-neutral-800">
 
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between flex-shrink-0">
@@ -632,7 +711,7 @@ export default function DealsPage() {
                   </div>
                 )}
 
-                {/* Name + Price */}
+                {/* Deal name + pricing + validity */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
@@ -648,23 +727,28 @@ export default function DealsPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                      Price <span className="text-red-500 normal-case">*</span>
+                      Deal price <span className="text-red-500 normal-case">*</span>
                     </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400">{sym}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{sym}</span>
                       <input
                         type="number"
                         min={0}
                         value={form.comboPrice}
                         onChange={(e) => setForm((f) => ({ ...f, comboPrice: e.target.value }))}
-                        placeholder="0"
-                        className="w-full pl-7 pr-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                        placeholder="Deal price"
+                        className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                       />
                     </div>
+                    <p className="mt-1.5 text-[11px] text-gray-500 dark:text-neutral-400">
+                      Items total: {sym} {Math.round(selectedItemsTotal).toLocaleString()}{" "}
+                      <span className="mx-1 text-gray-300 dark:text-neutral-600">|</span>
+                      You save: {sym} {Math.round(savingsAmount).toLocaleString()}
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                      Active period
+                      Deal valid from
                     </label>
                     <div className="flex items-center gap-1.5">
                       <input
@@ -673,7 +757,7 @@ export default function DealsPage() {
                         onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
                         className="flex-1 w-0 px-2 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                       />
-                      <span className="text-gray-400 text-xs flex-shrink-0">→</span>
+                      <span className="text-gray-400 text-xs flex-shrink-0">to</span>
                       <input
                         type="date"
                         value={form.endDate}
@@ -681,6 +765,9 @@ export default function DealsPage() {
                         className="flex-1 w-0 px-2 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                       />
                     </div>
+                    <p className="mt-1.5 text-[11px] text-gray-400 dark:text-neutral-500">
+                      Leave empty for no expiry
+                    </p>
                   </div>
                 </div>
 
@@ -698,51 +785,6 @@ export default function DealsPage() {
                   />
                 </div>
 
-                {/* Image */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                    Image <span className="text-gray-400 font-normal normal-case">(optional)</span>
-                  </label>
-                  <div className="flex gap-3 items-start">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden w-fit">
-                        <button type="button" onClick={() => setImageTab("link")}
-                          className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors ${imageTab === "link" ? "bg-primary text-white" : "bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}>
-                          <Link className="w-3 h-3" />Paste URL
-                        </button>
-                        <button type="button" onClick={() => setImageTab("upload")}
-                          className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium border-l border-gray-200 dark:border-neutral-700 transition-colors ${imageTab === "upload" ? "bg-primary text-white" : "bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}>
-                          <Upload className="w-3 h-3" />Upload
-                        </button>
-                      </div>
-                      {imageTab === "link" && (
-                        <input type="text" value={form.imageUrl}
-                          onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-                          placeholder="https://example.com/image.jpg"
-                          className="w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                        />
-                      )}
-                      {imageTab === "upload" && (
-                        <label className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${uploading ? "border-primary/40 bg-primary/5" : "border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 hover:bg-primary/5"}`}>
-                          {uploading ? <><Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /><span className="text-xs text-primary font-medium">Uploading…</span></> : <><Upload className="w-3.5 h-3.5 text-gray-400" /><span className="text-xs text-gray-500">Browse file</span></>}
-                          <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={uploading} />
-                        </label>
-                      )}
-                      {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
-                    </div>
-                    {form.imageUrl && (
-                      <div className="relative flex-shrink-0">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={form.imageUrl} alt="Preview" className="h-16 w-16 rounded-xl object-cover border border-gray-200 dark:border-neutral-700" />
-                        <button type="button" onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
-                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600">
-                          <X className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
                 {/* Show on POS */}
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                   <div
@@ -754,10 +796,77 @@ export default function DealsPage() {
                   <span className="text-sm text-gray-700 dark:text-neutral-300 font-medium">Show on POS</span>
                 </label>
 
+                {/* Image (collapsed by default) */}
+                <div>
+                  {!showImageFields ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowImageFields(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Image
+                    </button>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
+                          Image <span className="text-gray-400 font-normal normal-case">(optional)</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowImageFields(false)}
+                          className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                        >
+                          Hide
+                        </button>
+                      </div>
+                      <div className="flex gap-3 items-start">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden w-fit">
+                            <button type="button" onClick={() => setImageTab("link")}
+                              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors ${imageTab === "link" ? "bg-primary text-white" : "bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}>
+                              <Link className="w-3 h-3" />Paste URL
+                            </button>
+                            <button type="button" onClick={() => setImageTab("upload")}
+                              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium border-l border-gray-200 dark:border-neutral-700 transition-colors ${imageTab === "upload" ? "bg-primary text-white" : "bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}>
+                              <Upload className="w-3 h-3" />Upload
+                            </button>
+                          </div>
+                          {imageTab === "link" && (
+                            <input type="text" value={form.imageUrl}
+                              onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+                              placeholder="https://example.com/image.jpg"
+                              className="w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                            />
+                          )}
+                          {imageTab === "upload" && (
+                            <label className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${uploading ? "border-primary/40 bg-primary/5" : "border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 hover:bg-primary/5"}`}>
+                              {uploading ? <><Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /><span className="text-xs text-primary font-medium">Uploading…</span></> : <><Upload className="w-3.5 h-3.5 text-gray-400" /><span className="text-xs text-gray-500">Browse file</span></>}
+                              <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={uploading} />
+                            </label>
+                          )}
+                          {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
+                        </div>
+                        {form.imageUrl && (
+                          <div className="relative flex-shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={form.imageUrl} alt="Preview" className="h-16 w-16 rounded-xl object-cover border border-gray-200 dark:border-neutral-700" />
+                            <button type="button" onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+
               </div>
 
               {/* Right — Item picker */}
-              <div className="md:w-72 flex flex-col border-t md:border-t-0 border-gray-100 dark:border-neutral-800 flex-shrink-0">
+              <div className="md:w-80 flex flex-col border-t md:border-t-0 border-gray-100 dark:border-neutral-800 flex-shrink-0">
                 <div className="px-4 pt-4 pb-2 flex-shrink-0">
                   <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide mb-2">
                     Items in deal <span className="text-red-500 normal-case">*</span>
@@ -767,6 +876,29 @@ export default function DealsPage() {
                       {form.selectedItems.length} selected
                     </span>
                   )}
+                  <input
+                    type="text"
+                    value={itemSearch}
+                    onChange={(e) => setItemSearch(e.target.value)}
+                    placeholder="Search items..."
+                    className="mt-2 w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                  />
+                  {selectedItemPills.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {selectedItemPills.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => toggleItemSelection(item.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-semibold hover:bg-primary/15"
+                          title={`Remove ${item.name}`}
+                        >
+                          <X className="w-3 h-3" />
+                          <span className="max-w-[120px] truncate">{item.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 overflow-y-auto px-2 pb-4 min-h-0">
                   {menuItems.length === 0 ? (
@@ -774,34 +906,73 @@ export default function DealsPage() {
                       <ShoppingBag className="w-8 h-8 text-gray-300 dark:text-neutral-700 mb-2" />
                       <p className="text-xs text-gray-400 dark:text-neutral-500">No menu items found.</p>
                     </div>
+                  ) : categoryEntries.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-center px-4">
+                      <ShoppingBag className="w-8 h-8 text-gray-300 dark:text-neutral-700 mb-2" />
+                      <p className="text-xs text-gray-400 dark:text-neutral-500">No matching items.</p>
+                    </div>
                   ) : (
-                    <div className="space-y-1">
-                      {menuItems.map((item) => {
-                        const selected = form.selectedItems.find((s) => s.menuItemId === item.id);
+                    <div className="space-y-2">
+                      {categoryEntries.map(({ categoryName, items }) => {
+                        const isCollapsed = !!collapsedCategories[categoryName];
+                        const selectedInCategory = items.filter((item) => selectedItemsMap.has(String(item.id))).length;
                         return (
-                          <div
-                            key={item.id}
-                            onClick={() => toggleItemSelection(item.id)}
-                            className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${selected ? "bg-primary/8 dark:bg-primary/10 border border-primary/20" : "hover:bg-gray-50 dark:hover:bg-neutral-900 border border-transparent"}`}
-                          >
-                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                              <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-colors ${selected ? "bg-primary border-primary" : "border-gray-300 dark:border-neutral-600"}`}>
-                                {selected && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                          <div key={categoryName} className="rounded-xl border border-gray-100 dark:border-neutral-800">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCollapsedCategories((prev) => ({
+                                  ...prev,
+                                  [categoryName]: !prev[categoryName],
+                                }))
+                              }
+                              className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
+                            >
+                              <span className="text-[11px] font-semibold text-gray-600 dark:text-neutral-300 truncate">
+                                {categoryName} ({items.length})
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-medium text-primary/80 dark:text-primary/90">
+                                  {selectedInCategory} selected
+                                </span>
+                                <ChevronDown
+                                  className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isCollapsed ? "-rotate-90" : "rotate-0"}`}
+                                />
                               </div>
-                              <div className="min-w-0">
-                                <p className={`text-xs font-semibold truncate ${selected ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-neutral-300"}`}>{item.name}</p>
-                                <p className="text-[10px] text-gray-400 dark:text-neutral-500">{sym} {item.price}</p>
+                            </button>
+                            {!isCollapsed && (
+                              <div className="space-y-1 px-2 pb-2">
+                                {items.map((item) => {
+                                  const selected = form.selectedItems.find((s) => String(s.menuItemId) === String(item.id));
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      onClick={() => toggleItemSelection(item.id)}
+                                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${selected ? "bg-primary/8 dark:bg-primary/10 border border-primary/20" : "hover:bg-gray-50 dark:hover:bg-neutral-900 border border-transparent"}`}
+                                    >
+                                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                        <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-colors ${selected ? "bg-primary border-primary" : "border-gray-300 dark:border-neutral-600"}`}>
+                                          {selected && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className={`text-xs font-semibold truncate ${selected ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-neutral-300"}`}>{item.name}</p>
+                                          <p className="text-[10px] text-gray-400 dark:text-neutral-500">{sym} {item.price}</p>
+                                        </div>
+                                      </div>
+                                      {selected && (
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          value={selected.quantity}
+                                          onClick={(e) => e.stopPropagation()}
+                                          onChange={(e) => setItemQuantity(item.id, e.target.value)}
+                                          className="w-12 px-1.5 py-1 border-2 border-primary/30 rounded-lg text-xs text-center bg-white dark:bg-neutral-900 text-gray-900 dark:text-white outline-none focus:border-primary transition-all ml-2 flex-shrink-0"
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            </div>
-                            {selected && (
-                              <input
-                                type="number"
-                                min={1}
-                                value={selected.quantity}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => setItemQuantity(item.id, e.target.value)}
-                                className="w-12 px-1.5 py-1 border-2 border-primary/30 rounded-lg text-xs text-center bg-white dark:bg-neutral-900 text-gray-900 dark:text-white outline-none focus:border-primary transition-all ml-2 flex-shrink-0"
-                              />
                             )}
                           </div>
                         );

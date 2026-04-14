@@ -370,16 +370,32 @@ export default function OrdersPage() {
   // POS view state (merged into orders page for instant switching)
   const [activeView, setActiveView] = useState("orders");
   const [posEditOrderId, setPosEditOrderId] = useState(null);
+  const [posInitialTableName, setPosInitialTableName] = useState("");
 
-  const openPOS = useCallback((editId = null) => {
+  const openPOS = useCallback((editId = null, tableName = "") => {
     setPosEditOrderId(editId);
+    setPosInitialTableName(tableName || "");
     setActiveView("pos");
   }, []);
 
   const closePOS = useCallback(() => {
     setPosEditOrderId(null);
+    setPosInitialTableName("");
     setActiveView("orders");
-  }, []);
+    // Clean query params when closing POS
+    router.replace("/dashboard/orders", undefined, { shallow: true });
+  }, [router]);
+
+  // Handle ?view=pos&table=<name> or ?editOrder=<id> deep-links from Tables/Reservations pages
+  useEffect(() => {
+    if (!router.isReady) return;
+    const { view, table, editOrder } = router.query;
+    if (view === "pos") {
+      openPOS(null, table || "");
+    } else if (editOrder) {
+      openPOS(editOrder, "");
+    }
+  }, [router.isReady, router.query.view, router.query.editOrder]);
 
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
@@ -997,6 +1013,7 @@ export default function OrdersPage() {
           onClose={closePOS}
           onOrderChanged={handlePosOrderChanged}
           isActive={activeView === "pos"}
+          initialTableName={posInitialTableName}
         />
       </div>
 

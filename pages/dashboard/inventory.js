@@ -1,22 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import {
   Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown,
-  AlertTriangle, Copy, X, Loader2, CheckCircle2, XCircle,
-  ArrowUp, ArrowDown, ArrowUpDown, Printer, Minus, FileDown, FileText, ChevronDown,
+  AlertTriangle, X, Loader2, CheckCircle2, XCircle,
+  ArrowUp, ArrowDown, ArrowUpDown, Printer, Minus, FileDown, FileText, ChevronDown, Upload,
+  Search, SlidersHorizontal,
 } from "lucide-react";
 import DataTable from "../../components/ui/DataTable";
 import {
   getInventory, createInventoryItem, updateInventoryItem,
-  deleteInventoryItem, getStoredAuth, getSourceBranchInventory,
-  copyInventoryFromBranch, SubscriptionInactiveError, getCurrencySymbol,
+  deleteInventoryItem, SubscriptionInactiveError, getCurrencySymbol,
 } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
-
-const isAdminRole = (role) => role === "restaurant_admin" || role === "admin";
 
 // ─── Units ────────────────────────────────────────────────────────────────────
 
@@ -51,8 +49,213 @@ const UNIT_GROUPS = [
 
 const ALL_UNITS = UNIT_GROUPS.flatMap((g) => g.options);
 
+const BACKEND_UNITS = new Set([
+  "gram", "kilogram", "milliliter", "liter", "piece", "dozen", "box", "pack", "bag", "bottle", "can",
+]);
+
+function parseCSVLine(line) {
+  const out = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQ && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else inQ = !inQ;
+    } else if (c === "," && !inQ) {
+      out.push(cur.trim());
+      cur = "";
+    } else if (c === "\r" && !inQ) {
+      continue;
+    } else {
+      cur += c;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function normHeader(s) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[()]/g, "");
+}
+
+function findCol(headers, ...aliases) {
+  const H = headers.map(normHeader);
+  for (const a of aliases) {
+    const n = normHeader(a);
+    const i = H.findIndex((h) => h === n || h.endsWith(n) || n.endsWith(h));
+    if (i >= 0) return i;
+  }
+  for (const a of aliases) {
+    const n = normHeader(a);
+    const i = H.findIndex((h) => h.includes(n) || n.includes(h));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+function resolveImportUnit(raw) {
+  const cell = String(raw ?? "").trim();
+  if (!cell) return null;
+  const lower = cell.toLowerCase();
+  const aliases = { kg: "kilogram", g: "gram", ml: "milliliter", l: "liter", pcs: "piece", liter: "liter" };
+  if (aliases[lower]) return aliases[lower];
+  if (BACKEND_UNITS.has(lower)) return lower;
+  for (const u of ALL_UNITS) {
+    if (u.value === lower) return u.value;
+    if (u.label.toLowerCase() === lower) return u.value;
+    if (u.abbr && lower === u.abbr.toLowerCase()) return u.value;
+  }
+  const compact = lower.replace(/\s+/g, "");
+  if (compact.includes("kilogram")) return "kilogram";
+  if (compact.includes("gram") && !compact.includes("kilo")) return "gram";
+  if (compact.includes("milliliter")) return "milliliter";
+  if (compact === "liter" || lower === "l") return "liter";
+  if (compact.includes("piece") || lower.includes("pcs")) return "piece";
+  return null;
+}
+
+function parseNum(v, fallback = 0) {
+  if (v == null || v === "") return fallback;
+  const n = Number(String(v).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Detect header row (template or exported inventory CSV). */
+function findInventoryCsvHeaderIndex(rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.length < 2) continue;
+    const c0 = normHeader(r[0]);
+    const c1 = normHeader(r[1]);
+    const nameLike = c0 === "name" || c0 === "itemname" || c0.endsWith("name");
+    const unitLike = c1 === "unit" || c1.includes("unit");
+    if (nameLike && unitLike) return i;
+  }
+  return -1;
+}
+
+function parseInventoryImportText(text) {
+  const raw = String(text || "").replace(/^\uFEFF/, "");
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+  if (!lines.length) return { error: "File is empty", items: [], rowErrors: [] };
+
+  const rows = lines.map(parseCSVLine);
+  const headerIdx = findInventoryCsvHeaderIndex(rows);
+  if (headerIdx < 0) {
+    return {
+      error: 'No header row found. Use columns: name, unit, stock (optional), low_threshold (optional), cost (optional).',
+      items: [],
+      rowErrors: [],
+    };
+  }
+
+  const h = rows[headerIdx];
+  const iName = findCol(h, "name", "item name", "item");
+  const iUnit = findCol(h, "unit");
+  const iStock = findCol(h, "current stock", "stock", "initial stock", "quantity");
+  const iLow = findCol(h, "alert threshold", "low stock threshold", "low threshold", "threshold", "low_threshold");
+  const iCost = findCol(h, "cost price", "costprice", "cost");
+  if (iName < 0 || iUnit < 0) {
+    return { error: 'Missing required columns: need "name" and "unit".', items: [], rowErrors: [] };
+  }
+
+  const items = [];
+  const rowErrors = [];
+  const skipFirst = new Set([
+    "inventory report", "branch", "filter", "generated", "summary", "total items", "healthy", "low stock", "out of stock",
+  ]);
+
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const line = rows[r];
+    const name = (line[iName] || "").trim();
+    if (!name) continue;
+    const nLow = normHeader(name);
+    if (skipFirst.has(nLow) || nLow.startsWith("total ")) continue;
+
+    const unit = resolveImportUnit(line[iUnit]);
+    if (!unit) {
+      rowErrors.push({ row: r + 1, name, message: `Unknown unit: "${line[iUnit] || ""}"` });
+      continue;
+    }
+
+    const stock = iStock >= 0 ? parseNum(line[iStock], 0) : 0;
+    const low = iLow >= 0 ? parseNum(line[iLow], 0) : 0;
+    const cost = iCost >= 0 ? parseNum(line[iCost], 0) : 0;
+
+    items.push({ name, unit, stock: Math.max(0, stock), low: Math.max(0, low), cost: Math.max(0, cost) });
+  }
+
+  if (!items.length && !rowErrors.length) {
+    return { error: "No data rows found after the header.", items: [], rowErrors: [] };
+  }
+  return { items, rowErrors };
+}
+
+function downloadImportTemplate() {
+  const header = "name,unit,stock,low_threshold,cost";
+  const example = ['"Sample Tomato","gram",5000,1000,120', '"Cooking Oil","milliliter",2000,500,800'].join("\n");
+  const blob = new Blob(["\uFEFF" + `${header}\n${example}\n`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "inventory-import-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const IMPORT_PREVIEW_COLUMNS = [
+  {
+    key: "name",
+    header: "Name",
+    render: (_, row) => (
+      <span
+        className="max-w-[min(200px,28vw)] truncate block font-medium text-gray-900 dark:text-white"
+        title={row.name}
+      >
+        {row.name}
+      </span>
+    ),
+  },
+  {
+    key: "unit",
+    header: "Unit",
+    cellClassName: "whitespace-nowrap text-gray-700 dark:text-neutral-300",
+  },
+  {
+    key: "stock",
+    header: "Stock",
+    align: "right",
+    cellClassName: "tabular-nums text-gray-700 dark:text-neutral-300",
+  },
+  {
+    key: "low",
+    header: "Low",
+    align: "right",
+    cellClassName: "tabular-nums text-gray-700 dark:text-neutral-300",
+  },
+  {
+    key: "cost",
+    header: "Cost",
+    align: "right",
+    cellClassName: "tabular-nums text-gray-700 dark:text-neutral-300",
+  },
+];
+
 function unitAbbr(unit) {
   return ALL_UNITS.find((u) => u.value === unit)?.abbr ?? unit ?? "unit";
+}
+
+function fmtQty(quantity) {
+  const n = Number(quantity);
+  if (!Number.isFinite(n)) return "0";
+  return String(n % 1 === 0 ? n : parseFloat(n.toFixed(3)));
 }
 
 function costPriceLabel(unit) {
@@ -153,18 +356,18 @@ export default function InventoryPage() {
   const [selectedIds, setSelectedIds]           = useState(new Set());
   const [bulkDeleting, setBulkDeleting]         = useState(false);
   const [isItemModalOpen, setIsItemModalOpen]   = useState(false);
-  const [copyModalOpen, setCopyModalOpen]       = useState(false);
-  const [copySourceBranchId, setCopySourceBranchId]   = useState("");
-  const [copySourceData, setCopySourceData]           = useState(null);
-  const [copySourceLoading, setCopySourceLoading]     = useState(false);
-  const [copySelectedItemIds, setCopySelectedItemIds] = useState([]);
-  const [copySubmitting, setCopySubmitting]           = useState(false);
+  const [filtersOpen, setFiltersOpen]             = useState(false);
   const [showExportMenu, setShowExportMenu]           = useState(false);
+  const [importModalOpen, setImportModalOpen]         = useState(false);
+  const [importPreview, setImportPreview]           = useState(null); // { items, rowErrors } | null
+  const [importing, setImporting]                   = useState(false);
+  const [importResult, setImportResult]             = useState(null); // { created, failures }
+  const [importAttachedFile, setImportAttachedFile] = useState(null); // { name, size } | null
+  const importFileRef = useRef(null);
+  const filtersRef = useRef(null);
 
   const { confirm } = useConfirmDialog();
-  const { currentBranch, branches } = useBranch() || {};
-  const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
-  const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
+  const { currentBranch } = useBranch() || {};
 
   useEffect(() => {
     (async () => {
@@ -181,53 +384,115 @@ export default function InventoryPage() {
   }, []);
 
   useEffect(() => {
-    if (!copySourceBranchId || !copyModalOpen || copySourceBranchId === "all") {
-      setCopySourceData(null); setCopySelectedItemIds([]); return;
+    if (!filtersOpen) return;
+    function handleDown(e) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target)) {
+        setFiltersOpen(false);
+      }
     }
-    let cancelled = false;
-    setCopySourceLoading(true);
-    getSourceBranchInventory(copySourceBranchId)
-      .then((data) => {
-        if (cancelled) return;
-        const list = data?.items ?? [];
-        setCopySourceData({ items: list });
-        setCopySelectedItemIds(list.map((i) => i.id));
-      })
-      .catch(() => { if (!cancelled) setCopySourceData({ items: [] }); })
-      .finally(() => { if (!cancelled) setCopySourceLoading(false); });
-    return () => { cancelled = true; };
-  }, [copySourceBranchId, copyModalOpen]);
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [filtersOpen]);
 
-  function toggleCopyItem(id) {
-    setCopySelectedItemIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+  function openImportModal() {
+    if (!currentBranch?.id) {
+      toast.error("Please select a branch from the header dropdown to import inventory.");
+      return;
+    }
+    setImportPreview(null);
+    setImportResult(null);
+    setImportAttachedFile(null);
+    setImportModalOpen(true);
+    if (importFileRef.current) importFileRef.current.value = "";
   }
 
-  async function handleCopySubmit() {
-    if (!currentBranch?.id || !copySourceBranchId) {
-      toast.error("Please select a target branch and source branch."); return;
+  function closeImportModal() {
+    setImportModalOpen(false);
+    setImportPreview(null);
+    setImportResult(null);
+    setImportAttachedFile(null);
+    if (importFileRef.current) importFileRef.current.value = "";
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes == null || bytes < 0) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function onImportFileSelected(e) {
+    const f = e.target.files?.[0];
+    setImportResult(null);
+    if (!f) {
+      setImportPreview(null);
+      setImportAttachedFile(null);
+      return;
     }
-    setCopySubmitting(true);
-    const toastId = toast.loading("Copying inventory...");
-    try {
-      if (copySourceBranchId === "all") {
-        for (const branch of sourceBranches) {
-          const data = await getSourceBranchInventory(branch.id);
-          const itemIds = (data?.items ?? []).map((i) => i.id);
-          if (itemIds.length) await copyInventoryFromBranch(branch.id, { itemIds });
-        }
-        toast.success("Inventory copied from all branches!", { id: toastId });
-      } else {
-        await copyInventoryFromBranch(copySourceBranchId, { itemIds: copySelectedItemIds });
-        toast.success("Inventory copied successfully!", { id: toastId });
+    setImportAttachedFile({ name: f.name, size: f.size });
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      const parsed = parseInventoryImportText(text);
+      if (parsed.error && !parsed.items.length) {
+        toast.error(parsed.error);
+        setImportPreview({ error: parsed.error, items: [], rowErrors: parsed.rowErrors || [] });
+        return;
       }
-      setCopyModalOpen(false); setCopySourceBranchId("");
-      const data = await getInventory(); setItems(data);
-    } catch (err) {
-      toast.error(err.message || "Failed to copy inventory", { id: toastId });
+      setImportPreview({
+        items: parsed.items,
+        rowErrors: parsed.rowErrors || [],
+        parseError: parsed.error || null,
+      });
+    };
+    reader.readAsText(f);
+  }
+
+  async function handleRunImport() {
+    if (!currentBranch?.id || !importPreview?.items?.length || importing) return;
+    setImporting(true);
+    setImportResult(null);
+    const toastId = toast.loading("Importing inventory…");
+    const failures = [];
+    let created = 0;
+    try {
+      for (const row of importPreview.items) {
+        try {
+          await createInventoryItem({
+            name: row.name,
+            unit: row.unit,
+            initialStock: row.stock,
+            lowStockThreshold: row.low,
+            costPrice: row.cost,
+            branchId: currentBranch.id,
+          });
+          created += 1;
+        } catch (err) {
+          failures.push({ name: row.name, message: err.message || "Failed to create" });
+        }
+      }
+      try {
+        const data = await getInventory();
+        setItems(data);
+      } catch {
+        /* non-fatal */
+      }
+
+      if (failures.length === 0) {
+        toast.success(
+          `Imported ${created} item${created === 1 ? "" : "s"}.`,
+          { id: toastId }
+        );
+        closeImportModal();
+      } else {
+        setImportResult({ created, failures });
+        toast.success(
+          `Imported ${created} item${created === 1 ? "" : "s"}, ${failures.length} failed.`,
+          { id: toastId }
+        );
+      }
     } finally {
-      setCopySubmitting(false);
+      setImporting(false);
     }
   }
 
@@ -416,8 +681,8 @@ export default function InventoryPage() {
       return `<tr>
         <td><strong>${item.name}</strong></td>
         <td>${unitAbbr(item.unit)}</td>
-        <td style="font-weight:700">${item.currentStock ?? 0} ${unitAbbr(item.unit)}</td>
-        <td>${item.lowStockThreshold ? `${item.lowStockThreshold} ${unitAbbr(item.unit)}` : "—"}</td>
+        <td style="font-weight:700">${fmtQty(item.currentStock ?? 0)} ${unitAbbr(item.unit)}</td>
+        <td>${item.lowStockThreshold ? `${fmtQty(item.lowStockThreshold)} ${unitAbbr(item.unit)}` : "—"}</td>
         <td><span style="background:${isOut ? "#fef2f2" : "#fff7ed"};color:${isOut ? "#dc2626" : "#ea580c"};font-weight:700;padding:3px 10px;border-radius:4px;font-size:11px">${isOut ? "OUT OF STOCK" : "LOW STOCK"}</span></td>
         <td style="color:#d1d5db">_____________________</td>
       </tr>`;
@@ -435,7 +700,7 @@ export default function InventoryPage() {
 <h1>Restock List</h1>
 <p class="meta">${branchName} &nbsp;·&nbsp; ${date} &nbsp;·&nbsp; ${restockItems.length} item${restockItems.length !== 1 ? "s" : ""} need attention</p>
 <table>
-  <thead><tr><th>Item</th><th>Unit</th><th>Current Stock</th><th>Alert Threshold</th><th>Status</th><th>Order Qty</th></tr></thead>
+  <thead><tr><th>Item</th><th>Unit</th><th>Stock Levels</th><th>Alert Threshold</th><th>Status</th><th>Order Qty</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
 </body></html>`;
@@ -538,12 +803,12 @@ export default function InventoryPage() {
       ["Filter", filterLabel],
       ["Generated", date],
       [],
-      ["Item Name", "Unit", "Current Stock", "Alert Threshold", "Cost Price (Rs)", "Status"],
+      ["Item Name", "Unit", "Stock Levels", "Alert Threshold", "Cost Price (Rs)", "Status"],
       ...sortedFiltered.map((item) => [
         item.name,
         ALL_UNITS.find((u) => u.value === item.unit)?.label ?? item.unit,
-        item.currentStock ?? 0,
-        item.lowStockThreshold ?? 0,
+        fmtQty(item.currentStock ?? 0),
+        fmtQty(item.lowStockThreshold ?? 0),
         item.costPrice ?? 0,
         stockStatus(item),
       ]),
@@ -583,8 +848,8 @@ export default function InventoryPage() {
       return `<tr>
         <td><strong>${item.name}</strong></td>
         <td>${ALL_UNITS.find((u) => u.value === item.unit)?.label ?? item.unit}</td>
-        <td style="font-weight:700">${item.currentStock ?? 0} ${unitAbbr(item.unit)}</td>
-        <td>${item.lowStockThreshold ? `${item.lowStockThreshold} ${unitAbbr(item.unit)}` : "—"}</td>
+        <td style="font-weight:700">${fmtQty(item.currentStock ?? 0)} ${unitAbbr(item.unit)}</td>
+        <td>${item.lowStockThreshold ? `${fmtQty(item.lowStockThreshold)} ${unitAbbr(item.unit)}` : "—"}</td>
         <td>${item.costPrice > 0 ? `${getCurrencySymbol()} ${item.costPrice.toLocaleString()}` : "—"}</td>
         <td><span style="font-weight:700;padding:2px 8px;border-radius:4px;font-size:11px;${statusStyle}">${status}</span></td>
       </tr>`;
@@ -615,7 +880,7 @@ export default function InventoryPage() {
   <div class="stat"><div class="stat-label">Out of Stock</div><div class="stat-value" style="color:#dc2626">${outCount}</div></div>
 </div>
 <table>
-  <thead><tr><th>Item</th><th>Unit</th><th>Current Stock</th><th>Alert Threshold</th><th>Cost Price</th><th>Status</th></tr></thead>
+  <thead><tr><th>Item</th><th>Unit</th><th>Stock Levels</th><th>Alert Threshold</th><th>Cost Price</th><th>Status</th></tr></thead>
   <tbody>${itemRows || '<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:32px">No items match current filter</td></tr>'}</tbody>
 </table>
 </body></html>`;
@@ -644,116 +909,300 @@ export default function InventoryPage() {
   return (
     <AdminLayout title="Inventory Management" suspended={suspended}>
 
-      {/* ── Copy inventory modal ──────────────────────────────────────────── */}
-      {copyModalOpen && (
+      {/* ── Import CSV modal ──────────────────────────────────────────────── */}
+      {importModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+          <div className={`bg-white dark:bg-neutral-950 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col relative ${importing ? "ring-2 ring-primary/30" : ""}`}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Copy inventory from branch</h2>
-              <button type="button" onClick={() => { setCopyModalOpen(false); setCopySourceBranchId(""); }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Import inventory (CSV)</h2>
+              <button type="button" onClick={closeImportModal} disabled={importing}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 disabled:opacity-40 disabled:pointer-events-none disabled:cursor-not-allowed">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-4 overflow-y-auto flex-1">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Source branch</label>
-                <select value={copySourceBranchId} onChange={(e) => setCopySourceBranchId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white">
-                  <option value="">Select branch</option>
-                  {isAdmin && <option value="all">All branches</option>}
-                  {sourceBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-              </div>
-              {copySourceLoading && (
-                <div className="flex items-center justify-center py-6">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            {importing && (
+              <div className="px-5 pt-1 pb-2">
+                <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 dark:bg-primary/10 px-3 py-2.5 text-xs font-semibold text-primary">
+                  <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+                  Importing rows… please wait.
                 </div>
-              )}
-              {copySourceBranchId === "all" && (
-                <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
-                  All inventory items from every other branch will be copied to this branch (stock 0).
-                </p>
-              )}
-              {!copySourceLoading && copySourceData && copySourceBranchId !== "all" && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400 mb-2">Inventory items</p>
-                  <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-800">
-                    {(copySourceData.items || []).map((i) => (
-                      <label key={i.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800/50 cursor-pointer">
-                        <input type="checkbox" checked={copySelectedItemIds.includes(i.id)}
-                          onChange={() => toggleCopyItem(i.id)} className="rounded border-gray-300 text-primary" />
-                        <span className="text-sm text-gray-900 dark:text-white flex-1">{i.name}</span>
-                        <span className="text-[10px] text-gray-500 dark:text-neutral-400">{unitAbbr(i.unit)}</span>
-                      </label>
-                    ))}
-                    {(copySourceData.items || []).length === 0 && (
-                      <p className="px-3 py-2 text-xs text-gray-500">No inventory items in this branch</p>
+              </div>
+            )}
+            <div className={`p-5 space-y-4 overflow-y-auto flex-1 text-sm text-gray-700 dark:text-neutral-300 ${importing ? "pointer-events-none opacity-60" : ""}`}>
+              <p>
+                Rows are added to <span className="font-semibold text-gray-900 dark:text-white">{currentBranch?.name}</span>.
+                Required columns: <code className="text-xs bg-gray-100 dark:bg-neutral-800 px-1 rounded">name</code>,{" "}
+                <code className="text-xs bg-gray-100 dark:bg-neutral-800 px-1 rounded">unit</code>.
+                Optional: stock, low threshold, cost (matches exported reports when you keep the header row).
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="ghost" className="px-3 text-xs" disabled={importing}
+                  onClick={() => downloadImportTemplate()}>
+                  <FileDown className="w-3.5 h-3.5 mr-1" /> Download template
+                </Button>
+                <label className={`inline-flex items-center gap-2 h-9 px-3 rounded-lg border-2 border-primary text-primary text-xs font-semibold ${importing ? "opacity-50 cursor-not-allowed pointer-events-none" : "cursor-pointer hover:bg-primary/10"}`}>
+                  <Upload className="w-3.5 h-3.5" />
+                  Choose CSV file
+                  <input ref={importFileRef} type="file" accept=".csv,text/csv" className="hidden" disabled={importing} onChange={onImportFileSelected} />
+                </label>
+              </div>
+              {importAttachedFile && (
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/80 px-3 py-2.5 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-600 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">Attached file</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate" title={importAttachedFile.name}>
+                      {importAttachedFile.name}
+                    </p>
+                    {importAttachedFile.size != null && (
+                      <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">{formatFileSize(importAttachedFile.size)}</p>
                     )}
                   </div>
                 </div>
               )}
+              {importPreview?.error && (
+                <p className="text-xs text-red-600 dark:text-red-400">{importPreview.error}</p>
+              )}
+              {importPreview?.parseError && importPreview.items?.length > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">{importPreview.parseError}</p>
+              )}
+              {importPreview?.rowErrors?.length > 0 && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 max-h-32 overflow-y-auto">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1">Skipped rows (invalid unit)</p>
+                  <ul className="text-[11px] text-amber-900 dark:text-amber-100 space-y-0.5">
+                    {importPreview.rowErrors.map((e, idx) => (
+                      <li key={idx}>Line {e.row}: {e.name} — {e.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {importPreview?.items?.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                    Ready to import: {importPreview.items.length} item{importPreview.items.length !== 1 ? "s" : ""}
+                  </p>
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 mb-2">
+                      Preview (first {Math.min(10, importPreview.items.length)} of {importPreview.items.length})
+                    </p>
+                    <div className="max-h-52 overflow-auto">
+                      <DataTable
+                        variant="card"
+                        tableClassName="text-xs"
+                        columns={IMPORT_PREVIEW_COLUMNS}
+                        rows={importPreview.items.slice(0, 10)}
+                        getRowId={(_, i) => `import-preview-${i}`}
+                        emptyMessage="No rows to preview."
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {importResult && (
+                <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-gray-900 dark:text-white">
+                    Created {importResult.created} item{importResult.created !== 1 ? "s" : ""}.
+                  </p>
+                  {importResult.failures?.length > 0 && (
+                    <ul className="text-[11px] text-red-600 dark:text-red-400 max-h-28 overflow-y-auto space-y-0.5">
+                      {importResult.failures.map((f, idx) => (
+                        <li key={idx}><span className="font-medium">{f.name}</span>: {f.message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
-              <Button type="button" variant="ghost" onClick={() => { setCopyModalOpen(false); setCopySourceBranchId(""); }} className="px-4">Cancel</Button>
-              <Button type="button" onClick={handleCopySubmit}
-                disabled={!copySourceBranchId || copySubmitting || (copySourceBranchId !== "all" && copySelectedItemIds.length === 0)}
-                className="px-4">
-                {copySubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
-                {copySubmitting ? "Copying…" : "Copy to this branch"}
+              <Button type="button" variant="ghost" onClick={closeImportModal} disabled={importing} className="px-4">Close</Button>
+              <Button type="button" onClick={handleRunImport}
+                disabled={!importPreview?.items?.length || importing}
+                className="px-4 min-w-[8.5rem] justify-center">
+                {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {importing ? "Importing…" : "Import now"}
               </Button>
             </div>
           </div>
         </div>
       )}
 
-
       {/* ── Toolbar ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {/* Search */}
-        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search items..."
-          className="w-48 h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all" />
+      <div className="mb-4 flex w-full min-w-0 flex-wrap items-center gap-2">
+        <label className="sr-only" htmlFor="inventory-search">Search inventory</label>
+        <div className="relative min-w-0 flex-1 basis-full sm:basis-0 sm:min-w-[12rem]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            id="inventory-search"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search items…"
+            className="h-9 w-full rounded-xl border-2 border-gray-200 bg-white pl-8 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+          />
+        </div>
 
-        {/* Status */}
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit">
-          <option value="all">All Status</option>
-          <option value="healthy">Healthy</option>
-          <option value="low">Low Stock</option>
-          <option value="out">Out of Stock</option>
-        </select>
-
-        {/* Unit type */}
-        <select value={filterUnit} onChange={e => setFilterUnit(e.target.value)}
-          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit">
-          <option value="all">All Units</option>
-          <option value="weight">Weight (g / kg)</option>
-          <option value="volume">Volume (ml / L)</option>
-          <option value="count">Count (pcs, box…)</option>
-        </select>
-
-        {/* Sort */}
-        <select value={sortBy} onChange={e => { setSortBy(e.target.value); setSortKey(null); }}
-          className="h-9 pl-2.5 pr-7 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-xs font-semibold text-gray-700 dark:text-neutral-300 focus:outline-none focus:border-primary cursor-pointer transition-all w-fit">
-          <option value="name_asc">A → Z</option>
-          <option value="name_desc">Z → A</option>
-          <option value="stock_asc">Stock Low → High</option>
-          <option value="stock_desc">Stock High → Low</option>
-          <option value="cost_asc">Cost Low → High</option>
-          <option value="cost_desc">Cost High → Low</option>
-        </select>
-
-        {/* Clear */}
-        {(statusFilter !== "all" || filterUnit !== "all" || search.trim()) && (
-          <button type="button"
-            onClick={() => { setStatusFilter("all"); setFilterUnit("all"); setSearch(""); }}
-            className="inline-flex items-center gap-1 h-9 px-3 rounded-lg bg-gray-100 dark:bg-neutral-800 text-xs font-semibold text-gray-600 dark:text-neutral-300 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors">
-            <X className="w-3.5 h-3.5" /> Clear
+        <div className="relative" ref={filtersRef}>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-all ${
+              filtersOpen
+                ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            }`}
+          >
+            <SlidersHorizontal className="h-4 w-4 shrink-0" />
+            Filters
+            {(() => {
+              const sortActive = sortKey != null || sortBy !== "name_asc";
+              const count =
+                (statusFilter !== "all" ? 1 : 0) +
+                (filterUnit !== "all" ? 1 : 0) +
+                (sortActive ? 1 : 0);
+              return count > 0 ? (
+                <span className="flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-white">
+                  {count}
+                </span>
+              ) : null;
+            })()}
+            <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
           </button>
-        )}
 
-        <div className="flex items-center gap-2 ml-auto">
+          {filtersOpen && (
+            <div className="absolute left-0 top-full z-[100] mt-1.5 w-72 overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">Filters &amp; Sort</span>
+                {(statusFilter !== "all" || filterUnit !== "all" || sortKey != null || sortBy !== "name_asc") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setFilterUnit("all");
+                      setSortBy("name_asc");
+                      setSortKey(null);
+                      setSortDir("asc");
+                    }}
+                    className="text-xs font-semibold text-red-500 hover:text-red-600 dark:text-red-400"
+                  >
+                    Reset all
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-4 p-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">Status</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      ["all", "All"],
+                      ["healthy", "Healthy"],
+                      ["low", "Low stock"],
+                      ["out", "Out of stock"],
+                    ].map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setStatusFilter(val)}
+                        className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                          statusFilter === val
+                            ? "bg-primary text-white shadow-sm"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">Unit type</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      ["all", "All"],
+                      ["weight", "Weight"],
+                      ["volume", "Volume"],
+                      ["count", "Count"],
+                    ].map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setFilterUnit(val)}
+                        className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                          filterUnit === val
+                            ? "bg-primary text-white shadow-sm"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">Sort by</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      ["name_asc", "A → Z"],
+                      ["name_desc", "Z → A"],
+                      ["stock_asc", "Stock ↑"],
+                      ["stock_desc", "Stock ↓"],
+                      ["cost_asc", "Cost ↑"],
+                      ["cost_desc", "Cost ↓"],
+                    ].map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => {
+                          setSortBy(val);
+                          setSortKey(null);
+                          setSortDir("asc");
+                        }}
+                        className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                          sortKey == null && sortBy === val
+                            ? "bg-primary text-white shadow-sm"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {sortKey != null && (
+                    <p className="mt-2 text-[10px] text-gray-500 dark:text-neutral-500">
+                      Table header sort is active. Pick a sort above to use preset order.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {(statusFilter !== "all" || filterUnit !== "all" || sortKey != null || sortBy !== "name_asc" || search.trim()) && (
+                <div className="px-4 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setFilterUnit("all");
+                      setSortBy("name_asc");
+                      setSortKey(null);
+                      setSortDir("asc");
+                      setSearch("");
+                      setFiltersOpen(false);
+                    }}
+                    className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-xl bg-red-50 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+                  >
+                    <X className="h-3.5 w-3.5" /> Clear all filters
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {needsRestock && (
             <button type="button" onClick={printRestockList}
               className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border-2 border-orange-300 dark:border-orange-500/40 text-orange-600 dark:text-orange-400 text-sm font-semibold hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-all whitespace-nowrap">
@@ -764,9 +1213,9 @@ export default function InventoryPage() {
             </button>
           )}
           {currentBranch?.id && (
-            <button type="button" onClick={() => { setCopySourceBranchId(""); setCopyModalOpen(true); }}
-              className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border-2 border-primary text-primary text-sm font-semibold hover:bg-primary/10 transition-all whitespace-nowrap">
-              <Copy className="w-4 h-4" /> Copy Inventory
+            <button type="button" onClick={openImportModal}
+              className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border-2 border-emerald-600 dark:border-emerald-500 text-emerald-700 dark:text-emerald-400 text-sm font-semibold hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all whitespace-nowrap">
+              <Upload className="w-4 h-4" /> Import
             </button>
           )}
           {/* Export dropdown */}
@@ -936,7 +1385,7 @@ export default function InventoryPage() {
                           <Minus className="w-3 h-3" />
                         </button>
                         <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-lg text-xs font-bold min-w-[70px] ${badgeColor}`}>
-                          {isAdjusting ? <Loader2 className="w-3 h-3 animate-spin" /> : <>{stock} {unitAbbr(item.unit)}</>}
+                          {isAdjusting ? <Loader2 className="w-3 h-3 animate-spin" /> : <>{fmtQty(stock)} {unitAbbr(item.unit)}</>}
                         </span>
                         <button type="button"
                           disabled={isAdjusting}
@@ -976,7 +1425,7 @@ export default function InventoryPage() {
                 hideOnMobile: true,
                 render: (val, item) => val > 0 ? (
                   <span className="text-xs text-gray-500 dark:text-neutral-400 tabular-nums">
-                    {val} {unitAbbr(item.unit)}
+                    {fmtQty(val)} {unitAbbr(item.unit)}
                   </span>
                 ) : (
                   <span className="text-gray-300 dark:text-neutral-600 text-xs">—</span>
@@ -1136,9 +1585,9 @@ export default function InventoryPage() {
 
             <div className="mb-4 p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 dark:text-neutral-400">Current Stock</span>
+                <span className="text-xs text-gray-500 dark:text-neutral-400">Stock Levels</span>
                 <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
-                  {adjustDialog.currentStock} {unitAbbr(adjustDialog.unit)}
+                  {fmtQty(adjustDialog.currentStock)} {unitAbbr(adjustDialog.unit)}
                 </span>
               </div>
               {adjustAmt > 0 && (
@@ -1147,7 +1596,7 @@ export default function InventoryPage() {
                   <span className={`text-sm font-bold tabular-nums ${
                     adjustDialog.mode === "add" ? "text-emerald-600 dark:text-emerald-400" : "text-orange-600 dark:text-orange-400"
                   }`}>
-                    {previewStock} {unitAbbr(adjustDialog.unit)}
+                    {fmtQty(previewStock)} {unitAbbr(adjustDialog.unit)}
                   </span>
                 </div>
               )}

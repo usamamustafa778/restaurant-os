@@ -1,14 +1,49 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import { getOrders, getNextStatuses, updateOrderStatus } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import {
   Clock, User, ChefHat, Loader2, CheckCircle2, RefreshCw,
   Package, UtensilsCrossed, Headset, ShoppingBag, Truck, MapPin,
+  Trash2, CalendarDays, EyeOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Deduplicate orders by their canonical ID.
+ * Keeps the entry with the higher STATUS_PRIORITY so an order that has
+ * already been promoted to READY never shows in "In Kitchen" due to a
+ * stale socket payload arriving slightly late.
+ */
+function deduplicateOrders(list) {
+  const seen = new Map();
+  for (const o of list) {
+    const key = String(o._id || o.id || "");
+    if (!key) continue;
+    const existing = seen.get(key);
+    if (
+      !existing ||
+      (STATUS_PRIORITY[o.status] ?? 0) > (STATUS_PRIORITY[existing.status] ?? 0)
+    ) {
+      seen.set(key, o);
+    }
+  }
+  return Array.from(seen.values());
+}
+
+/** Returns true when the order was created today (on or after midnight). */
+function isTodayOrder(order, todayStart) {
+  if (!order.createdAt) return true;
+  return new Date(order.createdAt) >= todayStart;
+}
+
+/** Returns true when a READY order has been waiting longer than STALE_READY_MINUTES. */
+function isStaleReady(order) {
+  if (order.status !== "READY") return false;
+  return getElapsedMinutes(order.createdAt) >= STALE_READY_MINUTES;
+}
 
 function getDisplayOrderId(order) {
   const id = order.id || order.orderNumber || order._id || "";
@@ -52,6 +87,22 @@ function getOrderTypeLabel(order) {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Ready orders older than this threshold get a Dismiss button. */
+const STALE_READY_MINUTES = 120;
+
+/** sessionStorage key for KDS-dismissed order IDs (cleared on tab close). */
+const KDS_DISMISSED_KEY = "kds_dismissed_ids";
+
+/**
+ * Status priority used for deduplication: if the same order ID appears
+ * twice (e.g. from a race between a local optimistic update and a socket
+ * event), keep the entry with the higher status priority so the order
+ * moves forward, never backward.
+ */
+const STATUS_PRIORITY = {
+  READY: 4, PROCESSING: 3, PENDING: 2, NEW_ORDER: 1, UNPROCESSED: 1,
+};
 
 const URGENCY = {
   normal:   { border: "border-gray-200 dark:border-neutral-700", timerBg: "bg-gray-100 dark:bg-neutral-800",     timerText: "text-gray-500 dark:text-neutral-400",  dot: "bg-gray-400" },
@@ -119,7 +170,7 @@ const COLUMNS = [
 
 // ─── Order Card ───────────────────────────────────────────────────────────────
 
-function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
+function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
   const typeLabel = getOrderTypeLabel(order);
   const typeConf = TYPE_CONFIG[typeLabel] || TYPE_CONFIG["Walk-in"];
   const minutes = getElapsedMinutes(order.createdAt);
@@ -127,6 +178,7 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
   const ug = URGENCY[urgency];
   const { AdvIcon } = column;
   const totalQty = order.items?.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
+  const stale = isStaleReady(order);
 
   return (
     <div
@@ -222,6 +274,20 @@ function OrderCard({ order, column, isUpdating, onAdvance, tick }) {
           </button>
         </div>
       )}
+
+      {/* Dismiss button — only for stale Ready orders */}
+      {stale && onDismiss && (
+        <div className="px-3 pb-3 pt-0">
+          <button
+            type="button"
+            onClick={() => onDismiss(order.id || order._id)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
+          >
+            <EyeOff className="w-3 h-3" />
+            Dismiss from KDS
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -237,6 +303,18 @@ export default function KitchenPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [lastRefreshed, setLastRefreshed] = useState(Date.now());
   const [refreshing, setRefreshing] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState(() => {
+    try {
+      const stored =
+        typeof sessionStorage !== "undefined"
+          ? sessionStorage.getItem(KDS_DISMISSED_KEY)
+          : null;
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   useEffect(() => {
     const iv = setInterval(() => setTick((t) => t + 1), 30000);
@@ -245,7 +323,7 @@ export default function KitchenPage() {
 
   useEffect(() => {
     fetchOrders();
-    const iv = setInterval(fetchOrders, 30000);
+    const iv = setInterval(fetchOrders, 3000);
     return () => clearInterval(iv);
   }, []);
 
@@ -263,7 +341,9 @@ export default function KitchenPage() {
   async function fetchOrders() {
     try {
       const data = await getOrders();
-      setOrders(Array.isArray(data) ? data : (data?.orders ?? []));
+      const raw = Array.isArray(data) ? data : (data?.orders ?? []);
+      // Deduplicate so the same order ID cannot appear in two columns simultaneously.
+      setOrders(deduplicateOrders(raw));
       setLastRefreshed(Date.now());
     } catch (err) {
       toast.error(err.message || "Failed to load orders");
@@ -271,6 +351,33 @@ export default function KitchenPage() {
       setPageLoading(false);
       setRefreshing(false);
     }
+  }
+
+  function handleDismiss(orderId) {
+    const id = String(orderId);
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try { sessionStorage.setItem(KDS_DISMISSED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
+
+  function handleClearStaleReady() {
+    // Collect IDs from the READY column that are older than the stale threshold.
+    const toRemove = orders.filter(
+      (o) => o.status === "READY" && isStaleReady(o),
+    );
+    if (toRemove.length === 0) return;
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      toRemove.forEach((o) => next.add(String(o._id || o.id || "")));
+      try { sessionStorage.setItem(KDS_DISMISSED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+    toast.success(
+      `Dismissed ${toRemove.length} stale order${toRemove.length !== 1 ? "s" : ""}`,
+    );
   }
 
   async function handleManualRefresh() {
@@ -298,8 +405,30 @@ export default function KitchenPage() {
     }
   }
 
-  // Derived data — kitchen only cares about active orders (not delivered/cancelled)
-  const activeOrders = orders.filter((o) => !["DELIVERED", "CANCELLED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(o.status));
+  // ── Derived data ──────────────────────────────────────────────────────────
+
+  // Midnight of today in local time — recomputed every tick so it flips correctly
+  // if the KDS stays open overnight.
+  const todayStart = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
+
+  // Active = not closed/cancelled AND not dismissed from KDS view.
+  const activeOrders = orders.filter(
+    (o) =>
+      !["DELIVERED", "CANCELLED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(o.status) &&
+      !dismissedIds.has(String(o._id || o.id || "")),
+  );
+
+  // Today-only vs show-all toggle.
+  const visibleOrders = showAll
+    ? activeOrders
+    : activeOrders.filter((o) => isTodayOrder(o, todayStart));
+
+  const hiddenCount = activeOrders.length - visibleOrders.length;
 
   const applyTypeFilter = (list) => {
     if (typeFilter === "all") return list;
@@ -313,16 +442,19 @@ export default function KitchenPage() {
   };
 
   const columnOrders = COLUMNS.map((col) =>
-    applyTypeFilter(activeOrders.filter((o) => col.statuses.includes(o.status)))
+    applyTypeFilter(visibleOrders.filter((o) => col.statuses.includes(o.status))),
   );
 
+  // Stale ready orders — drives the "Clear stale" button.
+  const staleReadyCount = columnOrders[2].filter(isStaleReady).length;
+
   const typeCounts = {
-    DINE_IN:  activeOrders.filter((o) => getOrderTypeLabel(o) === "Dine In").length,
-    TAKEAWAY: activeOrders.filter((o) => getOrderTypeLabel(o) === "Takeaway").length,
-    DELIVERY: activeOrders.filter((o) => getOrderTypeLabel(o) === "Delivery").length,
+    DINE_IN:  visibleOrders.filter((o) => getOrderTypeLabel(o) === "Dine In").length,
+    TAKEAWAY: visibleOrders.filter((o) => getOrderTypeLabel(o) === "Takeaway").length,
+    DELIVERY: visibleOrders.filter((o) => getOrderTypeLabel(o) === "Delivery").length,
   };
 
-  const totalActive = activeOrders.length;
+  const totalActive = visibleOrders.length;
   const secondsSince = Math.round((Date.now() - lastRefreshed) / 1000);
   const refreshLabel = secondsSince < 5 ? "Just now" : secondsSince < 60 ? `${secondsSince}s ago` : `${Math.floor(secondsSince / 60)}m ago`;
 
@@ -349,6 +481,7 @@ export default function KitchenPage() {
         {/* ── Top bar ────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Order-type filter */}
             <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5">
               {[
                 { value: "all", label: "All", count: totalActive },
@@ -375,6 +508,39 @@ export default function KitchenPage() {
                 </button>
               ))}
             </div>
+
+            {/* Today / Show all toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs font-semibold transition-all ${
+                showAll
+                  ? "border-primary/40 bg-primary/10 text-primary dark:text-primary"
+                  : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:border-gray-400"
+              }`}
+              title={showAll ? "Showing all orders — click to show today only" : "Showing today's orders only"}
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              {showAll ? "All orders" : "Today only"}
+              {!showAll && hiddenCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400 text-[10px] font-bold">
+                  +{hiddenCount} older
+                </span>
+              )}
+            </button>
+
+            {/* Clear stale Ready orders */}
+            {staleReadyCount > 0 && (
+              <button
+                type="button"
+                onClick={handleClearStaleReady}
+                className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                title="Dismiss all Ready orders older than 2 hours from KDS view (does not change order status)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear {staleReadyCount} stale
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -411,6 +577,7 @@ export default function KitchenPage() {
           {COLUMNS.map((col, colIdx) => {
             const colOrs = columnOrders[colIdx];
             const { EmptyIcon } = col;
+            const staleInCol = col.key === "ready" ? colOrs.filter(isStaleReady).length : 0;
             return (
               <div
                 key={col.key}
@@ -422,6 +589,12 @@ export default function KitchenPage() {
                   <span className={`ml-auto text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${col.countBg}`}>
                     {colOrs.length}
                   </span>
+                  {staleInCol > 0 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400"
+                      title={`${staleInCol} order${staleInCol !== 1 ? "s" : ""} waiting over 2 hours`}>
+                      {staleInCol} stale
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
@@ -440,6 +613,7 @@ export default function KitchenPage() {
                           column={col}
                           isUpdating={updatingOrderId === orderId}
                           onAdvance={handleStatusAdvance}
+                          onDismiss={handleDismiss}
                           tick={tick}
                         />
                       );

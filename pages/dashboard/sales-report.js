@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getSalesReport,
+  getDiscountReport,
   getOrders,
   getDaySessions,
   getDaySessionOrders,
@@ -41,6 +42,7 @@ import {
   Clock,
   Eye,
   Layers,
+  Percent,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -57,8 +59,23 @@ const PRESETS = [
 const TABS = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "orders", label: "Orders List", icon: ClipboardList },
+  { id: "discounts", label: "Discounts", icon: Percent },
   { id: "sessions", label: "Business Day Report", icon: CalendarDays },
 ];
+
+const DISCOUNT_REASON_LABELS = {
+  customer_complaint: "Customer complaint",
+  staff_meal: "Staff meal",
+  loyalty_reward: "Loyalty reward",
+  manager_approval: "Manager approval",
+  other: "Other",
+  "(no reason recorded)": "(No reason recorded)",
+};
+
+function formatDiscountReasonLabel(key) {
+  const k = String(key || "").trim();
+  return DISCOUNT_REASON_LABELS[k] || k;
+}
 
 const FILTER_ALL = "ALL";
 
@@ -308,12 +325,12 @@ function getCalendarDates(preset) {
       return { from: firstLast.toISOString(), to: firstThis.toISOString() };
     }
     case "all": {
-      const s = new Date(2020, 0, 1);
-      s.setHours(0, 0, 0, 0);
+      const ALL_TIME_START = new Date(2020, 0, 1);
+      ALL_TIME_START.setHours(0, 0, 0, 0);
       const e = new Date(today);
       e.setDate(e.getDate() + 1);
       e.setHours(0, 0, 0, 0);
-      return { from: s.toISOString(), to: e.toISOString() };
+      return { from: ALL_TIME_START.toISOString(), to: e.toISOString() };
     }
     default:
       return null;
@@ -836,6 +853,9 @@ export default function HistoryPage() {
   const [sessionsDatePreset, setSessionsDatePreset] = useState("all");
   const [showSessionsDateDropdown, setShowSessionsDateDropdown] = useState(false);
 
+  const [discountReport, setDiscountReport] = useState(null);
+  const [discountReportLoading, setDiscountReportLoading] = useState(false);
+
   // Orders tab state
   const [allOrders, setAllOrders] = useState([]);
   const [ordersStatusFilter, setOrdersStatusFilter] = useState(FILTER_ALL);
@@ -856,9 +876,10 @@ export default function HistoryPage() {
   const ORDER_EXPORT_COLUMN_OPTIONS = [
     { key: "orderNumber", label: "Order #" },
     { key: "status", label: "Status" },
-    { key: "grandTotal", label: "Grand Total" },
     { key: "subtotal", label: "Subtotal" },
+    { key: "deliveryCharges", label: "Delivery Fee" },
     { key: "discount", label: "Discount" },
+    { key: "grandTotal", label: "Grand Total" },
     { key: "items", label: "Items" },
     { key: "type", label: "Type" },
     { key: "payment", label: "Payment" },
@@ -870,7 +891,6 @@ export default function HistoryPage() {
     { key: "orderTaker", label: "Order Taker" },
     { key: "rider", label: "Rider" },
     { key: "deliveryAddress", label: "Delivery Address" },
-    { key: "deliveryCharges", label: "Del. Charges" },
     { key: "cancelReason", label: "Cancel Reason" },
     { key: "created", label: "Created" },
     { key: "preparing", label: "Preparing" },
@@ -976,9 +996,9 @@ export default function HistoryPage() {
       } else {
         setAllOrders(Array.isArray(data) ? data : []);
       }
-    } catch {
+    } catch (err) {
       setAllOrders([]);
-      // silently ignore — orders API might not be available or running old version
+      console.error("Failed to load orders:", err);
     } finally {
       setOrdersLoading(false);
     }
@@ -1026,6 +1046,46 @@ export default function HistoryPage() {
     loadReport({ from, to });
     loadOrders({ from, to });
   }
+
+  useEffect(() => {
+    if (activeTab !== "discounts") return;
+    let cancelled = false;
+    async function run() {
+      setDiscountReportLoading(true);
+      try {
+        let params;
+        if (preset === "custom") {
+          params = {
+            from: customFrom
+              ? new Date(customFrom + "T00:00:00").toISOString()
+              : "",
+            to: customTo
+              ? new Date(customTo + "T23:59:59.999").toISOString()
+              : "",
+          };
+        } else {
+          const q = getSalesReportQuery(preset, sessions);
+          params =
+            q.daySessionId != null
+              ? { daySessionId: q.daySessionId }
+              : { from: q.from || "", to: q.to || "" };
+        }
+        const data = await getDiscountReport(params);
+        if (!cancelled) setDiscountReport(data);
+      } catch (err) {
+        if (!cancelled) {
+          setDiscountReport(null);
+          toast.error(err.message || "Failed to load discount report");
+        }
+      } finally {
+        if (!cancelled) setDiscountReportLoading(false);
+      }
+    }
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, preset, customFrom, customTo, sessions, currentBranch?.id]);
 
   async function loadSessions(pageNum = 0, fromDate, toDate) {
     setSessionsLoading(true);
@@ -1464,6 +1524,10 @@ export default function HistoryPage() {
 
   // Export CSV for current tab
   function handleExportCSV() {
+    if (activeTab === "discounts" && !discountReport) {
+      toast.error("Discount report is still loading");
+      return;
+    }
     const activeFilters = [
       ordersStatusFilter !== FILTER_ALL ? `Status: ${ordersStatusFilter}` : null,
       ordersTypeFilter !== FILTER_ALL ? `Type: ${ordersTypeFilter}` : null,
@@ -1516,6 +1580,36 @@ export default function HistoryPage() {
           Math.round(item.revenue || 0),
         ]),
       );
+    } else if (activeTab === "discounts" && discountReport) {
+      rows.push(
+        ["DISCOUNT SUMMARY"],
+        ["Total discount amount", discountReport.totalDiscount],
+        ["Orders with discount", discountReport.orderCount],
+        [],
+        ["BY REASON"],
+        ["Reason", "Orders", "Total"],
+        ...(discountReport.byReason || []).map((r) => [
+          formatDiscountReasonLabel(r.reason),
+          r.count,
+          r.total,
+        ]),
+        [],
+        ["BY STAFF"],
+        ["Staff", "Orders", "Total"],
+        ...(discountReport.byStaff || []).map((r) => [
+          r.name || r.staffId,
+          r.count,
+          r.total,
+        ]),
+        [],
+        ["BY DAY"],
+        ["Day", "Orders", "Total"],
+        ...(discountReport.byDay || []).map((r) => [
+          r.day,
+          r.count,
+          r.total,
+        ]),
+      );
     } else if (activeTab === "orders") {
       const selectedCols = ordersExportColumns.length
         ? ordersExportColumns
@@ -1546,6 +1640,11 @@ export default function HistoryPage() {
     }
     const generated = new Date().toLocaleString("en-PK");
     const tabLabel = TABS.find((t) => t.id === activeTab)?.label || "Report";
+    const escHtml = (s) =>
+      String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
     let bodyContent = `<div class="kpis">
       <div class="kpi"><div class="kpi-label">Sales (items)</div><div class="kpi-value">${fmtRs(revenueBreakdown.salesAmount)}</div></div>
       <div class="kpi"><div class="kpi-label">Delivery fees</div><div class="kpi-value">${fmtRs(revenueBreakdown.deliveryFees)}</div></div>
@@ -1553,7 +1652,35 @@ export default function HistoryPage() {
       <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">${revenueBreakdown.orderCount}</div></div>
       <div class="kpi"><div class="kpi-label">Avg Ticket</div><div class="kpi-value">${fmtRs(avgTicket)}</div></div>
     </div>`;
-    if (activeTab === "orders") {
+    if (activeTab === "discounts") {
+      if (!discountReport) {
+        bodyContent =
+          "<p>Discount data is not loaded yet. Close print and try again.</p>";
+      } else {
+      const rRows = (discountReport.byReason || [])
+        .map(
+          (r) =>
+            `<tr><td>${escHtml(formatDiscountReasonLabel(r.reason))}</td><td>${r.count}</td><td>${fmtRs(r.total)}</td></tr>`,
+        )
+        .join("");
+      const sRows = (discountReport.byStaff || [])
+        .map(
+          (r) =>
+            `<tr><td>${escHtml(r.name || r.staffId)}</td><td>${r.count}</td><td>${fmtRs(r.total)}</td></tr>`,
+        )
+        .join("");
+      const dRows = (discountReport.byDay || [])
+        .map(
+          (r) =>
+            `<tr><td>${escHtml(r.day)}</td><td>${r.count}</td><td>${fmtRs(r.total)}</td></tr>`,
+        )
+        .join("");
+      bodyContent = `<h2>Discounts</h2><p><strong>Total:</strong> ${fmtRs(discountReport.totalDiscount)} &nbsp;|&nbsp; <strong>Orders:</strong> ${discountReport.orderCount}</p>
+        <h3>By reason</h3><table class="t"><thead><tr><th>Reason</th><th>Orders</th><th>Total</th></tr></thead><tbody>${rRows}</tbody></table>
+        <h3>By staff</h3><table class="t"><thead><tr><th>Staff</th><th>Orders</th><th>Total</th></tr></thead><tbody>${sRows}</tbody></table>
+        <h3>By day</h3><table class="t"><thead><tr><th>Day</th><th>Orders</th><th>Total</th></tr></thead><tbody>${dRows}</tbody></table>`;
+      }
+    } else if (activeTab === "orders") {
       const selectedCols = ordersExportColumns.length
         ? ordersExportColumns
         : ORDER_EXPORT_COLUMN_OPTIONS.map((c) => c.key);
@@ -2410,16 +2537,17 @@ export default function HistoryPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="text-xs min-w-[2100px]">
+              <table className="text-xs min-w-[2000px]">
                 <thead className="bg-gray-50 dark:bg-neutral-900/80 sticky top-0">
                   <tr>
                     <th className={`${TH_CLS} text-center`}>#</th>
                     <th className={TH_CLS}>Order #</th>
                     <th className={TH_CLS}>View</th>
                     <th className={TH_CLS}>Status</th>
-                    <th className={`${TH_CLS} text-right`}>Grand Total</th>
                     <th className={`${TH_CLS} text-right`}>Subtotal</th>
+                    <th className={`${TH_CLS} text-right`}>Delivery Fee</th>
                     <th className={`${TH_CLS} text-right`}>Discount</th>
+                    <th className={`${TH_CLS} text-right`}>Grand Total</th>
                     <th className={TH_CLS}>Items</th>
                     <th className={TH_CLS}>Type</th>
                     <th className={TH_CLS}>Payment</th>
@@ -2434,7 +2562,6 @@ export default function HistoryPage() {
                     <th className={TH_CLS}>Order Taker</th>
                     <th className={TH_CLS}>Rider</th>
                     <th className={TH_CLS}>Delivery Address</th>
-                    <th className={TH_CLS}>Del. Charges</th>
                     <th className={TH_CLS}>Cancel Reason</th>
                     <th className={TH_CLS}>Created</th>
                     <th className={TH_CLS}>Preparing</th>
@@ -2473,16 +2600,21 @@ export default function HistoryPage() {
                           {STATUS_LABELS[o.status] || o.status}
                         </span>
                       </td>
-                      <td
-                        className={`${TD_CLS} text-right font-bold text-gray-900 dark:text-white`}
-                      >
-                        {fmtRs(o.grandTotal ?? o.total)}
-                      </td>
                       <td className={`${TD_CLS} text-right`}>
                         {fmtRs(o.subtotal)}
                       </td>
                       <td className={`${TD_CLS} text-right`}>
+                        {Number(o.deliveryCharges) > 0
+                          ? fmtRs(o.deliveryCharges)
+                          : "—"}
+                      </td>
+                      <td className={`${TD_CLS} text-right`}>
                         {o.discountAmount > 0 ? fmtRs(o.discountAmount) : "—"}
+                      </td>
+                      <td
+                        className={`${TD_CLS} text-right font-bold text-gray-900 dark:text-white`}
+                      >
+                        {fmtRs(o.grandTotal ?? o.total)}
                       </td>
                       <td className={`${TD_CLS} relative`}>
                         {(o.items || []).length > 0 ? (
@@ -2595,9 +2727,6 @@ export default function HistoryPage() {
                         title={o.deliveryAddress || ""}
                       >
                         {o.deliveryAddress || "—"}
-                      </td>
-                      <td className={`${TD_CLS} text-right`}>
-                        {o.deliveryCharges > 0 ? fmtRs(o.deliveryCharges) : "—"}
                       </td>
                       <td
                         className={`${TD_CLS} max-w-[150px] truncate`}
@@ -2889,16 +3018,31 @@ export default function HistoryPage() {
       }
     };
 
-    // Order type breakdown from detail orders
+    // Order type breakdown from detail orders (display: delivery splits items vs fees)
     const typeBreakdown = sessionOrders
       .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
       .reduce((map, o) => {
-      const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
-      if (!map[t]) map[t] = { count: 0, revenue: 0 };
-      map[t].count += 1;
-      map[t].revenue += o.total || 0;
-      return map;
-    }, {});
+        const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
+        const grand =
+          Math.round(Number(o.grandTotal ?? o.total ?? 0) || 0) || 0;
+        const sub = Math.round(Number(o.subtotal ?? 0) || 0) || 0;
+        const dc = Math.round(Number(o.deliveryCharges ?? 0) || 0) || 0;
+        if (!map[t]) {
+          map[t] = {
+            count: 0,
+            revenue: 0,
+            itemSales: 0,
+            deliveryFees: 0,
+          };
+        }
+        map[t].count += 1;
+        map[t].revenue += grand;
+        if (t === "delivery") {
+          map[t].itemSales += sub;
+          map[t].deliveryFees += dc;
+        }
+        return map;
+      }, {});
 
     async function handleMoveSelectedOrders() {
       if (!moveTargetSessionId || selectedSessionOrderIds.length === 0) return;
@@ -3478,6 +3622,13 @@ export default function HistoryPage() {
                               <p className="text-[20px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                                 {fmtRs(d.revenue)}
                               </p>
+                              {type === "delivery" &&
+                                (d.itemSales > 0 || d.deliveryFees > 0) && (
+                                  <p className="mt-0.5 text-[9px] text-gray-500 dark:text-neutral-400 leading-snug">
+                                    {fmtRs(d.itemSales)} (items) +{" "}
+                                    {fmtRs(d.deliveryFees)} (delivery fees)
+                                  </p>
+                                )}
                               <p className="mt-0.5 text-[9px] text-gray-400 dark:text-neutral-500">
                                 {d.count} order{d.count !== 1 ? "s" : ""}
                               </p>
@@ -3861,10 +4012,158 @@ export default function HistoryPage() {
     );
   }
 
+  function renderDiscounts() {
+    if (discountReportLoading) {
+      return (
+        <div className="flex items-center justify-center gap-2 py-20 text-gray-500 dark:text-neutral-400">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Loading discount report…
+        </div>
+      );
+    }
+    if (!discountReport) {
+      return (
+        <p className="text-sm text-gray-500 dark:text-neutral-400 py-12 text-center">
+          No discount data for this period.
+        </p>
+      );
+    }
+    const byReason = discountReport.byReason || [];
+    const byStaff = discountReport.byStaff || [];
+    const byDay = discountReport.byDay || [];
+    return (
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+            Summary
+          </p>
+          <div className="mt-2 flex flex-wrap items-end gap-6">
+            <div>
+              <p className="text-2xl font-black text-gray-900 dark:text-white tabular-nums">
+                {fmtRs(discountReport.totalDiscount || 0)}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">
+                Total discounts (paid orders)
+              </p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-gray-800 dark:text-neutral-200">
+                {discountReport.orderCount ?? 0}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">
+                Orders with a discount
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 shadow-sm">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+              By reason
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-500 dark:text-neutral-400 border-b border-gray-100 dark:border-neutral-800">
+                    <th className="pb-2 pr-2">Reason</th>
+                    <th className="pb-2 pr-2">Orders</th>
+                    <th className="pb-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byReason.map((row) => (
+                    <tr
+                      key={row.reason}
+                      className="border-b border-gray-50 dark:border-neutral-900"
+                    >
+                      <td className="py-2 pr-2 text-gray-800 dark:text-neutral-200">
+                        {formatDiscountReasonLabel(row.reason)}
+                      </td>
+                      <td className="py-2 pr-2 tabular-nums">{row.count}</td>
+                      <td className="py-2 tabular-nums font-semibold">
+                        {fmtRs(row.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 shadow-sm">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+              By staff
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-500 dark:text-neutral-400 border-b border-gray-100 dark:border-neutral-800">
+                    <th className="pb-2 pr-2">Staff</th>
+                    <th className="pb-2 pr-2">Orders</th>
+                    <th className="pb-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byStaff.map((row) => (
+                    <tr
+                      key={row.staffId}
+                      className="border-b border-gray-50 dark:border-neutral-900"
+                    >
+                      <td className="py-2 pr-2 text-gray-800 dark:text-neutral-200">
+                        {row.name || "Unknown"}
+                      </td>
+                      <td className="py-2 pr-2 tabular-nums">{row.count}</td>
+                      <td className="py-2 tabular-nums font-semibold">
+                        {fmtRs(row.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 shadow-sm lg:col-span-1">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+              By day
+            </h3>
+            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-500 dark:text-neutral-400 border-b border-gray-100 dark:border-neutral-800 sticky top-0 bg-white dark:bg-neutral-950">
+                    <th className="pb-2 pr-2">Day</th>
+                    <th className="pb-2 pr-2">Orders</th>
+                    <th className="pb-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byDay.map((row) => (
+                    <tr
+                      key={row.day}
+                      className="border-b border-gray-50 dark:border-neutral-900"
+                    >
+                      <td className="py-2 pr-2 font-medium text-gray-800 dark:text-neutral-200">
+                        {row.day}
+                      </td>
+                      <td className="py-2 pr-2 tabular-nums">{row.count}</td>
+                      <td className="py-2 tabular-nums font-semibold">
+                        {fmtRs(row.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderActiveTab() {
     switch (activeTab) {
       case "orders":
         return renderOrders();
+      case "discounts":
+        return renderDiscounts();
       case "sessions":
         return renderSessions();
       default:
@@ -3890,6 +4189,8 @@ export default function HistoryPage() {
                 if (tab.id === "orders")
                   badge = dateFilteredOrdersCount || null;
                 if (tab.id === "sessions") badge = sessionsTotal || null;
+                if (tab.id === "discounts" && discountReport?.orderCount != null)
+                  badge = discountReport.orderCount;
                 return (
                   <button
                     key={tab.id}
@@ -4513,12 +4814,35 @@ export default function HistoryPage() {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden shadow-sm">
-                <div className="grid grid-cols-2 md:grid-cols-4">
-                  <div className="p-4 border-b md:border-b-0 md:border-r border-gray-100 dark:border-neutral-800"><p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500">Subtotal</p><p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{fmtRs(Number(selectedOrderDetail.subtotal ?? 0))}</p></div>
-                  <div className="p-4 border-b md:border-b-0 md:border-r border-gray-100 dark:border-neutral-800"><p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500">Discount</p><p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{fmtRs(Number(selectedOrderDetail.discountAmount ?? 0))}</p></div>
-                  <div className="p-4 md:border-r border-gray-100 dark:border-neutral-800"><p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-neutral-500">Delivery</p><p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{fmtRs(Number(selectedOrderDetail.deliveryCharges ?? 0))}</p></div>
-                  <div className="p-4 bg-gradient-to-br from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20"><p className="text-[10px] uppercase tracking-wider text-primary/80">Grand Total</p><p className="mt-1 text-xl font-black text-primary">{fmtRs(Number(selectedOrderDetail.grandTotal ?? selectedOrderDetail.total ?? 0))}</p></div>
+              <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden shadow-sm p-4 bg-white dark:bg-neutral-950">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-neutral-500 mb-3">
+                  Order total breakdown
+                </p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-gray-500 dark:text-neutral-400">Items subtotal</span>
+                    <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                      {fmtRs(Number(selectedOrderDetail.subtotal ?? 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-gray-500 dark:text-neutral-400">Delivery fee</span>
+                    <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                      {fmtRs(Number(selectedOrderDetail.deliveryCharges ?? 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-gray-500 dark:text-neutral-400">Discount</span>
+                    <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                      {fmtRs(Number(selectedOrderDetail.discountAmount ?? 0))}
+                    </span>
+                  </div>
+                  <div className="border-t border-gray-100 dark:border-neutral-800 pt-2 mt-2 flex justify-between gap-3 items-baseline">
+                    <span className="font-bold text-gray-900 dark:text-white">Total</span>
+                    <span className="text-lg font-black text-primary tabular-nums">
+                      {fmtRs(Number(selectedOrderDetail.grandTotal ?? selectedOrderDetail.total ?? 0))}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

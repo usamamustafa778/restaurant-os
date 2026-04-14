@@ -1,129 +1,24 @@
-import { useEffect, useState, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getSubscriptionStatus,
-  submitSubscriptionRequest,
-  updateSubscriptionScreenshot,
-  deleteSubscriptionRequest,
   getSubscriptionHistory,
-  getPaymentMethods,
-  uploadImage,
+  getDaySessions,
+  getRestaurantSettings,
 } from "../../lib/apiClient";
+import { PLAN_DEFINITIONS, PRICING_COUNTRIES, formatMoney } from "../../lib/pricingConfig";
 import {
-  CreditCard,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Upload,
-  Loader2,
   Crown,
-  Shield,
-  Zap,
-  ChevronRight,
-  History,
-  Image as ImageIcon,
-  Wallet,
-  Copy,
-  Check,
-  Gift,
-  X,
-  Trash2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+  ArrowUpRight,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
 
-const PLANS = [
-  {
-    key: "free_trial_3months",
-    label: "Free Trial",
-    days: 90,
-    price: "Free",
-    monthlyEquivalent: null,
-    priceSubtitle: "3 months • All features included",
-    icon: Gift,
-    badge: "Try Free",
-    features: [
-      "All features included",
-      "Full access for 3 months",
-      "Everything in Enterprise",
-      "Unlimited Branches",
-      "Advanced Analytics & Reports",
-      "POS, KDS, Reservations",
-      "Deals, API & Integrations",
-      "No credit card required",
-    ],
-  },
-  {
-    key: "starter_monthly",
-    label: "Starter",
-    days: 30,
-    price: "$39",
-    monthlyEquivalent: "$39",
-    icon: Zap,
-    badge: null,
-    features: [
-      "Single Branch Support",
-      "Basic POS System",
-      "Order Management",
-      "Menu & Inventory Tracking",
-      "Customer Database",
-      "Free Restaurant Website",
-      "Sales Reports",
-      "Email Support",
-    ],
-  },
-  {
-    key: "professional_monthly",
-    label: "Professional",
-    days: 30,
-    price: "$79",
-    monthlyEquivalent: "$79",
-    icon: Crown,
-    badge: "Popular",
-    features: [
-      "Up to 5 Branches",
-      "Full POS + Kitchen Display System",
-      "Advanced Inventory Management",
-      "Deals & Promotions Engine",
-      "Reservations Management",
-      "Multi-user with Role Permissions",
-      "Day-end Reports & Analytics",
-      "Foodpanda Integration",
-      "Custom Branded Website",
-      "Priority Support",
-    ],
-  },
-  {
-    key: "enterprise_quarterly",
-    label: "Enterprise",
-    days: 90,
-    price: "$399",
-    monthlyEquivalent: "$133",
-    icon: Shield,
-    badge: "Best Value",
-    features: [
-      "Unlimited Branches",
-      "Everything in Professional",
-      "Advanced Analytics Dashboard",
-      "Custom Deal Configurations",
-      "API Access for Integrations",
-      "White-label Options",
-      "Dedicated Account Manager",
-      "Custom Feature Development",
-      "24/7 Priority Support",
-    ],
-    savings: "Save $138 vs monthly",
-  },
-];
-
-function formatDate(d) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-PK", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
+const WHATSAPP_URL = process.env.NEXT_PUBLIC_WHATSAPP_URL || "https://wa.me/923166222269";
 
 function daysRemaining(endDate) {
   if (!endDate) return 0;
@@ -131,823 +26,364 @@ function daysRemaining(endDate) {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
-function StatusBadge({ status }) {
-  const map = {
-    trial_active: {
-      label: "Trial Active",
-      bg: "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border-2 border-blue-200 dark:border-blue-500/30",
-      icon: Clock,
-    },
-    active: {
-      label: "Active",
-      bg: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-2 border-emerald-200 dark:border-emerald-500/30",
-      icon: CheckCircle2,
-    },
-    expired: {
-      label: "Expired (Read-only)",
-      bg: "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border-2 border-red-200 dark:border-red-500/30",
-      icon: AlertTriangle,
-    },
-  };
-  const s = map[status] || map.expired;
-  const Icon = s.icon;
-  return (
-    <span
-      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-base font-bold shadow-sm ${s.bg}`}
-    >
-      <Icon className="w-5 h-5" />
-      {s.label}
-    </span>
-  );
+function fmtDate(date) {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
-function RequestStatusBadge({ status }) {
-  const map = {
-    pending:
-      "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-500/30",
-    approved:
-      "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30",
-    rejected:
-      "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30",
-  };
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-bold capitalize ${map[status] || map.pending}`}
-    >
-      {status}
-    </span>
-  );
+function statusTone(status) {
+  if (status === "paid" || status === "approved") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300";
+  if (status === "trial" || status === "trial_active") return "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300";
+  return "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300";
 }
 
 export default function SubscriptionPage() {
+  const [loading, setLoading] = useState(true);
   const [subStatus, setSubStatus] = useState(null);
-  const [history, setHistory] = useState(null);
-  const [pageLoading, setPageLoading] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState(null);
-  const [screenshotFile, setScreenshotFile] = useState(null);
-  const [screenshotPreview, setScreenshotPreview] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitMsg, setSubmitMsg] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [error, setError] = useState(null);
-  const [paymentMethods, setPaymentMethods] = useState([]);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
-  const [copiedField, setCopiedField] = useState(null);
-  const [reuploadingId, setReuploadingId] = useState(null);
-  const [deletingScreenshotId, setDeletingScreenshotId] = useState(null);
-  const [portalReady, setPortalReady] = useState(false);
-  useEffect(() => setPortalReady(true), []);
-
-  const loadData = useCallback(async () => {
-    try {
-      setPageLoading(true);
-      setError(null);
-      const [status, hist, methods] = await Promise.all([
-        getSubscriptionStatus(),
-        getSubscriptionHistory(),
-        getPaymentMethods(),
-      ]);
-      setSubStatus(status);
-      setHistory(hist);
-      setPaymentMethods(methods || []);
-      // Auto-select first payment method
-      if (methods && methods.length > 0) {
-        setSelectedPaymentMethod(methods[0].id);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setPageLoading(false);
-    }
-  }, []);
+  const [history, setHistory] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [country, setCountry] = useState("PK");
+  const [err, setErr] = useState("");
+  const [openPlanSections, setOpenPlanSections] = useState({
+    "Point of Sale": true,
+    "Kitchen & Delivery": true,
+    "Inventory Management": true,
+    Accounting: true,
+    "Website & Online Ordering": true,
+  });
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    async function load() {
+      try {
+        setLoading(true);
+        setErr("");
+        const [statusRes, historyRes, daySessionRes, settingsRes] = await Promise.all([
+          getSubscriptionStatus(),
+          getSubscriptionHistory(),
+          getDaySessions(undefined, { limit: 200, offset: 0 }),
+          getRestaurantSettings(),
+        ]);
+        setSubStatus(statusRes || null);
+        setHistory(historyRes?.requests || []);
+        setSessions(daySessionRes?.sessions || []);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setScreenshotFile(file);
-      setScreenshotPreview(URL.createObjectURL(file));
+        const currencyCode = String(settingsRes?.currencyCode || "").toUpperCase();
+        if (currencyCode === "PKR") setCountry("PK");
+        else setCountry("US");
+      } catch (e) {
+        setErr(e?.message || "Failed to load subscription details");
+      } finally {
+        setLoading(false);
+      }
     }
-  };
+    load();
+  }, []);
 
-  const handleCopy = (text, fieldKey) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedField(fieldKey);
-      setTimeout(() => setCopiedField(null), 2000);
+  const growthDaily = PLAN_DEFINITIONS.growth.daily[country];
+
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+  const daysInMonth = new Date(thisYear, thisMonth + 1, 0).getDate();
+  const firstDayJs = new Date(thisYear, thisMonth, 1).getDay(); // 0=Sun
+  const firstDayMonOffset = (firstDayJs + 6) % 7; // 0=Mon
+  const calendarCells = [
+    ...Array.from({ length: firstDayMonOffset }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  const billableDaysSet = useMemo(() => {
+    const set = new Set();
+    (sessions || []).forEach((s) => {
+      if (!s?.startAt) return;
+      const d = new Date(s.startAt);
+      if (d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
+        if ((Number(s.totalOrders) || 0) > 0 || (Number(s.totalSales) || 0) > 0 || (Number(s.orderCount) || 0) > 0) {
+          set.add(d.getDate());
+        }
+      }
     });
-  };
+    return set;
+  }, [sessions, thisMonth, thisYear]);
 
-  const handleSubmit = async () => {
-    if (!selectedPlan || !screenshotFile) return;
-    try {
-      setSubmitting(true);
-      setSubmitMsg(null);
+  const billableDays = billableDaysSet.size;
+  const estimatedBill = billableDays * growthDaily;
+  const trialDays = daysRemaining(subStatus?.freeTrialEndDate);
+  const onTrial = subStatus?.currentStatus === "trial_active";
+  const onGrowth =
+    String(subStatus?.plan || "").toUpperCase().includes("PROFESSIONAL") ||
+    String(subStatus?.plan || "").toUpperCase().includes("GROWTH");
+  const planFeatureGroups = useMemo(() => {
+    if (onTrial || onGrowth) return PLAN_DEFINITIONS.growth.sections;
+    return [
+      {
+        title: "Point of Sale",
+        items: PLAN_DEFINITIONS.starter.included.slice(0, 8),
+      },
+      { title: "Menu", items: PLAN_DEFINITIONS.starter.included.slice(8, 12) },
+      { title: "Customers", items: PLAN_DEFINITIONS.starter.included.slice(12, 15) },
+      { title: "Reports", items: PLAN_DEFINITIONS.starter.included.slice(15, 20) },
+      { title: "Website & Support", items: PLAN_DEFINITIONS.starter.included.slice(20) },
+    ];
+  }, [onGrowth, onTrial]);
 
-      // Upload screenshot first
-      const { url } = await uploadImage(screenshotFile);
-
-      // Submit subscription request
-      const result = await submitSubscriptionRequest({
-        planType: selectedPlan,
-        paymentScreenshot: url,
-        paymentMethodId: selectedPaymentMethod || undefined,
-      });
-
-      setSubmitMsg({ type: "success", text: result.message });
-      setSelectedPlan(null);
-      setScreenshotFile(null);
-      setScreenshotPreview(null);
-      loadData();
-    } catch (err) {
-      setSubmitMsg({ type: "error", text: err.message });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleReupload = async (requestId, file) => {
-    if (!file) return;
-    try {
-      setReuploadingId(requestId);
-      const { url } = await uploadImage(file);
-      await updateSubscriptionScreenshot(requestId, url);
-      loadData();
-    } catch {
-      /* ignore */
-    } finally {
-      setReuploadingId(null);
-    }
-  };
-
-  const handleDeleteRequest = async (requestId) => {
-    if (!confirm("Remove this pending request? You can submit a new subscription request after that.")) return;
-    try {
-      setDeletingScreenshotId(requestId);
-      await deleteSubscriptionRequest(requestId);
-      loadData();
-    } catch {
-      /* ignore */
-    } finally {
-      setDeletingScreenshotId(null);
-    }
-  };
-
-  if (pageLoading) {
+  if (loading) {
     return (
-      <AdminLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
-            <CreditCard className="w-10 h-10 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <p className="text-base font-semibold text-gray-700 dark:text-neutral-300">
-              Loading subscription...
-            </p>
-          </div>
+      <AdminLayout title="Subscription">
+        <div className="min-h-[50vh] flex items-center justify-center text-gray-500">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading subscription...
         </div>
       </AdminLayout>
     );
   }
 
-  if (error) {
+  if (err) {
     return (
-      <AdminLayout>
-        <div className="p-6">
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 text-red-700 dark:text-red-300">
-            {error}
-          </div>
-        </div>
+      <AdminLayout title="Subscription">
+        <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 p-4">{err}</div>
       </AdminLayout>
     );
   }
-
-  const trialEnd = subStatus?.freeTrialEndDate;
-  const subEnd = subStatus?.subscriptionEndDate;
-  const trialDays = daysRemaining(trialEnd);
-  const subDays = daysRemaining(subEnd);
-
-  const hasPending = history?.requests?.some((r) => r.status === "pending");
 
   return (
     <AdminLayout title="Subscription">
       <div className="space-y-6">
-        {/* Current Status Card */}
-        <div className="bg-gradient-to-br from-primary/5 via-white to-secondary/5 dark:from-primary/10 dark:via-neutral-950 dark:to-secondary/10 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 p-6 shadow-lg">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        {/* SECTION 1 — CURRENT STATUS */}
+        <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <p className="text-sm uppercase tracking-wider text-gray-600 dark:text-neutral-400 font-bold mb-3 flex items-center gap-2">
-                <CreditCard className="w-4 h-4" />
-                Current Status
-              </p>
-              <StatusBadge status={subStatus?.currentStatus} />
+              <p className="text-xs uppercase tracking-wider text-gray-500">Current plan</p>
+              <div className="mt-1 flex items-center gap-2">
+                <Crown className="w-4 h-4 text-primary" />
+                <p className="text-lg font-bold text-gray-900 dark:text-white">
+                  {onTrial ? "Growth (Trial)" : onGrowth ? "Growth" : "Starter"}
+                </p>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusTone(subStatus?.currentStatus)}`}>
+                  {onTrial ? "Trial Active" : subStatus?.currentStatus === "active" ? "Active" : "Pending"}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                <Crown className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500 dark:text-neutral-400">
-                  Current Plan
-                </p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {subStatus?.plan || "Essential"}
-                </p>
-              </div>
+            <div className="text-sm text-gray-600 dark:text-neutral-400">
+              {onTrial ? (
+                <>
+                  <p className="font-semibold text-blue-700 dark:text-blue-300">Trial Active — {trialDays} days remaining</p>
+                  <p>Trial ends on {fmtDate(subStatus?.freeTrialEndDate)}</p>
+                  <p className="text-xs mt-1">Your trial includes full Growth access.</p>
+                </>
+              ) : (
+                <p>Subscription ends on {fmtDate(subStatus?.subscriptionEndDate)}</p>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 2 — THIS MONTH'S USAGE */}
+        <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">This Month's Usage</h2>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+              <p className="text-xs text-gray-500">Business days this month</p>
+              <p className="text-lg font-bold">{billableDays}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+              <p className="text-xs text-gray-500">Daily rate</p>
+              <p className="text-lg font-bold">{formatMoney(country, growthDaily, true)}/day</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+              <p className="text-xs text-gray-500">Estimated bill</p>
+              <p className="text-lg font-bold">{formatMoney(country, estimatedBill)}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
+              <p className="text-xs text-gray-500">Billing note</p>
+              <p className="text-sm font-medium">Only days with active orders are billed</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
-            {/* Trial Info */}
-            <div className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-xl p-5 border-2 border-primary/20 shadow-sm">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 rounded-xl bg-blue-500 flex items-center justify-center shadow-lg">
-                  <Clock className="w-5 h-5 text-white" />
+          <div className="mt-4">
+            <p className="text-xs text-gray-500 mb-2 flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" /> Billable days calendar</p>
+            <div className="grid grid-cols-7 gap-2 text-center">
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => (
+                <div key={w} className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 py-1">
+                  {w}
                 </div>
-                <span className="text-sm font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
-                  Free Trial Period
-                </span>
-              </div>
-              <div className="text-base text-gray-700 dark:text-neutral-300 space-y-2">
-                <p className="flex justify-between">
-                  <span>Start:</span>
-                  <strong>{formatDate(subStatus?.freeTrialStartDate)}</strong>
-                </p>
-                <p className="flex justify-between">
-                  <span>End:</span>
-                  <strong>{formatDate(subStatus?.freeTrialEndDate)}</strong>
-                </p>
-                {trialDays > 0 &&
-                  subStatus?.currentStatus === "trial_active" && (
-                    <div className="mt-3 pt-3 border-t-2 border-blue-200 dark:border-blue-500/20">
-                      <p className="text-blue-700 dark:text-blue-400 font-bold text-lg">
-                        {trialDays} day{trialDays !== 1 ? "s" : ""} remaining
-                      </p>
-                    </div>
-                  )}
-              </div>
-            </div>
-
-            {/* Subscription Info */}
-            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-500/10 dark:to-emerald-500/5 rounded-xl p-5 border-2 border-emerald-200 dark:border-emerald-500/20 shadow-sm">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg">
-                  <CheckCircle2 className="w-5 h-5 text-white" />
-                </div>
-                <span className="text-sm font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                  Active Subscription
-                </span>
-              </div>
-              <div className="text-base text-gray-700 dark:text-neutral-300 space-y-2">
-                <p className="flex justify-between">
-                  <span>Start:</span>
-                  <strong>
-                    {formatDate(subStatus?.subscriptionStartDate)}
-                  </strong>
-                </p>
-                <p className="flex justify-between">
-                  <span>End:</span>
-                  <strong>{formatDate(subStatus?.subscriptionEndDate)}</strong>
-                </p>
-                {subDays > 0 && subStatus?.currentStatus === "active" && (
-                  <div className="mt-3 pt-3 border-t-2 border-emerald-200 dark:border-emerald-500/20">
-                    <p className="text-emerald-700 dark:text-emerald-400 font-bold text-lg">
-                      {subDays} day{subDays !== 1 ? "s" : ""} remaining
-                    </p>
+              ))}
+              {calendarCells.map((d, idx) => {
+                if (!d) {
+                  return <div key={`blank-${idx}`} className="h-10 rounded-md bg-transparent" />;
+                }
+                const billable = billableDaysSet.has(d);
+                return (
+                  <div
+                    key={d}
+                    className={`h-10 rounded-md border flex flex-col items-center justify-center ${
+                      billable
+                        ? "border-orange-200 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
+                        : "border-gray-200 bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900"
+                    }`}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full ${billable ? "bg-orange-500" : "bg-gray-300 dark:bg-neutral-600"}`} />
+                    <span className="text-[10px] text-gray-600 dark:text-neutral-400 mt-0.5">{d}</span>
                   </div>
-                )}
-              </div>
+                );
+              })}
             </div>
           </div>
+        </section>
 
-          {/* Read-only warning */}
-          {subStatus?.readonly && (
-            <div className="mt-5 bg-gradient-to-r from-red-50 to-red-100/50 dark:from-red-500/10 dark:to-red-500/5 rounded-xl p-5 border-2 border-red-200 dark:border-red-500/30 flex items-start gap-4 shadow-lg">
-              <div className="h-10 w-10 rounded-xl bg-red-500 flex items-center justify-center flex-shrink-0 shadow-lg">
-                <AlertTriangle className="w-5 h-5 text-white" />
-              </div>
-              <div className="text-sm text-red-700 dark:text-red-300">
-                <p className="font-bold text-base mb-1">
-                  Account in Read-Only Mode
-                </p>
-                <p>
-                  You can view your data but cannot create, edit, or delete
-                  anything. Please subscribe to restore full access.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Plan Cards */}
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-            Choose Your Plan
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {PLANS.map((plan) => {
-              const isSelected = selectedPlan === plan.key;
-              const Icon = plan.icon;
+        {/* SECTION 3 — YOUR PLAN */}
+        <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Your Plan</h2>
+          <div className="mt-3 space-y-2">
+            {planFeatureGroups.map((group) => {
+              const isOpen = Boolean(openPlanSections[group.title]);
               return (
-                <button
-                  key={plan.key}
-                  onClick={() => {
-                    if (hasPending) return;
-                    setSelectedPlan(isSelected ? null : plan.key);
-                    setSubmitMsg(null);
-                    if (!isSelected) {
-                      setScreenshotFile(null);
-                      setScreenshotPreview(null);
+                <div key={group.title} className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenPlanSections((prev) => ({
+                        ...prev,
+                        [group.title]: !prev[group.title],
+                      }))
                     }
-                  }}
-                  disabled={hasPending}
-                  className={`
-                    relative text-left rounded-2xl border-2 p-6 transition-all group
-                    ${
-                      isSelected
-                        ? "border-primary shadow-2xl shadow-primary/20 bg-gradient-to-br from-primary/10 to-primary/5 scale-105"
-                        : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 hover:border-primary/50 hover:shadow-xl hover:scale-105"
-                    }
-                    ${hasPending ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
-                  `}
-                >
-                  {plan.badge && (
-                    <span className="absolute -top-3 right-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full shadow-lg">
-                      {plan.badge}
+                    className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 dark:bg-neutral-900 hover:bg-gray-100 dark:hover:bg-neutral-800 text-left"
+                  >
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {group.title} ({group.items.length} features)
                     </span>
-                  )}
-                  <div className="flex items-center justify-between mb-4">
-                    <div
-                      className={`h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
-                        isSelected
-                          ? "bg-gradient-to-br from-primary to-secondary"
-                          : "bg-gradient-to-br from-gray-400 to-gray-500 group-hover:from-primary group-hover:to-secondary"
-                      }`}
-                    >
-                      <Icon className="w-7 h-7 text-white" />
-                    </div>
-                    {isSelected && (
-                      <div className="flex items-center gap-1.5 text-xs text-primary font-bold">
-                        <CheckCircle2 className="w-4 h-4" /> Selected
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                    {plan.label}
-                  </div>
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <div className="text-4xl font-bold text-primary">
-                      {plan.price}
-                    </div>
-                    {plan.days > 30 && plan.price !== "Free" && (
-                      <div className="text-sm text-gray-500 dark:text-neutral-400">
-                        /
-                        {plan.days === 90
-                          ? "3 months"
-                          : plan.days === 180
-                            ? "6 months"
-                            : `${plan.days}d`}
-                      </div>
-                    )}
-                    {plan.price === "Free" && plan.days === 90 && (
-                      <div className="text-sm text-gray-500 dark:text-neutral-400"> / 3 months</div>
-                    )}
-                  </div>
-                  <div className="text-sm font-semibold text-gray-600 dark:text-neutral-400 mb-4">
-                    {plan.priceSubtitle
-                      ? plan.priceSubtitle
-                      : plan.monthlyEquivalent != null
-                        ? `${plan.monthlyEquivalent}/month `
-                        : ""}
-                    {plan.savings && (
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        • {plan.savings}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Features list */}
-                  {plan.features && (
-                    <ul className="space-y-2 mt-4 pt-4 border-t-2 border-gray-100 dark:border-neutral-800">
-                      {plan.features.slice(0, 6).map((feature, idx) => (
-                        <li
-                          key={idx}
-                          className="flex items-start gap-2 text-sm text-gray-700 dark:text-neutral-300"
-                        >
-                          <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
-                          <span>{feature}</span>
-                        </li>
+                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {isOpen ? (
+                    <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {group.items.map((f) => (
+                        <div key={f} className="flex items-start gap-2 text-sm">
+                          <CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-500 shrink-0" />
+                          <span>{f}</span>
+                        </div>
                       ))}
-                      {plan.features.length > 6 && (
-                        <li className="text-xs text-gray-500 dark:text-neutral-500 pl-6">
-                          +{plan.features.length - 6} more features
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                </button>
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
           </div>
-          {hasPending && (
-            <div className="mt-5 flex items-center gap-3 p-4 rounded-xl bg-yellow-50 dark:bg-yellow-500/10 border-2 border-yellow-200 dark:border-yellow-500/20">
-              <Clock className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
-              <p className="text-sm font-semibold text-yellow-700 dark:text-yellow-400">
-                You have a pending request. Please wait for approval before
-                submitting a new one.
-              </p>
-            </div>
-          )}
-        </div>
+        </section>
 
-        {/* Payment Modal - portaled to body so overlay covers full viewport (no top gap) */}
-        {selectedPlan && !hasPending && (() => {
-          const modal = (
-            <>
-              <div
-                className="fixed inset-0 bg-black/50 dark:bg-black/60 z-40 backdrop-blur-sm"
-                aria-hidden
-                onClick={() => {
-                  setSelectedPlan(null);
-                  setScreenshotFile(null);
-                  setScreenshotPreview(null);
-                  setSubmitMsg(null);
-                }}
-              />
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-              <div
-                className="bg-white dark:bg-neutral-950 rounded-xl border-2 border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-lg max-h-[95vh] flex flex-col pointer-events-auto"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex-shrink-0">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
-                      {(() => {
-                        const plan = PLANS.find((p) => p.key === selectedPlan);
-                        const Icon = plan?.icon || CreditCard;
-                        return <Icon className="w-4 h-4 text-white" />;
-                      })()}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
-                        {PLANS.find((p) => p.key === selectedPlan)?.label} — Payment
-                      </h3>
-                      <p className="text-xs text-gray-600 dark:text-neutral-400">
-                        {PLANS.find((p) => p.key === selectedPlan)?.price}
-                        {PLANS.find((p) => p.key === selectedPlan)?.priceSubtitle
-                          ? ` · ${PLANS.find((p) => p.key === selectedPlan)?.priceSubtitle}`
-                          : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedPlan(null);
-                      setScreenshotFile(null);
-                      setScreenshotPreview(null);
-                      setSubmitMsg(null);
-                    }}
-                    className="p-1.5 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 dark:text-neutral-400 dark:hover:text-white transition-colors flex-shrink-0"
-                    aria-label="Close"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+        {/* SECTION 4 — UPGRADE / CHANGE PLAN */}
+        <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Upgrade / Change Plan</h2>
+          <div className="mt-3">
+            {onTrial ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-neutral-400">Choose your plan before trial ends.</p>
+                <div className="flex gap-2 flex-wrap">
+                  <button className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-semibold">Choose Starter</button>
+                  <button className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-semibold">Choose Growth</button>
                 </div>
-                <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0">
-            {/* Payment Method Tabs */}
-            {paymentMethods.length > 0 && (
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-1.5">
-                  <Wallet className="w-4 h-4" /> Select Payment Method
-                </h3>
-                <div className="flex gap-2 overflow-x-auto pb-0.5">
-                  {paymentMethods.map((pm) => (
-                    <button
-                      key={pm.id}
-                      onClick={() => setSelectedPaymentMethod(pm.id)}
-                      className={`
-                        px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0
-                        ${
-                          selectedPaymentMethod === pm.id
-                            ? "bg-gradient-to-r from-primary to-secondary text-white shadow-md shadow-primary/20"
-                            : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 hover:bg-gray-200 dark:hover:bg-neutral-700"
-                        }
-                      `}
-                    >
-                      {pm.name}
-                    </button>
-                  ))}
-                </div>
+              </div>
+            ) : onGrowth ? (
+              <div className="rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 p-4">
+                <p className="font-semibold text-emerald-700 dark:text-emerald-300">You're on our best plan 🎉</p>
+                <p className="text-sm text-emerald-700/90 dark:text-emerald-300/90">Locked in at launch pricing forever.</p>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 p-4">
+                <p className="font-semibold text-orange-700 dark:text-orange-300">Unlock everything for {formatMoney(country, 100, true)}/day more</p>
+                <p className="text-sm text-orange-700/90 dark:text-orange-300/90">Upgrade to Growth for KDS, riders, inventory, accounting, website, and advanced reports.</p>
+                <button className="mt-3 h-9 px-4 rounded-lg bg-primary text-white text-sm font-semibold inline-flex items-center gap-1">
+                  Upgrade to Growth <ArrowUpRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
 
-                {/* Selected Payment Method Details */}
-                {(() => {
-                  const activePm = paymentMethods.find(
-                    (pm) => pm.id === selectedPaymentMethod,
-                  );
-                  if (!activePm) return null;
+        {/* SECTION 5 — BILLING HISTORY */}
+        <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Billing History</h2>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-gray-500">
+                <tr>
+                  <th className="py-2">Month</th>
+                  <th className="py-2">Active Days</th>
+                  <th className="py-2">Rate</th>
+                  <th className="py-2">Amount</th>
+                  <th className="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(history || []).slice(0, 8).map((r) => {
+                  const created = new Date(r.createdAt);
+                  const monthLabel = created.toLocaleString("en-US", { month: "short", year: "numeric" });
+                  const status = r.status === "approved" ? "paid" : r.status === "pending" ? "pending" : "trial";
+                  const amount = onGrowth ? PLAN_DEFINITIONS.growth.monthlyApprox[country] : PLAN_DEFINITIONS.starter.monthlyApprox[country];
                   return (
-                    <div className="mt-3 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent rounded-lg p-3 border border-primary/20">
-                      <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2 flex items-center gap-1.5">
-                        <Wallet className="w-3.5 h-3.5" />
-                        {activePm.name} Account Details
-                      </p>
-                      <div className="space-y-2">
-                        {activePm.fields.map((f, i) => {
-                          const fKey = `${activePm.id}-${i}`;
-                          return (
-                            <div
-                              key={i}
-                              className="flex items-center justify-between gap-2 bg-white dark:bg-neutral-900 rounded-lg px-3 py-2 border border-gray-200 dark:border-neutral-700"
-                            >
-                              <div className="min-w-0">
-                                <span className="text-xs text-gray-500 dark:text-neutral-500 block font-semibold mb-0.5">
-                                  {f.label}
-                                </span>
-                                <span className="text-sm font-bold text-gray-900 dark:text-white break-all">
-                                  {f.value}
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handleCopy(f.value, fKey)}
-                                className="flex-shrink-0 p-1.5 rounded hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
-                                title="Copy"
-                              >
-                                {copiedField === fKey ? (
-                                  <Check className="w-4 h-4 text-emerald-500" />
-                                ) : (
-                                  <Copy className="w-4 h-4" />
-                                )}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-2.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
-                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-300">
-                          💰 Transfer{" "}
-                          <strong>
-                            {PLANS.find((p) => p.key === selectedPlan)?.price}
-                          </strong>{" "}
-                          to the account above
-                        </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">
-                          Then upload payment screenshot below to activate your subscription
-                        </p>
-                      </div>
-                    </div>
+                    <tr key={r.id} className="border-t border-gray-100 dark:border-neutral-800">
+                      <td className="py-2">{monthLabel}</td>
+                      <td className="py-2">{r.durationInDays || "—"}</td>
+                      <td className="py-2">{formatMoney(country, growthDaily, true)}/day</td>
+                      <td className="py-2">{formatMoney(country, amount)}</td>
+                      <td className="py-2">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusTone(status)}`}>
+                          {status === "paid" ? "Paid" : status === "pending" ? "Pending" : "Trial"}
+                        </span>
+                      </td>
+                    </tr>
                   );
-                })()}
-              </div>
-            )}
+                })}
+                {(!history || history.length === 0) && (
+                  <tr><td colSpan={5} className="py-5 text-center text-gray-500">No billing history yet</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-            {/* Upload Section */}
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
-                <Upload className="w-4 h-4" />
-                Upload Payment Screenshot
-              </h3>
-              <p className="text-xs text-gray-600 dark:text-neutral-400">
-                {paymentMethods.length > 0
-                  ? "After transferring, upload a screenshot of the payment confirmation"
-                  : `Transfer the amount for ${PLANS.find((p) => p.key === selectedPlan)?.label} and upload a screenshot`}
-              </p>
+        {/* SECTION 6 — PAYMENT INFO */}
+        <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h2 className="text-base font-bold text-gray-900 dark:text-white">Payment Info — How to pay</h2>
+            <div className="inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 p-1">
+              {Object.values(PRICING_COUNTRIES).map((c) => (
+                <button key={c.code} onClick={() => setCountry(c.code)} className={`h-7 px-2 rounded text-xs ${country === c.code ? "bg-primary text-white" : "text-gray-600 dark:text-neutral-400"}`}>
+                  {c.flag} {c.label}
+                </button>
+              ))}
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="w-full cursor-pointer">
-                <div
-                  className={`
-                  border-2 border-dashed rounded-xl p-4 text-center transition-all hover:shadow-md
-                  ${
-                    screenshotPreview
-                      ? "border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10"
-                      : "border-gray-300 dark:border-neutral-600 hover:border-primary hover:bg-gray-50 dark:hover:bg-neutral-900"
-                  }
-                `}
-                >
-                  {screenshotPreview ? (
-                    <div className="space-y-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={screenshotPreview}
-                        alt="Screenshot preview"
-                        className="max-h-40 mx-auto rounded-lg shadow border border-emerald-200 dark:border-emerald-500/30"
-                      />
-                      <div className="flex items-center justify-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-sm font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Screenshot uploaded · Click to change
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="h-12 w-12 mx-auto rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
-                        <Upload className="w-6 h-6 text-primary" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
-                          Click to upload or drag & drop
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
-                          PNG, JPG up to 5MB
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </label>
-            </div>
-
-            {submitMsg && (
-              <div
-                className={`rounded-lg p-2.5 text-xs font-medium border ${
-                  submitMsg.type === "success"
-                    ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30"
-                    : "bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30"
-                }`}
-              >
-                {submitMsg.text}
-              </div>
-            )}
-
-            <button
-              onClick={handleSubmit}
-              disabled={!screenshotFile || submitting}
-              className={`
-                w-full px-4 py-3 rounded-xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2 shadow-lg
-                ${
-                  !screenshotFile || submitting
-                    ? "bg-gray-300 dark:bg-neutral-700 cursor-not-allowed opacity-50"
-                    : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 shadow-emerald-500/20"
-                }
-              `}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" /> Submitting
-                  Payment...
-                </>
-              ) : (
-                <>
-                  <CreditCard className="w-5 h-5" /> Submit Payment Request
-                </>
-              )}
-            </button>
-                </div>
+          {country === "PK" ? (
+            <div className="mt-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 p-4">
+              <p className="text-sm font-semibold">Pakistan</p>
+              <p className="text-sm text-gray-600 dark:text-neutral-400 mt-1">Bank transfer or Easypaisa/JazzCash.</p>
+              <p className="text-sm text-gray-600 dark:text-neutral-400">Contact us to complete payment.</p>
+              <div className="mt-3 flex gap-2">
+                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="h-9 px-3 rounded-lg bg-primary text-white text-sm font-semibold inline-flex items-center gap-1.5">
+                  <MessageCircle className="w-4 h-4" /> WhatsApp Us
+                </a>
+                <a href="mailto:support@eatsdesk.com" className="h-9 px-3 rounded-lg border border-gray-300 dark:border-neutral-700 text-sm font-semibold inline-flex items-center gap-1.5">
+                  <Mail className="w-4 h-4" /> Email Us
+                </a>
               </div>
             </div>
-            </>
-          );
-          return portalReady && typeof document !== "undefined" && document.body
-            ? createPortal(modal, document.body)
-            : modal;
-        })()}
-
-        {/* History Toggle */}
-        <div>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl text-base font-bold text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 transition-all"
-          >
-            <History className="w-5 h-5" />
-            Subscription History
-            <ChevronRight
-              className={`w-4 h-4 transition-transform ${showHistory ? "rotate-90" : ""}`}
-            />
-          </button>
-
-          {showHistory && history?.requests && (
-            <div className="mt-4 bg-white dark:bg-neutral-950 rounded-2xl border-2 border-gray-200 dark:border-neutral-800 overflow-hidden shadow-sm">
-              {history.requests.length === 0 ? (
-                <div className="p-12 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mx-auto mb-3">
-                    <History className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-neutral-400">
-                    No subscription requests yet
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-neutral-900/50 dark:to-neutral-900/30">
-                      <tr>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
-                          Plan
-                        </th>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
-                          Method
-                        </th>
-                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">
-                          Status
-                        </th>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
-                          Requested
-                        </th>
-                        <th className="px-5 py-4 text-left font-bold text-gray-700 dark:text-neutral-300">
-                          Approved
-                        </th>
-                        <th className="px-5 py-4 text-center font-bold text-gray-700 dark:text-neutral-300">
-                          Screenshot
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y-2 divide-gray-100 dark:divide-neutral-800">
-                      {history.requests.map((r) => (
-                        <tr
-                          key={r.id}
-                          className="hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors"
-                        >
-                          <td className="px-5 py-4">
-                            <div className="font-bold text-gray-900 dark:text-white capitalize">
-                              {r.planType.replace("_", " ")}
-                            </div>
-                            <span className="text-xs text-gray-500 dark:text-neutral-500">
-                              {r.durationInDays} days
-                            </span>
-                          </td>
-                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">
-                            {r.paymentMethodName || "—"}
-                          </td>
-                          <td className="px-5 py-4 text-center">
-                            <RequestStatusBadge status={r.status} />
-                          </td>
-                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">
-                            {formatDate(r.createdAt)}
-                          </td>
-                          <td className="px-5 py-4 text-gray-600 dark:text-neutral-400">
-                            {formatDate(r.approvedAt)}
-                          </td>
-                          <td className="px-5 py-4 text-center">
-                            <div className="flex items-center justify-center gap-2 flex-wrap">
-                              {r.paymentScreenshot ? (
-                                <a
-                                  href={r.paymentScreenshot}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-primary hover:text-primary/80 font-semibold"
-                                >
-                                  <ImageIcon className="w-4 h-4" /> View
-                                </a>
-                              ) : (
-                                <span className="text-gray-400">—</span>
-                              )}
-                              {r.status === "pending" && (
-                                <>
-                                  <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 font-semibold flex items-center gap-1 transition-colors">
-                                    {reuploadingId === r.id ? (
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                      <Upload className="w-3.5 h-3.5" />
-                                    )}
-                                    {r.paymentScreenshot ? "Change" : "Upload"}
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) handleReupload(r.id, file);
-                                        e.target.value = "";
-                                      }}
-                                    />
-                                  </label>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteRequest(r.id)}
-                                    disabled={deletingScreenshotId === r.id}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 font-semibold transition-colors disabled:opacity-50"
-                                  >
-                                    {deletingScreenshotId === r.id ? (
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    )}
-                                    Delete
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+          ) : (
+            <div className="mt-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 p-4">
+              <p className="text-sm font-semibold">USA</p>
+              <p className="text-sm text-gray-600 dark:text-neutral-400 mt-1">Online payment coming soon.</p>
+              <p className="text-sm text-gray-600 dark:text-neutral-400">Contact us to arrange payment.</p>
+              <a href="mailto:support@eatsdesk.com" className="mt-3 h-9 px-3 rounded-lg border border-gray-300 dark:border-neutral-700 text-sm font-semibold inline-flex items-center gap-1.5">
+                <Mail className="w-4 h-4" /> Email Us
+              </a>
             </div>
           )}
-        </div>
+        </section>
       </div>
     </AdminLayout>
   );
 }
+

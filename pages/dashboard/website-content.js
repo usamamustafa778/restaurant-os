@@ -29,6 +29,7 @@ import {
   Instagram,
   Twitter,
   Youtube,
+  MessageCircle,
   Clock,
   Layout,
   Sparkles,
@@ -42,6 +43,7 @@ import {
   X,
   Check,
   Search,
+  Circle,
 } from "lucide-react";
 
 const SECTIONS = [
@@ -92,6 +94,92 @@ const TEMPLATES = [
     color: "from-emerald-500 to-teal-500",
   },
 ];
+
+const HOURS_DAYS = [
+  { key: "monday", short: "Mon" },
+  { key: "tuesday", short: "Tue" },
+  { key: "wednesday", short: "Wed" },
+  { key: "thursday", short: "Thu" },
+  { key: "friday", short: "Fri" },
+  { key: "saturday", short: "Sat" },
+  { key: "sunday", short: "Sun" },
+];
+
+const DEFAULT_HOURS_DRAFT = HOURS_DAYS.reduce((acc, d) => {
+  acc[d.key] = { enabled: true, open: "09:00", close: "22:00" };
+  return acc;
+}, {});
+
+function to12h(time24) {
+  const [hRaw, mRaw] = String(time24 || "09:00").split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return "9:00 AM";
+  const suffix = h >= 12 ? "PM" : "AM";
+  const hr = h % 12 || 12;
+  return `${hr}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+function to24hFrom12h(value) {
+  const raw = String(value || "").trim();
+  const m = raw.match(/^(\d{1,2})[:.](\d{2})\s*(AM|PM)$/i);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  const ampm = String(m[3]).toUpperCase();
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h < 1 || h > 12) return null;
+  if (ampm === "PM" && h < 12) h += 12;
+  if (ampm === "AM" && h === 12) h = 0;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function parseOpeningHoursDraft(openingHours) {
+  const next = { ...DEFAULT_HOURS_DRAFT };
+  HOURS_DAYS.forEach(({ key }) => {
+    const raw = String(openingHours?.[key] || "").trim();
+    if (!raw) {
+      next[key] = { ...next[key], enabled: false };
+      return;
+    }
+    const mm = raw.match(/(.+)\s*-\s*(.+)/);
+    if (!mm) {
+      next[key] = { ...next[key], enabled: true };
+      return;
+    }
+    next[key] = {
+      enabled: true,
+      open: to24hFrom12h(mm[1]) || next[key].open,
+      close: to24hFrom12h(mm[2]) || next[key].close,
+    };
+  });
+  return next;
+}
+
+function buildOpeningHoursMap(hoursDraft) {
+  const out = {};
+  HOURS_DAYS.forEach(({ key }) => {
+    const row = hoursDraft?.[key];
+    if (!row?.enabled) {
+      out[key] = "";
+      return;
+    }
+    out[key] = `${to12h(row.open)} - ${to12h(row.close)}`;
+  });
+  return out;
+}
+
+function buildOpeningHoursText(hoursDraft) {
+  const lines = HOURS_DAYS.map(({ key, short }) => {
+    const row = hoursDraft?.[key];
+    if (!row?.enabled) return `${short}: Closed`;
+    return `${short}: ${to12h(row.open)} - ${to12h(row.close)}`;
+  });
+  return lines.join("\n");
+}
+
+function normalizeWhatsAppForWaMe(input) {
+  return String(input || "").replace(/[^\d]/g, "");
+}
 
 function SectionCard({
   id,
@@ -249,12 +337,14 @@ export default function WebsiteContentPage() {
   const { activeBranch } = useBranch();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedSectionId, setSavedSectionId] = useState("");
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainFeedback, setDomainFeedback] = useState(null);
   const [domainInput, setDomainInput] = useState("");
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [copiedKey, setCopiedKey] = useState("");
   const [ws, setWs] = useState({});
+  const [hoursDraft, setHoursDraft] = useState(DEFAULT_HOURS_DRAFT);
   const [menuItems, setMenuItems] = useState([]);
   const [activeSection, setActiveSection] = useState("template");
   const [envView, setEnvView] = useState("live");
@@ -267,6 +357,7 @@ export default function WebsiteContentPage() {
         getMenu(activeBranch?.id).catch(() => ({ items: [] })),
       ]);
       setWs(settings || {});
+      setHoursDraft(parseOpeningHoursDraft(settings?.openingHours || {}));
       const items = menu?.items || menu?.menu || [];
       setMenuItems(Array.isArray(items) ? items : []);
     } catch {
@@ -291,6 +382,13 @@ export default function WebsiteContentPage() {
     }));
   }
 
+  function updateHoursDraft(dayKey, patch) {
+    setHoursDraft((prev) => ({
+      ...prev,
+      [dayKey]: { ...(prev[dayKey] || {}), ...patch },
+    }));
+  }
+
   function updateSeo(key, value) {
     setWs((prev) => ({
       ...prev,
@@ -310,14 +408,81 @@ export default function WebsiteContentPage() {
     setSaving(true);
     const toastId = toast.loading("Saving website settings...");
     try {
-      const updated = await updateWebsiteSettings(ws);
-      setWs(updated || ws);
+      const payload = { ...ws, openingHours: buildOpeningHoursMap(hoursDraft) };
+      if (!String(payload.openingHoursText || "").trim()) {
+        payload.openingHoursText = buildOpeningHoursText(hoursDraft);
+      }
+      if (payload.socialMedia?.whatsapp) {
+        payload.socialMedia = {
+          ...payload.socialMedia,
+          whatsapp: payload.socialMedia.whatsapp.trim(),
+        };
+      }
+      const updated = await updateWebsiteSettings(payload);
+      setWs(updated || payload);
+      setHoursDraft(parseOpeningHoursDraft((updated || payload).openingHours || {}));
       toast.success("Website settings saved!", { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to save", { id: toastId });
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSaveSection(sectionId) {
+    await handleSave();
+    setSavedSectionId(sectionId);
+    window.setTimeout(() => {
+      setSavedSectionId((prev) => (prev === sectionId ? "" : prev));
+    }, 2000);
+  }
+
+  function hasContent(v) {
+    if (typeof v === "string") return v.trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "number") return Number.isFinite(v);
+    if (typeof v === "boolean") return v;
+    if (v && typeof v === "object") return Object.values(v).some((x) => hasContent(x));
+    return false;
+  }
+
+  const sectionCompletion = {
+    template: hasContent(ws.template),
+    branding: hasContent(ws.name) || hasContent(ws.logoUrl) || hasContent(ws.tagline),
+    seo: hasContent(ws.seo?.title) || hasContent(ws.seo?.metaDescription),
+    domain: hasContent(ws.customDomain),
+    contact: hasContent(ws.contactPhone) || hasContent(ws.contactEmail) || hasContent(ws.address),
+    hero:
+      (ws.heroType === "banner" && hasContent(ws.bannerUrl)) ||
+      (Array.isArray(ws.heroSlides) && ws.heroSlides.some((s) => hasContent(s?.imageUrl))),
+    theme: hasContent(ws.themeColors?.primary) || hasContent(ws.themeColors?.secondary),
+    social: hasContent(ws.socialMedia),
+    hours:
+      hasContent(ws.openingHoursText) ||
+      Object.values(hoursDraft || {}).some((d) => d?.enabled),
+    sections: Array.isArray(ws.websiteSections) && ws.websiteSections.length > 0,
+    settings: ws.isPublic !== false || ws.allowWebsiteOrders !== false,
+  };
+
+  function renderSectionSave(sectionId) {
+    return (
+      <div className="mt-5 flex items-center justify-end gap-3">
+        {savedSectionId === sectionId ? (
+          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            ✓ Saved
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void handleSaveSection(sectionId)}
+          disabled={saving || loading}
+          className={btnPrimary}
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    );
   }
 
   async function handleConnectDomain() {
@@ -572,7 +737,7 @@ export default function WebsiteContentPage() {
           )}
         </div>
 
-        {/* Right: visibility pill + save */}
+        {/* Right: visibility pill */}
         <div className="flex items-center gap-3">
           <div className="inline-flex items-center gap-2 rounded-full bg-gray-100 dark:bg-neutral-900 px-3 py-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
@@ -595,18 +760,6 @@ export default function WebsiteContentPage() {
               <span>{ws.isPublic !== false ? "Visible" : "Hidden"}</span>
             </button>
           </div>
-          <button
-            onClick={handleSave}
-            disabled={saving || loading}
-            className={btnPrimary}
-          >
-            {saving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
         </div>
       </div>
 
@@ -633,14 +786,22 @@ export default function WebsiteContentPage() {
                 <button
                   key={s.id}
                   onClick={() => scrollTo(s.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors border-l-2 ${
                     activeSection === s.id
-                      ? "bg-primary/10 text-primary dark:text-primary"
-                      : "text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
+                      ? "border-l-primary text-primary bg-primary/5 dark:bg-primary/10"
+                      : "border-l-transparent text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-900"
                   }`}
                 >
-                  <s.icon className="w-4 h-4" />
+                  <s.icon className="w-4 h-4 text-gray-400 dark:text-neutral-500" />
                   {s.label}
+                  <span
+                    className={`ml-auto inline-block h-2.5 w-2.5 rounded-full border ${
+                      sectionCompletion[s.id]
+                        ? "bg-emerald-500 border-emerald-500"
+                        : "bg-transparent border-gray-300 dark:border-neutral-600"
+                    }`}
+                    aria-hidden
+                  />
                 </button>
               ))}
             </div>
@@ -657,6 +818,7 @@ export default function WebsiteContentPage() {
               >
                 {SECTIONS.map((s) => (
                   <option key={s.id} value={s.id}>
+                    {sectionCompletion[s.id] ? "● " : "○ "}
                     {s.label}
                   </option>
                 ))}
@@ -685,9 +847,25 @@ export default function WebsiteContentPage() {
                         : "border-gray-200 dark:border-neutral-700 hover:border-gray-300"
                     } ${t.soon ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                   >
-                    <div
-                      className={`w-full h-20 rounded-lg bg-gradient-to-br ${t.color} mb-3`}
-                    />
+                    <div className="mb-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2">
+                      <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 mb-2" />
+                      <div
+                        className="h-8 rounded mb-2"
+                        style={{
+                          background:
+                            t.id === "minimal"
+                              ? "linear-gradient(90deg,#f3f4f6,#e5e7eb)"
+                              : t.id === "modern"
+                                ? "linear-gradient(90deg,#0f172a,#334155)"
+                                : "linear-gradient(90deg,#fef3c7,#fde68a)",
+                        }}
+                      />
+                      <div className="grid grid-cols-3 gap-1">
+                        <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                        <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                        <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                      </div>
+                    </div>
                     <h4 className="text-sm font-bold text-gray-900 dark:text-white">
                       {t.name}
                     </h4>
@@ -708,6 +886,7 @@ export default function WebsiteContentPage() {
                   </button>
                 ))}
               </div>
+              {renderSectionSave("template")}
             </SectionCard>
 
             {/* Branding */}
@@ -789,6 +968,7 @@ export default function WebsiteContentPage() {
                   </div>
                 </div>
               </div>
+              {renderSectionSave("branding")}
             </SectionCard>
 
             {/* SEO */}
@@ -883,6 +1063,7 @@ export default function WebsiteContentPage() {
                   </button>
                 </div>
               </div>
+              {renderSectionSave("seo")}
             </SectionCard>
 
             {/* Connect Domain */}
@@ -1165,6 +1346,7 @@ export default function WebsiteContentPage() {
                   </div>
                 </div>
               )}
+              {renderSectionSave("domain")}
             </SectionCard>
 
             {/* Contact */}
@@ -1217,6 +1399,7 @@ export default function WebsiteContentPage() {
                   </div>
                 </div>
               </div>
+              {renderSectionSave("contact")}
             </SectionCard>
 
             {/* Hero: banner vs slides */}
@@ -1281,7 +1464,8 @@ export default function WebsiteContentPage() {
                 </div>
 
                 {ws.heroType === "banner" ? (
-                  <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40">
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
                         Banner image
@@ -1301,6 +1485,19 @@ export default function WebsiteContentPage() {
                       hint="Wide image works best (about 1200×400 or larger). Also used as a fallback for social previews when no SEO image is set."
                       previewClassName="aspect-[2.4/1] w-full max-h-44"
                     />
+                    </div>
+                    <div className="rounded-xl border border-gray-200 dark:border-neutral-700 overflow-hidden relative min-h-[180px]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={ws.bannerUrl || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80&auto=format&fit=crop"}
+                        alt="Hero preview"
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/45 p-4 flex flex-col justify-end">
+                        <p className="text-white text-lg font-bold">{ws.name || "Your Restaurant"}</p>
+                        <p className="text-white/90 text-sm">{ws.tagline || "Fresh food, delivered fast."}</p>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1414,6 +1611,7 @@ export default function WebsiteContentPage() {
                 </button>
               </div>
               ) : null}
+              {renderSectionSave("hero")}
             </SectionCard>
 
             {/* Theme Colors */}
@@ -1425,7 +1623,8 @@ export default function WebsiteContentPage() {
               iconColor={iconAccentPrimary}
               isActive={activeSection === "theme"}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Primary Color</label>
                   <div className="flex items-center gap-3">
@@ -1468,21 +1667,31 @@ export default function WebsiteContentPage() {
                     />
                   </div>
                 </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
+                  <div
+                    className="h-10 px-3 flex items-center text-white text-xs font-semibold"
+                    style={{ backgroundColor: ws.themeColors?.primary || "#EF4444" }}
+                  >
+                    Navbar preview
+                  </div>
+                  <div className="p-3 bg-white dark:bg-neutral-900 space-y-3">
+                    <button
+                      type="button"
+                      className="h-8 px-3 rounded-lg text-white text-xs font-semibold"
+                      style={{ backgroundColor: ws.themeColors?.primary || "#EF4444" }}
+                    >
+                      Order now
+                    </button>
+                    <div
+                      className="h-2.5 w-20 rounded-full"
+                      style={{ backgroundColor: ws.themeColors?.secondary || "#FFA500" }}
+                    />
+                    <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 w-full" />
+                  </div>
+                </div>
               </div>
-              <div className="mt-4 flex gap-3">
-                <div
-                  className="h-12 flex-1 rounded-xl"
-                  style={{
-                    backgroundColor: ws.themeColors?.primary || "#EF4444",
-                  }}
-                />
-                <div
-                  className="h-12 flex-1 rounded-xl"
-                  style={{
-                    backgroundColor: ws.themeColors?.secondary || "#FFA500",
-                  }}
-                />
-              </div>
+              {renderSectionSave("theme")}
             </SectionCard>
 
             {/* Social Media */}
@@ -1497,6 +1706,7 @@ export default function WebsiteContentPage() {
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
+                  ["whatsapp", MessageCircle, "WhatsApp Number (+923001234567)"],
                   ["facebook", Facebook, "Facebook URL"],
                   ["instagram", Instagram, "Instagram URL"],
                   ["twitter", Twitter, "Twitter / X URL"],
@@ -1506,21 +1716,40 @@ export default function WebsiteContentPage() {
                     <label className={labelCls}>
                       <span className="flex items-center gap-1.5">
                         <Ic className="w-3.5 h-3.5" />
-                        {key.charAt(0).toUpperCase() + key.slice(1)}
+                        {key === "whatsapp"
+                          ? "WhatsApp"
+                          : key.charAt(0).toUpperCase() + key.slice(1)}
                       </span>
                     </label>
                     <input
-                      type="url"
+                      type={key === "whatsapp" ? "text" : "url"}
                       value={ws.socialMedia?.[key] || ""}
                       onChange={(e) =>
-                        updateNested("socialMedia", key, e.target.value)
+                        updateNested(
+                          "socialMedia",
+                          key,
+                          key === "whatsapp"
+                            ? e.target.value.replace(/[^\d+]/g, "")
+                            : e.target.value
+                        )
                       }
                       placeholder={placeholder}
                       className={inp}
                     />
+                    {key === "whatsapp" ? (
+                      <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
+                        Website link:{" "}
+                        {ws.socialMedia?.whatsapp
+                          ? `wa.me/${normalizeWhatsAppForWaMe(
+                              ws.socialMedia.whatsapp
+                            )}`
+                          : "wa.me/923001234567"}
+                      </p>
+                    ) : null}
                   </div>
                 ))}
               </div>
+              {renderSectionSave("social")}
             </SectionCard>
 
             {/* Opening Hours */}
@@ -1534,18 +1763,95 @@ export default function WebsiteContentPage() {
               isActive={activeSection === "hours"}
             >
               <label className={labelCls}>Opening Hours Text</label>
-              <textarea
-                value={ws.openingHoursText || ""}
-                onChange={(e) => update("openingHoursText", e.target.value)}
-                placeholder={
-                  "Mon - Fri: 9:00 AM - 10:00 PM\nSat - Sun: 10:00 AM - 11:00 PM"
-                }
-                rows={4}
-                className={`${inp} h-auto py-2.5 resize-none`}
-              />
+              <div className="grid grid-cols-[36px_1fr] rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 overflow-hidden">
+                <div className="bg-gray-100 dark:bg-neutral-800 text-[11px] font-mono text-gray-500 dark:text-neutral-400 px-2 py-2.5 leading-6">
+                  1
+                  <br />
+                  2
+                  <br />
+                  3
+                  <br />
+                  4
+                </div>
+                <textarea
+                  value={ws.openingHoursText || ""}
+                  onChange={(e) => update("openingHoursText", e.target.value)}
+                  placeholder={"Mon: 9:00 AM - 10:00 PM\nTue: 9:00 AM - 10:00 PM\n..."}
+                  rows={4}
+                  className="w-full h-auto py-2.5 px-3 resize-none bg-transparent text-sm font-mono text-gray-900 dark:text-white outline-none"
+                />
+              </div>
               <p className="text-xs text-gray-400 dark:text-neutral-500 mt-2">
-                Free text — use new lines to separate days.
+                Free text override. If left empty, structured hours below will
+                auto-generate this text on save.
               </p>
+
+              <div className="mt-5 rounded-xl border border-gray-200 dark:border-neutral-800 p-4">
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Or use structured hours
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {HOURS_DAYS.map((d) => {
+                    const enabled = Boolean(hoursDraft?.[d.key]?.enabled);
+                    return (
+                      <button
+                        key={d.key}
+                        type="button"
+                        onClick={() =>
+                          updateHoursDraft(d.key, {
+                            enabled: !enabled,
+                          })
+                        }
+                        className={`h-8 px-3 rounded-lg text-xs font-semibold border transition-colors ${
+                          enabled
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-white dark:bg-neutral-900 border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400"
+                        }`}
+                      >
+                        {d.short}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {HOURS_DAYS.map((d) => {
+                    const row = hoursDraft?.[d.key] || {
+                      enabled: false,
+                      open: "09:00",
+                      close: "22:00",
+                    };
+                    if (!row.enabled) return null;
+                    return (
+                      <div
+                        key={`${d.key}-row`}
+                        className="grid grid-cols-12 gap-2 items-center"
+                      >
+                        <span className="col-span-2 text-xs font-semibold text-gray-600 dark:text-neutral-300">
+                          {d.short}
+                        </span>
+                        <input
+                          type="time"
+                          value={row.open || "09:00"}
+                          onChange={(e) =>
+                            updateHoursDraft(d.key, { open: e.target.value })
+                          }
+                          className={`${inp} col-span-5`}
+                        />
+                        <input
+                          type="time"
+                          value={row.close || "22:00"}
+                          onChange={(e) =>
+                            updateHoursDraft(d.key, { close: e.target.value })
+                          }
+                          className={`${inp} col-span-5`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {renderSectionSave("hours")}
             </SectionCard>
 
             {/* Website Sections */}
@@ -1558,6 +1864,25 @@ export default function WebsiteContentPage() {
               isActive={activeSection === "sections"}
             >
               <div className="space-y-4">
+                {(ws.websiteSections || []).length === 0 ? (
+                  <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-700 p-8 text-center">
+                    <Layout className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      No sections added yet
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
+                      Add up to 3 featured menu sections to highlight your best dishes on the homepage.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={addWebsiteSection}
+                      className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary/90"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add your first section
+                    </button>
+                  </div>
+                ) : null}
                 {(ws.websiteSections || []).map((section, sIdx) => (
                   <div
                     key={sIdx}
@@ -1675,9 +2000,28 @@ export default function WebsiteContentPage() {
                         })
                       )}
                     </div>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900 p-4">
+                  <p className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                    How to connect your domain
+                  </p>
+                  <ol className="mt-2 space-y-1.5 text-xs text-gray-600 dark:text-neutral-400 list-decimal pl-4">
+                    <li>Enter your domain (e.g. menu.sufi-eats.com).</li>
+                    <li>Add a CNAME record pointing to `sites.eatsdesk.com` in your DNS settings.</li>
+                    <li>Click Connect. Verification may take up to 24 hours.</li>
+                  </ol>
+                  <a
+                    href="https://vercel.com/docs/domains/working-with-dns"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex text-xs font-semibold text-primary hover:underline"
+                  >
+                    How to connect a domain
+                  </a>
+                </div>
                   </div>
                 ))}
-                {(ws.websiteSections || []).length < 3 && (
+                {(ws.websiteSections || []).length > 0 &&
+                  (ws.websiteSections || []).length < 3 && (
                   <button
                     type="button"
                     onClick={addWebsiteSection}
@@ -1688,6 +2032,7 @@ export default function WebsiteContentPage() {
                   </button>
                 )}
               </div>
+              {renderSectionSave("sections")}
             </SectionCard>
 
             {/* Settings */}
@@ -1778,6 +2123,7 @@ export default function WebsiteContentPage() {
                   </button>
                 </div>
               </div>
+              {renderSectionSave("settings")}
             </SectionCard>
           </div>
         </div>

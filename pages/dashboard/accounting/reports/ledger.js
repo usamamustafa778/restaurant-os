@@ -16,7 +16,12 @@ import {
 import { getStoredAuth, getCurrencySymbol } from "../../../../lib/apiClient";
 import toast from "react-hot-toast";
 import AsyncCombobox from "../../../../components/accounting/AsyncCombobox";
-import { localToday, localMonthStart, fmtMoneyPK } from "../../../../lib/accountingFormat";
+import {
+  localToday,
+  localMonthStart,
+  fmtMoneyPK,
+  fmtDateRangeHuman,
+} from "../../../../lib/accountingFormat";
 import ReportsNav from "../../../../components/accounting/ReportsNav";
 
 // ─── API ─────────────────────────────────────────────────────────────────────
@@ -804,7 +809,7 @@ export default function LedgerPage() {
             Ledger Report — {accountObj?.name}
           </h2>
           <p className="text-sm text-gray-600">
-            {dateFrom} to {dateTo}
+            {fmtDateRangeHuman(dateFrom, dateTo, "to")}
             {partyObj ? ` · ${partyObj.name}` : ""}
           </p>
         </div>
@@ -848,7 +853,7 @@ export default function LedgerPage() {
                   {partyObj ? ` · ${partyObj.name}` : ""}
                   <span className="text-gray-400 dark:text-neutral-600">
                     {" "}
-                    · {dateFrom} → {dateTo}
+                    · {fmtDateRangeHuman(dateFrom, dateTo)}
                   </span>
                 </p>
               </div>
@@ -887,8 +892,14 @@ export default function LedgerPage() {
                     </span>
                     <BookOpen className="w-3.5 h-3.5 text-gray-300 dark:text-neutral-700" />
                   </div>
-                  <div className="text-base font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {sym} {fmtAmt(report.closingBalance)}
+                  <div
+                    className={`text-base font-semibold tabular-nums ${
+                      Number(report.closingBalance) < 0
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-gray-900 dark:text-white"
+                    }`}
+                  >
+                    {fmtBalAccounting(report.closingBalance, sym)}
                   </div>
                 </div>
               </div>
