@@ -457,6 +457,26 @@ function computeDeliveredUnpaid(orders) {
   return { count, amount };
 }
 
+/**
+ * Client-side revenue breakdown matching the Sales page logic exactly.
+ * Only counts DELIVERED / COMPLETED orders; separates food vs delivery fees.
+ */
+function computeRevenueBreakdown(orders) {
+  let salesAmount = 0;
+  let deliveryFees = 0;
+  let orderCount = 0;
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const s = String(order?.status || "").toUpperCase();
+    if (s !== "DELIVERED" && s !== "COMPLETED") continue;
+    orderCount += 1;
+    const gt = Number(order?.grandTotal ?? order?.total) || 0;
+    const dc = Number(order?.deliveryCharges) || 0;
+    deliveryFees += dc;
+    salesAmount += Math.max(0, gt - dc);
+  }
+  return { orderCount, salesAmount, deliveryFees, grandTotal: salesAmount + deliveryFees };
+}
+
 function Skeleton({ className = "" }) {
   return (
     <div
@@ -609,6 +629,8 @@ export default function OverviewPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [periodReport, setPeriodReport] = useState({
     totalRevenue: 0,
+    salesAmount: 0,
+    deliveryFees: 0,
     totalProfit: 0,
     totalOrders: 0,
     topItems: [],
@@ -1250,11 +1272,18 @@ export default function OverviewPage() {
           /* ledger P&L is optional — fall back to sales-based profit */
         }
 
+        // Compute revenue/orders client-side from raw orders so the numbers
+        // exactly match the Sales page (same DELIVERED|COMPLETED filter, same
+        // grandTotal − deliveryCharges split).
+        const clientBreakdown = computeRevenueBreakdown(ordersForMetrics);
+
         if (!cancelled) {
           setPeriodReport({
-            totalRevenue: report.totalRevenue ?? 0,
+            totalRevenue: clientBreakdown.grandTotal,
+            salesAmount: clientBreakdown.salesAmount,
+            deliveryFees: clientBreakdown.deliveryFees,
             totalProfit: report.totalProfit ?? 0,
-            totalOrders: report.totalOrders ?? 0,
+            totalOrders: clientBreakdown.orderCount,
             topItems: report.topItems ?? [],
             dailySales: report.dailySales ?? [],
             hourlySales: resolvedHourlySales,
@@ -1592,7 +1621,9 @@ export default function OverviewPage() {
             {[
               {
                 label: "Revenue",
-                sub: periodLabel,
+                sub: periodReport.deliveryFees > 0
+                  ? `${currencySymbol} ${Math.round(periodReport.salesAmount).toLocaleString()} food · ${currencySymbol} ${Math.round(periodReport.deliveryFees).toLocaleString()} delivery`
+                  : periodLabel,
                 value: `${currencySymbol} ${Math.round(viewTotalRevenue).toLocaleString()}`,
                 icon: DollarSign,
                 color: "text-primary",
