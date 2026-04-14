@@ -1370,9 +1370,12 @@ export default function POSView({
         : 0,
     ),
   );
+  // Apply the percentage to the FULL subtotal so that "50% off" always means
+  // 50% of the order value, regardless of any auto-applied deal discounts.
+  // Math.min caps the result so the combined discount never exceeds subtotal.
   const manualDiscount = Math.min(
     maxManualDiscountAllowed,
-    (maxManualDiscountAllowed * manualDiscountPercentClamped) / 100,
+    (subtotal * manualDiscountPercentClamped) / 100,
   );
   const totalDiscount = dealDiscount + manualDiscount;
   const total = Math.max(0, subtotal - totalDiscount);
@@ -1408,7 +1411,7 @@ export default function POSView({
 
   function getDiscountPinRequirement({ pct, label, customOpen }) {
     if (customOpen) {
-      // Custom discounts are manager-approved when PIN is configured.
+      // Custom discounts always require manager PIN when one is configured.
       return pct > 0;
     }
     const selectedPreset = mergedDiscountPresets.find(
@@ -1416,7 +1419,13 @@ export default function POSView({
         Math.round(Number(p.percent) || 0) === Math.round(Number(pct) || 0) &&
         String(p.label || "") === String(label || ""),
     );
-    return !Boolean(selectedPreset?.cashierAllowed);
+    // No matching preset → treat as requiring PIN (safe default).
+    if (!selectedPreset) return pct > 0;
+    // Prefer the explicit requiresPin flag; fall back to !cashierAllowed for
+    // legacy presets that only have the cashierAllowed field.
+    if (selectedPreset.requiresPin !== undefined)
+      return Boolean(selectedPreset.requiresPin);
+    return !Boolean(selectedPreset.cashierAllowed);
   }
 
   function buildPosDiscountApiFields() {
