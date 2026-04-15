@@ -204,6 +204,7 @@ export default function POSView({
   const [paymentAccountsLoading, setPaymentAccountsLoading] = useState(true);
   const [orderType, setOrderType] = useState("DINE_IN");
   const [manualDiscountPercent, setManualDiscountPercent] = useState(0);
+  const [bulkAddQtyInput, setBulkAddQtyInput] = useState("1");
   const [discountReason, setDiscountReason] = useState("");
   const [discountPresetLabel, setDiscountPresetLabel] = useState("");
   const [managerDiscountPin, setManagerDiscountPin] = useState("");
@@ -1314,6 +1315,7 @@ export default function POSView({
         },
       ]);
     }
+    setBulkAddQtyInput("1");
   };
 
   const updateQuantity = (itemId, change) => {
@@ -1360,6 +1362,7 @@ export default function POSView({
     (sum, item) => sum + item.price * item.quantity,
     0,
   );
+  const bulkAddQty = Math.max(1, Math.floor(Number(bulkAddQtyInput) || 1));
   const maxManualDiscountAllowed = Math.max(0, subtotal - dealDiscount);
   const manualDiscountPercentClamped = Math.min(
     100,
@@ -2283,19 +2286,80 @@ export default function POSView({
           {/* Menu Items Section */}
           <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1">
             {/* Header: title + search (one row) + dietary chips */}
-            <div className="border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-b from-gray-50/90 to-white dark:from-neutral-900 dark:to-neutral-950">
-              <div className="flex flex-col gap-2.5 p-3 sm:flex-row sm:items-center sm:gap-3 min-w-0">
-                <h2 className="text-lg font-extrabold tracking-tight text-gray-900 dark:text-white">
+            <div className="border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-b from-gray-50 to-white dark:from-neutral-900 dark:to-neutral-950">
+              {/* Category tabs */}
+              <div className="flex gap-2 overflow-x-auto border-t border-gray-100/80 bg-white/60 px-3 pb-2 pt-2 scrollbar-hide dark:border-neutral-800/80 dark:bg-neutral-950/40">
+                <button
+                  onClick={() => setSelectedCategory("all")}
+                  className={`category-tab flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                    selectedCategory === "all"
+                      ? "border-primary bg-primary/5 text-primary shadow-sm"
+                      : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
+                  }`}
+                >
+                  All{" "}
+                  <span className="font-normal opacity-60">
+                    {
+                      allItemsForGrid.filter(
+                        (item) =>
+                          item.isDeal ||
+                          (item.finalAvailable ?? item.available),
+                      ).length
+                    }
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedCategory("deals")}
+                  className={`category-tab flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                    selectedCategory === "deals"
+                      ? "border-primary bg-primary/5 text-primary shadow-sm"
+                      : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
+                  }`}
+                >
+                  Deals{" "}
+                  <span className="font-normal opacity-60">
+                    {allItemsForGrid.filter((i) => i.isDeal).length}
+                  </span>
+                </button>
+
+                {menu.categories.map((cat) => {
+                  const catItemCount = allItemsForGrid.filter(
+                    (item) => !item.isDeal && item.categoryId === cat.id,
+                  ).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`category-tab flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
+                        selectedCategory === cat.id
+                          ? "border-primary bg-primary/5 text-primary shadow-sm"
+                          : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
+                      }`}
+                    >
+                      <span className="whitespace-nowrap">
+                        {String(cat.name || "").toLowerCase()}
+                      </span>{" "}
+                      <span className="font-normal opacity-60">
+                        {catItemCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3 min-w-0 border-t border-gray-100/80 dark:border-neutral-800/80">
+                <h2 className="text-lg font-extrabold tracking-tight text-gray-900 dark:text-white shrink-0">
                   Menu
                 </h2>
 
                 {/* Search — same row as heading on sm+ */}
-                <div className="relative flex-1 min-w-0">
+                <div className="relative flex-1 basis-[360px] min-w-0">
                   <label htmlFor="pos-menu-search" className="sr-only">
                     Search menu items
                   </label>
                   <Search
-                    className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
                     aria-hidden
                   />
                   <input
@@ -2304,7 +2368,7 @@ export default function POSView({
                     type="search"
                     inputMode="search"
                     autoComplete="off"
-                    placeholder="Search items…"
+                    placeholder="Search item…"
                     value={menuSearchQuery}
                     onChange={(e) => {
                       setMenuSearchQuery(e.target.value);
@@ -2362,118 +2426,78 @@ export default function POSView({
                         toast.error(`${selectedItem.name} is out of stock`);
                         return;
                       }
-                      addToCart(selectedItem, 1);
-                      toast.success(`1 × ${selectedItem.name} added to cart`);
+                      addToCart(selectedItem, bulkAddQty);
+                      toast.success(
+                        `${bulkAddQty} × ${selectedItem.name} added to cart`,
+                      );
                       setMenuSearchQuery("");
                       setFocusedItemIndex(0);
                     }}
-                    className="h-7 w-full border-b border-gray-200 pl-9 pr-3 text-sm text-gray-900 bg-transparent outline-none transition-all placeholder:text-gray-400  focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+                    className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+                  />
+                </div>
+
+                <div
+                  className="inline-flex h-9 w-[120px] items-center justify-between gap-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 shrink-0"
+                  title="Sets how many of each item to add when you click it"
+                >
+                  <label
+                    htmlFor="pos-bulk-qty"
+                    className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap"
+                  >
+                    Add qty:
+                  </label>
+                  <input
+                    id="pos-bulk-qty"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={bulkAddQtyInput}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^\d]/g, "");
+                      setBulkAddQtyInput(
+                        digits ? String(Math.max(1, Number(digits))) : "",
+                      );
+                    }}
+                    onBlur={() => {
+                      if (!bulkAddQtyInput || Number(bulkAddQtyInput) < 1)
+                        setBulkAddQtyInput("1");
+                    }}
+                    className="h-6 w-12 rounded-md border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-950 px-1.5 text-[11px] font-semibold text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    aria-label="Bulk quantity"
                   />
                 </div>
 
                 {/* Dietary — compact chips, same row on wide screens */}
                 <div
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 shrink-0 sm:justify-end"
+                  className="flex flex-wrap items-center gap-1.5 shrink-0 sm:justify-end"
                   role="group"
                   aria-label="Dietary filter"
                 >
                   {[
-                    { value: "veg", label: "Veg" },
-                    { value: "non-veg", label: "Non-veg" },
-                    { value: "egg", label: "Egg" },
+                    { value: "veg", label: "🥦 Veg" },
+                    { value: "non-veg", label: "🍖 Non-veg" },
+                    { value: "egg", label: "🥚 Egg" },
                   ].map((filter) => {
                     const active = dietaryFilter === filter.value;
                     return (
-                      <label
+                      <button
                         key={filter.value}
-                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all ${
+                        type="button"
+                        onClick={() =>
+                          setDietaryFilter(active ? "all" : filter.value)
+                        }
+                        className={`inline-flex h-8 items-center rounded-full border px-3 text-[11px] font-semibold transition-all ${
                           active
-                            ? "border-primary bg-primary/10 text-primary dark:bg-primary/15"
+                            ? "border-primary bg-primary/10 text-primary shadow-sm dark:bg-primary/15"
                             : "border-gray-200 bg-white text-gray-600 hover:border-primary/40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={active}
-                          onChange={() =>
-                            setDietaryFilter(active ? "all" : filter.value)
-                          }
-                          className="sr-only"
-                        />
-                        <span
-                          className={`flex h-3.5 w-3.5 items-center justify-center rounded border text-[9px] font-bold leading-none ${
-                            active
-                              ? "border-primary bg-primary text-white"
-                              : "border-gray-300 dark:border-neutral-600"
-                          }`}
-                          aria-hidden
-                        >
-                          {active ? "✓" : ""}
-                        </span>
                         {filter.label}
-                      </label>
+                      </button>
                     );
                   })}
                 </div>
-              </div>
-
-              {/* Category tabs */}
-              <div className="flex gap-2 overflow-x-auto border-t border-gray-100/80 bg-white/60 px-3 pb-2 pt-2 scrollbar-hide dark:border-neutral-800/80 dark:bg-neutral-950/40">
-                <button
-                  onClick={() => setSelectedCategory("all")}
-                  className={`flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left capitalize ${
-                    selectedCategory === "all"
-                      ? "border-primary bg-primary/5 text-primary shadow-sm"
-                      : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
-                  }`}
-                >
-                  All{" "}
-                  <span className="font-normal opacity-60">
-                    {
-                      allItemsForGrid.filter(
-                        (item) =>
-                          item.isDeal ||
-                          (item.finalAvailable ?? item.available),
-                      ).length
-                    }
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setSelectedCategory("deals")}
-                  className={`flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left capitalize ${
-                    selectedCategory === "deals"
-                      ? "border-primary bg-primary/5 text-primary shadow-sm"
-                      : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
-                  }`}
-                >
-                  Deals{" "}
-                  <span className="font-normal opacity-60">
-                    {allItemsForGrid.filter((i) => i.isDeal).length}
-                  </span>
-                </button>
-
-                {menu.categories.map((cat) => {
-                  const catItemCount = menu.items.filter(
-                    (item) => item.categoryId === cat.id,
-                  ).length;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left capitalize ${
-                        selectedCategory === cat.id
-                          ? "border-primary bg-primary/5 text-primary shadow-sm"
-                          : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
-                      }`}
-                    >
-                      <span className="whitespace-nowrap">{cat.name}</span>{" "}
-                      <span className="font-normal opacity-60">
-                        {catItemCount}
-                      </span>
-                    </button>
-                  );
-                })}
               </div>
             </div>
 
@@ -2520,7 +2544,7 @@ export default function POSView({
                           <div
                             className="relative h-32 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800"
                             onClick={() =>
-                              !outOfStock && !inCart && addToCart(item)
+                              !outOfStock && !inCart && addToCart(item, bulkAddQty)
                             }
                           >
                             {/* Badges */}
@@ -2625,7 +2649,7 @@ export default function POSView({
                                   </div>
                                 ) : (
                                   <button
-                                    onClick={() => addToCart(item)}
+                                    onClick={() => addToCart(item, bulkAddQty)}
                                     className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
                                   >
                                     <Plus className="w-3 h-3" />

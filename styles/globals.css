@@ -121,3 +121,8 @@ body {
   display: none;
 }
 
+/* POS category label normalization (keeps source data unchanged). */
+.category-tab {
+  text-transform: capitalize;
+}
+
