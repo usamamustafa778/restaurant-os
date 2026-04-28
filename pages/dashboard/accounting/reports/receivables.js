@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../../../components/layout/AdminLayout";
 import {
+  ArrowDownToLine,
   BookOpen,
-  Building2,
   ChevronDown,
   Download,
   ExternalLink,
@@ -44,7 +44,7 @@ async function apiFetch(path, opts = {}) {
   return data;
 }
 
-// ── Date helpers ─────────────────────────────────────────────────────────────
+// ── Date helpers ──────────────────────────────────────────────────────────────
 function thisMonthRange() {
   const now = new Date();
   return {
@@ -62,14 +62,13 @@ function lastMonthRange() {
 function thisYearRange() {
   return { from: `${new Date().getFullYear()}-01-01`, to: localToday() };
 }
-// Pakistan fiscal year: 1 Jul → 30 Jun
 function pkFiscalRange() {
   const now = new Date();
   const startYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
   return { from: `${startYear}-07-01`, to: localToday() };
 }
 
-// ── Number formatting ─────────────────────────────────────────────────────────
+// ── Formatting ────────────────────────────────────────────────────────────────
 function fmtCell(n) {
   if (n === 0 || n === null || n === undefined) return "";
   return fmtMoneyPK(n);
@@ -80,41 +79,34 @@ function exportCSV(report) {
   const cols = [
     "Code",
     "Party Description",
-    "Opening Payable",
-    "Purchases",
-    "Cash Paid",
-    "Cheque Issued",
-    "Payable",
+    "O. Receivable",
+    "Activity",
+    "Cash Rec",
+    "Bank Rec",
+    "Receivable",
   ];
   const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-
   const rows = [cols.map(q).join(",")];
-  report.suppliers.forEach((s) => {
+
+  report.customers.forEach((c) => {
     rows.push(
       [
-        s.code,
-        s.name,
-        s.openingPayable || "",
-        s.purchases || "",
-        s.cashPaid || "",
-        s.chequeIssued || "",
-        s.payable || "",
+        c.code,
+        c.name,
+        c.openingRec  || "",
+        c.activity    || "",
+        c.cashRec     || "",
+        c.bankRec     || "",
+        c.receivable  || "",
       ]
         .map(q)
         .join(","),
     );
   });
+
   const t = report.totals;
   rows.push(
-    [
-      "",
-      "TOTAL",
-      t.openingPayable || "",
-      t.purchases || "",
-      t.cashPaid || "",
-      t.chequeIssued || "",
-      t.payable || "",
-    ]
+    ["", "TOTAL", t.openingRec || "", t.activity || "", t.cashRec || "", t.bankRec || "", t.receivable || ""]
       .map(q)
       .join(","),
   );
@@ -122,12 +114,12 @@ function exportCSV(report) {
   const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `payables-${report.dateFrom}-${report.dateTo}.csv`;
+  a.download = `receivables-${report.dateFrom}-${report.dateTo}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
 
-// ── Styled helpers ────────────────────────────────────────────────────────────
+// ── Shared style constants ────────────────────────────────────────────────────
 const DATE_CLS =
   "h-9 px-3 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-500 transition-colors";
 
@@ -143,20 +135,34 @@ const QUICK_MODES = [
   { id: "custom",    label: "Custom" },
 ];
 
+const PRINT_CSS = `
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; color: #111 !important; font-size: 10px; }
+  .ra-print-table th, .ra-print-table td {
+    border: 1px solid #bbb; padding: 4px 7px; font-size: 9.5px;
+  }
+  .ra-print-table th { background: #e0e0e0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ra-print-totals td { background: #ebebeb !important; border-top: 2px solid #888; font-weight: bold; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4 landscape; margin: 1.2cm; }
+}
+`;
+
 // ── Amount cell ───────────────────────────────────────────────────────────────
-function AmtTD({ value, red = false, bold = false }) {
-  const formatted = fmtCell(value);
-  const neg = (value ?? 0) < 0;
-  const display = neg ? `(${fmtMoneyPK(Math.abs(value))})` : formatted;
+function AmtTD({ value, bold = false, accent = false }) {
+  const n = value ?? 0;
+  const neg = n < 0;
+  const display = n === 0 ? "" : neg ? `(${fmtMoneyPK(Math.abs(n))})` : fmtMoneyPK(n);
 
   if (!display) return <td className="px-3 py-2 text-right tabular-nums font-mono text-[11.5px]" />;
+
   return (
     <td
-      className={`px-3 py-2 text-right tabular-nums font-mono text-[11.5px] ${
+      className={`px-3 py-2 text-right tabular-nums font-mono text-[11.5px] whitespace-nowrap ${
         neg
           ? "text-red-600 dark:text-red-400"
-          : red
-            ? "text-gray-800 dark:text-neutral-200"
+          : accent
+            ? "text-emerald-700 dark:text-emerald-400"
             : "text-gray-700 dark:text-neutral-300"
       } ${bold ? "font-bold" : ""}`}
     >
@@ -165,22 +171,8 @@ function AmtTD({ value, red = false, bold = false }) {
   );
 }
 
-// ── Print styles ──────────────────────────────────────────────────────────────
-const PRINT_CSS = `
-@media print {
-  .no-print { display: none !important; }
-  body { background: white !important; color: #111 !important; font-size: 10px; }
-  .pa-print-table th, .pa-print-table td {
-    border: 1px solid #bbb; padding: 4px 7px; font-size: 9.5px;
-  }
-  .pa-print-table th { background: #e0e0e0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pa-print-totals td { background: #ebebeb !important; border-top: 2px solid #888; font-weight: bold; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  @page { size: A4 landscape; margin: 1.2cm; }
-}
-`;
-
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function PayablesPage() {
+export default function ReceivablesPage() {
   const sym = getCurrencySymbol();
   const router = useRouter();
 
@@ -211,11 +203,11 @@ export default function PayablesPage() {
     setHasRun(true);
     try {
       const data = await apiFetch(
-        `/api/accounting/reports/payables?dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        `/api/accounting/reports/receivables?dateFrom=${dateFrom}&dateTo=${dateTo}`,
       );
       setReport(data);
     } catch (err) {
-      toast.error(err.message || "Failed to load payables");
+      toast.error(err.message || "Failed to load receivables");
       setReport(null);
     } finally {
       setLoading(false);
@@ -241,22 +233,22 @@ export default function PayablesPage() {
     return () => document.removeEventListener("mousedown", handle);
   }, [exportOpen]);
 
-  const suppliers = report?.suppliers || [];
-  const totals = report?.totals || {};
+  const customers = report?.customers || [];
+  const totals    = report?.totals    || {};
 
   return (
-    <AdminLayout title="Payables — Party Analysis">
+    <AdminLayout title="Receivables — Party Analysis">
       <style>{PRINT_CSS}</style>
       <div className="space-y-4">
         <ReportsNav />
 
         {/* Info banner */}
         <div className="flex items-center gap-3 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl px-5 py-3 shadow-sm no-print">
-          <Building2 className="w-4 h-4 text-gray-500 dark:text-neutral-400 shrink-0" />
+          <ArrowDownToLine className="w-4 h-4 text-gray-500 dark:text-neutral-400 shrink-0" />
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Party Payable Analysis — opening balance, purchases, cash & cheque
-            payments, and closing payable for each supplier. Default range is
-            the current Pakistan financial year.
+            Party Receivable Analysis — opening balance, new activity, cash &
+            bank receipts, and closing receivable for each customer. Default
+            range is the current Pakistan financial year.
           </p>
         </div>
 
@@ -267,7 +259,7 @@ export default function PayablesPage() {
               Report parameters
             </h2>
             <span className="text-[10px] text-gray-400 dark:text-neutral-600 uppercase tracking-wider hidden sm:inline">
-              Supplier AP
+              Customer AR
             </span>
           </div>
 
@@ -358,7 +350,7 @@ export default function PayablesPage() {
               <button
                 type="button"
                 onClick={() => setExportOpen((o) => !o)}
-                disabled={!report || !suppliers.length}
+                disabled={!report || !customers.length}
                 className="flex items-center gap-2 h-9 pl-3 pr-3 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-200 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-40"
               >
                 Export
@@ -393,7 +385,7 @@ export default function PayablesPage() {
           <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm flex flex-col items-center justify-center py-20 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
             <p className="text-sm text-gray-500 dark:text-neutral-400">
-              Loading party analysis…
+              Loading receivables…
             </p>
           </div>
         )}
@@ -405,7 +397,7 @@ export default function PayablesPage() {
               <FileSearch className="w-6 h-6" />
             </div>
             <p className="text-sm font-medium text-gray-900 dark:text-white">
-              Couldn&apos;t load payables
+              Couldn&apos;t load receivables
             </p>
             <p className="text-xs text-gray-500 dark:text-neutral-500 mt-1 max-w-sm mx-auto">
               Try again with Run Report, or check your connection.
@@ -420,22 +412,22 @@ export default function PayablesPage() {
             <div className="px-5 py-3 border-b border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 no-print flex items-center justify-between flex-wrap gap-2">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-                  Party Payable Analysis
+                  Party Receivable Analysis
                 </h2>
                 <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
                   {fmtDateRangeHuman(report.dateFrom, report.dateTo)}
                   <span className="text-gray-400 dark:text-neutral-600">
-                    {" "}· {suppliers.length}{" "}
-                    {suppliers.length === 1 ? "party" : "parties"}
+                    {" "}· {customers.length}{" "}
+                    {customers.length === 1 ? "party" : "parties"}
                   </span>
                 </p>
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-gray-400 dark:text-neutral-600 uppercase tracking-wider">
-                  Total Payable
+                  Total Receivable
                 </p>
-                <p className="text-base font-bold tabular-nums text-red-600 dark:text-red-400">
-                  {sym} {fmtMoneyPK(totals.payable || 0)}
+                <p className="text-base font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {sym} {fmtMoneyPK(totals.receivable || 0)}
                 </p>
               </div>
             </div>
@@ -445,10 +437,10 @@ export default function PayablesPage() {
               <div className="flex justify-between items-start">
                 <div>
                   <h1 className="text-lg font-black uppercase tracking-widest">
-                    Party Payable Analysis
+                    Party Receivable Analysis
                   </h1>
                   <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-0.5">
-                    Supplier Accounts Payable
+                    Customer Accounts Receivable
                   </p>
                 </div>
                 <div className="text-right text-[10px] text-gray-600">
@@ -458,73 +450,69 @@ export default function PayablesPage() {
               </div>
             </div>
 
-            {/* Empty suppliers */}
-            {suppliers.length === 0 ? (
+            {/* Empty customers */}
+            {customers.length === 0 ? (
               <div className="text-center py-16 px-6">
                 <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500 flex items-center justify-center mx-auto mb-4">
                   <FileSearch className="w-6 h-6" />
                 </div>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  No payable activity
+                  No receivable activity
                 </p>
                 <p className="text-xs text-gray-500 dark:text-neutral-500 mt-1 max-w-sm mx-auto">
-                  No supplier transactions found for{" "}
+                  No customer transactions found for{" "}
                   {fmtDateRangeHuman(report.dateFrom, report.dateTo)}.
                 </p>
               </div>
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full pa-print-table">
+                  <table className="w-full ra-print-table">
                     <thead>
                       <tr className="bg-gray-50 dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800">
                         <th className={`${TH_CLS} text-left w-12`}>Code</th>
-                        <th className={`${TH_CLS} text-left`}>Party Description</th>
-                        <th className={`${TH_CLS} text-right`}>O. Payable</th>
-                        <th className={`${TH_CLS} text-right`}>Purchases</th>
-                        <th className={`${TH_CLS} text-right`}>Cash Paid</th>
-                        <th className={`${TH_CLS} text-right`}>Cheque Issued</th>
-                        <th className={`${TH_CLS} text-right`}>Payable</th>
+                        <th className={`${TH_CLS} text-left`}>Party</th>
+                        <th className={`${TH_CLS} text-right`}>O. Receivable</th>
+                        <th className={`${TH_CLS} text-right`}>Activity</th>
+                        <th className={`${TH_CLS} text-right`}>Cash Rec</th>
+                        <th className={`${TH_CLS} text-right`}>Bank Rec</th>
+                        <th className={`${TH_CLS} text-right`}>Receivable</th>
                         <th className={`${TH_CLS} text-center no-print`}>Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-neutral-800/60 bg-white dark:bg-neutral-950">
-                      {suppliers.map((s, idx) => (
+                      {customers.map((c, idx) => (
                         <tr
-                          key={String(s._id)}
-                          className={`hover:bg-orange-50/40 dark:hover:bg-orange-500/5 transition-colors ${idx % 2 === 1 ? "bg-gray-50/40 dark:bg-neutral-900/25" : ""}`}
+                          key={String(c._id)}
+                          className={`hover:bg-emerald-50/30 dark:hover:bg-emerald-500/5 transition-colors ${idx % 2 === 1 ? "bg-gray-50/40 dark:bg-neutral-900/25" : ""}`}
                         >
                           {/* Code */}
                           <td className="px-3 py-2.5 font-mono text-[11px] text-gray-400 dark:text-neutral-600 whitespace-nowrap">
-                            {String(s.code).padStart(3, "0")}
+                            {String(c.code).padStart(3, "0")}
                           </td>
-                          {/* Party name */}
+                          {/* Name */}
                           <td className="px-3 py-2.5 text-sm font-medium text-gray-900 dark:text-white min-w-[160px]">
-                            {s.name}
-                            {s.city ? (
+                            {c.name}
+                            {c.city ? (
                               <span className="ml-1.5 text-[10px] text-gray-400 dark:text-neutral-600 font-normal">
-                                {s.city}
+                                {c.city}
                               </span>
                             ) : null}
                           </td>
                           {/* Amounts */}
-                          <AmtTD value={s.openingPayable} />
-                          <AmtTD value={s.purchases} />
-                          <AmtTD value={s.cashPaid} />
-                          <AmtTD value={s.chequeIssued} />
-                          <AmtTD
-                            value={s.payable}
-                            red
-                            bold
-                          />
-                          {/* Actions — screen only */}
+                          <AmtTD value={c.openingRec} />
+                          <AmtTD value={c.activity} />
+                          <AmtTD value={c.cashRec} />
+                          <AmtTD value={c.bankRec} />
+                          <AmtTD value={c.receivable} bold accent />
+                          {/* Actions */}
                           <td className="px-3 py-2.5 text-center no-print">
                             <div className="inline-flex items-center gap-3">
                               <button
                                 type="button"
                                 onClick={() =>
                                   router.push(
-                                    `/dashboard/accounting/reports/ledger?partyId=${s._id}`,
+                                    `/dashboard/accounting/reports/ledger?partyId=${c._id}`,
                                   )
                                 }
                                 className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-orange-500 dark:hover:text-orange-400 transition-colors"
@@ -532,50 +520,32 @@ export default function PayablesPage() {
                                 <ExternalLink className="w-3 h-3" />
                                 Ledger
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const q = new URLSearchParams({
-                                    partyId: String(s._id),
-                                    partyName: String(s.name || ""),
-                                    suggestedAmount: String(s.payable ?? 0),
-                                  });
-                                  router.push(
-                                    `/dashboard/accounting/vouchers/cash-payment?${q}`,
-                                  );
-                                }}
-                                className="inline-flex items-center text-xs font-semibold text-orange-500 dark:text-orange-400 underline underline-offset-2 hover:text-orange-600 dark:hover:text-orange-300 transition-colors"
-                              >
-                                Pay
-                              </button>
                             </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
 
-                    {/* Totals row */}
+                    {/* Totals */}
                     <tfoot>
-                      <tr className="pa-print-totals border-t-2 border-gray-300 dark:border-neutral-700 bg-gray-100/80 dark:bg-neutral-900/60">
+                      <tr className="ra-print-totals border-t-2 border-gray-300 dark:border-neutral-700 bg-gray-100/80 dark:bg-neutral-900/60">
                         <td className="px-3 py-3" />
                         <td className="px-3 py-3 text-xs font-black text-gray-900 dark:text-white uppercase tracking-wide">
                           Total
                           <span className="ml-2 font-normal text-[10px] text-gray-400 dark:text-neutral-600 normal-case tracking-normal">
-                            {suppliers.length} {suppliers.length === 1 ? "party" : "parties"}
+                            {customers.length} {customers.length === 1 ? "party" : "parties"}
                           </span>
                         </td>
-                        {["openingPayable", "purchases", "cashPaid", "chequeIssued"].map(
-                          (k) => (
-                            <td
-                              key={k}
-                              className="px-3 py-3 text-right tabular-nums font-mono text-[11.5px] font-bold text-gray-800 dark:text-neutral-200"
-                            >
-                              {fmtCell(totals[k])}
-                            </td>
-                          ),
-                        )}
-                        <td className="px-3 py-3 text-right tabular-nums font-mono text-[12px] font-black text-red-600 dark:text-red-400">
-                          {fmtCell(totals.payable)}
+                        {["openingRec", "activity", "cashRec", "bankRec"].map((k) => (
+                          <td
+                            key={k}
+                            className="px-3 py-3 text-right tabular-nums font-mono text-[11.5px] font-bold text-gray-800 dark:text-neutral-200"
+                          >
+                            {fmtCell(totals[k])}
+                          </td>
+                        ))}
+                        <td className="px-3 py-3 text-right tabular-nums font-mono text-[12px] font-black text-emerald-600 dark:text-emerald-400">
+                          {fmtCell(totals.receivable)}
                         </td>
                         <td className="no-print" />
                       </tr>

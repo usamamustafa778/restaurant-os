@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useState } from "react";
-import { Gift, Wrench, Smartphone, DoorOpen } from "lucide-react";
 import Head from "next/head";
 import Link from "next/link";
 import { FAQ_ITEMS } from "../lib/landingPricingData";
@@ -134,6 +133,18 @@ export default function Home() {
   const [hasManualCountry, setHasManualCountry] = useState(false);
   const [showAllFeatures, setShowAllFeatures] = useState(false);
 
+  const [calcOrders, setCalcOrders] = useState(180);
+  const [calcAvg, setCalcAvg] = useState(905);
+  const [calcSystem, setCalcSystem] = useState("whatsapp");
+
+  const calcDailyRev = (Number(calcOrders) || 0) * (Number(calcAvg) || 0);
+  const calcMonthlyRev = calcDailyRev * 30;
+  const LOSS_RATES = { whatsapp: 0.2, basic: 0.12, multi: 0.15 };
+  const calcMonthlyLoss = calcMonthlyRev * (LOSS_RATES[calcSystem] ?? 0.2);
+  const calcPayoffX =
+    calcMonthlyLoss > 0 ? (calcMonthlyLoss / 10500).toFixed(1) : "0.0";
+  const fmtRs = (n) => "Rs " + Math.round(n).toLocaleString("en-PK");
+
   useEffect(() => {
     if (hasManualCountry) return;
 
@@ -174,7 +185,8 @@ export default function Home() {
   const getPrice = (plan, mode = "daily") => {
     const p = PLAN_DEFINITIONS[plan];
     if (!p || p.custom) return "Custom pricing";
-    if (mode === "daily") return `${formatMoney(country, p.daily[country], true)}/day`;
+    if (mode === "daily")
+      return `${formatMoney(country, p.daily[country], true)}/day`;
     return `~${formatMoney(country, p.monthlyApprox[country])}/month`;
   };
 
@@ -381,7 +393,7 @@ export default function Home() {
           <div className="hero-inner">
             <div className="hero-left">
               <div className="hero-label fade-up">
-                Restaurant OS · Fast food
+                The Future of Restaurant Sales is Digital
               </div>
               <h1 className="fade-up delay-1">
                 Stop losing
@@ -515,20 +527,28 @@ export default function Home() {
         <div className="stats-strip">
           <div className="stats-strip-inner">
             <div className="strip-stat">
-              <div className="strip-num">3<span> mo</span></div>
-              <div className="strip-desc">Free trial</div>
+              <div className="strip-num">
+                Rs <span>179,000</span>
+              </div>
+              <div className="strip-desc">tracked in a single day</div>
             </div>
             <div className="strip-stat">
-              <div className="strip-num">1<span> day</span></div>
-              <div className="strip-desc">To go live</div>
+              <div className="strip-num">
+                <span>189</span>
+              </div>
+              <div className="strip-desc">orders managed in one day</div>
             </div>
             <div className="strip-stat">
-              <div className="strip-num">Rs <span>0</span></div>
-              <div className="strip-desc">Hardware needed</div>
+              <div className="strip-num">
+                Rs <span>0</span>
+              </div>
+              <div className="strip-desc">hardware required</div>
             </div>
             <div className="strip-stat">
-              <div className="strip-num">∞</div>
-              <div className="strip-desc">No lock-in</div>
+              <div className="strip-num">
+                1<span> day</span>
+              </div>
+              <div className="strip-desc">to go fully live</div>
             </div>
           </div>
         </div>
@@ -701,6 +721,67 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="feat-cards-section">
+          <div className="section-inner">
+            <div className="feat-cards-grid">
+              <div className="feat-card">
+                <div className="fc-icon">📺</div>
+                <div className="fc-title">Kitchen Display System (KDS)</div>
+                <div className="fc-desc">
+                  Reduce missed orders during rush hour. Every order appears on
+                  the kitchen screen the moment it&apos;s placed — no paper
+                  slip, no shouting, no wrong items going out.
+                </div>
+              </div>
+              <div className="feat-card">
+                <div className="fc-icon">🛵</div>
+                <div className="fc-title">Riders app + live tracking</div>
+                <div className="fc-desc">
+                  Know exactly what every rider collected at end of day. Zero
+                  cash disputes. Zero missing money. Every delivery logged,
+                  every rupee accounted for.
+                </div>
+              </div>
+              <div className="feat-card">
+                <div className="fc-icon">📦</div>
+                <div className="fc-title">Inventory management</div>
+                <div className="fc-desc">
+                  Stop losing money to stock surprises. Your inventory updates
+                  with every sale — so you never run out of chicken on a Friday
+                  night again.
+                </div>
+              </div>
+              <div className="feat-card">
+                <div className="fc-icon">👥</div>
+                <div className="fc-title">Staff scheduling &amp; roles</div>
+                <div className="fc-desc">
+                  Every team member sees only what they need. Cashier, waiter,
+                  kitchen, rider, manager — each with their own screen. No
+                  confusion, no overlap, no security gaps.
+                </div>
+              </div>
+              <div className="feat-card">
+                <div className="fc-icon">🌐</div>
+                <div className="fc-title">Restaurant website + CMS</div>
+                <div className="fc-desc">
+                  Your own restaurant website with online ordering — built in,
+                  no developer needed. Take direct orders without paying
+                  Foodpanda commission on every sale.
+                </div>
+              </div>
+              <div className="feat-card">
+                <div className="fc-icon">📈</div>
+                <div className="fc-title">Advanced analytics &amp; reports</div>
+                <div className="fc-desc">
+                  Know what you made, what you sold, and what you wasted —
+                  before you go to sleep. Daily reports, top items, payment
+                  breakdown, and rider performance in one view.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="hiw-section" id="how">
           <div className="section-inner">
             <div className="section-label">Setup</div>
@@ -748,6 +829,106 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="calc-section">
+          <div className="section-inner">
+            <div className="section-label">Revenue calculator</div>
+            <h2 className="section-title">
+              How much is your restaurant
+              <br />
+              <span className="orange">losing right now?</span>
+            </h2>
+            <p className="section-sub">
+              Most restaurants lose 15–25% of potential revenue every day.
+              Calculate yours.
+            </p>
+            <div className="calc-card">
+              <div className="calc-left">
+                <div className="calc-field">
+                  <label className="calc-label">Daily orders</label>
+                  <input
+                    type="number"
+                    className="calc-input"
+                    placeholder="180"
+                    value={calcOrders}
+                    onChange={(e) => setCalcOrders(e.target.value)}
+                    min="0"
+                  />
+                </div>
+                <div className="calc-field">
+                  <label className="calc-label">Average order value (Rs)</label>
+                  <input
+                    type="number"
+                    className="calc-input"
+                    placeholder="905"
+                    value={calcAvg}
+                    onChange={(e) => setCalcAvg(e.target.value)}
+                    min="0"
+                  />
+                </div>
+                <div className="calc-field">
+                  <label className="calc-label">
+                    How do you manage orders?
+                  </label>
+                  <select
+                    className="calc-input calc-select"
+                    value={calcSystem}
+                    onChange={(e) => setCalcSystem(e.target.value)}
+                  >
+                    <option value="whatsapp">WhatsApp + paper</option>
+                    <option value="basic">Basic POS only</option>
+                    <option value="multi">Multiple disconnected systems</option>
+                  </select>
+                </div>
+              </div>
+              <div className="calc-right">
+                <div className="calc-results-grid">
+                  <div className="calc-result-card">
+                    <div className="cr-label">Estimated daily revenue</div>
+                    <div className="cr-value cr-orange">
+                      {fmtRs(calcDailyRev)}
+                    </div>
+                  </div>
+                  <div className="calc-result-card">
+                    <div className="cr-label">Estimated monthly revenue</div>
+                    <div className="cr-value cr-white">
+                      {fmtRs(calcMonthlyRev)}
+                    </div>
+                  </div>
+                  <div className="calc-result-card">
+                    <div className="cr-label">Estimated monthly loss</div>
+                    <div className="cr-value cr-red">
+                      {fmtRs(calcMonthlyLoss)}
+                    </div>
+                  </div>
+                  <div className="calc-result-card">
+                    <div className="cr-label">EatsDesk cost vs loss</div>
+                    <div className="cr-payoff-detail">
+                      <span>
+                        EatsDesk Growth plan costs{" "}
+                        <strong>Rs 10,500/month</strong>
+                      </span>
+                      <span>
+                        Your estimated loss:{" "}
+                        <strong>{fmtRs(calcMonthlyLoss)}/month</strong>
+                      </span>
+                      <span className="cr-payoff-bold">
+                        EatsDesk pays for itself{" "}
+                        <span className="cr-orange">{calcPayoffX}×</span> over
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <Link
+                  href="/signup"
+                  className="btn btn-primary-dark calc-cta-btn"
+                >
+                  Start free trial — recover your revenue →
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="pricing-section" id="pricing">
           <div className="section-inner">
             <div className="section-label">Simple launch pricing</div>
@@ -756,9 +937,7 @@ export default function Home() {
               <br />
               <span className="orange">from {getPrice("growth", "daily")}</span>
             </h2>
-            <p className="section-sub">
-              {PRICING_COPY.subheadline}
-            </p>
+            <p className="section-sub">{PRICING_COPY.subheadline}</p>
 
             <div
               className="pricing-billing-wrap"
@@ -801,12 +980,20 @@ export default function Home() {
               <div className="price-card">
                 <div className="pc-name">{PLAN_DEFINITIONS.starter.name}</div>
                 <p className="pc-tagline">{PLAN_DEFINITIONS.starter.target}</p>
-                <div className="pc-price">{getPrice("starter", billingMode)}</div>
-                <div className="pc-equiv">
-                  {billingMode === "daily" ? getPrice("starter", "monthly") : "30 day equivalent shown above"}
+                <div className="pc-price">
+                  {getPrice("starter", billingMode)}
                 </div>
-                <p className="pc-year-note">or Rs 45,000/year (save 2 months)</p>
-                <Link href="/signup" className="pc-cta">Start free trial</Link>
+                <div className="pc-equiv">
+                  {billingMode === "daily"
+                    ? getPrice("starter", "monthly")
+                    : "30 day equivalent shown above"}
+                </div>
+                <p className="pc-year-note">
+                  or Rs 45,000/year (save 2 months)
+                </p>
+                <Link href="/signup" className="pc-cta">
+                  Start free trial
+                </Link>
                 <ul className="pc-features">
                   {[
                     "Full POS system",
@@ -816,7 +1003,10 @@ export default function Home() {
                     "Free website subdomain",
                     "WhatsApp support + free setup",
                   ].map((f) => (
-                    <li key={f} className="pc-feat yes"><span className="dot">✓</span>{f}</li>
+                    <li key={f} className="pc-feat yes">
+                      <span className="dot">✓</span>
+                      {f}
+                    </li>
                   ))}
                 </ul>
                 <p className="pc-feature-link">
@@ -827,17 +1017,33 @@ export default function Home() {
               <div className="price-card featured">
                 <div className="pc-name">{PLAN_DEFINITIONS.growth.name}</div>
                 <p className="pc-tagline">{PLAN_DEFINITIONS.growth.target}</p>
-                <div className="pc-price">{getPrice("growth", billingMode)}</div>
-                <div className="pc-equiv">
-                  {billingMode === "daily" ? getPrice("growth", "monthly") : "30 day equivalent shown above"}
+                <div className="pc-price">
+                  {getPrice("growth", billingMode)}
                 </div>
-                <p className="pc-year-note">or Rs 75,000/year (save 2 months)</p>
-                <div className="pc-lock-tag">🔒 Launch pricing — locked forever</div>
-                <p className="pc-normal-price">Normally Rs 350/day after launch</p>
-                <p className="pc-save-line">
-                  Save {country === "PK" ? "Rs 11,500" : formatMoney(country, valueSave)} /month vs buying separately
+                <div className="pc-equiv">
+                  {billingMode === "daily"
+                    ? getPrice("growth", "monthly")
+                    : "30 day equivalent shown above"}
+                </div>
+                <p className="pc-year-note">
+                  or Rs 75,000/year (save 2 months)
                 </p>
-                <Link href="/signup" className="pc-cta primary">Start free trial</Link>
+                <div className="pc-lock-tag">
+                  🔒 Launch pricing — locked forever
+                </div>
+                <p className="pc-normal-price">
+                  Normally Rs 350/day after launch
+                </p>
+                <p className="pc-save-line">
+                  Save{" "}
+                  {country === "PK"
+                    ? "Rs 11,500"
+                    : formatMoney(country, valueSave)}{" "}
+                  /month vs buying separately
+                </p>
+                <Link href="/signup" className="pc-cta primary">
+                  Start free trial
+                </Link>
                 <ul className="pc-features">
                   {[
                     "Everything in Starter",
@@ -847,7 +1053,10 @@ export default function Home() {
                     "Restaurant website + online ordering",
                     "Tables, reservations & staff roles",
                   ].map((f) => (
-                    <li key={f} className="pc-feat yes"><span className="dot">✓</span>{f}</li>
+                    <li key={f} className="pc-feat yes">
+                      <span className="dot">✓</span>
+                      {f}
+                    </li>
                   ))}
                 </ul>
                 <p className="pc-feature-link">
@@ -856,11 +1065,22 @@ export default function Home() {
               </div>
 
               <div className="price-card price-card--enterprise">
-                <div className="pc-name">{PLAN_DEFINITIONS.enterprise.name}</div>
-                <p className="pc-tagline">{PLAN_DEFINITIONS.enterprise.target}</p>
+                <div className="pc-name">
+                  {PLAN_DEFINITIONS.enterprise.name}
+                </div>
+                <p className="pc-tagline">
+                  {PLAN_DEFINITIONS.enterprise.target}
+                </p>
                 <div className="pc-price">Custom pricing</div>
-                <p className="pc-year-note">Tailored to your number of branches</p>
-                <a href={ENTERPRISE_WHATSAPP_URL} className="pc-cta" target="_blank" rel="noopener noreferrer">
+                <p className="pc-year-note">
+                  Tailored to your number of branches
+                </p>
+                <a
+                  href={ENTERPRISE_WHATSAPP_URL}
+                  className="pc-cta"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   Contact us →
                 </a>
                 <ul className="pc-features">
@@ -872,7 +1092,10 @@ export default function Home() {
                     "Dedicated account manager",
                     "Priority support + SLA guarantee",
                   ].map((f) => (
-                    <li key={f} className="pc-feat yes"><span className="dot">✓</span>{f}</li>
+                    <li key={f} className="pc-feat yes">
+                      <span className="dot">✓</span>
+                      {f}
+                    </li>
                   ))}
                 </ul>
                 <p className="pc-feature-link">
@@ -881,13 +1104,15 @@ export default function Home() {
               </div>
             </div>
             <p className="pricing-detail-sub" style={{ marginTop: 16 }}>
-              Pay yearly and get 2 months free — locked in at launch pricing forever.
+              Pay yearly and get 2 months free — locked in at launch pricing
+              forever.
             </p>
-
 
             <div id="compare">
               <h3 className="pricing-detail-title">Full feature comparison</h3>
-              <p className="pricing-detail-sub">Exact plan-level feature breakdown.</p>
+              <p className="pricing-detail-sub">
+                Exact plan-level feature breakdown.
+              </p>
               <div
                 style={{
                   maxHeight: showAllFeatures ? "5000px" : "620px",
@@ -895,58 +1120,87 @@ export default function Home() {
                   transition: "max-height 420ms ease",
                 }}
               >
-              <div className="cmp-wrap">
-                <table className="cmp-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "42%" }}>Feature</th>
-                      <th className="plan-col" style={{ width: "19%" }}>
-                        Starter
-                        <br /><span style={{ fontSize: 10, fontWeight: 400 }}>{getPrice("starter", "daily")}</span>
-                      </th>
-                      <th
-                        className="plan-col featured-col"
-                        style={{ width: "19%" }}
-                      >
-                        Growth
-                        <br /><span style={{ fontSize: 10, fontWeight: 400 }}>{getPrice("growth", "daily")}</span>
-                      </th>
-                      <th className="plan-col" style={{ width: "19%" }}>
-                        Enterprise
-                        <br /><span style={{ fontSize: 10, fontWeight: 400 }}>Custom</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {showAllFeatures
-                      ? FEATURE_COMPARISON_GROUPS.map((section) => (
-                          <Fragment key={section.title}>
-                            <tr className="cmp-cat">
-                              <td colSpan={4}>{section.title}</td>
-                            </tr>
-                            {section.rows.map((row) => (
-                              <tr key={`${section.title}-${row[0]}`}>
-                                <td><div className="cmp-feat-name">{row[0]}</div></td>
-                                <td className="center"><CmpCell value={row[1]} col="starter" /></td>
-                                <td className="center"><CmpCell value={row[2]} col="growth" /></td>
-                                <td className="center"><CmpCell value={row[3]} col="pro" /></td>
+                <div className="cmp-wrap">
+                  <table className="cmp-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "42%" }}>Feature</th>
+                        <th className="plan-col" style={{ width: "19%" }}>
+                          Starter
+                          <br />
+                          <span style={{ fontSize: 10, fontWeight: 400 }}>
+                            {getPrice("starter", "daily")}
+                          </span>
+                        </th>
+                        <th
+                          className="plan-col featured-col"
+                          style={{ width: "19%" }}
+                        >
+                          Growth
+                          <br />
+                          <span style={{ fontSize: 10, fontWeight: 400 }}>
+                            {getPrice("growth", "daily")}
+                          </span>
+                        </th>
+                        <th className="plan-col" style={{ width: "19%" }}>
+                          Enterprise
+                          <br />
+                          <span style={{ fontSize: 10, fontWeight: 400 }}>
+                            Custom
+                          </span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {showAllFeatures
+                        ? FEATURE_COMPARISON_GROUPS.map((section) => (
+                            <Fragment key={section.title}>
+                              <tr className="cmp-cat">
+                                <td colSpan={4}>{section.title}</td>
                               </tr>
-                            ))}
-                          </Fragment>
-                        ))
-                      : compactComparisonRows.map((match) => {
-                          return (
-                            <tr key={match[0]}>
-                              <td><div className="cmp-feat-name">{match[0]}</div></td>
-                              <td className="center"><CmpCell value={match[1]} col="starter" /></td>
-                              <td className="center"><CmpCell value={match[2]} col="growth" /></td>
-                              <td className="center"><CmpCell value={match[3]} col="pro" /></td>
-                            </tr>
-                          );
-                        })}
-                  </tbody>
-                </table>
-              </div>
+                              {section.rows.map((row) => (
+                                <tr key={`${section.title}-${row[0]}`}>
+                                  <td>
+                                    <div className="cmp-feat-name">
+                                      {row[0]}
+                                    </div>
+                                  </td>
+                                  <td className="center">
+                                    <CmpCell value={row[1]} col="starter" />
+                                  </td>
+                                  <td className="center">
+                                    <CmpCell value={row[2]} col="growth" />
+                                  </td>
+                                  <td className="center">
+                                    <CmpCell value={row[3]} col="pro" />
+                                  </td>
+                                </tr>
+                              ))}
+                            </Fragment>
+                          ))
+                        : compactComparisonRows.map((match) => {
+                            return (
+                              <tr key={match[0]}>
+                                <td>
+                                  <div className="cmp-feat-name">
+                                    {match[0]}
+                                  </div>
+                                </td>
+                                <td className="center">
+                                  <CmpCell value={match[1]} col="starter" />
+                                </td>
+                                <td className="center">
+                                  <CmpCell value={match[2]} col="growth" />
+                                </td>
+                                <td className="center">
+                                  <CmpCell value={match[3]} col="pro" />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
               <div style={{ marginTop: 20, textAlign: "center" }}>
                 <button
@@ -982,7 +1236,8 @@ export default function Home() {
               <div className="ea-left">
                 <div className="section-label">Early Access</div>
                 <h2 className="section-title">
-                  Be one of our<br />
+                  Be one of our
+                  <br />
                   first <span className="orange">restaurants.</span>
                 </h2>
                 <div className="ea-spots-row">
@@ -992,12 +1247,13 @@ export default function Home() {
               </div>
               <div className="ea-right">
                 <p className="section-sub">
-                  We&apos;re in early access. A small number of restaurants are already running on EatsDesk.
-                  We work closely with each one — setting up their system, training their staff, and
-                  improving the product based on their feedback.
+                  The first 20 restaurants that sign up get launch pricing
+                  locked forever — even when we raise prices for new clients.
                 </p>
                 <p className="section-sub ea-detail-sub">
-                  Join the first 20 and lock in launch pricing forever — plus direct access to our founding team.
+                  We work closely with each restaurant — setting up their
+                  system, training their staff, and improving the product based
+                  on their feedback.
                 </p>
                 <div className="ea-actions">
                   <a
@@ -1008,9 +1264,7 @@ export default function Home() {
                   >
                     Apply for early access →
                   </a>
-                  <p className="hero-note" style={{ marginTop: 12 }}>
-                    Pricing locked forever · Direct founder access
-                  </p>
+                  <p className="ea-spots-remaining">13 spots remaining</p>
                 </div>
               </div>
             </div>
@@ -1021,33 +1275,46 @@ export default function Home() {
           <div className="section-inner">
             <div className="section-label">Risk free</div>
             <h2 className="section-title">
-              Zero risk.<br />
+              Zero risk.
+              <br />
               <span className="orange">Seriously.</span>
             </h2>
-            <p className="section-sub">
-              Nothing to install, nothing to lose. You&apos;re live in one day or we set it up for you.
-            </p>
-            <div className="guarantee-grid">
+            <p className="section-sub">Every reason to say no — eliminated.</p>
+            <div className="guarantee-grid guarantee-grid--2col">
               <div className="guarantee-item">
-                  <span className="gi-icon"><Gift size={22} strokeWidth={1.75} /></span>
-                  <div className="gi-title">3 months free</div>
-                  <div className="gi-desc">No credit card. No commitment. Full access from day one.</div>
+                <span className="gi-icon gi-icon--emoji">🗓️</span>
+                <div className="gi-title">30 days free</div>
+                <div className="gi-desc">
+                  Full access to every feature for 30 days. No credit card. No
+                  commitment. If you don&apos;t love it, you walk away owing
+                  nothing.
                 </div>
-                <div className="guarantee-item">
-                  <span className="gi-icon"><Wrench size={22} strokeWidth={1.75} /></span>
-                  <div className="gi-title">We set it up</div>
-                  <div className="gi-desc">Menu, staff, delivery zones. Done by us, same day.</div>
+              </div>
+              <div className="guarantee-item">
+                <span className="gi-icon gi-icon--emoji">⚡</span>
+                <div className="gi-title">We set it up</div>
+                <div className="gi-desc">
+                  We add your menu, configure your team, and get your system
+                  ready. You take your first order the same day we set it up.
                 </div>
-                <div className="guarantee-item">
-                  <span className="gi-icon"><Smartphone size={22} strokeWidth={1.75} /></span>
-                  <div className="gi-title">No hardware</div>
-                  <div className="gi-desc">Runs on any phone, tablet, or laptop you already own.</div>
+              </div>
+              <div className="guarantee-item">
+                <span className="gi-icon gi-icon--emoji">📱</span>
+                <div className="gi-title">No hardware</div>
+                <div className="gi-desc">
+                  EatsDesk runs on any phone, tablet, or laptop you already own.
+                  No expensive POS terminals. No installation. Just a browser.
                 </div>
-                <div className="guarantee-item">
-                  <span className="gi-icon"><DoorOpen size={22} strokeWidth={1.75} /></span>
-                  <div className="gi-title">Cancel anytime</div>
-                  <div className="gi-desc">No contracts, no lock-in. Leave whenever you want.</div>
+              </div>
+              <div className="guarantee-item">
+                <span className="gi-icon gi-icon--emoji">🔓</span>
+                <div className="gi-title">Cancel anytime</div>
+                <div className="gi-desc">
+                  Month-to-month. No annual contracts forced on you. Cancel from
+                  your dashboard in one click. Your data is always yours to
+                  export.
                 </div>
+              </div>
             </div>
           </div>
         </section>
@@ -1071,7 +1338,11 @@ export default function Home() {
               className="btn btn-ghost"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ marginLeft: 10, borderColor: "rgba(255,255,255,0.45)", color: "#fff" }}
+              style={{
+                marginLeft: 10,
+                borderColor: "rgba(255,255,255,0.45)",
+                color: "#fff",
+              }}
             >
               Book a Demo
             </a>

@@ -106,34 +106,57 @@ function InlineEdit({ account, onSave, onCancel }) {
 
 function AccountRow({ account, onToggleActive, onEditName, onDelete, isEditing, onStartEdit, onCancelEdit }) {
   const depth = account.depth || 0;
+  const isGroup = depth === 0;     // 3-digit group account
+  const isChild = depth === 1;     // 5-digit leaf under a group
+
+  // Row background: groups get a very subtle tint to visually distinguish them
+  const rowBg = isGroup
+    ? "bg-gray-50/70 dark:bg-neutral-900/50"
+    : "bg-white dark:bg-neutral-950";
 
   return (
-    <tr className={`group border-b border-gray-100 dark:border-neutral-800/60 transition-colors ${
-      account.isActive
-        ? "hover:bg-gray-50 dark:hover:bg-neutral-800/20"
-        : "opacity-40 hover:opacity-70 hover:bg-gray-50 dark:hover:bg-neutral-800/20"
+    <tr className={`group border-b border-gray-100 dark:border-neutral-800/60 transition-colors ${rowBg} ${
+      account.isActive ? "hover:bg-orange-50/30 dark:hover:bg-orange-500/5" : "opacity-40"
     }`}>
       {/* Code */}
-      <td className="pl-4 pr-3 py-2.5 w-24 whitespace-nowrap">
-        <span className="font-mono text-[11px] text-gray-400 dark:text-neutral-500 tabular-nums tracking-wide">
+      <td className="pl-4 pr-3 py-2 w-24 whitespace-nowrap">
+        <span className={`font-mono tabular-nums tracking-wide ${
+          isGroup
+            ? "text-[11px] text-gray-600 dark:text-neutral-400 font-semibold"
+            : "text-[11px] text-gray-400 dark:text-neutral-600"
+        }`}>
           {account.code}
         </span>
       </td>
 
       {/* Name */}
-      <td className="px-3 py-2.5">
-        <div className="flex items-center min-w-0" style={{ paddingLeft: depth * 20 }}>
-          {depth > 0 && (
+      <td className="px-3 py-2">
+        <div
+          className="flex items-center min-w-0"
+          style={{ paddingLeft: isGroup ? 0 : (depth - 1) * 20 + 16 }}
+        >
+          {/* Depth indicator */}
+          {isChild && (
             <span className="mr-2 flex-shrink-0 text-gray-300 dark:text-neutral-700 text-xs select-none">└</span>
           )}
+          {depth >= 2 && (
+            <span className="mr-2 flex-shrink-0 text-gray-200 dark:text-neutral-800 text-xs select-none">└─</span>
+          )}
+
           {isEditing ? (
             <InlineEdit account={account} onSave={(name) => onEditName(account._id, name)} onCancel={onCancelEdit} />
           ) : (
             <div className="flex items-center gap-2 min-w-0">
-              <span className={`text-sm truncate ${
-                account.isActive
-                  ? `text-gray-900 dark:text-white ${depth === 0 ? "font-medium" : ""}`
-                  : "text-gray-400 dark:text-neutral-500 line-through"
+              {/* Left accent bar for group accounts */}
+              {isGroup && (
+                <span className="flex-shrink-0 w-0.5 h-3.5 rounded-full bg-orange-400/60 dark:bg-orange-500/40 mr-1" />
+              )}
+              <span className={`truncate ${
+                !account.isActive
+                  ? "text-gray-400 dark:text-neutral-600 line-through text-sm"
+                  : isGroup
+                    ? "text-sm font-semibold text-gray-800 dark:text-neutral-200"
+                    : "text-sm text-gray-700 dark:text-neutral-300"
               }`}>
                 {account.name}
               </span>
@@ -149,7 +172,7 @@ function AccountRow({ account, onToggleActive, onEditName, onDelete, isEditing, 
       </td>
 
       {/* Status */}
-      <td className="px-3 py-2.5 w-20 text-center">
+      <td className="px-3 py-2 w-20 text-center">
         {!account.isActive && (
           <span className="text-[10px] font-medium text-gray-400 dark:text-neutral-600 bg-gray-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded">
             Inactive
@@ -158,7 +181,7 @@ function AccountRow({ account, onToggleActive, onEditName, onDelete, isEditing, 
       </td>
 
       {/* Actions */}
-      <td className="pl-3 pr-4 py-2.5 w-16">
+      <td className="pl-3 pr-4 py-2 w-16">
         <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button type="button" onClick={() => onToggleActive(account)}
             title={account.isActive ? "Deactivate" : "Activate"}
@@ -228,12 +251,77 @@ function Section({ section, rows, onToggleActive, onEditName, onDelete, editingI
 const inputCls = "w-full bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-neutral-600 focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-400 transition-colors";
 const labelCls = "block text-xs font-medium text-gray-500 dark:text-neutral-400 mb-1.5";
 
+// Type → first-digit prefix for top-level code generation
+const TYPE_CODE_PREFIX = {
+  capital:   "1",
+  liability: "2",
+  asset:     "3",
+  revenue:   "4",
+  cogs:      "5",
+  expense:   "6",
+};
+
+function generateNextCode(accounts, type, parentId) {
+  if (parentId) {
+    // Child code: find siblings (same parentId), take max numeric code + 1
+    const parent = accounts.find((a) => a._id === parentId);
+    if (!parent) return "";
+    const siblings = accounts.filter((a) => String(a.parentId) === String(parentId));
+    if (siblings.length === 0) {
+      // First child: append "01" to parent code
+      return parent.code + "01";
+    }
+    const max = Math.max(...siblings.map((a) => parseInt(a.code, 10)).filter((n) => !isNaN(n)));
+    return isFinite(max) ? String(max + 1) : parent.code + "01";
+  } else {
+    // Top-level: find highest code starting with the type prefix
+    const prefix = TYPE_CODE_PREFIX[type];
+    if (!prefix) return "";
+    const topLevel = accounts.filter((a) => a.type === type && !a.parentId);
+    const codes = topLevel
+      .map((a) => parseInt(a.code, 10))
+      .filter((n) => !isNaN(n) && String(n).startsWith(prefix));
+    if (codes.length === 0) return prefix + "01";
+    const max = Math.max(...codes);
+    return String(max + 1);
+  }
+}
+
 function AddAccountModal({ accounts, onClose, onCreated }) {
   const [form, setForm] = useState({ code: "", name: "", type: "", parentId: "" });
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [codeIsAuto, setCodeIsAuto] = useState(false);
 
   const parentOptions = form.type ? accounts.filter((a) => a.type === form.type) : [];
+
+  // Auto-generate code whenever type or parentId changes
+  useEffect(() => {
+    if (!form.type) {
+      setForm((f) => ({ ...f, code: "" }));
+      setCodeIsAuto(false);
+      return;
+    }
+    const generated = generateNextCode(accounts, form.type, form.parentId);
+    if (generated) {
+      setForm((f) => ({ ...f, code: generated }));
+      setCodeIsAuto(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.type, form.parentId]);
+
+  function handleCodeChange(e) {
+    setForm((f) => ({ ...f, code: e.target.value }));
+    setCodeIsAuto(false); // user manually editing — remove Auto badge
+  }
+
+  function handleTypeChange(e) {
+    setForm((f) => ({ ...f, type: e.target.value, parentId: "" }));
+  }
+
+  function handleParentChange(e) {
+    setForm((f) => ({ ...f, parentId: e.target.value }));
+  }
 
   function validate() {
     const e = {};
@@ -270,38 +358,50 @@ function AddAccountModal({ accounts, onClose, onCreated }) {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Code <span className="text-red-500">*</span></label>
-              <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                placeholder="e.g. 30401" className={`${inputCls} font-mono ${errors.code ? "border-red-400" : ""}`} />
-              {errors.code && <p className="text-red-500 text-xs mt-1">{errors.code}</p>}
-            </div>
-            <div>
-              <label className={labelCls}>Type <span className="text-red-500">*</span></label>
-              <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value, parentId: "" }))}
-                className={`${inputCls} ${errors.type ? "border-red-400" : ""}`}>
-                <option value="">Select…</option>
-                {VALID_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-              </select>
-              {errors.type && <p className="text-red-500 text-xs mt-1">{errors.type}</p>}
-            </div>
-          </div>
+          {/* Type first so parent options appear and code can generate */}
           <div>
-            <label className={labelCls}>Account Name <span className="text-red-500">*</span></label>
-            <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="e.g. Petty Cash 2" className={`${inputCls} ${errors.name ? "border-red-400" : ""}`} />
-            {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+            <label className={labelCls}>Type <span className="text-red-500">*</span></label>
+            <select value={form.type} onChange={handleTypeChange}
+              className={`${inputCls} ${errors.type ? "border-red-400" : ""}`}>
+              <option value="">Select…</option>
+              {VALID_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+            </select>
+            {errors.type && <p className="text-red-500 text-xs mt-1">{errors.type}</p>}
           </div>
           {parentOptions.length > 0 && (
             <div>
               <label className={labelCls}>Parent Account <span className="text-gray-400 dark:text-neutral-600">(optional)</span></label>
-              <select value={form.parentId} onChange={(e) => setForm((f) => ({ ...f, parentId: e.target.value }))} className={inputCls}>
+              <select value={form.parentId} onChange={handleParentChange} className={inputCls}>
                 <option value="">None — top-level</option>
                 {parentOptions.map((a) => <option key={a._id} value={a._id}>{a.code} – {a.name}</option>)}
               </select>
             </div>
           )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={`${labelCls} flex items-center gap-1.5`}>
+                Code <span className="text-red-500">*</span>
+                {codeIsAuto && (
+                  <span className="text-[10px] font-semibold text-orange-500 bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 px-1.5 py-0.5 rounded-md leading-none">
+                    Auto
+                  </span>
+                )}
+              </label>
+              <input
+                value={form.code}
+                onChange={handleCodeChange}
+                placeholder="e.g. 30401"
+                className={`${inputCls} font-mono ${errors.code ? "border-red-400" : ""} ${codeIsAuto ? "border-orange-300 dark:border-orange-500/40" : ""}`}
+              />
+              {errors.code && <p className="text-red-500 text-xs mt-1">{errors.code}</p>}
+            </div>
+            <div>
+              <label className={labelCls}>Account Name <span className="text-red-500">*</span></label>
+              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Petty Cash 2" className={`${inputCls} ${errors.name ? "border-red-400" : ""}`} />
+              {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+            </div>
+          </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm text-gray-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
@@ -343,24 +443,44 @@ function EmptyState({ onSetup, loading }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ChartOfAccountsPage() {
-  const [accounts, setAccounts]         = useState([]);
-  const [isEmpty, setIsEmpty]           = useState(false);
-  const [loading, setLoading]           = useState(true);
-  const [setupLoading, setSetupLoading] = useState(false);
-  const [search, setSearch]             = useState("");
-  const [typeFilter, setTypeFilter]     = useState("");
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingId, setEditingId]       = useState(null);
+  const [accounts, setAccounts]           = useState([]);
+  const [isEmpty, setIsEmpty]             = useState(false);
+  const [loading, setLoading]             = useState(true);
+  const [setupLoading, setSetupLoading]   = useState(false);
+  const [fixNamesLoading, setFixNamesLoading] = useState(false);
+  const [search, setSearch]               = useState("");
+  const [typeFilter, setTypeFilter]       = useState("");
+  const [showAddModal, setShowAddModal]   = useState(false);
+  const [editingId, setEditingId]         = useState(null);
 
-  async function load() {
-    setLoading(true);
+  async function load({ silent = false } = {}) {
+    if (!silent) setLoading(true);
     try {
       const data = await apiFetch("/api/accounting/accounts");
-      setAccounts(data.accounts || []);
+      const accs = data.accounts || [];
+
+      // Auto-migrate: if any 5-digit account still has no parentId,
+      // call the migration endpoint once and re-fetch.
+      const needsMigration = accs.some((a) => a.code.length > 3 && !a.parentId);
+      if (needsMigration) {
+        try {
+          await apiFetch("/api/accounting/accounts/migrate-parents", { method: "POST" });
+        } catch (_) {
+          // migration errors are non-fatal — continue with what we have
+        }
+        const data2 = await apiFetch("/api/accounting/accounts");
+        setAccounts(data2.accounts || []);
+        setIsEmpty(data2.isEmpty ?? false);
+        return;
+      }
+
+      setAccounts(accs);
       setIsEmpty(data.isEmpty ?? false);
     } catch (err) {
       toast.error(err.message || "Failed to load accounts");
-    } finally { setLoading(false); }
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -402,6 +522,23 @@ export default function ChartOfAccountsPage() {
       setAccounts((prev) => prev.filter((a) => a._id !== account._id));
       toast.success("Account deleted");
     } catch (err) { toast.error(err.message || "Failed to delete account"); }
+  }
+
+  async function handleFixAccountNames() {
+    setFixNamesLoading(true);
+    try {
+      const result = await apiFetch("/api/accounting/migrate-account-names", { method: "POST" });
+      if (result.totalRenamed > 0) {
+        toast.success(`Fixed ${result.totalRenamed} account name${result.totalRenamed > 1 ? "s" : ""}`);
+        await load({ silent: true });
+      } else {
+        toast.success("Account names are already correct");
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to fix account names");
+    } finally {
+      setFixNamesLoading(false);
+    }
   }
 
   function handleCreated(account) {
@@ -446,7 +583,13 @@ export default function ChartOfAccountsPage() {
             <span className="hidden sm:block text-xs text-gray-400 dark:text-neutral-600 ml-1">
               {activeAccounts} / {totalAccounts} active
             </span>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              <button type="button" onClick={handleFixAccountNames} disabled={fixNamesLoading}
+                title="Rename stale parent account names (Cash Accounts → Cash In Hand, etc.)"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-500 dark:text-neutral-400 hover:border-orange-400 hover:text-orange-500 dark:hover:text-orange-400 transition-colors disabled:opacity-50">
+                {fixNamesLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Fix Account Names
+              </button>
               <button type="button" onClick={() => setShowAddModal(true)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-sm font-semibold text-white transition-colors shadow-sm shadow-orange-500/20">
                 <Plus className="w-4 h-4" /> Add Account

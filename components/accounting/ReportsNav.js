@@ -7,17 +7,21 @@ import {
   Wallet,
   FileText,
   Scale,
+  LayoutList,
+  ArrowDownToLine,
 } from "lucide-react";
 
 const REPORTS_PREFIX = "/dashboard/accounting/reports";
 
 const REPORT_LINKS = [
-  { key: "day-book",       href: `${REPORTS_PREFIX}/day-book`,       label: "Day Book",       shortLabel: "Day Book",  Icon: CalendarDays },
-  { key: "ledger",         href: `${REPORTS_PREFIX}/ledger`,         label: "Ledger",         shortLabel: "Ledger",    Icon: BookMarked   },
-  { key: "profit-loss",    href: `${REPORTS_PREFIX}/profit-loss`,    label: "P&L Statement",  shortLabel: "P&L",       Icon: TrendingDown },
-  { key: "cash-statement", href: `${REPORTS_PREFIX}/cash-statement`, label: "Cash Statement", shortLabel: "Cash",      Icon: Wallet       },
-  { key: "payables",       href: `${REPORTS_PREFIX}/payables`,       label: "Payables",       shortLabel: "Payables",  Icon: FileText     },
-  { key: "balance-sheet",  href: `${REPORTS_PREFIX}/balance-sheet`,  label: "Balance Sheet",  shortLabel: "BS",        Icon: Scale        },
+  { key: "day-book",       href: `${REPORTS_PREFIX}/day-book`,        label: "Day Book",       shortLabel: "Day Book",  Icon: CalendarDays },
+  { key: "ledger",         href: `${REPORTS_PREFIX}/ledger`,          label: "Ledger",         shortLabel: "Ledger",    Icon: BookMarked   },
+  { key: "profit-loss",    href: `${REPORTS_PREFIX}/profit-loss`,     label: "P&L Statement",  shortLabel: "P&L",       Icon: TrendingDown },
+  { key: "trial-balance",  href: `${REPORTS_PREFIX}/trial-balance`,   label: "Trial Balance",  shortLabel: "TB",        Icon: LayoutList   },
+  { key: "cash-statement", href: `${REPORTS_PREFIX}/cash-statement`,  label: "Cash Statement", shortLabel: "Cash",      Icon: Wallet       },
+  { key: "payables",        href: `${REPORTS_PREFIX}/payables`,        label: "Payables",       shortLabel: "Payables",  Icon: FileText       },
+  { key: "receivables",    href: `${REPORTS_PREFIX}/receivables`,     label: "Receivables",    shortLabel: "Rec",       Icon: ArrowDownToLine },
+  { key: "balance-sheet",  href: `${REPORTS_PREFIX}/balance-sheet`,   label: "Balance Sheet",  shortLabel: "BS",        Icon: Scale          },
 ];
 
 function normalizePath(p) {

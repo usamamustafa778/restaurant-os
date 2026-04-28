@@ -55,6 +55,8 @@ import {
   ShoppingCart,
   PackageCheck,
   Package,
+  LayoutList,
+  ArrowDownToLine,
 } from "lucide-react";
 import {
   getToken,
@@ -197,11 +199,31 @@ const tenantNav = [
     path: "/accounting/vouchers",
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
     children: [
-      { path: "/accounting/vouchers/cash-payment", label: "Cash Payment", icon: ArrowUpCircle },
-      { path: "/accounting/vouchers/cash-receipt", label: "Cash Receipt", icon: ArrowDownCircle },
-      { path: "/accounting/vouchers/bank-payment", label: "Bank Payment", icon: Building2 },
-      { path: "/accounting/vouchers/bank-receipt", label: "Bank Receipt", icon: Landmark },
-      { path: "/accounting/vouchers/journal", label: "Journal Voucher", icon: BookOpen },
+      {
+        path: "/accounting/vouchers/cash-payment",
+        label: "Cash Payment",
+        icon: ArrowUpCircle,
+      },
+      {
+        path: "/accounting/vouchers/cash-receipt",
+        label: "Cash Receipt",
+        icon: ArrowDownCircle,
+      },
+      {
+        path: "/accounting/vouchers/bank-payment",
+        label: "Bank Payment",
+        icon: Building2,
+      },
+      {
+        path: "/accounting/vouchers/bank-receipt",
+        label: "Bank Receipt",
+        icon: Landmark,
+      },
+      {
+        path: "/accounting/vouchers/journal",
+        label: "Journal Voucher",
+        icon: BookOpen,
+      },
       { path: "/accounting/vouchers", label: "All Vouchers", icon: List },
     ],
   },
@@ -211,12 +233,42 @@ const tenantNav = [
     path: "/accounting/reports/day-book",
     roles: ["restaurant_admin", "admin", "manager"],
     children: [
-      { path: "/accounting/reports/day-book", label: "Day Book", icon: CalendarDays },
+      {
+        path: "/accounting/reports/day-book",
+        label: "Day Book",
+        icon: CalendarDays,
+      },
       { path: "/accounting/reports/ledger", label: "Ledger", icon: BookMarked },
-      { path: "/accounting/reports/profit-loss", label: "P&L Statement", icon: TrendingDown },
-      { path: "/accounting/reports/cash-statement", label: "Cash Statement", icon: Wallet },
-      { path: "/accounting/reports/payables", label: "Payables", icon: FileText },
-      { path: "/accounting/reports/balance-sheet", label: "Balance Sheet", icon: Scale },
+      {
+        path: "/accounting/reports/profit-loss",
+        label: "P&L Statement",
+        icon: TrendingDown,
+      },
+      {
+        path: "/accounting/reports/trial-balance",
+        label: "Trial Balance",
+        icon: LayoutList,
+      },
+      {
+        path: "/accounting/reports/cash-statement",
+        label: "Cash Statement",
+        icon: Wallet,
+      },
+      {
+        path: "/accounting/reports/payables",
+        label: "Payables",
+        icon: FileText,
+      },
+      {
+        path: "/accounting/reports/receivables",
+        label: "Receivables",
+        icon: ArrowDownToLine,
+      },
+      {
+        path: "/accounting/reports/balance-sheet",
+        label: "Balance Sheet",
+        icon: Scale,
+      },
     ],
   },
   {
@@ -225,9 +277,12 @@ const tenantNav = [
     path: "/accounting/chart-of-accounts",
     roles: ["restaurant_admin", "admin", "manager"],
     children: [
-      { path: "/accounting/chart-of-accounts", label: "Chart of Accounts", icon: Network },
+      {
+        path: "/accounting/chart-of-accounts",
+        label: "Chart of Accounts",
+        icon: Network,
+      },
       { path: "/accounting/parties", label: "Parties", icon: Users },
-      { path: "/business-settings/payment-accounts", label: "Payment Accounts", icon: CreditCard },
     ],
   },
 

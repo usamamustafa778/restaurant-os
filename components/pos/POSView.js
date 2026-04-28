@@ -1658,6 +1658,7 @@ export default function POSView({
         printOrder,
       });
       setCart([]);
+      setItemNotes({});
       setCustomerName("");
       setCustomerPhone("");
       setCustomerAddress("");
@@ -2353,6 +2354,44 @@ export default function POSView({
                   Menu
                 </h2>
 
+                {/* Add qty — moved before search */}
+                <div
+                  className="inline-flex h-9 w-[120px] items-center justify-between gap-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 shrink-0"
+                  title="Sets how many of each item to add when you click it"
+                >
+                  <label
+                    htmlFor="pos-bulk-qty"
+                    className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap"
+                  >
+                    Add qty:
+                  </label>
+                  <input
+                    id="pos-bulk-qty"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={bulkAddQtyInput}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/[^\d]/g, "");
+                      setBulkAddQtyInput(
+                        digits ? String(Math.max(1, Number(digits))) : "",
+                      );
+                    }}
+                    onBlur={() => {
+                      if (!bulkAddQtyInput || Number(bulkAddQtyInput) < 1)
+                        setBulkAddQtyInput("1");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        menuSearchInputRef.current?.focus();
+                      }
+                    }}
+                    className="h-6 w-12 rounded-md border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-950 px-1.5 text-[11px] font-semibold text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    aria-label="Bulk quantity"
+                  />
+                </div>
+
                 {/* Search — same row as heading on sm+ */}
                 <div className="relative flex-1 basis-[360px] min-w-0">
                   <label htmlFor="pos-menu-search" className="sr-only">
@@ -2434,37 +2473,6 @@ export default function POSView({
                       setFocusedItemIndex(0);
                     }}
                     className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
-                  />
-                </div>
-
-                <div
-                  className="inline-flex h-9 w-[120px] items-center justify-between gap-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 shrink-0"
-                  title="Sets how many of each item to add when you click it"
-                >
-                  <label
-                    htmlFor="pos-bulk-qty"
-                    className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 whitespace-nowrap"
-                  >
-                    Add qty:
-                  </label>
-                  <input
-                    id="pos-bulk-qty"
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={bulkAddQtyInput}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/[^\d]/g, "");
-                      setBulkAddQtyInput(
-                        digits ? String(Math.max(1, Number(digits))) : "",
-                      );
-                    }}
-                    onBlur={() => {
-                      if (!bulkAddQtyInput || Number(bulkAddQtyInput) < 1)
-                        setBulkAddQtyInput("1");
-                    }}
-                    className="h-6 w-12 rounded-md border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-950 px-1.5 text-[11px] font-semibold text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                    aria-label="Bulk quantity"
                   />
                 </div>
 
