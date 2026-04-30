@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import {
   getMenu,
   getBranchMenu,
@@ -85,6 +85,18 @@ function isBranchRequiredError(msg) {
     msg.toLowerCase().includes("branchid") &&
     msg.toLowerCase().includes("required")
   );
+}
+
+const ALL_POS_ORDER_TYPES = ["DINE_IN", "TAKEAWAY", "DELIVERY"];
+
+function normalizePosAllowedOrderTypesFromApi(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [...ALL_POS_ORDER_TYPES];
+  const set = new Set();
+  for (const x of raw) {
+    if (typeof x === "string" && ALL_POS_ORDER_TYPES.includes(x)) set.add(x);
+  }
+  const arr = [...set];
+  return arr.length > 0 ? arr : [...ALL_POS_ORDER_TYPES];
 }
 
 const FALLBACK_POS_DISCOUNT_REASON_OPTIONS = [
@@ -188,6 +200,7 @@ export default function POSView({
   const menuSearchInputRef = useRef(null);
   const orderSearchInputRef = useRef(null);
   const amountReceivedInputRef = useRef(null);
+  const bulkAddQtyInputRef = useRef(null);
   const [gridCols, setGridCols] = useState(4);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -269,6 +282,14 @@ export default function POSView({
   const [posWaiterSettingsDraft, setPosWaiterSettingsDraft] = useState(true);
   const [posCustomerSettingsDraft, setPosCustomerSettingsDraft] =
     useState(true);
+  const [posOrderTypesDraft, setPosOrderTypesDraft] = useState({
+    DINE_IN: true,
+    TAKEAWAY: true,
+    DELIVERY: true,
+  });
+  const [posAllowedOrderTypes, setPosAllowedOrderTypes] = useState(() => [
+    ...ALL_POS_ORDER_TYPES,
+  ]);
   const [posTableSettingsSaving, setPosTableSettingsSaving] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
 
@@ -281,6 +302,30 @@ export default function POSView({
   // Business day (computed from branch day-reset hour)
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDate = getBusinessDate(new Date(), cutoffHour);
+
+  const orderTypePickerOptions = useMemo(() => {
+    const all = [
+      { type: "DINE_IN", icon: "🍽️", label: "Dine In" },
+      { type: "TAKEAWAY", icon: "📦", label: "Take" },
+      { type: "DELIVERY", icon: "🚚", label: "Delivery" },
+    ];
+    if (editingOrderId) return all;
+    return all.filter((o) => posAllowedOrderTypes.includes(o.type));
+  }, [editingOrderId, posAllowedOrderTypes]);
+
+  /** New orders only: keep order type inside branch-allowed list. */
+  useEffect(() => {
+    if (editingOrderId) return;
+    if (!posAllowedOrderTypes.length) return;
+    if (posAllowedOrderTypes.includes(orderType)) return;
+    const next = posAllowedOrderTypes[0];
+    setOrderType(next);
+    if (next !== "DINE_IN") setTableName("");
+    if (next === "DELIVERY") {
+      setShowCustomerDetails(true);
+      setSelectedWaiter("");
+    }
+  }, [editingOrderId, posAllowedOrderTypes, orderType]);
 
   // Legacy session history (read-only, for browsing past sessions)
   const [showDayHistoryModal, setShowDayHistoryModal] = useState(false);
@@ -481,6 +526,7 @@ export default function POSView({
       setShowTablePos(true);
       setShowWaiterPos(true);
       setShowCustomerPos(true);
+      setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
       setPosOptionsLoaded(true);
       return;
     }
@@ -492,6 +538,9 @@ export default function POSView({
           setShowTablePos(b?.showTablePos !== false);
           setShowWaiterPos(b?.showWaiterPos !== false);
           setShowCustomerPos(b?.showCustomerPos !== false);
+          setPosAllowedOrderTypes(
+            normalizePosAllowedOrderTypesFromApi(b?.posAllowedOrderTypes),
+          );
           setPosOptionsLoaded(true);
         }
       })
@@ -500,6 +549,7 @@ export default function POSView({
           setShowTablePos(true);
           setShowWaiterPos(true);
           setShowCustomerPos(true);
+          setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
           setPosOptionsLoaded(true);
         }
       });
@@ -630,6 +680,16 @@ export default function POSView({
       setOrderType("DINE_IN");
     }
   }, [isActive, initialTableName, propEditOrderId]);
+
+  // Auto-focus the "Add qty" field whenever POS opens for a new order
+  useEffect(() => {
+    if (!isActive || propEditOrderId) return;
+    const frame = requestAnimationFrame(() => {
+      bulkAddQtyInputRef.current?.focus();
+      bulkAddQtyInputRef.current?.select();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isActive, propEditOrderId]);
 
   // Load order for edit when editOrderId prop is provided
   useEffect(() => {
@@ -1978,19 +2038,25 @@ export default function POSView({
       }
       if (e.shiftKey && (e.key === "E" || e.key === "e")) {
         e.preventDefault();
-        setOrderType("DINE_IN");
+        if (!editingOrderId && posAllowedOrderTypes.includes("DINE_IN")) {
+          setOrderType("DINE_IN");
+        }
         return;
       }
       if (e.shiftKey && (e.key === "A" || e.key === "a")) {
         e.preventDefault();
-        setOrderType("TAKEAWAY");
-        setTableName("");
+        if (!editingOrderId && posAllowedOrderTypes.includes("TAKEAWAY")) {
+          setOrderType("TAKEAWAY");
+          setTableName("");
+        }
         return;
       }
       if (e.shiftKey && (e.key === "L" || e.key === "l")) {
         e.preventDefault();
-        setOrderType("DELIVERY");
-        setTableName("");
+        if (!editingOrderId && posAllowedOrderTypes.includes("DELIVERY")) {
+          setOrderType("DELIVERY");
+          setTableName("");
+        }
         return;
       }
       if (e.key === "s" || e.key === "S") {
@@ -2007,6 +2073,7 @@ export default function POSView({
     cart,
     showTakePaymentModal,
     showShortcutsModal,
+    posAllowedOrderTypes,
   ]);
 
   async function loadDrafts() {
@@ -2367,6 +2434,7 @@ export default function POSView({
                   </label>
                   <input
                     id="pos-bulk-qty"
+                    ref={bulkAddQtyInputRef}
                     type="number"
                     min={1}
                     step={1}
@@ -2407,7 +2475,7 @@ export default function POSView({
                     type="search"
                     inputMode="search"
                     autoComplete="off"
-                    placeholder="Search item…"
+                    placeholder="Search"
                     value={menuSearchQuery}
                     onChange={(e) => {
                       setMenuSearchQuery(e.target.value);
@@ -2735,11 +2803,7 @@ export default function POSView({
 
             {/* Order Type Buttons + Settings (beside Delivery) */}
             <div className="flex gap-2 mb-2">
-              {[
-                { type: "DINE_IN", icon: "🍽️", label: "Dine In" },
-                { type: "TAKEAWAY", icon: "📦", label: "Take" },
-                { type: "DELIVERY", icon: "🚚", label: "Delivery" },
-              ].map((option) => (
+              {orderTypePickerOptions.map((option) => (
                 <button
                   key={option.type}
                   onClick={() => {
@@ -2767,10 +2831,15 @@ export default function POSView({
                     setPosTableSettingsDraft(showTablePos);
                     setPosWaiterSettingsDraft(showWaiterPos);
                     setPosCustomerSettingsDraft(showCustomerPos);
+                    setPosOrderTypesDraft({
+                      DINE_IN: posAllowedOrderTypes.includes("DINE_IN"),
+                      TAKEAWAY: posAllowedOrderTypes.includes("TAKEAWAY"),
+                      DELIVERY: posAllowedOrderTypes.includes("DELIVERY"),
+                    });
                     setShowPosTableSettingsModal(true);
                   }}
                   className="p-2 rounded-lg bg-gray-100 dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:text-gray-700 hover:bg-gray-200 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 transition-colors flex-shrink-0"
-                  title="POS options (table, waiter, customer)"
+                  title="POS options"
                 >
                   <Settings className="w-4 h-4" />
                 </button>
@@ -3228,7 +3297,7 @@ export default function POSView({
                       value={customerAddress}
                       onChange={(e) => setCustomerAddress(e.target.value)}
                       rows={2}
-                      placeholder="Full delivery address"
+                      placeholder="Address"
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white resize-none"
                     />
                   )}
@@ -4315,7 +4384,7 @@ export default function POSView({
                           required={paymentMethod === "CASH"}
                           value={amountReceived}
                           onChange={(e) => setAmountReceived(e.target.value)}
-                          placeholder={`Min. ${Math.ceil(total).toLocaleString()}`}
+                          placeholder={String(Math.ceil(total))}
                           className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                         />
                       </div>
@@ -4406,9 +4475,38 @@ export default function POSView({
               </button>
             </div>
             <div className="p-4 space-y-4">
-              <p className="text-sm text-gray-600 dark:text-neutral-400">
-                Show or hide these fields for this branch in POS.
-              </p>
+              <div className="space-y-3">
+                {[
+                  { key: "DINE_IN", label: "Dine in" },
+                  { key: "TAKEAWAY", label: "Takeaway" },
+                  { key: "DELIVERY", label: "Delivery" },
+                ].map(({ key, label }) => (
+                  <label
+                    key={key}
+                    className="flex items-center gap-3 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={posOrderTypesDraft[key]}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setPosOrderTypesDraft((prev) => {
+                          const next = { ...prev, [key]: checked };
+                          const n = ALL_POS_ORDER_TYPES.filter(
+                            (t) => next[t],
+                          ).length;
+                          if (n === 0) return prev;
+                          return next;
+                        });
+                      }}
+                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {label}
+                    </span>
+                  </label>
+                ))}
+              </div>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -4417,7 +4515,7 @@ export default function POSView({
                   className="rounded border-gray-300 text-primary focus:ring-primary"
                 />
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Show table (optional) section
+                  Table
                 </span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
@@ -4428,7 +4526,7 @@ export default function POSView({
                   className="rounded border-gray-300 text-primary focus:ring-primary"
                 />
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Show Waiter field
+                  Waiter
                 </span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
@@ -4441,7 +4539,7 @@ export default function POSView({
                   className="rounded border-gray-300 text-primary focus:ring-primary"
                 />
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Show Select Customer field
+                  Customer
                 </span>
               </label>
             </div>
@@ -4458,15 +4556,37 @@ export default function POSView({
                 disabled={posTableSettingsSaving}
                 onClick={() => {
                   setPosTableSettingsSaving(true);
+                  const chosen = ALL_POS_ORDER_TYPES.filter(
+                    (t) => posOrderTypesDraft[t],
+                  );
+                  if (chosen.length === 0) {
+                    toast.error("Select at least one order type");
+                    setPosTableSettingsSaving(false);
+                    return;
+                  }
                   updateBranch(currentBranch.id, {
                     showTablePos: posTableSettingsDraft,
                     showWaiterPos: posWaiterSettingsDraft,
                     showCustomerPos: posCustomerSettingsDraft,
+                    posAllowedOrderTypes: chosen,
                   })
-                    .then(() => {
+                    .then((b) => {
                       setShowTablePos(posTableSettingsDraft);
                       setShowWaiterPos(posWaiterSettingsDraft);
                       setShowCustomerPos(posCustomerSettingsDraft);
+                      setPosAllowedOrderTypes(
+                        normalizePosAllowedOrderTypesFromApi(
+                          b?.posAllowedOrderTypes,
+                        ),
+                      );
+                      if (
+                        typeof setCurrentBranch === "function" &&
+                        currentBranch &&
+                        b?.id &&
+                        String(currentBranch.id) === String(b.id)
+                      ) {
+                        setCurrentBranch({ ...currentBranch, ...b });
+                      }
                       toast.success("POS options saved");
                       setShowPosTableSettingsModal(false);
                     })
@@ -4511,7 +4631,7 @@ export default function POSView({
               <>
                 <input
                   type="text"
-                  placeholder="Search customer by phone..."
+                  placeholder="Phone"
                   value={customerSearch}
                   onChange={(e) => {
                     setCustomerSearch(e.target.value);
@@ -4570,12 +4690,7 @@ export default function POSView({
                                           address: e.target.value,
                                         }))
                                       }
-                                      placeholder={
-                                        orderType === "DELIVERY" &&
-                                        !deliveryZonesActive
-                                          ? "Address *"
-                                          : "Address"
-                                      }
+                                      placeholder="Address"
                                       className="w-full px-2 py-1.5 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                     />
                                     <div className="flex gap-2">
@@ -4749,7 +4864,7 @@ export default function POSView({
                                 setQuickCustomerName(e.target.value)
                               }
                               className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                              placeholder="Customer name"
+                              placeholder="Name"
                             />
                           </div>
                           {orderType === "DELIVERY" &&
@@ -4780,7 +4895,7 @@ export default function POSView({
                                       setDeliveryZoneQuery(e.target.value);
                                       setDeliveryZoneOpen(true);
                                     }}
-                                    placeholder="Search delivery area..."
+                                    placeholder="Search"
                                     className="w-full px-3 pr-8 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                   />
                                   <ChevronDown
@@ -4871,7 +4986,7 @@ export default function POSView({
             </div>
             <div className="p-4 overflow-y-auto flex-1 space-y-3 text-sm">
               <p className="text-xs text-gray-500 dark:text-neutral-400 mb-3">
-                Use Ctrl (Windows/Linux) or Cmd (Mac) + Shift + key.
+                Ctrl/Cmd + Shift + key.
               </p>
               <div className="space-y-2">
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
@@ -5325,7 +5440,7 @@ export default function POSView({
                     value={dmCustomStr}
                     onChange={(e) => setDmCustomStr(e.target.value)}
                     className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                    placeholder="e.g. 15"
+                    placeholder="%"
                   />
                 </div>
               )}
@@ -5377,7 +5492,7 @@ export default function POSView({
                         if (dmPinError) setDmPinError("");
                       }}
                       className="mt-1 w-full px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                      placeholder="Enter PIN"
+                      placeholder="PIN"
                     />
                     {dmPinError ? (
                       <p className="mt-1 text-xs text-red-500">{dmPinError}</p>

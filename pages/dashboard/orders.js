@@ -397,6 +397,18 @@ export default function OrdersPage() {
     }
   }, [router.isReady, router.query.view, router.query.editOrder]);
 
+  // Ctrl+N / Cmd+N → open POS for a new order
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "n" || e.key === "N") && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        if (activeView !== "pos") openPOS();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeView, openPOS]);
+
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [restaurantLogoHeight, setRestaurantLogoHeight] = useState(100);
   const [restaurantBillFooter, setRestaurantBillFooter] = useState(

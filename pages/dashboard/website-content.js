@@ -32,7 +32,6 @@ import {
   MessageCircle,
   Clock,
   Layout,
-  Sparkles,
   ExternalLink,
   AlertCircle,
   CheckCircle2,
@@ -53,7 +52,6 @@ const SECTIONS = [
   { id: "domain", label: "Domain", icon: LinkIcon },
   { id: "contact", label: "Contact", icon: Phone },
   { id: "hero", label: "Hero", icon: ImageIcon },
-  { id: "theme", label: "Theme", icon: Sparkles },
   { id: "social", label: "Social Media", icon: Globe },
   { id: "hours", label: "Opening Hours", icon: Clock },
   { id: "sections", label: "Website Sections", icon: Layout },
@@ -224,6 +222,7 @@ function MediaField({
   className = "",
   /** When true, hint sticks to bottom of the card (for equal-height paired fields). */
   pinHintToBottom = false,
+  linkPlaceholder = "https://...",
 }) {
   const [mode, setMode] = useState("link");
   const [uploading, setUploading] = useState(false);
@@ -280,7 +279,7 @@ function MediaField({
             type="url"
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="https://..."
+            placeholder={linkPlaceholder}
             className={inp}
           />
         ) : (
@@ -331,6 +330,26 @@ function MediaField({
       </div>
     </div>
   );
+}
+
+/** Returns normalized #rrggbb or null if not a complete hex color */
+function parseHexColor(input) {
+  const raw = String(input ?? "").trim();
+  if (!raw) return null;
+  const withHash = raw.startsWith("#") ? raw : `#${raw}`;
+  const compact = withHash.slice(1);
+  if (!/^[0-9a-fA-F]+$/.test(compact)) return null;
+  if (compact.length === 3) {
+    const [a, b, c] = compact.split("");
+    return `#${a}${a}${b}${b}${c}${c}`.toLowerCase();
+  }
+  if (compact.length === 6) return `#${compact.toLowerCase()}`;
+  return null;
+}
+
+/** Valid #rrggbb for native <input type="color" /> */
+function hexForColorInput(stored, fallback) {
+  return parseHexColor(stored) ?? fallback;
 }
 
 export default function WebsiteContentPage() {
@@ -448,14 +467,13 @@ export default function WebsiteContentPage() {
 
   const sectionCompletion = {
     template: hasContent(ws.template),
-    branding: hasContent(ws.name) || hasContent(ws.logoUrl) || hasContent(ws.tagline),
+    branding: hasContent(ws.name) || hasContent(ws.logoUrl) || hasContent(ws.themeColors?.primary),
     seo: hasContent(ws.seo?.title) || hasContent(ws.seo?.metaDescription),
     domain: hasContent(ws.customDomain),
     contact: hasContent(ws.contactPhone) || hasContent(ws.contactEmail) || hasContent(ws.address),
     hero:
       (ws.heroType === "banner" && hasContent(ws.bannerUrl)) ||
       (Array.isArray(ws.heroSlides) && ws.heroSlides.some((s) => hasContent(s?.imageUrl))),
-    theme: hasContent(ws.themeColors?.primary) || hasContent(ws.themeColors?.secondary),
     social: hasContent(ws.socialMedia),
     hours:
       hasContent(ws.openingHoursText) ||
@@ -894,43 +912,23 @@ export default function WebsiteContentPage() {
               id="branding"
               icon={Palette}
               title="Branding"
-              subtitle="Restaurant name, logo, favicon, and description"
+              subtitle="Restaurant name, logo, favicon, and brand colors"
               iconColor={iconAccentPrimary}
               isActive={activeSection === "branding"}
             >
               <div className="space-y-8">
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
-                  <div>
-                    <label className={labelCls}>Restaurant Name</label>
-                    <input
-                      type="text"
-                      value={ws.name || ""}
-                      onChange={(e) => update("name", e.target.value)}
-                      placeholder="My Restaurant"
-                      className={inp}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Tagline</label>
-                    <input
-                      type="text"
-                      value={ws.tagline || ""}
-                      onChange={(e) => update("tagline", e.target.value)}
-                      placeholder="Best food in town"
-                      className={inp}
-                    />
-                  </div>
-                </div>
-
                 <div>
-                  <label className={labelCls}>Description</label>
-                  <textarea
-                    value={ws.description || ""}
-                    onChange={(e) => update("description", e.target.value)}
-                    placeholder="Tell your customers about your restaurant..."
-                    rows={3}
-                    className={`${inp} h-auto py-2.5 resize-none`}
+                  <label className={labelCls}>Restaurant Name</label>
+                  <input
+                    type="text"
+                    value={ws.name || ""}
+                    onChange={(e) => update("name", e.target.value)}
+                    placeholder="My Restaurant"
+                    className={inp}
                   />
+                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
+                    Used in the navbar, footer, and as a fallback for hero text when Hero fields are left blank.
+                  </p>
                 </div>
 
                 <div className="border-t border-gray-100 pt-8 dark:border-neutral-800">
@@ -967,6 +965,106 @@ export default function WebsiteContentPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Theme Colors — moved from standalone Theme section */}
+                <div className="border-t border-gray-100 pt-8 dark:border-neutral-800">
+                  <div className="mb-5">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                      Theme Colors
+                    </h4>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-neutral-500">
+                      Primary and secondary colors used across buttons, accents, and highlights on your website.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Primary Color</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          aria-label="Primary color picker"
+                          value={hexForColorInput(ws.themeColors?.primary, "#ef4444")}
+                          onChange={(e) =>
+                            updateNested("themeColors", "primary", e.target.value)
+                          }
+                          className="h-10 w-10 shrink-0 cursor-pointer rounded-lg border-2 border-gray-200 bg-transparent p-0 dark:border-neutral-700 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-md"
+                        />
+                        <input
+                          type="text"
+                          value={ws.themeColors?.primary ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const parsed = parseHexColor(v);
+                            updateNested("themeColors", "primary", parsed ?? v);
+                          }}
+                          placeholder="#EF4444"
+                          spellCheck={false}
+                          className={`${inp} flex-1 font-mono text-sm`}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Secondary Color</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          aria-label="Secondary color picker"
+                          value={hexForColorInput(ws.themeColors?.secondary, "#ffa500")}
+                          onChange={(e) =>
+                            updateNested("themeColors", "secondary", e.target.value)
+                          }
+                          className="h-10 w-10 shrink-0 cursor-pointer rounded-lg border-2 border-gray-200 bg-transparent p-0 dark:border-neutral-700 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-md"
+                        />
+                        <input
+                          type="text"
+                          value={ws.themeColors?.secondary ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const parsed = parseHexColor(v);
+                            updateNested("themeColors", "secondary", parsed ?? v);
+                          }}
+                          placeholder="#FFA500"
+                          spellCheck={false}
+                          className={`${inp} flex-1 font-mono text-sm`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs font-medium text-gray-500 dark:text-neutral-500">
+                    Live Preview
+                  </p>
+                  <div className="mt-1.5 w-full overflow-hidden rounded-xl border border-gray-200 dark:border-neutral-800">
+                    <div
+                      className="flex h-10 items-center px-3 text-xs font-semibold text-white"
+                      style={{
+                        backgroundColor:
+                          hexForColorInput(ws.themeColors?.primary, "#ef4444"),
+                      }}
+                    >
+                      Navbar preview
+                    </div>
+                    <div className="space-y-3 bg-white p-3 dark:bg-neutral-900">
+                      <button
+                        type="button"
+                        className="h-8 rounded-lg px-3 text-xs font-semibold text-white"
+                        style={{
+                          backgroundColor:
+                            hexForColorInput(ws.themeColors?.primary, "#ef4444"),
+                        }}
+                      >
+                        Order now
+                      </button>
+                      <div
+                        className="h-2.5 w-20 rounded-full"
+                        style={{
+                          backgroundColor:
+                            hexForColorInput(ws.themeColors?.secondary, "#ffa500"),
+                        }}
+                      />
+                      <div className="h-2 w-full rounded bg-gray-200 dark:bg-neutral-700" />
+                    </div>
+                  </div>
+                </div>
               </div>
               {renderSectionSave("branding")}
             </SectionCard>
@@ -982,9 +1080,8 @@ export default function WebsiteContentPage() {
             >
               <div className="space-y-4">
                 <p className="text-sm text-gray-600 dark:text-neutral-400 -mt-1">
-                  Leave fields empty to use your restaurant name and description from Branding. Set a
-                  custom Open Graph image to control how links look when shared (e.g. Facebook,
-                  WhatsApp).
+                  Leave fields empty to use your restaurant name as default. Set a custom Open Graph
+                  image to control how links look when shared (e.g. Facebook, WhatsApp).
                 </p>
                 <div>
                   <label className={labelCls}>Page title</label>
@@ -992,7 +1089,11 @@ export default function WebsiteContentPage() {
                     type="text"
                     value={ws.seo?.title ?? ""}
                     onChange={(e) => updateSeo("title", e.target.value)}
-                    placeholder={`${ws.name || "Restaurant"} | Eats Desk`}
+                    placeholder={
+                      ws.name
+                        ? `${ws.name} | Burgers, shakes & weekend brunch · Nashville, TN`
+                        : "Maple & Main Diner | Burgers, shakes & weekend brunch · Nashville, TN"
+                    }
                     className={inp}
                     maxLength={200}
                   />
@@ -1006,14 +1107,13 @@ export default function WebsiteContentPage() {
                   <textarea
                     value={ws.seo?.metaDescription ?? ""}
                     onChange={(e) => updateSeo("metaDescription", e.target.value)}
-                    placeholder={ws.description || "A short summary for Google and social previews…"}
+                    placeholder="Hand-pressed burgers, crispy fries, and old-fashioned milkshakes. Family-friendly counter service in Midtown Memphis—order online for pickup or swing by for patio seating."
                     rows={3}
                     maxLength={500}
                     className={`${inp} h-auto py-2.5 resize-none`}
                   />
                   <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                    Aim for ~150–160 characters. If empty, your restaurant description from Branding
-                    is used.
+                    Aim for ~150–160 characters. Leave blank to let search engines generate a snippet.
                   </p>
                 </div>
                 <div>
@@ -1022,7 +1122,7 @@ export default function WebsiteContentPage() {
                     type="text"
                     value={ws.seo?.keywords ?? ""}
                     onChange={(e) => updateSeo("keywords", e.target.value)}
-                    placeholder="pizza, delivery, downtown"
+                    placeholder="American diner, burgers and fries, Memphis TN, takeout, family restaurant, weekend brunch"
                     className={inp}
                     maxLength={500}
                   />
@@ -1035,6 +1135,7 @@ export default function WebsiteContentPage() {
                   hint="Recommended 1200×630px. If empty, your banner image is used when available."
                   value={ws.seo?.ogImageUrl}
                   onChange={(v) => updateSeo("ogImageUrl", v)}
+                  linkPlaceholder="https://cdn.example.com/og-brunch-burger-austin.jpg"
                 />
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border-2 border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50 px-4 py-3">
                   <div>
@@ -1415,21 +1516,21 @@ export default function WebsiteContentPage() {
                 <p className="text-sm text-gray-600 dark:text-neutral-400">
                   Choose how the top of your website introduces your restaurant.{" "}
                   <strong className="text-gray-800 dark:text-neutral-200">Hero banner</strong> uses a
-                  single wide image (set below when selected).{" "}
-                  <strong className="text-gray-800 dark:text-neutral-200">Hero slides</strong> uses the
-                  carousel you configure below.
+                  single full-width image with custom text.{" "}
+                  <strong className="text-gray-800 dark:text-neutral-200">Hero slides</strong> rotates
+                  multiple promotional slides. Hero text is independent from Branding.
                 </p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {[
                     {
                       id: "banner",
                       title: "Hero banner",
-                      desc: "One full-width image behind your restaurant name and tagline. Upload or link the banner in the section below.",
+                      desc: "One full-width image with your own headline, sub-headline, and CTA button.",
                     },
                     {
                       id: "slides",
                       title: "Hero slides",
-                      desc: "Multiple slides with custom titles, images, and buttons. Great for promotions and specials.",
+                      desc: "Multiple slides each with its own title, subtitle, image, and CTA. Great for promotions.",
                     },
                   ].map((opt) => {
                     const active =
@@ -1464,28 +1565,67 @@ export default function WebsiteContentPage() {
                 </div>
 
                 {ws.heroType === "banner" ? (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40">
-                    <div>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                        Banner image
-                      </h4>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-neutral-500">
-                        Full-width hero background. Overlay text uses your{" "}
-                        <strong className="text-gray-700 dark:text-neutral-300">name</strong>,{" "}
-                        <strong className="text-gray-700 dark:text-neutral-300">tagline</strong>, and{" "}
-                        <strong className="text-gray-700 dark:text-neutral-300">description</strong> from
-                        Branding.
-                      </p>
-                    </div>
+                  <div className="space-y-4">
+                    {/* Banner image */}
                     <MediaField
-                      label="Hero banner image"
+                      label="Banner image"
                       value={ws.bannerUrl}
                       onChange={(v) => update("bannerUrl", v)}
-                      hint="Wide image works best (about 1200×400 or larger). Also used as a fallback for social previews when no SEO image is set."
+                      hint="Wide image works best (1200×400 px or larger). Also used as fallback for social previews."
                       previewClassName="aspect-[2.4/1] w-full max-h-44"
                     />
+                    {/* Banner text & CTA */}
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40 space-y-4">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                        Banner text &amp; CTA
+                      </h4>
+                      <p className="text-xs text-gray-500 dark:text-neutral-500">
+                        These fields are shown on the hero overlay. If left blank, defaults to your restaurant name.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelCls}>Headline</label>
+                          <input
+                            type="text"
+                            value={ws.heroHeadline || ""}
+                            onChange={(e) => update("heroHeadline", e.target.value)}
+                            placeholder="Fresh, Fast &amp; Flavourful"
+                            className={inp}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Sub-headline</label>
+                          <input
+                            type="text"
+                            value={ws.heroSubheadline || ""}
+                            onChange={(e) => update("heroSubheadline", e.target.value)}
+                            placeholder="Order your favourite meal in minutes"
+                            className={inp}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>CTA Button Text</label>
+                          <input
+                            type="text"
+                            value={ws.heroCtaText || ""}
+                            onChange={(e) => update("heroCtaText", e.target.value)}
+                            placeholder="Order Now"
+                            className={inp}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>CTA Button Link</label>
+                          <input
+                            type="text"
+                            value={ws.heroCtaLink || ""}
+                            onChange={(e) => update("heroCtaLink", e.target.value)}
+                            placeholder="#menu"
+                            className={inp}
+                          />
+                        </div>
+                      </div>
                     </div>
+                    {/* Live preview */}
                     <div className="rounded-xl border border-gray-200 dark:border-neutral-700 overflow-hidden relative min-h-[180px]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -1493,9 +1633,18 @@ export default function WebsiteContentPage() {
                         alt="Hero preview"
                         className="absolute inset-0 h-full w-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-black/45 p-4 flex flex-col justify-end">
-                        <p className="text-white text-lg font-bold">{ws.name || "Your Restaurant"}</p>
-                        <p className="text-white/90 text-sm">{ws.tagline || "Fresh food, delivered fast."}</p>
+                      <div className="absolute inset-0 bg-black/50 p-4 flex flex-col justify-end gap-1">
+                        <p className="text-white text-lg font-bold leading-snug">
+                          {ws.heroHeadline || ws.name || "Your Headline"}
+                        </p>
+                        <p className="text-white/85 text-sm">
+                          {ws.heroSubheadline || "Your sub-headline"}
+                        </p>
+                        {(ws.heroCtaText || ws.heroCtaLink) && (
+                          <span className="mt-1 inline-flex w-fit items-center rounded-full bg-primary px-4 py-1.5 text-xs font-bold text-white">
+                            {ws.heroCtaText || "Order Now"}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1507,12 +1656,15 @@ export default function WebsiteContentPage() {
                 <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
                   Slide content
                 </h4>
+                <p className="text-xs text-gray-500 dark:text-neutral-500">
+                  Each slide has its own headline, subtitle, image, and CTA — independent from Branding.
+                </p>
                 {(ws.heroSlides || []).map((slide, idx) => (
                   <div
                     key={idx}
-                    className="border-2 border-gray-100 dark:border-neutral-800 rounded-xl p-4"
+                    className="border-2 border-gray-100 dark:border-neutral-800 rounded-xl p-4 space-y-3"
                   >
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
                         Slide {idx + 1}
                       </span>
@@ -1541,31 +1693,31 @@ export default function WebsiteContentPage() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <label className={labelCls}>Title</label>
+                        <label className={labelCls}>Slide Title</label>
                         <input
                           type="text"
                           value={slide.title || ""}
                           onChange={(e) =>
                             updateHeroSlide(idx, "title", e.target.value)
                           }
-                          placeholder="Welcome to Our Restaurant"
+                          placeholder="Fresh, Fast &amp; Flavourful"
                           className={inp}
                         />
                       </div>
                       <div>
-                        <label className={labelCls}>Subtitle</label>
+                        <label className={labelCls}>Slide Sub-title</label>
                         <input
                           type="text"
                           value={slide.subtitle || ""}
                           onChange={(e) =>
                             updateHeroSlide(idx, "subtitle", e.target.value)
                           }
-                          placeholder="Fresh food, great taste"
+                          placeholder="Order your favourite meal in minutes"
                           className={inp}
                         />
                       </div>
                       <div>
-                        <label className={labelCls}>Button Text</label>
+                        <label className={labelCls}>CTA Button Text</label>
                         <input
                           type="text"
                           value={slide.buttonText || ""}
@@ -1577,28 +1729,25 @@ export default function WebsiteContentPage() {
                         />
                       </div>
                       <div>
-                        <label className={labelCls}>Image URL</label>
+                        <label className={labelCls}>CTA Button Link</label>
                         <input
-                          type="url"
-                          value={slide.imageUrl || ""}
+                          type="text"
+                          value={slide.buttonLink || ""}
                           onChange={(e) =>
-                            updateHeroSlide(idx, "imageUrl", e.target.value)
+                            updateHeroSlide(idx, "buttonLink", e.target.value)
                           }
-                          placeholder="https://..."
+                          placeholder="#menu"
                           className={inp}
                         />
                       </div>
                     </div>
-                    {slide.imageUrl && (
-                      <div className="mt-3 h-24 rounded-lg overflow-hidden">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={slide.imageUrl}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    )}
+                    <MediaField
+                      label="Slide image"
+                      value={slide.imageUrl || ""}
+                      onChange={(v) => updateHeroSlide(idx, "imageUrl", v)}
+                      hint="Landscape images work best (1200×600 px or larger)."
+                      previewClassName="aspect-[2/1] w-full max-h-36"
+                    />
                   </div>
                 ))}
                 <button
@@ -1612,86 +1761,6 @@ export default function WebsiteContentPage() {
               </div>
               ) : null}
               {renderSectionSave("hero")}
-            </SectionCard>
-
-            {/* Theme Colors */}
-            <SectionCard
-              id="theme"
-              icon={Sparkles}
-              title="Theme Colors"
-              subtitle="Primary and secondary colors for your website"
-              iconColor={iconAccentPrimary}
-              isActive={activeSection === "theme"}
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>Primary Color</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={ws.themeColors?.primary || "#EF4444"}
-                      onChange={(e) =>
-                        updateNested("themeColors", "primary", e.target.value)
-                      }
-                      className="w-10 h-10 rounded-lg border-2 border-gray-200 dark:border-neutral-700 cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={ws.themeColors?.primary || "#EF4444"}
-                      onChange={(e) =>
-                        updateNested("themeColors", "primary", e.target.value)
-                      }
-                      className={`${inp} flex-1`}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className={labelCls}>Secondary Color</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={ws.themeColors?.secondary || "#FFA500"}
-                      onChange={(e) =>
-                        updateNested("themeColors", "secondary", e.target.value)
-                      }
-                      className="w-10 h-10 rounded-lg border-2 border-gray-200 dark:border-neutral-700 cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={ws.themeColors?.secondary || "#FFA500"}
-                      onChange={(e) =>
-                        updateNested("themeColors", "secondary", e.target.value)
-                      }
-                      className={`${inp} flex-1`}
-                    />
-                  </div>
-                </div>
-                </div>
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
-                  <div
-                    className="h-10 px-3 flex items-center text-white text-xs font-semibold"
-                    style={{ backgroundColor: ws.themeColors?.primary || "#EF4444" }}
-                  >
-                    Navbar preview
-                  </div>
-                  <div className="p-3 bg-white dark:bg-neutral-900 space-y-3">
-                    <button
-                      type="button"
-                      className="h-8 px-3 rounded-lg text-white text-xs font-semibold"
-                      style={{ backgroundColor: ws.themeColors?.primary || "#EF4444" }}
-                    >
-                      Order now
-                    </button>
-                    <div
-                      className="h-2.5 w-20 rounded-full"
-                      style={{ backgroundColor: ws.themeColors?.secondary || "#FFA500" }}
-                    />
-                    <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 w-full" />
-                  </div>
-                </div>
-              </div>
-              {renderSectionSave("theme")}
             </SectionCard>
 
             {/* Social Media */}
