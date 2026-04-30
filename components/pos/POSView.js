@@ -59,6 +59,8 @@ import {
   ChevronRight,
   Clock,
   Utensils,
+  Package,
+  Truck,
   FileText,
   Printer,
   Flame,
@@ -110,8 +112,18 @@ const FALLBACK_POS_DISCOUNT_REASON_OPTIONS = [
 const FALLBACK_POS_DISCOUNT_PRESETS = [
   { id: "10", label: "10% Off", percent: 10, cashierAllowed: true },
   { id: "20", label: "20% Off", percent: 20, cashierAllowed: true },
-  { id: "staff50", label: "Staff Meal (50%)", percent: 50, cashierAllowed: false },
-  { id: "comp100", label: "Complimentary (100%)", percent: 100, cashierAllowed: false },
+  {
+    id: "staff50",
+    label: "Staff Meal (50%)",
+    percent: 50,
+    cashierAllowed: false,
+  },
+  {
+    id: "comp100",
+    label: "Complimentary (100%)",
+    percent: 100,
+    cashierAllowed: false,
+  },
 ];
 
 /**
@@ -226,7 +238,8 @@ export default function POSView({
   const [posDiscountReasonOptions, setPosDiscountReasonOptions] = useState(
     FALLBACK_POS_DISCOUNT_REASON_OPTIONS,
   );
-  const [posDiscountPinConfigured, setPosDiscountPinConfigured] = useState(false);
+  const [posDiscountPinConfigured, setPosDiscountPinConfigured] =
+    useState(false);
   const [dmPct, setDmPct] = useState(0);
   const [dmLabel, setDmLabel] = useState("");
   const [dmReason, setDmReason] = useState("");
@@ -306,7 +319,7 @@ export default function POSView({
   const orderTypePickerOptions = useMemo(() => {
     const all = [
       { type: "DINE_IN", icon: "🍽️", label: "Dine In" },
-      { type: "TAKEAWAY", icon: "📦", label: "Take" },
+      { type: "TAKEAWAY", icon: "📦", label: "Take Away" },
       { type: "DELIVERY", icon: "🚚", label: "Delivery" },
     ];
     if (editingOrderId) return all;
@@ -438,7 +451,8 @@ export default function POSView({
           data?.billFooterMessage || "Thank you for your order!",
         );
         setPosDiscountPresetsCfg(
-          Array.isArray(data?.posDiscountPresets) && data.posDiscountPresets.length
+          Array.isArray(data?.posDiscountPresets) &&
+            data.posDiscountPresets.length
             ? data.posDiscountPresets
             : null,
         );
@@ -756,7 +770,9 @@ export default function POSView({
         if (Number.isFinite(mp) && mp > 0) {
           setManualDiscountPercent(Math.min(100, Math.max(0, mp)));
           setDiscountReason(String(order.posDiscountReason || "").trim());
-          setDiscountPresetLabel(String(order.posDiscountPresetLabel || "").trim());
+          setDiscountPresetLabel(
+            String(order.posDiscountPresetLabel || "").trim(),
+          );
         } else {
           setManualDiscountPercent(0);
           setDiscountReason("");
@@ -1467,6 +1483,29 @@ export default function POSView({
   const deliveryZonesActive =
     orderType === "DELIVERY" && deliveryZones.length > 0;
 
+  /** Reason text for manual discount (e.g. Staff meal). */
+  const manualDiscountReasonLabel =
+    manualDiscountPercentClamped <= 0
+      ? ""
+      : (() => {
+          const o = posDiscountReasonOptions.find(
+            (x) => String(x.value) === String(discountReason),
+          );
+          const fromOpt = String(o?.label || o?.value || "").trim();
+          if (fromOpt) return fromOpt;
+          return (
+            String(discountReason || "").trim() ||
+            discountPresetLabel ||
+            "Discount"
+          );
+        })();
+
+  /** Left column: reason + (percent, amount given). */
+  const manualDiscountSummaryLine =
+    manualDiscountPercentClamped <= 0
+      ? ""
+      : `${manualDiscountReasonLabel} (${manualDiscountPercentClamped}%)`;
+
   const mergedDiscountPresets =
     posDiscountPresetsCfg && posDiscountPresetsCfg.length > 0
       ? posDiscountPresetsCfg
@@ -1517,11 +1556,7 @@ export default function POSView({
       label: discountPresetLabel,
       customOpen: discountPresetLabel.startsWith("Custom ("),
     });
-    if (
-      requiresPin &&
-      posDiscountPinConfigured &&
-      !managerDiscountPin.trim()
-    ) {
+    if (requiresPin && posDiscountPinConfigured && !managerDiscountPin.trim()) {
       toast.error(
         "Manager PIN is required for this discount. Open Discount to apply with PIN.",
       );
@@ -1817,6 +1852,19 @@ export default function POSView({
       paymentAmountReceived: overrides.paymentAmountReceived ?? null,
       paymentAmountReturned: overrides.paymentAmountReturned ?? null,
       discountAmount: totalDiscount,
+      dealDiscountAmount: dealDiscount,
+      manualDiscountAmount: manualDiscount,
+      manualDiscountLine:
+        manualDiscountPercentClamped > 0 ? manualDiscountSummaryLine : "",
+      posManualDiscountPercent:
+        manualDiscountPercentClamped > 0
+          ? manualDiscountPercentClamped
+          : null,
+      posDiscountReason:
+        manualDiscountPercentClamped > 0 ? discountReason : "",
+      posDiscountPresetLabel:
+        manualDiscountPercentClamped > 0 ? discountPresetLabel : "",
+      posDiscountReasonOptions,
       subtotal,
       total,
       items: cart.map((it) => ({
@@ -1920,17 +1968,7 @@ export default function POSView({
         "bill",
       );
 
-      // Open the created order in edit mode
-      if (orderNum) {
-        setEditingOrderId(orderNum);
-        getOrder(orderNum)
-          .then((order) => {
-            setEditingOrder(order);
-          })
-          .catch(() => {});
-      }
-
-      // Clear local cart and reset POS state
+      // Clear local cart and reset POS for a new ticket (do not enter edit mode)
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
@@ -2620,7 +2658,9 @@ export default function POSView({
                           <div
                             className="relative h-32 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800"
                             onClick={() =>
-                              !outOfStock && !inCart && addToCart(item, bulkAddQty)
+                              !outOfStock &&
+                              !inCart &&
+                              addToCart(item, bulkAddQty)
                             }
                           >
                             {/* Badges */}
@@ -3186,9 +3226,11 @@ export default function POSView({
                 {manualDiscountPercentClamped > 0 && (
                   <div className="flex flex-col gap-0.5 text-xs py-0.5">
                     <div className="flex justify-between items-baseline gap-2">
-                      <span className="text-gray-600 dark:text-neutral-400 flex items-center gap-1">
-                        <Percent className="w-3 h-3 opacity-80" />
-                        {discountPresetLabel || "Discount"}
+                      <span className="text-gray-600 dark:text-neutral-400 flex items-center gap-1 min-w-0">
+                        <Tag className="w-3 h-3 shrink-0 opacity-80" />
+                        <span className="truncate">
+                          {manualDiscountSummaryLine}
+                        </span>
                       </span>
                       <span className="font-semibold tabular-nums text-gray-700 dark:text-neutral-300">
                         -Rs {manualDiscount.toFixed(2)}
@@ -3251,7 +3293,7 @@ export default function POSView({
                           setDeliveryZoneQuery(e.target.value);
                           setDeliveryZoneOpen(true);
                         }}
-                        placeholder="Search delivery area..."
+                        placeholder="Area"
                         className="w-full px-3 pr-8 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white"
                       />
                       <ChevronDown
@@ -4384,7 +4426,7 @@ export default function POSView({
                           required={paymentMethod === "CASH"}
                           value={amountReceived}
                           onChange={(e) => setAmountReceived(e.target.value)}
-                          placeholder={String(Math.ceil(total))}
+                          placeholder={`${Math.ceil(total).toLocaleString()}`}
                           className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                         />
                       </div>
@@ -4460,94 +4502,140 @@ export default function POSView({
 
       {/* POS options modal (table, waiter, customer visibility per branch) */}
       {showPosTableSettingsModal && currentBranch?.id && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                POS options
-              </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/60 p-4 backdrop-blur-[1px]">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-black/5 dark:ring-white/10">
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Settings className="w-[18px] h-[18px]" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-gray-900 dark:text-white leading-tight">
+                    POS options
+                  </h2>
+                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 truncate">
+                    {currentBranch.name}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowPosTableSettingsModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors"
+                aria-label="Close"
               >
-                <span className="text-2xl">×</span>
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 space-y-4">
-              <div className="space-y-3">
-                {[
-                  { key: "DINE_IN", label: "Dine in" },
-                  { key: "TAKEAWAY", label: "Takeaway" },
-                  { key: "DELIVERY", label: "Delivery" },
-                ].map(({ key, label }) => (
-                  <label
-                    key={key}
-                    className="flex items-center gap-3 cursor-pointer"
-                  >
+
+            <div className="p-4 space-y-5 max-h-[min(70vh,520px)] overflow-y-auto">
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
+                  Order types
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    {
+                      key: "DINE_IN",
+                      label: "Dine in",
+                      Icon: Utensils,
+                    },
+                    {
+                      key: "TAKEAWAY",
+                      label: "Take Away",
+                      Icon: Package,
+                    },
+                    {
+                      key: "DELIVERY",
+                      label: "Delivery",
+                      Icon: Truck,
+                    },
+                  ].map(({ key, label, Icon }) => {
+                    const on = posOrderTypesDraft[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          setPosOrderTypesDraft((prev) => {
+                            const next = { ...prev, [key]: !prev[key] };
+                            const n = ALL_POS_ORDER_TYPES.filter(
+                              (t) => next[t],
+                            ).length;
+                            if (n === 0) return prev;
+                            return next;
+                          });
+                        }}
+                        className={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 px-1.5 py-2.5 text-[11px] font-semibold leading-tight transition-all min-h-[4.5rem] ${
+                          on
+                            ? "border-primary bg-primary/10 text-primary shadow-sm dark:bg-primary/15"
+                            : "border-gray-200 bg-gray-50/90 text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/80"
+                        }`}
+                      >
+                        <Icon
+                          className={`w-4 h-4 shrink-0 ${on ? "" : "opacity-70"}`}
+                          strokeWidth={2}
+                        />
+                        <span className="text-center">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
+                  Sidebar fields
+                </h3>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden divide-y divide-gray-100 dark:divide-neutral-800 bg-gray-50/40 dark:bg-neutral-900/25">
+                  <label className="flex items-center justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      Table
+                    </span>
                     <input
                       type="checkbox"
-                      checked={posOrderTypesDraft[key]}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setPosOrderTypesDraft((prev) => {
-                          const next = { ...prev, [key]: checked };
-                          const n = ALL_POS_ORDER_TYPES.filter(
-                            (t) => next[t],
-                          ).length;
-                          if (n === 0) return prev;
-                          return next;
-                        });
-                      }}
-                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                      checked={posTableSettingsDraft}
+                      onChange={(e) =>
+                        setPosTableSettingsDraft(e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
                     />
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {label}
-                    </span>
                   </label>
-                ))}
-              </div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={posTableSettingsDraft}
-                  onChange={(e) => setPosTableSettingsDraft(e.target.checked)}
-                  className="rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Table
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={posWaiterSettingsDraft}
-                  onChange={(e) => setPosWaiterSettingsDraft(e.target.checked)}
-                  className="rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Waiter
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={posCustomerSettingsDraft}
-                  onChange={(e) =>
-                    setPosCustomerSettingsDraft(e.target.checked)
-                  }
-                  className="rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Customer
-                </span>
-              </label>
+                  <label className="flex items-center justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      Waiter
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={posWaiterSettingsDraft}
+                      onChange={(e) =>
+                        setPosWaiterSettingsDraft(e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      Customer
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={posCustomerSettingsDraft}
+                      onChange={(e) =>
+                        setPosCustomerSettingsDraft(e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                    />
+                  </label>
+                </div>
+              </section>
             </div>
-            <div className="px-4 py-3 border-t border-gray-200 dark:border-neutral-800 flex gap-2">
+
+            <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/40 flex gap-2">
               <button
                 type="button"
                 onClick={() => setShowPosTableSettingsModal(false)}
-                className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-white dark:hover:bg-neutral-800 transition-colors"
               >
                 Cancel
               </button>
@@ -4560,7 +4648,7 @@ export default function POSView({
                     (t) => posOrderTypesDraft[t],
                   );
                   if (chosen.length === 0) {
-                    toast.error("Select at least one order type");
+                    toast.error("Pick one order type");
                     setPosTableSettingsSaving(false);
                     return;
                   }
@@ -4595,7 +4683,7 @@ export default function POSView({
                     )
                     .finally(() => setPosTableSettingsSaving(false));
                 }}
-                className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+                className="flex-1 px-3 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 shadow-sm transition-colors"
               >
                 {posTableSettingsSaving ? "Saving…" : "Save"}
               </button>
@@ -4895,7 +4983,7 @@ export default function POSView({
                                       setDeliveryZoneQuery(e.target.value);
                                       setDeliveryZoneOpen(true);
                                     }}
-                                    placeholder="Search"
+                                    placeholder="Area"
                                     className="w-full px-3 pr-8 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                   />
                                   <ChevronDown
@@ -5077,7 +5165,7 @@ export default function POSView({
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-neutral-800">
                   <span className="text-gray-700 dark:text-neutral-300">
-                    Order type: Take
+                    Order type: Take Away
                   </span>
                   <kbd className="px-2 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 font-mono text-xs">
                     Ctrl+Shift+A
@@ -5380,7 +5468,8 @@ export default function POSView({
                     const pinRequired = !Boolean(p.cashierAllowed);
                     const sel =
                       !dmCustomOpen &&
-                      Math.round(dmPct) === Math.round(Number(p.percent) || 0) &&
+                      Math.round(dmPct) ===
+                        Math.round(Number(p.percent) || 0) &&
                       dmLabel === p.label;
                     return (
                       <button
@@ -5440,7 +5529,7 @@ export default function POSView({
                     value={dmCustomStr}
                     onChange={(e) => setDmCustomStr(e.target.value)}
                     className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                    placeholder="%"
+                    placeholder="15"
                   />
                 </div>
               )}
@@ -5466,7 +5555,9 @@ export default function POSView({
                   ? Math.min(100, Math.max(0, Number(dmCustomStr) || 0))
                   : Math.min(100, Math.max(0, Number(dmPct) || 0));
                 const previewLabel = dmCustomOpen
-                  ? (previewPct ? `Custom (${previewPct}%)` : "")
+                  ? previewPct
+                    ? `Custom (${previewPct}%)`
+                    : ""
                   : dmLabel;
                 const requiresPin = getDiscountPinRequirement({
                   pct: previewPct,
@@ -5488,7 +5579,9 @@ export default function POSView({
                       maxLength={6}
                       value={dmPin}
                       onChange={(e) => {
-                        setDmPin(e.target.value.replace(/[^\d]/g, "").slice(0, 6));
+                        setDmPin(
+                          e.target.value.replace(/[^\d]/g, "").slice(0, 6),
+                        );
                         if (dmPinError) setDmPinError("");
                       }}
                       className="mt-1 w-full px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
@@ -5524,7 +5617,9 @@ export default function POSView({
                       ? Math.min(100, Math.max(0, Number(dmCustomStr) || 0))
                       : Math.min(100, Math.max(0, Number(dmPct) || 0));
                     const previewLabel = dmCustomOpen
-                      ? (previewPct ? `Custom (${previewPct}%)` : "")
+                      ? previewPct
+                        ? `Custom (${previewPct}%)`
+                        : ""
                       : dmLabel;
                     const requiresPin = getDiscountPinRequirement({
                       pct: previewPct,
@@ -5643,7 +5738,7 @@ export default function POSView({
                       ? "Dine In"
                       : orderConfirmation.orderType === "DELIVERY"
                         ? "Delivery"
-                        : "Takeaway"}
+                        : "Take Away"}
                   </span>
                 )}
                 {orderConfirmation.tableName && (
@@ -5729,7 +5824,9 @@ export default function POSView({
                           setTableName(order.tableName || "");
                           const mp2 = Number(order.posManualDiscountPercent);
                           if (Number.isFinite(mp2) && mp2 > 0) {
-                            setManualDiscountPercent(Math.min(100, Math.max(0, mp2)));
+                            setManualDiscountPercent(
+                              Math.min(100, Math.max(0, mp2)),
+                            );
                             setDiscountReason(
                               String(order.posDiscountReason || "").trim(),
                             );

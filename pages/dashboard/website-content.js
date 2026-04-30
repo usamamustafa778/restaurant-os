@@ -912,7 +912,7 @@ export default function WebsiteContentPage() {
               id="branding"
               icon={Palette}
               title="Branding"
-              subtitle="Restaurant name, logo, favicon, and brand colors"
+              subtitle="Name, logo, favicon, and colors"
               iconColor={iconAccentPrimary}
               isActive={activeSection === "branding"}
             >
@@ -923,32 +923,19 @@ export default function WebsiteContentPage() {
                     type="text"
                     value={ws.name || ""}
                     onChange={(e) => update("name", e.target.value)}
-                    placeholder="My Restaurant"
+                    placeholder="Joe's Diner"
                     className={inp}
                   />
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                    Used in the navbar, footer, and as a fallback for hero text when Hero fields are left blank.
-                  </p>
                 </div>
 
                 <div className="border-t border-gray-100 pt-8 dark:border-neutral-800">
-                  <div className="mb-5">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                      Logo & favicon
-                    </h4>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-neutral-500">
-                      Paste a URL or upload a file. Previews update after you save or set a value.
-                    </p>
-                  </div>
                   <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:items-stretch">
                     <div className="flex min-h-0 md:h-full">
                       <MediaField
                         label="Logo"
                         value={ws.logoUrl}
                         onChange={(v) => update("logoUrl", v)}
-                        hint="Shown in the header and footer. Square or near-square works best."
                         className="w-full flex-1"
-                        pinHintToBottom
                       />
                     </div>
                     <div className="flex min-h-0 md:h-full">
@@ -957,10 +944,8 @@ export default function WebsiteContentPage() {
                         value={ws.faviconUrl}
                         onChange={(v) => update("faviconUrl", v)}
                         accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/jpeg,image/webp,.ico"
-                        hint="Browser tab icon. Use PNG or ICO, ideally 32×32px or larger."
                         previewClassName="h-16 w-16"
                         className="w-full flex-1"
-                        pinHintToBottom
                       />
                     </div>
                   </div>
@@ -968,14 +953,9 @@ export default function WebsiteContentPage() {
 
                 {/* Theme Colors — moved from standalone Theme section */}
                 <div className="border-t border-gray-100 pt-8 dark:border-neutral-800">
-                  <div className="mb-5">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                      Theme Colors
-                    </h4>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-neutral-500">
-                      Primary and secondary colors used across buttons, accents, and highlights on your website.
-                    </p>
-                  </div>
+                  <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                    Theme Colors
+                  </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className={labelCls}>Primary Color</label>
@@ -997,7 +977,7 @@ export default function WebsiteContentPage() {
                             const parsed = parseHexColor(v);
                             updateNested("themeColors", "primary", parsed ?? v);
                           }}
-                          placeholder="#EF4444"
+                          placeholder="#ef4444"
                           spellCheck={false}
                           className={`${inp} flex-1 font-mono text-sm`}
                         />
@@ -1023,17 +1003,14 @@ export default function WebsiteContentPage() {
                             const parsed = parseHexColor(v);
                             updateNested("themeColors", "secondary", parsed ?? v);
                           }}
-                          placeholder="#FFA500"
+                          placeholder="#ffa500"
                           spellCheck={false}
                           className={`${inp} flex-1 font-mono text-sm`}
                         />
                       </div>
                     </div>
                   </div>
-                  <p className="mt-3 text-xs font-medium text-gray-500 dark:text-neutral-500">
-                    Live Preview
-                  </p>
-                  <div className="mt-1.5 w-full overflow-hidden rounded-xl border border-gray-200 dark:border-neutral-800">
+                  <div className="mt-4 w-full overflow-hidden rounded-xl border border-gray-200 dark:border-neutral-800">
                     <div
                       className="flex h-10 items-center px-3 text-xs font-semibold text-white"
                       style={{
@@ -1079,42 +1056,27 @@ export default function WebsiteContentPage() {
               isActive={activeSection === "seo"}
             >
               <div className="space-y-4">
-                <p className="text-sm text-gray-600 dark:text-neutral-400 -mt-1">
-                  Leave fields empty to use your restaurant name as default. Set a custom Open Graph
-                  image to control how links look when shared (e.g. Facebook, WhatsApp).
-                </p>
                 <div>
                   <label className={labelCls}>Page title</label>
                   <input
                     type="text"
                     value={ws.seo?.title ?? ""}
                     onChange={(e) => updateSeo("title", e.target.value)}
-                    placeholder={
-                      ws.name
-                        ? `${ws.name} | Burgers, shakes & weekend brunch · Nashville, TN`
-                        : "Maple & Main Diner | Burgers, shakes & weekend brunch · Nashville, TN"
-                    }
+                    placeholder={ws.name ? `${ws.name} | Chicago` : "Joe's Diner | Chicago"}
                     className={inp}
                     maxLength={200}
                   />
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                    Shown in the browser tab and search results. If empty, defaults to your restaurant
-                    name.
-                  </p>
                 </div>
                 <div>
                   <label className={labelCls}>Meta description</label>
                   <textarea
                     value={ws.seo?.metaDescription ?? ""}
                     onChange={(e) => updateSeo("metaDescription", e.target.value)}
-                    placeholder="Hand-pressed burgers, crispy fries, and old-fashioned milkshakes. Family-friendly counter service in Midtown Memphis—order online for pickup or swing by for patio seating."
+                    placeholder="Burgers, fries, and shakes. Open daily."
                     rows={3}
                     maxLength={500}
                     className={`${inp} h-auto py-2.5 resize-none`}
                   />
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                    Aim for ~150–160 characters. Leave blank to let search engines generate a snippet.
-                  </p>
                 </div>
                 <div>
                   <label className={labelCls}>Keywords</label>
@@ -1122,28 +1084,20 @@ export default function WebsiteContentPage() {
                     type="text"
                     value={ws.seo?.keywords ?? ""}
                     onChange={(e) => updateSeo("keywords", e.target.value)}
-                    placeholder="American diner, burgers and fries, Memphis TN, takeout, family restaurant, weekend brunch"
+                    placeholder="burgers, fries, Austin"
                     className={inp}
                     maxLength={500}
                   />
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                    Comma-separated. Optional; many search engines ignore this field.
-                  </p>
                 </div>
                 <MediaField
                   label="Social share image (Open Graph)"
-                  hint="Recommended 1200×630px. If empty, your banner image is used when available."
                   value={ws.seo?.ogImageUrl}
                   onChange={(v) => updateSeo("ogImageUrl", v)}
-                  linkPlaceholder="https://cdn.example.com/og-brunch-burger-austin.jpg"
                 />
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border-2 border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50 px-4 py-3">
                   <div>
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
                       Hide from search engines
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
-                      Adds a &quot;noindex&quot; tag so Google and others don&apos;t list this site.
                     </p>
                   </div>
                   <button

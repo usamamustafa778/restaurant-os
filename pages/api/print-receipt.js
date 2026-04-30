@@ -89,8 +89,22 @@ function buildEscPos(o) {
   ln(pad("Total Items:", String(totalItems)));
   ln(pad("Total Qty:", String(totalQty)));
   ln(pad("Subtotal:", Number(o.subtotal || o.total || 0).toFixed(2)));
-  if (o.discount > 0)
+  const dealDisc = Number(o.discountDeal || 0);
+  const manualDisc = Number(o.discountManual || 0);
+  if (dealDisc > 0) {
+    ln(pad("Deal discount:", "- " + dealDisc.toFixed(2)));
+  }
+  if (manualDisc > 0) {
+    const rawLabel = String(o.manualDiscountLine || "").trim();
+    const label =
+      rawLabel.length > LINE_WIDTH - 14
+        ? `${rawLabel.slice(0, LINE_WIDTH - 15)}…`
+        : rawLabel || "Discount";
+    ln(pad(label, "- " + manualDisc.toFixed(2)));
+  }
+  if (!(dealDisc > 0) && !(manualDisc > 0) && Number(o.discount || 0) > 0) {
     ln(pad("Discount:", "- " + Number(o.discount).toFixed(2)));
+  }
   if (deliveryCharges > 0)
     ln(pad("Delivery Charges:", deliveryCharges.toFixed(2)));
 
