@@ -472,7 +472,8 @@ export default function WebsiteContentPage() {
     domain: hasContent(ws.customDomain),
     contact: hasContent(ws.contactPhone) || hasContent(ws.contactEmail) || hasContent(ws.address),
     hero:
-      (ws.heroType === "banner" && hasContent(ws.bannerUrl)) ||
+      (ws.heroType === "banner" &&
+        (hasContent(ws.bannerUrl) || hasContent(ws.heroHeadline))) ||
       (Array.isArray(ws.heroSlides) && ws.heroSlides.some((s) => hasContent(s?.imageUrl))),
     social: hasContent(ws.socialMedia),
     hours:

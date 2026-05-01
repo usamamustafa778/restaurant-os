@@ -258,7 +258,50 @@ export default function RestaurantPage() {
     web.description ||
     `Welcome to ${tenant?.name}. Order delicious food online for delivery or pickup. Fresh ingredients, authentic flavors, and fast service.`;
 
-  const heroImageUrl = web.heroSlides?.[0]?.imageUrl || web.bannerUrl || "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1920&q=80";
+  const DEFAULT_HERO_BG =
+    "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1920&q=80";
+  const isBannerHero = web.heroType === "banner";
+  const slides = Array.isArray(web.heroSlides) ? web.heroSlides : [];
+  const firstActiveSlide =
+    slides.find((s) => s && s.isActive !== false) || slides[0] || null;
+
+  const heroBgRaw = isBannerHero
+    ? web.bannerUrl || firstActiveSlide?.imageUrl || DEFAULT_HERO_BG
+    : firstActiveSlide?.imageUrl || web.bannerUrl || DEFAULT_HERO_BG;
+  const heroImageUrl = getImageUrl(heroBgRaw) || heroBgRaw;
+
+  const heroTitle = isBannerHero
+    ? String(web.heroHeadline || "").trim() || tenant?.name || "Restaurant"
+    : String(firstActiveSlide?.title || "").trim() ||
+      String(web.heroHeadline || "").trim() ||
+      tenant?.name ||
+      "Restaurant";
+
+  const heroSubtitle = isBannerHero
+    ? String(web.heroSubheadline || "").trim() || description
+    : String(firstActiveSlide?.subtitle || "").trim() ||
+      String(web.heroSubheadline || "").trim() ||
+      description;
+
+  const heroCtaLabel = isBannerHero
+    ? String(web.heroCtaText || "").trim() || "View Our Menu"
+    : String(firstActiveSlide?.buttonText || "").trim() ||
+      String(web.heroCtaText || "").trim() ||
+      "View Our Menu";
+
+  const heroCtaRaw = isBannerHero
+    ? String(web.heroCtaLink || "").trim() || "#menu"
+    : String(firstActiveSlide?.buttonLink || "").trim() ||
+      String(web.heroCtaLink || "").trim() ||
+      "#menu";
+
+  const heroCtaHref = (() => {
+    const h = heroCtaRaw.trim() || "#menu";
+    if (h.startsWith("#") || h.startsWith("/")) return h;
+    if (/^https?:\/\//i.test(h)) return h;
+    if (/^mailto:/i.test(h) || /^tel:/i.test(h)) return h;
+    return `#${h.replace(/^#+/, "")}`;
+  })();
   
   const testimonialsList =
     Array.isArray(web.testimonials) && web.testimonials.length > 0
@@ -308,21 +351,21 @@ export default function RestaurantPage() {
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/90 via-slate-900/70 to-slate-900/95" />
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-24 text-center">
           <p className="text-xs uppercase tracking-[0.35em] text-white/90 font-medium mb-4">
-            {tenant?.city || "Delicious Food"}
+            {String(web.tagline || "").trim() || tenant?.city || "Delicious Food"}
           </p>
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-6 drop-shadow-lg">
-            {tenant?.name}
+            {heroTitle}
           </h1>
           <p className="text-lg sm:text-xl text-white/95 max-w-2xl mx-auto mb-10 font-light leading-relaxed">
-            {description}
+            {heroSubtitle}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
-              href="#menu"
+              href={heroCtaHref}
               className="inline-flex items-center gap-2 px-8 py-4 rounded-xl font-semibold text-white shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300"
               style={{ background: `linear-gradient(to right, ${primaryColor}, ${secondaryColor})` }}
             >
-              View Our Menu
+              {heroCtaLabel}
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
               </svg>
