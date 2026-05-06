@@ -17,6 +17,7 @@ import {
   assignRiderToOrder,
   collectDeliveryPayment,
   getDaySessions,
+  getDaySessionOrders,
   getCurrentDaySession,
   startDaySession,
   endDaySession,
@@ -63,6 +64,137 @@ import {
   PlayCircle,
   Coffee,
 } from "lucide-react";
+
+/** Paid closed orders only — aligns with session summary / POS closed bar. */
+function buildTodayReportBreakdown(orders) {
+  const list = Array.isArray(orders) ? orders : [];
+  const revenue = list.filter(
+    (o) =>
+      (o.status === "DELIVERED" || o.status === "COMPLETED") && o.isPaid === true,
+  );
+  const gt = (o) => Number(o.grandTotal ?? o.total ?? 0);
+
+  let cash = 0;
+  let card = 0;
+  let online = 0;
+  const cashOrders = new Set();
+  const cardOrders = new Set();
+  const onlineOrders = new Set();
+  const onlineByProv = {};
+
+  const ot = {
+    DINE_IN: { amt: 0, n: 0 },
+    TAKEAWAY: { amt: 0, n: 0 },
+    DELIVERY: { amt: 0, n: 0, items: 0, fees: 0 },
+  };
+
+  const itemAgg = new Map();
+  const staffAgg = new Map();
+
+  for (const o of revenue) {
+    const g = gt(o);
+    const pm = String(o.paymentMethod || "").toUpperCase();
+
+    if (pm === "CASH") {
+      cash += g;
+      cashOrders.add(o.id);
+    } else if (pm === "CARD") {
+      card += g;
+      cardOrders.add(o.id);
+    } else if (pm === "ONLINE") {
+      online += g;
+      onlineOrders.add(o.id);
+      const prov = (o.paymentProvider && String(o.paymentProvider).trim()) || "Online";
+      onlineByProv[prov] = (onlineByProv[prov] || 0) + g;
+    } else if (pm === "SPLIT") {
+      const sc = Number(o.splitCashAmount) || 0;
+      const sd = Number(o.splitCardAmount) || 0;
+      const so = Number(o.splitOnlineAmount) || 0;
+      if (sc > 0) {
+        cash += sc;
+        cashOrders.add(o.id);
+      }
+      if (sd > 0) {
+        card += sd;
+        cardOrders.add(o.id);
+      }
+      if (so > 0) {
+        online += so;
+        onlineOrders.add(o.id);
+        const pv =
+          (o.splitOnlineProvider && String(o.splitOnlineProvider).trim()) ||
+          (o.paymentProvider && String(o.paymentProvider).trim()) ||
+          "Online";
+        onlineByProv[pv] = (onlineByProv[pv] || 0) + so;
+      }
+    }
+
+    const ty = String(o.orderType || "DINE_IN").toUpperCase();
+    if (ty === "DELIVERY") {
+      ot.DELIVERY.amt += g;
+      ot.DELIVERY.n += 1;
+      const dc = Number(o.deliveryCharges) || 0;
+      ot.DELIVERY.fees += dc;
+      ot.DELIVERY.items += Math.max(0, g - dc);
+    } else if (ty === "TAKEAWAY") {
+      ot.TAKEAWAY.amt += g;
+      ot.TAKEAWAY.n += 1;
+    } else {
+      ot.DINE_IN.amt += g;
+      ot.DINE_IN.n += 1;
+    }
+
+    for (const it of o.items || []) {
+      const name = it.name || "Item";
+      const q = Number(it.qty ?? it.quantity ?? 0) || 0;
+      const lt = Number(it.lineTotal) || 0;
+      const row = itemAgg.get(name) || { qty: 0, rev: 0 };
+      row.qty += q;
+      row.rev += lt;
+      itemAgg.set(name, row);
+    }
+
+    const staff =
+      (o.orderTakerName && String(o.orderTakerName).trim()) ||
+      (o.createdBy?.name && String(o.createdBy.name).trim()) ||
+      "";
+    if (staff) {
+      const row = staffAgg.get(staff) || { n: 0, rev: 0 };
+      row.n += 1;
+      row.rev += g;
+      staffAgg.set(staff, row);
+    }
+  }
+
+  const topItems = Array.from(itemAgg.entries())
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.rev - a.rev)
+    .slice(0, 5);
+
+  const staffList = Array.from(staffAgg.entries())
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.rev - a.rev);
+
+  const onlineProviders = Object.entries(onlineByProv).sort(
+    (a, b) => b[1] - a[1],
+  );
+
+  return {
+    revenueCount: revenue.length,
+    payment: {
+      cash,
+      cashOrders: cashOrders.size,
+      card,
+      cardOrders: cardOrders.size,
+      online,
+      onlineOrders: onlineOrders.size,
+      onlineProviders,
+    },
+    orderTypes: ot,
+    topItems,
+    staffList,
+  };
+}
 
 // ─── Board configuration ────────────────────────────────────────────────────
 
@@ -358,7 +490,10 @@ export default function OrdersPage() {
   const [noActiveSession, setNoActiveSession] = useState(false);
   const [startingSession, setStartingSession] = useState(false);
   const [savingCutoff, setSavingCutoff] = useState(false);
-  const [showSessionHistoryModal, setShowSessionHistoryModal] = useState(false);
+  const [showTodayReportModal, setShowTodayReportModal] = useState(false);
+  const [loadingTodayReport, setLoadingTodayReport] = useState(false);
+  const [todayReportData, setTodayReportData] = useState(null);
+  const [showLegacySessionsModal, setShowLegacySessionsModal] = useState(false);
   const [sessionHistory, setSessionHistory] = useState([]);
   const [loadingSessionHistory, setLoadingSessionHistory] = useState(false);
 
@@ -914,6 +1049,76 @@ export default function OrdersPage() {
     return getBusinessDayRange(businessDateStr, cutoffHour);
   }, [datePreset, customFrom, customTo, businessDateStr, cutoffHour]);
 
+  const loadTodaySessionReport = useCallback(async () => {
+    setLoadingTodayReport(true);
+    try {
+      const cur = await getCurrentDaySession(currentBranch?.id);
+      let sessionId = cur?.id;
+      let headerSales = Number(cur?.totalSales) || 0;
+      let headerOrders = Number(cur?.totalOrders) || 0;
+      let meta = cur
+        ? {
+            status: "OPEN",
+            startAt: cur.startAt,
+            endAt: cur.endAt,
+          }
+        : null;
+
+      if (!sessionId) {
+        const res = await getDaySessions(currentBranch?.id, { limit: 40 });
+        const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
+        const match = sessions.find(
+          (s) =>
+            getBusinessDate(new Date(s.startAt), cutoffHour) === businessDateStr,
+        );
+        if (match) {
+          sessionId = match.id;
+          meta = {
+            status: match.status,
+            startAt: match.startAt,
+            endAt: match.endAt,
+          };
+          headerSales = Number(match.totalSales) || 0;
+          headerOrders = Number(match.totalOrders) || 0;
+        }
+      }
+
+      if (!sessionId) {
+        setTodayReportData(null);
+        return;
+      }
+
+      const pack = await getDaySessionOrders(sessionId);
+
+      if (cur?.id && sessionId === cur.id) {
+        headerSales = Number(cur.totalSales) || 0;
+        headerOrders = Number(cur.totalOrders) || 0;
+      } else if (pack?.summary) {
+        headerSales = Number(pack.summary.totalSales) || headerSales;
+        headerOrders = Number(pack.summary.totalOrders) || headerOrders;
+      }
+
+      setTodayReportData({
+        meta,
+        headerSales,
+        headerOrders,
+        orders: pack?.orders || [],
+        sessionId,
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error(e?.message || "Failed to load today's report");
+      setTodayReportData(null);
+    } finally {
+      setLoadingTodayReport(false);
+    }
+  }, [currentBranch?.id, cutoffHour, businessDateStr]);
+
+  const todayReportBreakdown = useMemo(() => {
+    if (!todayReportData?.orders?.length) return null;
+    return buildTodayReportBreakdown(todayReportData.orders);
+  }, [todayReportData]);
+
   const dateRangeKey = `${dateRange?.from?.getTime() ?? ""}-${dateRange?.to?.getTime() ?? ""}`;
   useEffect(() => {
     loadOrders(dateRange);
@@ -1030,6 +1235,10 @@ export default function OrdersPage() {
           onOrderChanged={handlePosOrderChanged}
           isActive={activeView === "pos"}
           initialTableName={posInitialTableName}
+          onOpenTodayReport={() => {
+            loadTodaySessionReport();
+            setShowTodayReportModal(true);
+          }}
         />
       </div>
 
@@ -1208,9 +1417,12 @@ export default function OrdersPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => { loadSessionHistory(); setShowSessionHistoryModal(true); }}
+                  onClick={() => {
+                    loadTodaySessionReport();
+                    setShowTodayReportModal(true);
+                  }}
                   className="h-9 w-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 hover:border-gray-400 dark:hover:border-neutral-500 transition-all inline-flex items-center justify-center flex-shrink-0"
-                  title="Past session history"
+                  title="Today's session report"
                 >
                   <Clock className="w-3.5 h-3.5" />
                 </button>
@@ -1892,12 +2104,362 @@ export default function OrdersPage() {
       )}
 
 
-      {/* ── Past Sessions modal ──────────────────────────────────── */}
-      {showSessionHistoryModal && (
+      {/* ── Today's session report ───────────────────────────────── */}
+      {showTodayReportModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowSessionHistoryModal(false);
+            if (e.target === e.currentTarget) setShowTodayReportModal(false);
+          }}
+        >
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Today&apos;s Report
+                </h2>
+                <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                  {currentBranch
+                    ? currentBranch.name
+                    : "All branches"}{" "}
+                  · business date {formatBusinessDate(businessDateStr)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTodayReportModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              {loadingTodayReport ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : !todayReportData?.sessionId ? (
+                <div className="text-center py-12 text-sm text-gray-500 dark:text-neutral-400">
+                  No business-day session found for today.
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 p-4 space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500 dark:text-neutral-400">
+                        Session started
+                      </span>
+                      <span className="font-semibold text-gray-900 dark:text-white text-right">
+                        {todayReportData.meta?.startAt
+                          ? new Date(todayReportData.meta.startAt).toLocaleString(
+                              "en-PK",
+                              {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              },
+                            )
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500 dark:text-neutral-400">
+                        Status
+                      </span>
+                      <span
+                        className={`font-semibold ${todayReportData.meta?.status === "OPEN" ? "text-emerald-600 dark:text-emerald-400" : "text-gray-900 dark:text-white"}`}
+                      >
+                        {todayReportData.meta?.status || "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500 dark:text-neutral-400">
+                        Period
+                      </span>
+                      <span className="font-medium text-gray-800 dark:text-neutral-200 text-right text-xs">
+                        {todayReportData.meta?.startAt
+                          ? new Date(todayReportData.meta.startAt).toLocaleString(
+                              "en-PK",
+                              {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              },
+                            )
+                          : "—"}{" "}
+                        →{" "}
+                        {todayReportData.meta?.status === "OPEN"
+                          ? "Now"
+                          : todayReportData.meta?.endAt
+                            ? new Date(todayReportData.meta.endAt).toLocaleString(
+                                "en-PK",
+                                {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: true,
+                                },
+                              )
+                            : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                      Revenue summary
+                    </p>
+                    <div className="rounded-xl bg-gradient-to-br from-primary/15 to-secondary/10 border border-primary/20 p-5">
+                      <p className="text-xs text-gray-600 dark:text-neutral-400 mb-1">
+                        Total revenue
+                      </p>
+                      <p className="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
+                        {sym}{" "}
+                        {Math.round(todayReportData.headerSales || 0).toLocaleString()}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-4 text-sm">
+                        <span className="text-gray-700 dark:text-neutral-300">
+                          <span className="font-semibold">
+                            {(todayReportData.headerOrders || 0).toLocaleString()}
+                          </span>{" "}
+                          orders
+                        </span>
+                        <span className="text-gray-500 dark:text-neutral-400">
+                          Avg order{" "}
+                          <span className="font-semibold text-gray-900 dark:text-white">
+                            {sym}{" "}
+                            {(todayReportData.headerOrders || 0) > 0
+                              ? Math.round(
+                                  (todayReportData.headerSales || 0) /
+                                    (todayReportData.headerOrders || 1),
+                                ).toLocaleString()
+                              : "0"}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {todayReportBreakdown && (
+                    <>
+                      <div>
+                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                          Payment breakdown
+                        </p>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
+                            <span className="text-gray-600 dark:text-neutral-400">
+                              Cash
+                            </span>
+                            <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                              {sym}{" "}
+                              {Math.round(todayReportBreakdown.payment.cash).toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-400">
+                                ({todayReportBreakdown.payment.cashOrders} orders)
+                              </span>
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
+                            <span className="text-gray-600 dark:text-neutral-400">
+                              Online
+                            </span>
+                            <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                              {sym}{" "}
+                              {Math.round(todayReportBreakdown.payment.online).toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-400">
+                                ({todayReportBreakdown.payment.onlineOrders} orders)
+                              </span>
+                            </span>
+                          </div>
+                          {todayReportBreakdown.payment.onlineProviders.length > 0 && (
+                            <div className="pl-3 space-y-1 text-xs text-gray-600 dark:text-neutral-400">
+                              {todayReportBreakdown.payment.onlineProviders.map(
+                                ([name, amt]) => (
+                                  <div key={name} className="flex justify-between">
+                                    <span>{name}</span>
+                                    <span className="tabular-nums">
+                                      {sym} {Math.round(amt).toLocaleString()}
+                                    </span>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          )}
+                          <div className="flex justify-between py-1">
+                            <span className="text-gray-600 dark:text-neutral-400">
+                              Card
+                            </span>
+                            <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                              {sym}{" "}
+                              {Math.round(todayReportBreakdown.payment.card).toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-400">
+                                ({todayReportBreakdown.payment.cardOrders} orders)
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                          Order type breakdown
+                        </p>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
+                            <span>Dine-in</span>
+                            <span className="font-semibold tabular-nums">
+                              {sym}{" "}
+                              {Math.round(
+                                todayReportBreakdown.orderTypes.DINE_IN.amt,
+                              ).toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-400">
+                                ({todayReportBreakdown.orderTypes.DINE_IN.n} orders)
+                              </span>
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
+                            <span>Takeaway</span>
+                            <span className="font-semibold tabular-nums">
+                              {sym}{" "}
+                              {Math.round(
+                                todayReportBreakdown.orderTypes.TAKEAWAY.amt,
+                              ).toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-400">
+                                ({todayReportBreakdown.orderTypes.TAKEAWAY.n} orders)
+                              </span>
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
+                            <span>Delivery</span>
+                            <span className="font-semibold tabular-nums">
+                              {sym}{" "}
+                              {Math.round(
+                                todayReportBreakdown.orderTypes.DELIVERY.amt,
+                              ).toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-gray-400">
+                                ({todayReportBreakdown.orderTypes.DELIVERY.n} orders)
+                              </span>
+                            </span>
+                          </div>
+                          <div className="pl-3 space-y-1 text-xs text-gray-600 dark:text-neutral-400">
+                            <div className="flex justify-between">
+                              <span>Items (excl. delivery fee)</span>
+                              <span className="tabular-nums">
+                                {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.orderTypes.DELIVERY.items,
+                                ).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Delivery fees</span>
+                              <span className="tabular-nums">
+                                {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.orderTypes.DELIVERY.fees,
+                                ).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                          Top items today
+                        </p>
+                        <div className="space-y-1.5 text-sm">
+                          {todayReportBreakdown.topItems.length === 0 ? (
+                            <p className="text-gray-400 text-xs">No item data</p>
+                          ) : (
+                            todayReportBreakdown.topItems.map((it) => (
+                              <div
+                                key={it.name}
+                                className="flex justify-between gap-3 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                              >
+                                <span className="text-gray-800 dark:text-neutral-200 truncate">
+                                  {it.name}
+                                </span>
+                                <span className="text-xs text-gray-500 dark:text-neutral-400 shrink-0 tabular-nums">
+                                  {Math.round(it.qty)} sold · {sym}{" "}
+                                  {Math.round(it.rev).toLocaleString()}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                          Staff performance (order takers)
+                        </p>
+                        <div className="space-y-1.5 text-sm">
+                          {todayReportBreakdown.staffList.length === 0 ? (
+                            <p className="text-gray-400 text-xs">
+                              No staff-attributed orders in closed sales
+                            </p>
+                          ) : (
+                            todayReportBreakdown.staffList.map((st) => (
+                              <div
+                                key={st.name}
+                                className="flex justify-between gap-3 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                              >
+                                <span className="font-medium text-gray-800 dark:text-neutral-200">
+                                  {st.name}
+                                </span>
+                                <span className="text-xs tabular-nums text-gray-600 dark:text-neutral-400">
+                                  {st.n} orders · {sym}{" "}
+                                  {Math.round(st.rev).toLocaleString()}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTodayReportModal(false);
+                  loadSessionHistory();
+                  setShowLegacySessionsModal(true);
+                }}
+                className="text-sm font-semibold text-primary hover:underline text-left"
+              >
+                View session history →
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTodayReportModal(false)}
+                className="h-9 px-4 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Past sessions (full history) ────────────────────────── */}
+      {showLegacySessionsModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowLegacySessionsModal(false);
           }}
         >
           <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
@@ -1913,7 +2475,7 @@ export default function OrdersPage() {
                 </p>
               </div>
               <button
-                onClick={() => setShowSessionHistoryModal(false)}
+                onClick={() => setShowLegacySessionsModal(false)}
                 className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
               >
                 <X className="w-4 h-4" />
