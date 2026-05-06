@@ -23,7 +23,9 @@ import {
   endDaySession,
   updateBranch,
   getCurrencySymbol,
+  getDailyCurrency,
 } from "../../lib/apiClient";
+import { buildTodayReportBreakdown } from "../../lib/sessionReportBreakdown";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import {
   getBusinessDate,
@@ -63,138 +65,8 @@ import {
   Wallet,
   PlayCircle,
   Coffee,
+  Globe,
 } from "lucide-react";
-
-/** Paid closed orders only — aligns with session summary / POS closed bar. */
-function buildTodayReportBreakdown(orders) {
-  const list = Array.isArray(orders) ? orders : [];
-  const revenue = list.filter(
-    (o) =>
-      (o.status === "DELIVERED" || o.status === "COMPLETED") && o.isPaid === true,
-  );
-  const gt = (o) => Number(o.grandTotal ?? o.total ?? 0);
-
-  let cash = 0;
-  let card = 0;
-  let online = 0;
-  const cashOrders = new Set();
-  const cardOrders = new Set();
-  const onlineOrders = new Set();
-  const onlineByProv = {};
-
-  const ot = {
-    DINE_IN: { amt: 0, n: 0 },
-    TAKEAWAY: { amt: 0, n: 0 },
-    DELIVERY: { amt: 0, n: 0, items: 0, fees: 0 },
-  };
-
-  const itemAgg = new Map();
-  const staffAgg = new Map();
-
-  for (const o of revenue) {
-    const g = gt(o);
-    const pm = String(o.paymentMethod || "").toUpperCase();
-
-    if (pm === "CASH") {
-      cash += g;
-      cashOrders.add(o.id);
-    } else if (pm === "CARD") {
-      card += g;
-      cardOrders.add(o.id);
-    } else if (pm === "ONLINE") {
-      online += g;
-      onlineOrders.add(o.id);
-      const prov = (o.paymentProvider && String(o.paymentProvider).trim()) || "Online";
-      onlineByProv[prov] = (onlineByProv[prov] || 0) + g;
-    } else if (pm === "SPLIT") {
-      const sc = Number(o.splitCashAmount) || 0;
-      const sd = Number(o.splitCardAmount) || 0;
-      const so = Number(o.splitOnlineAmount) || 0;
-      if (sc > 0) {
-        cash += sc;
-        cashOrders.add(o.id);
-      }
-      if (sd > 0) {
-        card += sd;
-        cardOrders.add(o.id);
-      }
-      if (so > 0) {
-        online += so;
-        onlineOrders.add(o.id);
-        const pv =
-          (o.splitOnlineProvider && String(o.splitOnlineProvider).trim()) ||
-          (o.paymentProvider && String(o.paymentProvider).trim()) ||
-          "Online";
-        onlineByProv[pv] = (onlineByProv[pv] || 0) + so;
-      }
-    }
-
-    const ty = String(o.orderType || "DINE_IN").toUpperCase();
-    if (ty === "DELIVERY") {
-      ot.DELIVERY.amt += g;
-      ot.DELIVERY.n += 1;
-      const dc = Number(o.deliveryCharges) || 0;
-      ot.DELIVERY.fees += dc;
-      ot.DELIVERY.items += Math.max(0, g - dc);
-    } else if (ty === "TAKEAWAY") {
-      ot.TAKEAWAY.amt += g;
-      ot.TAKEAWAY.n += 1;
-    } else {
-      ot.DINE_IN.amt += g;
-      ot.DINE_IN.n += 1;
-    }
-
-    for (const it of o.items || []) {
-      const name = it.name || "Item";
-      const q = Number(it.qty ?? it.quantity ?? 0) || 0;
-      const lt = Number(it.lineTotal) || 0;
-      const row = itemAgg.get(name) || { qty: 0, rev: 0 };
-      row.qty += q;
-      row.rev += lt;
-      itemAgg.set(name, row);
-    }
-
-    const staff =
-      (o.orderTakerName && String(o.orderTakerName).trim()) ||
-      (o.createdBy?.name && String(o.createdBy.name).trim()) ||
-      "";
-    if (staff) {
-      const row = staffAgg.get(staff) || { n: 0, rev: 0 };
-      row.n += 1;
-      row.rev += g;
-      staffAgg.set(staff, row);
-    }
-  }
-
-  const topItems = Array.from(itemAgg.entries())
-    .map(([name, v]) => ({ name, ...v }))
-    .sort((a, b) => b.rev - a.rev)
-    .slice(0, 5);
-
-  const staffList = Array.from(staffAgg.entries())
-    .map(([name, v]) => ({ name, ...v }))
-    .sort((a, b) => b.rev - a.rev);
-
-  const onlineProviders = Object.entries(onlineByProv).sort(
-    (a, b) => b[1] - a[1],
-  );
-
-  return {
-    revenueCount: revenue.length,
-    payment: {
-      cash,
-      cashOrders: cashOrders.size,
-      card,
-      cardOrders: cardOrders.size,
-      online,
-      onlineOrders: onlineOrders.size,
-      onlineProviders,
-    },
-    orderTypes: ot,
-    topItems,
-    staffList,
-  };
-}
 
 // ─── Board configuration ────────────────────────────────────────────────────
 
@@ -493,6 +365,9 @@ export default function OrdersPage() {
   const [showTodayReportModal, setShowTodayReportModal] = useState(false);
   const [loadingTodayReport, setLoadingTodayReport] = useState(false);
   const [todayReportData, setTodayReportData] = useState(null);
+  const [todayReportCurrency, setTodayReportCurrency] = useState({});
+  const [todayReportCurrencyLoading, setTodayReportCurrencyLoading] =
+    useState(false);
   const [showLegacySessionsModal, setShowLegacySessionsModal] = useState(false);
   const [sessionHistory, setSessionHistory] = useState([]);
   const [loadingSessionHistory, setLoadingSessionHistory] = useState(false);
@@ -1054,8 +929,6 @@ export default function OrdersPage() {
     try {
       const cur = await getCurrentDaySession(currentBranch?.id);
       let sessionId = cur?.id;
-      let headerSales = Number(cur?.totalSales) || 0;
-      let headerOrders = Number(cur?.totalOrders) || 0;
       let meta = cur
         ? {
             status: "OPEN",
@@ -1078,8 +951,6 @@ export default function OrdersPage() {
             startAt: match.startAt,
             endAt: match.endAt,
           };
-          headerSales = Number(match.totalSales) || 0;
-          headerOrders = Number(match.totalOrders) || 0;
         }
       }
 
@@ -1090,18 +961,8 @@ export default function OrdersPage() {
 
       const pack = await getDaySessionOrders(sessionId);
 
-      if (cur?.id && sessionId === cur.id) {
-        headerSales = Number(cur.totalSales) || 0;
-        headerOrders = Number(cur.totalOrders) || 0;
-      } else if (pack?.summary) {
-        headerSales = Number(pack.summary.totalSales) || headerSales;
-        headerOrders = Number(pack.summary.totalOrders) || headerOrders;
-      }
-
       setTodayReportData({
         meta,
-        headerSales,
-        headerOrders,
         orders: pack?.orders || [],
         sessionId,
       });
@@ -1115,9 +976,66 @@ export default function OrdersPage() {
   }, [currentBranch?.id, cutoffHour, businessDateStr]);
 
   const todayReportBreakdown = useMemo(() => {
-    if (!todayReportData?.orders?.length) return null;
-    return buildTodayReportBreakdown(todayReportData.orders);
+    if (!todayReportData) return null;
+    return buildTodayReportBreakdown(todayReportData.orders || []);
   }, [todayReportData]);
+
+  useEffect(() => {
+    if (!todayReportData?.meta?.startAt) {
+      setTodayReportCurrency({});
+      return;
+    }
+    const d = new Date(todayReportData.meta.startAt);
+    if (Number.isNaN(d.getTime())) return;
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    let cancelled = false;
+    setTodayReportCurrencyLoading(true);
+    getDailyCurrency(date)
+      .then((res) => {
+        if (cancelled) return;
+        setTodayReportCurrency(
+          res?.quantities && typeof res.quantities === "object"
+            ? res.quantities
+            : {},
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setTodayReportCurrency({});
+      })
+      .finally(() => {
+        if (!cancelled) setTodayReportCurrencyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [todayReportData?.meta?.startAt]);
+
+  const todayReportCashDenom = useMemo(() => {
+    const currencyRows = Object.entries(todayReportCurrency || {})
+      .map(([denom, qty]) => ({
+        denom: Number(denom),
+        qty: Number(qty) || 0,
+      }))
+      .filter((r) => Number.isFinite(r.denom) && r.denom > 0 && r.qty > 0)
+      .sort((a, b) => b.denom - a.denom)
+      .map((r) => ({ ...r, subtotal: r.denom * r.qty }));
+    const notesRows = currencyRows.filter((r) => r.denom >= 1);
+    const coinsRows = currencyRows.filter((r) => r.denom < 1);
+    const countedCashTotal = currencyRows.reduce(
+      (sum, r) => sum + Number(r.subtotal || 0),
+      0,
+    );
+    const expectedCash = Number(todayReportBreakdown?.payment?.cash ?? 0);
+    const cashDiff = countedCashTotal - expectedCash;
+    return {
+      currencyRows,
+      notesRows,
+      coinsRows,
+      countedCashTotal,
+      expectedCash,
+      cashDiff,
+    };
+  }, [todayReportCurrency, todayReportBreakdown?.payment?.cash]);
 
   const dateRangeKey = `${dateRange?.from?.getTime() ?? ""}-${dateRange?.to?.getTime() ?? ""}`;
   useEffect(() => {
@@ -2112,316 +2030,558 @@ export default function OrdersPage() {
             if (e.target === e.currentTarget) setShowTodayReportModal(false);
           }}
         >
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                  Today&apos;s Report
-                </h2>
-                <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
-                  {currentBranch
-                    ? currentBranch.name
-                    : "All branches"}{" "}
-                  · business date {formatBusinessDate(businessDateStr)}
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-r from-gray-50/90 to-white dark:from-neutral-900/80 dark:to-neutral-950">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white tracking-tight">
+                    Today&apos;s session report
+                  </h2>
+                  {todayReportData?.meta?.status === "OPEN" ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-500/25">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      OPEN
+                    </span>
+                  ) : todayReportData?.meta?.status ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 border border-gray-200 dark:border-neutral-700">
+                      {todayReportData.meta.status}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-1">
+                  {currentBranch?.name || "All branches"} · Business day{" "}
+                  {formatBusinessDate(businessDateStr)}
                 </p>
+                {todayReportData?.meta?.startAt && (
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">
+                    {new Date(todayReportData.meta.startAt).toLocaleString(
+                      "en-PK",
+                      {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: true,
+                      },
+                    )}
+                    {todayReportData.meta.status === "OPEN"
+                      ? " · Ongoing"
+                      : todayReportData.meta.endAt
+                        ? ` → ${new Date(todayReportData.meta.endAt).toLocaleString("en-PK", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}`
+                        : ""}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
                 onClick={() => setShowTodayReportModal(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
               {loadingTodayReport ? (
-                <div className="flex items-center justify-center py-16">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <Loader2 className="w-7 h-7 animate-spin text-primary" />
+                  <p className="text-sm text-gray-500 dark:text-neutral-400">
+                    Loading session numbers…
+                  </p>
                 </div>
               ) : !todayReportData?.sessionId ? (
-                <div className="text-center py-12 text-sm text-gray-500 dark:text-neutral-400">
-                  No business-day session found for today.
+                <div className="text-center py-14 px-4 rounded-2xl border border-dashed border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/30">
+                  <p className="text-sm font-medium text-gray-700 dark:text-neutral-300">
+                    No business-day session found for today.
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-neutral-500 mt-1">
+                    Start a session from the POS to see live totals here.
+                  </p>
                 </div>
               ) : (
                 <>
-                  <div className="rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 p-4 space-y-2 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500 dark:text-neutral-400">
-                        Session started
-                      </span>
-                      <span className="font-semibold text-gray-900 dark:text-white text-right">
-                        {todayReportData.meta?.startAt
-                          ? new Date(todayReportData.meta.startAt).toLocaleString(
-                              "en-PK",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: true,
-                              },
-                            )
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500 dark:text-neutral-400">
-                        Status
-                      </span>
-                      <span
-                        className={`font-semibold ${todayReportData.meta?.status === "OPEN" ? "text-emerald-600 dark:text-emerald-400" : "text-gray-900 dark:text-white"}`}
-                      >
-                        {todayReportData.meta?.status || "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500 dark:text-neutral-400">
-                        Period
-                      </span>
-                      <span className="font-medium text-gray-800 dark:text-neutral-200 text-right text-xs">
-                        {todayReportData.meta?.startAt
-                          ? new Date(todayReportData.meta.startAt).toLocaleString(
-                              "en-PK",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: true,
-                              },
-                            )
-                          : "—"}{" "}
-                        →{" "}
-                        {todayReportData.meta?.status === "OPEN"
-                          ? "Now"
-                          : todayReportData.meta?.endAt
-                            ? new Date(todayReportData.meta.endAt).toLocaleString(
-                                "en-PK",
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                },
-                              )
-                            : "—"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                      Revenue summary
-                    </p>
-                    <div className="rounded-xl bg-gradient-to-br from-primary/15 to-secondary/10 border border-primary/20 p-5">
-                      <p className="text-xs text-gray-600 dark:text-neutral-400 mb-1">
-                        Total revenue
-                      </p>
-                      <p className="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
-                        {sym}{" "}
-                        {Math.round(todayReportData.headerSales || 0).toLocaleString()}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-4 text-sm">
-                        <span className="text-gray-700 dark:text-neutral-300">
-                          <span className="font-semibold">
-                            {(todayReportData.headerOrders || 0).toLocaleString()}
-                          </span>{" "}
-                          orders
-                        </span>
-                        <span className="text-gray-500 dark:text-neutral-400">
-                          Avg order{" "}
-                          <span className="font-semibold text-gray-900 dark:text-white">
-                            {sym}{" "}
-                            {(todayReportData.headerOrders || 0) > 0
-                              ? Math.round(
-                                  (todayReportData.headerSales || 0) /
-                                    (todayReportData.headerOrders || 1),
-                                ).toLocaleString()
-                              : "0"}
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
                   {todayReportBreakdown && (
                     <>
-                      <div>
-                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                          Payment breakdown
-                        </p>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
-                            <span className="text-gray-600 dark:text-neutral-400">
-                              Cash
-                            </span>
-                            <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                              {sym}{" "}
-                              {Math.round(todayReportBreakdown.payment.cash).toLocaleString()}{" "}
-                              <span className="text-xs font-normal text-gray-400">
-                                ({todayReportBreakdown.payment.cashOrders} orders)
-                              </span>
-                            </span>
-                          </div>
-                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
-                            <span className="text-gray-600 dark:text-neutral-400">
-                              Online
-                            </span>
-                            <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                              {sym}{" "}
-                              {Math.round(todayReportBreakdown.payment.online).toLocaleString()}{" "}
-                              <span className="text-xs font-normal text-gray-400">
-                                ({todayReportBreakdown.payment.onlineOrders} orders)
-                              </span>
-                            </span>
-                          </div>
-                          {todayReportBreakdown.payment.onlineProviders.length > 0 && (
-                            <div className="pl-3 space-y-1 text-xs text-gray-600 dark:text-neutral-400">
+                      {/* KPI row */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 shadow-sm">
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                            Total revenue
+                          </p>
+                          <p className="mt-1 text-[26px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                            {sym}{" "}
+                            {Math.round(
+                              todayReportBreakdown.totalRevenue || 0,
+                            ).toLocaleString()}
+                          </p>
+                          {todayReportBreakdown.unpaid.totalCount > 0 ? (
+                            <div className="mt-2 space-y-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                              <p className="font-semibold leading-snug">
+                                Unpaid total: {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.unpaid.totalAmt,
+                                ).toLocaleString()}{" "}
+                                · {todayReportBreakdown.unpaid.totalCount}{" "}
+                                orders
+                              </p>
+                              <p className="text-[9px] leading-snug opacity-95">
+                                In progress: {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.unpaid.pipelineAmt,
+                                ).toLocaleString()}{" "}
+                                ({todayReportBreakdown.unpaid.pipelineCount}) ·
+                                Delivered, payment pending: {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.unpaid.deliveredAmt,
+                                ).toLocaleString()}{" "}
+                                ({todayReportBreakdown.unpaid.deliveredCount})
+                                {todayReportBreakdown.unpaid.otherCount > 0
+                                  ? ` · Other unpaid: ${sym} ${Math.round(todayReportBreakdown.unpaid.otherAmt).toLocaleString()} (${todayReportBreakdown.unpaid.otherCount})`
+                                  : ""}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                              All recorded orders paid
+                            </p>
+                          )}
+                        </div>
+                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 shadow-sm">
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                            Orders
+                          </p>
+                          <p className="mt-1 text-[26px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                            {(todayReportBreakdown.totalOrders ?? 0).toLocaleString()}
+                          </p>
+                          <p className="mt-2 text-[10px] text-gray-500 dark:text-neutral-400">
+                            Paid orders in session (closed sales)
+                          </p>
+                          {(todayReportBreakdown.totalOrders ?? 0) > 0 && (
+                            <p className="mt-1 text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
+                              Avg {sym}{" "}
+                              {Math.round(
+                                todayReportBreakdown.totalRevenue /
+                                  todayReportBreakdown.totalOrders,
+                              ).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Payment method KPIs */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5 text-center shadow-sm">
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                            Cash
+                          </p>
+                          <p className="mt-1 text-lg font-black text-gray-900 dark:text-white tabular-nums">
+                            {sym}{" "}
+                            {Math.round(
+                              todayReportBreakdown.payment.cash,
+                            ).toLocaleString()}
+                          </p>
+                          <p className="text-[9px] text-gray-400 mt-0.5">
+                            {todayReportBreakdown.payment.cashOrders} orders
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5 text-center shadow-sm">
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                            Card
+                          </p>
+                          <p className="mt-1 text-lg font-black text-gray-900 dark:text-white tabular-nums">
+                            {sym}{" "}
+                            {Math.round(
+                              todayReportBreakdown.payment.card,
+                            ).toLocaleString()}
+                          </p>
+                          <p className="text-[9px] text-gray-400 mt-0.5">
+                            {todayReportBreakdown.payment.cardOrders} orders
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5 text-center shadow-sm">
+                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                            Online
+                          </p>
+                          <p className="mt-1 text-lg font-black text-gray-900 dark:text-white tabular-nums">
+                            {sym}{" "}
+                            {Math.round(
+                              todayReportBreakdown.payment.online,
+                            ).toLocaleString()}
+                          </p>
+                          <p className="text-[9px] text-gray-400 mt-0.5">
+                            {todayReportBreakdown.payment.onlineOrders} orders
+                          </p>
+                          {todayReportBreakdown.payment.onlineProviders.length >
+                            0 && (
+                            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-neutral-800 space-y-0.5 max-h-24 overflow-y-auto text-left">
                               {todayReportBreakdown.payment.onlineProviders.map(
                                 ([name, amt]) => (
-                                  <div key={name} className="flex justify-between">
-                                    <span>{name}</span>
-                                    <span className="tabular-nums">
-                                      {sym} {Math.round(amt).toLocaleString()}
+                                  <div
+                                    key={name}
+                                    className="flex justify-between gap-2 text-[9px] text-gray-500 dark:text-neutral-400"
+                                  >
+                                    <span className="truncate">{name}</span>
+                                    <span className="tabular-nums shrink-0">
+                                      {sym}{" "}
+                                      {Math.round(amt).toLocaleString()}
                                     </span>
                                   </div>
                                 ),
                               )}
                             </div>
                           )}
-                          <div className="flex justify-between py-1">
-                            <span className="text-gray-600 dark:text-neutral-400">
-                              Card
-                            </span>
-                            <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                              {sym}{" "}
-                              {Math.round(todayReportBreakdown.payment.card).toLocaleString()}{" "}
-                              <span className="text-xs font-normal text-gray-400">
-                                ({todayReportBreakdown.payment.cardOrders} orders)
-                              </span>
-                            </span>
-                          </div>
                         </div>
                       </div>
 
+                      {/* Cash denomination (same calendar day as session start) */}
+                      <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 shadow-sm">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <h3 className="text-[12px] font-bold text-gray-900 dark:text-white">
+                            Cash breakdown
+                          </h3>
+                          <span className="text-[10px] text-gray-500 dark:text-neutral-400">
+                            Saved denomination count
+                          </span>
+                        </div>
+                        {todayReportCurrencyLoading ? (
+                          <div className="py-6 flex justify-center">
+                            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                          </div>
+                        ) : todayReportCashDenom.currencyRows.length === 0 ? (
+                          <p className="text-[11px] text-gray-500 dark:text-neutral-400 py-1">
+                            No denomination count saved for this day.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div className="rounded-lg border border-gray-100 dark:border-neutral-800 px-2.5 py-2">
+                                <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
+                                  Notes
+                                </p>
+                                <div className="space-y-1">
+                                  {todayReportCashDenom.notesRows.length === 0 ? (
+                                    <p className="text-[10px] text-gray-400">
+                                      None
+                                    </p>
+                                  ) : (
+                                    todayReportCashDenom.notesRows.map((r) => (
+                                      <div
+                                        key={`n-${r.denom}`}
+                                        className="flex justify-between text-[10px]"
+                                      >
+                                        <span className="text-gray-600 dark:text-neutral-400">
+                                          {sym}{" "}
+                                          {Math.round(r.denom).toLocaleString()}{" "}
+                                          × {r.qty}
+                                        </span>
+                                        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                                          {sym}{" "}
+                                          {Math.round(r.subtotal).toLocaleString()}
+                                        </span>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded-lg border border-gray-100 dark:border-neutral-800 px-2.5 py-2">
+                                <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
+                                  Coins
+                                </p>
+                                <div className="space-y-1">
+                                  {todayReportCashDenom.coinsRows.length === 0 ? (
+                                    <p className="text-[10px] text-gray-400">
+                                      None
+                                    </p>
+                                  ) : (
+                                    todayReportCashDenom.coinsRows.map((r) => (
+                                      <div
+                                        key={`c-${r.denom}`}
+                                        className="flex justify-between text-[10px]"
+                                      >
+                                        <span className="text-gray-600 dark:text-neutral-400">
+                                          {sym}{" "}
+                                          {r.denom.toLocaleString()} × {r.qty}
+                                        </span>
+                                        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                                          {sym}{" "}
+                                          {Math.round(r.subtotal).toLocaleString()}
+                                        </span>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div className="rounded-lg bg-gray-50 dark:bg-neutral-800/60 px-2.5 py-2">
+                                <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                                  Expected cash
+                                </p>
+                                <p className="text-[12px] font-bold text-gray-900 dark:text-white">
+                                  {sym}{" "}
+                                  {Math.round(
+                                    todayReportCashDenom.expectedCash,
+                                  ).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="rounded-lg bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-2">
+                                <p className="text-[9px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                                  Counted cash
+                                </p>
+                                <p className="text-[12px] font-bold text-emerald-700 dark:text-emerald-400">
+                                  {sym}{" "}
+                                  {Math.round(
+                                    todayReportCashDenom.countedCashTotal,
+                                  ).toLocaleString()}
+                                </p>
+                              </div>
+                              <div
+                                className={`rounded-lg px-2.5 py-2 ${
+                                  todayReportCashDenom.cashDiff === 0
+                                    ? "bg-gray-50 dark:bg-neutral-800/60"
+                                    : todayReportCashDenom.cashDiff > 0
+                                      ? "bg-amber-50 dark:bg-amber-500/10"
+                                      : "bg-rose-50 dark:bg-rose-500/10"
+                                }`}
+                              >
+                                <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                                  Difference
+                                </p>
+                                <p
+                                  className={`text-[12px] font-bold ${
+                                    todayReportCashDenom.cashDiff === 0
+                                      ? "text-gray-900 dark:text-white"
+                                      : todayReportCashDenom.cashDiff > 0
+                                        ? "text-amber-700 dark:text-amber-400"
+                                        : "text-rose-700 dark:text-rose-400"
+                                  }`}
+                                >
+                                  {todayReportCashDenom.cashDiff > 0 ? "+" : ""}
+                                  {sym}{" "}
+                                  {Math.round(
+                                    todayReportCashDenom.cashDiff,
+                                  ).toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Order type + website */}
                       <div>
-                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                        <h3 className="text-[13px] font-bold text-gray-900 dark:text-white mb-2">
                           Order type breakdown
-                        </p>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
-                            <span>Dine-in</span>
-                            <span className="font-semibold tabular-nums">
+                        </h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                          <div className="rounded-xl border border-orange-200/80 dark:border-orange-500/25 bg-orange-50/60 dark:bg-orange-500/10 px-3 py-3 min-h-[88px] flex flex-col justify-between">
+                            <p className="text-[10px] font-semibold text-orange-800 dark:text-orange-400 flex items-center gap-1">
+                              <UtensilsCrossed className="w-3.5 h-3.5 opacity-80" />
+                              Dine in
+                            </p>
+                            <p className="text-xl font-black text-gray-900 dark:text-white tabular-nums">
                               {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.orderTypes.DINE_IN.amt,
-                              ).toLocaleString()}{" "}
-                              <span className="text-xs font-normal text-gray-400">
-                                ({todayReportBreakdown.orderTypes.DINE_IN.n} orders)
-                              </span>
-                            </span>
+                              ).toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                              {todayReportBreakdown.orderTypes.DINE_IN.n} orders
+                            </p>
                           </div>
-                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
-                            <span>Takeaway</span>
-                            <span className="font-semibold tabular-nums">
+                          <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-3 py-3 min-h-[88px] flex flex-col justify-between">
+                            <p className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
+                              <ShoppingBag className="w-3.5 h-3.5 opacity-80" />
+                              Takeaway
+                            </p>
+                            <p className="text-xl font-black text-gray-900 dark:text-white tabular-nums">
                               {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.orderTypes.TAKEAWAY.amt,
-                              ).toLocaleString()}{" "}
-                              <span className="text-xs font-normal text-gray-400">
-                                ({todayReportBreakdown.orderTypes.TAKEAWAY.n} orders)
-                              </span>
-                            </span>
+                              ).toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                              {todayReportBreakdown.orderTypes.TAKEAWAY.n}{" "}
+                              orders
+                            </p>
                           </div>
-                          <div className="flex justify-between py-1 border-b border-gray-100 dark:border-neutral-800">
-                            <span>Delivery</span>
-                            <span className="font-semibold tabular-nums">
+                          <div className="rounded-xl border border-sky-200/80 dark:border-sky-500/25 bg-sky-50/60 dark:bg-sky-500/10 px-3 py-3 min-h-[88px] flex flex-col">
+                            <p className="text-[10px] font-semibold text-sky-800 dark:text-sky-400 flex items-center gap-1">
+                              <Truck className="w-3.5 h-3.5 opacity-80" />
+                              Delivery
+                            </p>
+                            <p className="mt-1 text-xl font-black text-gray-900 dark:text-white tabular-nums">
                               {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.orderTypes.DELIVERY.amt,
-                              ).toLocaleString()}{" "}
-                              <span className="text-xs font-normal text-gray-400">
-                                ({todayReportBreakdown.orderTypes.DELIVERY.n} orders)
-                              </span>
-                            </span>
-                          </div>
-                          <div className="pl-3 space-y-1 text-xs text-gray-600 dark:text-neutral-400">
-                            <div className="flex justify-between">
-                              <span>Items (excl. delivery fee)</span>
-                              <span className="tabular-nums">
+                              ).toLocaleString()}
+                            </p>
+                            {(todayReportBreakdown.orderTypes.DELIVERY.items >
+                              0 ||
+                              todayReportBreakdown.orderTypes.DELIVERY.fees >
+                                0) && (
+                              <p className="mt-1 text-[9px] text-gray-600 dark:text-neutral-400 leading-snug">
                                 {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.orderTypes.DELIVERY.items,
-                                ).toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Delivery fees</span>
-                              <span className="tabular-nums">
-                                {sym}{" "}
+                                ).toLocaleString()}{" "}
+                                (items) + {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.orderTypes.DELIVERY.fees,
-                                ).toLocaleString()}
-                              </span>
-                            </div>
+                                ).toLocaleString()}{" "}
+                                (fees)
+                              </p>
+                            )}
+                            <p className="mt-auto pt-2 text-[10px] text-gray-500 dark:text-neutral-400">
+                              {todayReportBreakdown.orderTypes.DELIVERY.n}{" "}
+                              orders
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-rose-200/80 dark:border-rose-500/25 bg-rose-50/60 dark:bg-rose-500/10 px-3 py-3 min-h-[88px] flex flex-col justify-between">
+                            <p className="text-[10px] font-semibold text-rose-800 dark:text-rose-400 flex items-center gap-1">
+                              <Globe className="w-3.5 h-3.5 opacity-80" />
+                              Website
+                            </p>
+                            <p className="text-xl font-black text-gray-900 dark:text-white tabular-nums">
+                              {sym}{" "}
+                              {Math.round(
+                                todayReportBreakdown.sources.WEBSITE.amt,
+                              ).toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                              {todayReportBreakdown.sources.WEBSITE.n} paid
+                              orders
+                            </p>
                           </div>
                         </div>
                       </div>
 
-                      <div>
-                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                          Top items today
-                        </p>
-                        <div className="space-y-1.5 text-sm">
-                          {todayReportBreakdown.topItems.length === 0 ? (
-                            <p className="text-gray-400 text-xs">No item data</p>
-                          ) : (
-                            todayReportBreakdown.topItems.map((it) => (
-                              <div
-                                key={it.name}
-                                className="flex justify-between gap-3 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
-                              >
-                                <span className="text-gray-800 dark:text-neutral-200 truncate">
-                                  {it.name}
-                                </span>
-                                <span className="text-xs text-gray-500 dark:text-neutral-400 shrink-0 tabular-nums">
-                                  {Math.round(it.qty)} sold · {sym}{" "}
-                                  {Math.round(it.rev).toLocaleString()}
-                                </span>
-                              </div>
-                            ))
-                          )}
+                      {/* Channel strip (POS / Website / Foodpanda / other) */}
+                        <div className="rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 px-4 py-3">
+                          <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                            Sales by channel
+                          </p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                            <div>
+                              <span className="text-gray-500 dark:text-neutral-400">
+                                POS counter
+                              </span>
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                                {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.sources.POS.amt,
+                                ).toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {todayReportBreakdown.sources.POS.n} orders
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-neutral-400">
+                                Website
+                              </span>
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                                {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.sources.WEBSITE.amt,
+                                ).toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {todayReportBreakdown.sources.WEBSITE.n} orders
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-neutral-400">
+                                Foodpanda
+                              </span>
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                                {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.sources.FOODPANDA.amt,
+                                ).toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {todayReportBreakdown.sources.FOODPANDA.n} orders
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-neutral-400">
+                                Other
+                              </span>
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                                {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.sources.OTHER.amt,
+                                ).toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {todayReportBreakdown.sources.OTHER.n} orders
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                      </div>
 
-                      <div>
-                        <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                          Staff performance (order takers)
-                        </p>
-                        <div className="space-y-1.5 text-sm">
-                          {todayReportBreakdown.staffList.length === 0 ? (
-                            <p className="text-gray-400 text-xs">
-                              No staff-attributed orders in closed sales
-                            </p>
-                          ) : (
-                            todayReportBreakdown.staffList.map((st) => (
-                              <div
-                                key={st.name}
-                                className="flex justify-between gap-3 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
-                              >
-                                <span className="font-medium text-gray-800 dark:text-neutral-200">
-                                  {st.name}
-                                </span>
-                                <span className="text-xs tabular-nums text-gray-600 dark:text-neutral-400">
-                                  {st.n} orders · {sym}{" "}
-                                  {Math.round(st.rev).toLocaleString()}
-                                </span>
-                              </div>
-                            ))
-                          )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 shadow-sm">
+                          <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-3">
+                            Top items today
+                          </p>
+                          <div className="space-y-2 text-sm">
+                            {todayReportBreakdown.topItems.length === 0 ? (
+                              <p className="text-gray-400 text-xs">
+                                No item data
+                              </p>
+                            ) : (
+                              todayReportBreakdown.topItems.map((it) => (
+                                <div
+                                  key={it.name}
+                                  className="flex justify-between gap-3 py-1.5 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                                >
+                                  <span className="text-gray-800 dark:text-neutral-200 truncate text-[13px]">
+                                    {it.name}
+                                  </span>
+                                  <span className="text-[11px] text-gray-500 dark:text-neutral-400 shrink-0 tabular-nums">
+                                    {Math.round(it.qty)} sold · {sym}{" "}
+                                    {Math.round(it.rev).toLocaleString()}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 shadow-sm">
+                          <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-3">
+                            Staff (order takers)
+                          </p>
+                          <div className="space-y-2 text-sm">
+                            {todayReportBreakdown.staffList.length === 0 ? (
+                              <p className="text-gray-400 text-xs">
+                                No staff-attributed orders in closed sales
+                              </p>
+                            ) : (
+                              todayReportBreakdown.staffList.map((st) => (
+                                <div
+                                  key={st.name}
+                                  className="flex justify-between gap-3 py-1.5 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                                >
+                                  <span className="font-medium text-gray-800 dark:text-neutral-200 text-[13px]">
+                                    {st.name}
+                                  </span>
+                                  <span className="text-[11px] tabular-nums text-gray-600 dark:text-neutral-400">
+                                    {st.n} orders · {sym}{" "}
+                                    {Math.round(st.rev).toLocaleString()}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
                         </div>
                       </div>
                     </>
