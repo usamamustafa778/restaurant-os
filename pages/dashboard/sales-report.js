@@ -152,20 +152,25 @@ function isDeliveryOrderForPayment(order) {
 
 function isOrderPaidForReport(order) {
   if (!order) return false;
-  if (typeof order.isPaid === "boolean") return order.isPaid;
+  if (order.isPaid === true) return true;
   if (order.source === "FOODPANDA") return true;
-  if (
-    order.paymentAmountReceived != null &&
-    Number(order.paymentAmountReceived) > 0
-  )
-    return true;
+  if (order.paymentAmountReceived != null) {
+    const gross = Number(order.paymentAmountReceived) || 0;
+    const returned = Number(order.paymentAmountReturned) || 0;
+    const totalDue = Number(order?.grandTotal ?? order?.total ?? 0) || 0;
+    if (gross - returned >= totalDue) return true;
+  }
   const pm = String(order?.paymentMethod || "").toUpperCase();
-  if (pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA")
+  if (pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "SPLIT" || pm === "FOODPANDA")
     return true;
   if (pm === "TO BE PAID" || pm.includes("TO BE PAID")) return false;
   if (isDeliveryOrderForPayment(order) && order?.deliveryPaymentCollected === true)
     return true;
   return false;
+}
+
+function isRevenueOrderForReport(order) {
+  return isCompletedSaleOrder(order) && isOrderPaidForReport(order);
 }
 
 const UNPAID_PIPELINE_STATUSES = [
@@ -1254,7 +1259,7 @@ export default function HistoryPage() {
 
   /** Split grand total into menu sales vs delivery fees (matches rider portal breakdown). */
   const revenueBreakdown = useMemo(() => {
-    const completed = dateFilteredOrders.filter(isCompletedSaleOrder);
+    const completed = dateFilteredOrders.filter(isRevenueOrderForReport);
     let salesAmount = 0;
     let deliveryFees = 0;
     for (const o of completed) {
@@ -1757,6 +1762,9 @@ export default function HistoryPage() {
 
     return (
       <div className="space-y-5 max-w-7xl mx-auto">
+        <p className="text-xs font-medium text-gray-500 dark:text-neutral-400 -mb-1">
+          Completed & paid orders
+        </p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <KpiCard
             label="Sales (items)"
@@ -1785,7 +1793,7 @@ export default function HistoryPage() {
           <KpiCard
             label="Total orders"
             value={revenueBreakdown.orderCount.toLocaleString()}
-            sub="completed & delivered"
+            sub="Completed & paid orders"
             icon={Package}
             gradient="from-amber-500 to-orange-600"
             shadow="shadow-amber-500/30"
@@ -3020,7 +3028,7 @@ export default function HistoryPage() {
 
     // Order type breakdown from detail orders (display: delivery splits items vs fees)
     const typeBreakdown = sessionOrders
-      .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
+      .filter(isRevenueOrderForReport)
       .reduce((map, o) => {
         const t = (o.orderType || "other").toLowerCase().replace(/_/g, "-");
         const grand =
@@ -3484,7 +3492,7 @@ export default function HistoryPage() {
                             {(summary.totalOrders || 0).toString()}
                           </p>
                           <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400">
-                            All paid orders during session period
+                            Paid orders in session
                           </p>
                         </div>
                       </div>

@@ -378,8 +378,7 @@ function buildHourlySalesFromOrders(orders, { from, to } = {}) {
   const toMs = to ? new Date(to).getTime() : Infinity;
 
   for (const order of Array.isArray(orders) ? orders : []) {
-    const status = normalizeOrderStatus(order?.status);
-    if (!(status === "DELIVERED" || status === "COMPLETED")) continue;
+    if (!isRevenueOrder(order)) continue;
     const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) continue;
     const t = createdAt.getTime();
@@ -405,19 +404,30 @@ function isDeliveryOrder(order) {
 }
 
 function isOrderPaid(order) {
-  // Prefer API flag — mapOrder sets isPaid from raw paymentMethod; list uses friendly labels ("Cash", "To be paid")
-  // so parsing paymentMethod strings alone can wrongly mark paid orders as unpaid.
-  if (typeof order?.isPaid === "boolean") return order.isPaid;
+  // Trust explicit paid=true from API; if false/missing, infer (mapOrder can be conservative on WEBSITE).
+  if (order?.isPaid === true) return true;
   if (order?.source === "FOODPANDA") return true;
-  if (order?.paymentAmountReceived != null && order.paymentAmountReceived > 0)
-    return true;
+  if (order?.paymentAmountReceived != null) {
+    const gross = Number(order.paymentAmountReceived) || 0;
+    const returned = Number(order.paymentAmountReturned) || 0;
+    const totalDue =
+      Number(order?.grandTotal ?? order?.total ?? 0) || 0;
+    if (gross - returned >= totalDue) return true;
+  }
   const pm = String(order?.paymentMethod || "").toUpperCase();
-  if (pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "FOODPANDA")
+  if (pm === "CASH" || pm === "CARD" || pm === "ONLINE" || pm === "SPLIT" || pm === "FOODPANDA")
     return true;
   if (pm === "TO BE PAID" || pm.includes("TO BE PAID")) return false;
   if (isDeliveryOrder(order) && order?.deliveryPaymentCollected === true)
     return true;
   return false;
+}
+
+/** Same as POS “closed” revenue: delivered/completed and paid (excludes unpaid delivered). */
+function isRevenueOrder(order) {
+  const s = String(order?.status || "").toUpperCase();
+  if (s !== "DELIVERED" && s !== "COMPLETED") return false;
+  return isOrderPaid(order);
 }
 
 function computeUpcomingPayments(orders) {
@@ -458,16 +468,14 @@ function computeDeliveredUnpaid(orders) {
 }
 
 /**
- * Client-side revenue breakdown matching the Sales page logic exactly.
- * Only counts DELIVERED / COMPLETED orders; separates food vs delivery fees.
+ * Client-side revenue breakdown: paid + delivered/completed only (matches POS closed bar).
  */
 function computeRevenueBreakdown(orders) {
   let salesAmount = 0;
   let deliveryFees = 0;
   let orderCount = 0;
   for (const order of Array.isArray(orders) ? orders : []) {
-    const s = String(order?.status || "").toUpperCase();
-    if (s !== "DELIVERED" && s !== "COMPLETED") continue;
+    if (!isRevenueOrder(order)) continue;
     orderCount += 1;
     const gt = Number(order?.grandTotal ?? order?.total) || 0;
     const dc = Number(order?.deliveryCharges) || 0;
@@ -1621,9 +1629,10 @@ export default function OverviewPage() {
             {[
               {
                 label: "Revenue",
-                sub: periodReport.deliveryFees > 0
-                  ? `${currencySymbol} ${Math.round(periodReport.salesAmount).toLocaleString()} food · ${currencySymbol} ${Math.round(periodReport.deliveryFees).toLocaleString()} delivery`
-                  : periodLabel,
+                sub:
+                  periodReport.deliveryFees > 0
+                    ? `Paid & delivered orders\n${currencySymbol} ${Math.round(periodReport.salesAmount).toLocaleString()} food · ${currencySymbol} ${Math.round(periodReport.deliveryFees).toLocaleString()} delivery`
+                    : `Paid & delivered orders\n${periodLabel}`,
                 value: `${currencySymbol} ${Math.round(viewTotalRevenue).toLocaleString()}`,
                 icon: DollarSign,
                 color: "text-primary",
@@ -1632,7 +1641,7 @@ export default function OverviewPage() {
               },
               {
                 label: "Orders",
-                sub: periodLabel,
+                sub: `Paid & delivered orders\n${periodLabel}`,
                 value: viewTotalOrders.toLocaleString(),
                 icon: ShoppingBag,
                 color: "text-violet-600 dark:text-violet-400",
@@ -1692,7 +1701,7 @@ export default function OverviewPage() {
                   <p className={`text-lg font-bold leading-tight ${color}`}>
                     {value}
                   </p>
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-600 mt-0.5">
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-600 mt-0.5 whitespace-pre-line">
                     {sub}
                   </p>
                 </div>
