@@ -2025,16 +2025,16 @@ export default function OrdersPage() {
       {/* ── Today's session report ───────────────────────────────── */}
       {showTodayReportModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) setShowTodayReportModal(false);
           }}
         >
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
-            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-r from-gray-50/90 to-white dark:from-neutral-900/80 dark:to-neutral-950">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col text-[13px]">
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-r from-gray-50/90 to-white dark:from-neutral-900/80 dark:to-neutral-950">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white tracking-tight">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">
                     Today&apos;s session report
                   </h2>
                   {todayReportData?.meta?.status === "OPEN" ? (
@@ -2048,12 +2048,14 @@ export default function OrdersPage() {
                     </span>
                   ) : null}
                 </div>
-                <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-1">
+                <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-0.5">
                   {currentBranch?.name || "All branches"} · Business day{" "}
                   {formatBusinessDate(businessDateStr)}
                 </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
                 {todayReportData?.meta?.startAt && (
-                  <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5">
+                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 text-right leading-tight max-w-[calc(100vw-8rem)] sm:max-w-[220px]">
                     {new Date(todayReportData.meta.startAt).toLocaleString(
                       "en-PK",
                       {
@@ -2078,30 +2080,30 @@ export default function OrdersPage() {
                         : ""}
                   </p>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setShowTodayReportModal(false)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowTodayReportModal(false)}
-                className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
               {loadingTodayReport ? (
-                <div className="flex flex-col items-center justify-center py-20 gap-3">
-                  <Loader2 className="w-7 h-7 animate-spin text-primary" />
-                  <p className="text-sm text-gray-500 dark:text-neutral-400">
+                <div className="flex flex-col items-center justify-center py-12 gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <p className="text-xs text-gray-500 dark:text-neutral-400">
                     Loading session numbers…
                   </p>
                 </div>
               ) : !todayReportData?.sessionId ? (
-                <div className="text-center py-14 px-4 rounded-2xl border border-dashed border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/30">
-                  <p className="text-sm font-medium text-gray-700 dark:text-neutral-300">
+                <div className="text-center py-8 px-3 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/30">
+                  <p className="text-xs font-medium text-gray-700 dark:text-neutral-300">
                     No business-day session found for today.
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-neutral-500 mt-1">
+                  <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-0.5">
                     Start a session from the POS to see live totals here.
                   </p>
                 </div>
@@ -2111,18 +2113,18 @@ export default function OrdersPage() {
                     <>
                       {/* KPI row */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 shadow-sm">
+                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
                             Total revenue
                           </p>
-                          <p className="mt-1 text-[26px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                          <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                             {sym}{" "}
                             {Math.round(
                               todayReportBreakdown.totalRevenue || 0,
                             ).toLocaleString()}
                           </p>
                           {todayReportBreakdown.unpaid.totalCount > 0 ? (
-                            <div className="mt-2 space-y-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                            <div className="mt-1.5 space-y-0.5 text-[9px] text-amber-600 dark:text-amber-400">
                               <p className="font-semibold leading-snug">
                                 Unpaid total: {sym}{" "}
                                 {Math.round(
@@ -2131,7 +2133,7 @@ export default function OrdersPage() {
                                 · {todayReportBreakdown.unpaid.totalCount}{" "}
                                 orders
                               </p>
-                              <p className="text-[9px] leading-snug opacity-95">
+                              <p className="text-[8px] leading-snug opacity-95">
                                 In progress: {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.unpaid.pipelineAmt,
@@ -2148,23 +2150,23 @@ export default function OrdersPage() {
                               </p>
                             </div>
                           ) : (
-                            <p className="mt-2 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            <p className="mt-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
                               All recorded orders paid
                             </p>
                           )}
                         </div>
-                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 shadow-sm">
+                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
                             Orders
                           </p>
-                          <p className="mt-1 text-[26px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                          <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                             {(todayReportBreakdown.totalOrders ?? 0).toLocaleString()}
                           </p>
-                          <p className="mt-2 text-[10px] text-gray-500 dark:text-neutral-400">
+                          <p className="mt-1.5 text-[9px] text-gray-500 dark:text-neutral-400 leading-snug">
                             Paid orders in session (closed sales)
                           </p>
                           {(todayReportBreakdown.totalOrders ?? 0) > 0 && (
-                            <p className="mt-1 text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
+                            <p className="mt-1 text-[10px] font-semibold text-gray-700 dark:text-neutral-300">
                               Avg {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.totalRevenue /
@@ -2177,11 +2179,11 @@ export default function OrdersPage() {
 
                       {/* Payment method KPIs */}
                       <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5 text-center shadow-sm">
+                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
                             Cash
                           </p>
-                          <p className="mt-1 text-lg font-black text-gray-900 dark:text-white tabular-nums">
+                          <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
                             {sym}{" "}
                             {Math.round(
                               todayReportBreakdown.payment.cash,
@@ -2191,11 +2193,11 @@ export default function OrdersPage() {
                             {todayReportBreakdown.payment.cashOrders} orders
                           </p>
                         </div>
-                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5 text-center shadow-sm">
+                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
                             Card
                           </p>
-                          <p className="mt-1 text-lg font-black text-gray-900 dark:text-white tabular-nums">
+                          <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
                             {sym}{" "}
                             {Math.round(
                               todayReportBreakdown.payment.card,
@@ -2205,11 +2207,11 @@ export default function OrdersPage() {
                             {todayReportBreakdown.payment.cardOrders} orders
                           </p>
                         </div>
-                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5 text-center shadow-sm">
+                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
                             Online
                           </p>
-                          <p className="mt-1 text-lg font-black text-gray-900 dark:text-white tabular-nums">
+                          <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
                             {sym}{" "}
                             {Math.round(
                               todayReportBreakdown.payment.online,
@@ -2220,7 +2222,7 @@ export default function OrdersPage() {
                           </p>
                           {todayReportBreakdown.payment.onlineProviders.length >
                             0 && (
-                            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-neutral-800 space-y-0.5 max-h-24 overflow-y-auto text-left">
+                            <div className="mt-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-800 space-y-0.5 max-h-16 overflow-y-auto text-left">
                               {todayReportBreakdown.payment.onlineProviders.map(
                                 ([name, amt]) => (
                                   <div
@@ -2241,9 +2243,9 @@ export default function OrdersPage() {
                       </div>
 
                       {/* Cash denomination (same calendar day as session start) */}
-                      <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 shadow-sm">
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <h3 className="text-[12px] font-bold text-gray-900 dark:text-white">
+                      <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
+                          <h3 className="text-xs font-bold text-gray-900 dark:text-white">
                             Cash breakdown
                           </h3>
                           <span className="text-[10px] text-gray-500 dark:text-neutral-400">
@@ -2251,7 +2253,7 @@ export default function OrdersPage() {
                           </span>
                         </div>
                         {todayReportCurrencyLoading ? (
-                          <div className="py-6 flex justify-center">
+                          <div className="py-4 flex justify-center">
                             <Loader2 className="w-5 h-5 animate-spin text-primary" />
                           </div>
                         ) : todayReportCashDenom.currencyRows.length === 0 ? (
@@ -2261,7 +2263,7 @@ export default function OrdersPage() {
                         ) : (
                           <>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div className="rounded-lg border border-gray-100 dark:border-neutral-800 px-2.5 py-2">
+                              <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
                                 <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
                                   Notes
                                 </p>
@@ -2290,8 +2292,8 @@ export default function OrdersPage() {
                                   )}
                                 </div>
                               </div>
-                              <div className="rounded-lg border border-gray-100 dark:border-neutral-800 px-2.5 py-2">
-                                <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
+                              <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-0.5">
                                   Coins
                                 </p>
                                 <div className="space-y-1">
@@ -2320,22 +2322,22 @@ export default function OrdersPage() {
                               </div>
                             </div>
                             <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <div className="rounded-lg bg-gray-50 dark:bg-neutral-800/60 px-2.5 py-2">
+                              <div className="rounded-md bg-gray-50 dark:bg-neutral-800/60 px-2 py-1.5">
                                 <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">
                                   Expected cash
                                 </p>
-                                <p className="text-[12px] font-bold text-gray-900 dark:text-white">
+                                <p className="text-[11px] font-bold text-gray-900 dark:text-white">
                                   {sym}{" "}
                                   {Math.round(
                                     todayReportCashDenom.expectedCash,
                                   ).toLocaleString()}
                                 </p>
                               </div>
-                              <div className="rounded-lg bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-2">
+                              <div className="rounded-md bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1.5">
                                 <p className="text-[9px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
                                   Counted cash
                                 </p>
-                                <p className="text-[12px] font-bold text-emerald-700 dark:text-emerald-400">
+                                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
                                   {sym}{" "}
                                   {Math.round(
                                     todayReportCashDenom.countedCashTotal,
@@ -2343,7 +2345,7 @@ export default function OrdersPage() {
                                 </p>
                               </div>
                               <div
-                                className={`rounded-lg px-2.5 py-2 ${
+                                className={`rounded-md px-2 py-1.5 ${
                                   todayReportCashDenom.cashDiff === 0
                                     ? "bg-gray-50 dark:bg-neutral-800/60"
                                     : todayReportCashDenom.cashDiff > 0
@@ -2355,7 +2357,7 @@ export default function OrdersPage() {
                                   Difference
                                 </p>
                                 <p
-                                  className={`text-[12px] font-bold ${
+                                  className={`text-[11px] font-bold ${
                                     todayReportCashDenom.cashDiff === 0
                                       ? "text-gray-900 dark:text-white"
                                       : todayReportCashDenom.cashDiff > 0
@@ -2377,47 +2379,47 @@ export default function OrdersPage() {
 
                       {/* Order type + website */}
                       <div>
-                        <h3 className="text-[13px] font-bold text-gray-900 dark:text-white mb-2">
+                        <h3 className="text-xs font-bold text-gray-900 dark:text-white mb-1.5">
                           Order type breakdown
                         </h3>
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                          <div className="rounded-xl border border-orange-200/80 dark:border-orange-500/25 bg-orange-50/60 dark:bg-orange-500/10 px-3 py-3 min-h-[88px] flex flex-col justify-between">
-                            <p className="text-[10px] font-semibold text-orange-800 dark:text-orange-400 flex items-center gap-1">
-                              <UtensilsCrossed className="w-3.5 h-3.5 opacity-80" />
+                          <div className="rounded-lg border border-orange-200/80 dark:border-orange-500/25 bg-orange-50/60 dark:bg-orange-500/10 px-2 py-2 flex flex-col justify-between gap-1">
+                            <p className="text-[9px] font-semibold text-orange-800 dark:text-orange-400 flex items-center gap-1">
+                              <UtensilsCrossed className="w-3 h-3 opacity-80 shrink-0" />
                               Dine in
                             </p>
-                            <p className="text-xl font-black text-gray-900 dark:text-white tabular-nums">
+                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
                               {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.orderTypes.DINE_IN.amt,
                               ).toLocaleString()}
                             </p>
-                            <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                            <p className="text-[9px] text-gray-500 dark:text-neutral-400">
                               {todayReportBreakdown.orderTypes.DINE_IN.n} orders
                             </p>
                           </div>
-                          <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-3 py-3 min-h-[88px] flex flex-col justify-between">
-                            <p className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
-                              <ShoppingBag className="w-3.5 h-3.5 opacity-80" />
+                          <div className="rounded-lg border border-emerald-200/80 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-2 py-2 flex flex-col justify-between gap-1">
+                            <p className="text-[9px] font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
+                              <ShoppingBag className="w-3 h-3 opacity-80 shrink-0" />
                               Takeaway
                             </p>
-                            <p className="text-xl font-black text-gray-900 dark:text-white tabular-nums">
+                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
                               {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.orderTypes.TAKEAWAY.amt,
                               ).toLocaleString()}
                             </p>
-                            <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                            <p className="text-[9px] text-gray-500 dark:text-neutral-400">
                               {todayReportBreakdown.orderTypes.TAKEAWAY.n}{" "}
                               orders
                             </p>
                           </div>
-                          <div className="rounded-xl border border-sky-200/80 dark:border-sky-500/25 bg-sky-50/60 dark:bg-sky-500/10 px-3 py-3 min-h-[88px] flex flex-col">
-                            <p className="text-[10px] font-semibold text-sky-800 dark:text-sky-400 flex items-center gap-1">
-                              <Truck className="w-3.5 h-3.5 opacity-80" />
+                          <div className="rounded-lg border border-sky-200/80 dark:border-sky-500/25 bg-sky-50/60 dark:bg-sky-500/10 px-2 py-2 flex flex-col gap-1">
+                            <p className="text-[9px] font-semibold text-sky-800 dark:text-sky-400 flex items-center gap-1">
+                              <Truck className="w-3 h-3 opacity-80 shrink-0" />
                               Delivery
                             </p>
-                            <p className="mt-1 text-xl font-black text-gray-900 dark:text-white tabular-nums">
+                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
                               {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.orderTypes.DELIVERY.amt,
@@ -2427,7 +2429,7 @@ export default function OrdersPage() {
                               0 ||
                               todayReportBreakdown.orderTypes.DELIVERY.fees >
                                 0) && (
-                              <p className="mt-1 text-[9px] text-gray-600 dark:text-neutral-400 leading-snug">
+                              <p className="text-[8px] text-gray-600 dark:text-neutral-400 leading-snug">
                                 {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.orderTypes.DELIVERY.items,
@@ -2439,23 +2441,23 @@ export default function OrdersPage() {
                                 (fees)
                               </p>
                             )}
-                            <p className="mt-auto pt-2 text-[10px] text-gray-500 dark:text-neutral-400">
+                            <p className="mt-auto pt-1 text-[9px] text-gray-500 dark:text-neutral-400">
                               {todayReportBreakdown.orderTypes.DELIVERY.n}{" "}
                               orders
                             </p>
                           </div>
-                          <div className="rounded-xl border border-rose-200/80 dark:border-rose-500/25 bg-rose-50/60 dark:bg-rose-500/10 px-3 py-3 min-h-[88px] flex flex-col justify-between">
-                            <p className="text-[10px] font-semibold text-rose-800 dark:text-rose-400 flex items-center gap-1">
-                              <Globe className="w-3.5 h-3.5 opacity-80" />
+                          <div className="rounded-lg border border-rose-200/80 dark:border-rose-500/25 bg-rose-50/60 dark:bg-rose-500/10 px-2 py-2 flex flex-col justify-between gap-1">
+                            <p className="text-[9px] font-semibold text-rose-800 dark:text-rose-400 flex items-center gap-1">
+                              <Globe className="w-3 h-3 opacity-80 shrink-0" />
                               Website
                             </p>
-                            <p className="text-xl font-black text-gray-900 dark:text-white tabular-nums">
+                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
                               {sym}{" "}
                               {Math.round(
                                 todayReportBreakdown.sources.WEBSITE.amt,
                               ).toLocaleString()}
                             </p>
-                            <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                            <p className="text-[9px] text-gray-500 dark:text-neutral-400">
                               {todayReportBreakdown.sources.WEBSITE.n} paid
                               orders
                             </p>
@@ -2464,22 +2466,22 @@ export default function OrdersPage() {
                       </div>
 
                       {/* Channel strip (POS / Website / Foodpanda / other) */}
-                        <div className="rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 px-4 py-3">
-                          <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                        <div className="rounded-lg border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 px-3 py-2">
+                          <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
                             Sales by channel
                           </p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-1 text-[10px]">
                             <div>
                               <span className="text-gray-500 dark:text-neutral-400">
                                 POS counter
                               </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
                                 {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.sources.POS.amt,
                                 ).toLocaleString()}
                               </p>
-                              <p className="text-[10px] text-gray-400">
+                              <p className="text-[9px] text-gray-400">
                                 {todayReportBreakdown.sources.POS.n} orders
                               </p>
                             </div>
@@ -2487,13 +2489,13 @@ export default function OrdersPage() {
                               <span className="text-gray-500 dark:text-neutral-400">
                                 Website
                               </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
                                 {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.sources.WEBSITE.amt,
                                 ).toLocaleString()}
                               </p>
-                              <p className="text-[10px] text-gray-400">
+                              <p className="text-[9px] text-gray-400">
                                 {todayReportBreakdown.sources.WEBSITE.n} orders
                               </p>
                             </div>
@@ -2501,13 +2503,13 @@ export default function OrdersPage() {
                               <span className="text-gray-500 dark:text-neutral-400">
                                 Foodpanda
                               </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
                                 {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.sources.FOODPANDA.amt,
                                 ).toLocaleString()}
                               </p>
-                              <p className="text-[10px] text-gray-400">
+                              <p className="text-[9px] text-gray-400">
                                 {todayReportBreakdown.sources.FOODPANDA.n} orders
                               </p>
                             </div>
@@ -2515,39 +2517,39 @@ export default function OrdersPage() {
                               <span className="text-gray-500 dark:text-neutral-400">
                                 Other
                               </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
                                 {sym}{" "}
                                 {Math.round(
                                   todayReportBreakdown.sources.OTHER.amt,
                                 ).toLocaleString()}
                               </p>
-                              <p className="text-[10px] text-gray-400">
+                              <p className="text-[9px] text-gray-400">
                                 {todayReportBreakdown.sources.OTHER.n} orders
                               </p>
                             </div>
                           </div>
                         </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 shadow-sm">
-                          <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
+                          <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
                             Top items today
                           </p>
-                          <div className="space-y-2 text-sm">
+                          <div className="space-y-1.5 text-xs">
                             {todayReportBreakdown.topItems.length === 0 ? (
-                              <p className="text-gray-400 text-xs">
+                              <p className="text-gray-400 text-[11px]">
                                 No item data
                               </p>
                             ) : (
                               todayReportBreakdown.topItems.map((it) => (
                                 <div
                                   key={it.name}
-                                  className="flex justify-between gap-3 py-1.5 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                                  className="flex justify-between gap-2 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
                                 >
-                                  <span className="text-gray-800 dark:text-neutral-200 truncate text-[13px]">
+                                  <span className="text-gray-800 dark:text-neutral-200 truncate text-[12px]">
                                     {it.name}
                                   </span>
-                                  <span className="text-[11px] text-gray-500 dark:text-neutral-400 shrink-0 tabular-nums">
+                                  <span className="text-[10px] text-gray-500 dark:text-neutral-400 shrink-0 tabular-nums">
                                     {Math.round(it.qty)} sold · {sym}{" "}
                                     {Math.round(it.rev).toLocaleString()}
                                   </span>
@@ -2556,25 +2558,25 @@ export default function OrdersPage() {
                             )}
                           </div>
                         </div>
-                        <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 shadow-sm">
-                          <p className="text-[11px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-3">
+                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
+                          <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
                             Staff (order takers)
                           </p>
-                          <div className="space-y-2 text-sm">
+                          <div className="space-y-1.5 text-xs">
                             {todayReportBreakdown.staffList.length === 0 ? (
-                              <p className="text-gray-400 text-xs">
+                              <p className="text-gray-400 text-[11px]">
                                 No staff-attributed orders in closed sales
                               </p>
                             ) : (
                               todayReportBreakdown.staffList.map((st) => (
                                 <div
                                   key={st.name}
-                                  className="flex justify-between gap-3 py-1.5 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                                  className="flex justify-between gap-2 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
                                 >
-                                  <span className="font-medium text-gray-800 dark:text-neutral-200 text-[13px]">
+                                  <span className="font-medium text-gray-800 dark:text-neutral-200 text-[12px]">
                                     {st.name}
                                   </span>
-                                  <span className="text-[11px] tabular-nums text-gray-600 dark:text-neutral-400">
+                                  <span className="text-[10px] tabular-nums text-gray-600 dark:text-neutral-400">
                                     {st.n} orders · {sym}{" "}
                                     {Math.round(st.rev).toLocaleString()}
                                   </span>
@@ -2590,7 +2592,7 @@ export default function OrdersPage() {
               )}
             </div>
 
-            <div className="px-5 py-3 border-t border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="px-4 py-2 border-t border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -2598,14 +2600,14 @@ export default function OrdersPage() {
                   loadSessionHistory();
                   setShowLegacySessionsModal(true);
                 }}
-                className="text-sm font-semibold text-primary hover:underline text-left"
+                className="text-xs font-semibold text-primary hover:underline text-left"
               >
                 View session history →
               </button>
               <button
                 type="button"
                 onClick={() => setShowTodayReportModal(false)}
-                className="h-9 px-4 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-semibold"
+                className="h-8 px-3 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold"
               >
                 Close
               </button>

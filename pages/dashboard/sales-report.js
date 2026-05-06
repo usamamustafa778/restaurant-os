@@ -500,6 +500,46 @@ function orderDeliveryFeeAmount(order) {
   return Number(order?.deliveryCharges) || 0;
 }
 
+/**
+ * Session modal KPIs from the same orders as the table / type breakdown.
+ * Backend `/day-session/:id/orders` summary aggregate can return 0 when its
+ * paid predicate diverges from `isRevenueOrderForReport`; cash/card follow
+ * the same split rules as the API aggregate.
+ */
+function deriveSessionRevenueSummaryFromOrders(orders) {
+  const revenue = (Array.isArray(orders) ? orders : []).filter(
+    isRevenueOrderForReport,
+  );
+  const gt = (o) => Number(o.grandTotal ?? o.total ?? 0);
+  let cashSales = 0;
+  let cardSales = 0;
+  for (const o of revenue) {
+    const g = gt(o);
+    const pm = String(o.paymentMethod || "").toUpperCase();
+    if (pm === "CASH") {
+      cashSales += g;
+    } else if (pm === "CARD") {
+      cardSales += g;
+    } else if (pm === "SPLIT") {
+      cashSales += Number(o.splitCashAmount) || 0;
+      cardSales += Number(o.splitCardAmount) || 0;
+    }
+  }
+  const totalSales = revenue.reduce((sum, o) => sum + gt(o), 0);
+  const totalOrders = revenue.length;
+  const sessionOnlineSales = Math.max(
+    0,
+    totalSales - cashSales - cardSales,
+  );
+  return {
+    totalSales,
+    totalOrders,
+    cashSales,
+    cardSales,
+    sessionOnlineSales,
+  };
+}
+
 function Skeleton({ className = "" }) {
   return (
     <div
@@ -1120,7 +1160,29 @@ export default function HistoryPage() {
         ...(from ? { from: new Date(from + "T00:00:00").toISOString() } : {}),
         ...(to ? { to: new Date(to + "T23:59:59.999").toISOString() } : {}),
       });
-      setSessionsList(Array.isArray(res?.sessions) ? res.sessions : []);
+      let rows = Array.isArray(res?.sessions) ? res.sessions : [];
+      const hasOpen = rows.some((s) => s.status === "OPEN");
+      if (hasOpen) {
+        rows = await Promise.all(
+          rows.map(async (s) => {
+            if (s.status !== "OPEN") return s;
+            try {
+              const pack = await getDaySessionOrders(s.id);
+              const orders = pack?.orders || [];
+              const d = deriveSessionRevenueSummaryFromOrders(orders);
+              return {
+                ...s,
+                totalSales: d.totalSales,
+                totalOrders: d.totalOrders,
+                orderCount: d.totalOrders,
+              };
+            } catch {
+              return s;
+            }
+          }),
+        );
+      }
+      setSessionsList(rows);
       setSessionsTotal(res?.total || 0);
     } catch {
       toast.error("Failed to load sessions");
@@ -2872,12 +2934,19 @@ export default function HistoryPage() {
 
   function renderSessions() {
     const sessionPages = Math.ceil(sessionsTotal / SESSIONS_PER_PAGE);
-    const summary = sessionDetail?.summary || {};
     const sessionOrders = Array.isArray(sessionDetail?.orders)
       ? [...sessionDetail.orders].sort(
           (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
         )
       : [];
+    const derivedRevenue = deriveSessionRevenueSummaryFromOrders(sessionOrders);
+    const summary = {
+      ...(sessionDetail?.summary || {}),
+      totalSales: derivedRevenue.totalSales,
+      totalOrders: derivedRevenue.totalOrders,
+      cashSales: derivedRevenue.cashSales,
+      cardSales: derivedRevenue.cardSales,
+    };
     const filteredSessionOrders = (() => {
       const q = String(sessionOrderSearch || "").trim().toLowerCase();
       const base = sessionOrders.filter((o) => {
@@ -2943,12 +3012,7 @@ export default function HistoryPage() {
       { key: "payment", label: "Payment" },
     ];
     const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const sessionOnlineSales = Math.max(
-      0,
-      Number(summary.totalSales || 0) -
-        Number(summary.cashSales || 0) -
-        Number(summary.cardSales || 0),
-    );
+    const sessionOnlineSales = derivedRevenue.sessionOnlineSales;
     const currencySymbol = CURRENCY_SYMBOLS[settingsCurrencyCode] || "¤";
     const fmtMoney = (v) =>
       `${currencySymbol} ${Math.round(Number(v || 0)).toLocaleString()}`;
