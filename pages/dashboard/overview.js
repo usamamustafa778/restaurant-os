@@ -1159,7 +1159,7 @@ export default function OverviewPage() {
     (async () => {
       const now = new Date();
       let fromStr, toStr;
-      /** Same scope as Business Day Report — filter by daySession, not createdAt. */
+      /** Same scope as Business Day Report — session link or paid/closed in session window. */
       let daySessionId;
 
       if (reportPeriod === "today" || reportPeriod === "yesterday") {

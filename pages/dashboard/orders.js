@@ -1008,6 +1008,10 @@ export default function OrdersPage() {
     0,
   );
   const closedCount = groupedOrders.DELIVERED?.length || 0;
+  const closedTotalAmount = (groupedOrders.DELIVERED || []).reduce(
+    (sum, order) => sum + getOrderTotal(order),
+    0,
+  );
   const cancelledCount = groupedOrders.CANCELLED?.length || 0;
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -1305,6 +1309,9 @@ export default function OrdersPage() {
                   <span className="text-sm font-semibold">Closed</span>
                   <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
                     {closedCount}
+                  </span>
+                  <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
+                    {sym} {Math.round(closedTotalAmount).toLocaleString()}
                   </span>
                 </div>
                 <ChevronDown

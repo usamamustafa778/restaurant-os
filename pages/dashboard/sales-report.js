@@ -3484,7 +3484,7 @@ export default function HistoryPage() {
                             {(summary.totalOrders || 0).toString()}
                           </p>
                           <p className="mt-1 text-[10px] text-gray-500 dark:text-neutral-400">
-                            Paid (closed) orders in revenue
+                            All paid orders during session period
                           </p>
                         </div>
                       </div>

@@ -71,6 +71,51 @@ body:has(.eatsdesk-landing) {
   transition: transform 0.35s ease, width 0.2s, height 0.2s, border-color 0.2s;
 }
 
+/* Fixed WhatsApp + Instagram */
+.eatsdesk-landing .landing-chat-float {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.eatsdesk-landing .landing-chat-float .landing-chat-btn {
+  pointer-events: auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  text-decoration: none;
+}
+
+.eatsdesk-landing .landing-chat-float .landing-chat-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+}
+
+.eatsdesk-landing .landing-chat-float .landing-chat-btn:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 3px;
+}
+
+.eatsdesk-landing .landing-chat-float .landing-chat-btn--wa {
+  background: #25d366;
+}
+
+.eatsdesk-landing .landing-chat-float .landing-chat-btn--ig {
+  background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285aeb 90%);
+}
+
 /* NAV */
 /* Only the top bar — footer uses <nav> for a11y and must NOT match */
 .eatsdesk-landing nav#nav {
