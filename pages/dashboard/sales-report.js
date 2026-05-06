@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getSalesReport,
@@ -792,6 +793,7 @@ function TopItemsList({ items, title, subtitle, onItemClick }) {
 }
 
 export default function HistoryPage() {
+  const router = useRouter();
   const { currentBranch } = useBranch() || {};
 
   const [showHelpModal, setShowHelpModal] = useState(false);
@@ -1008,6 +1010,21 @@ export default function HistoryPage() {
       setOrdersLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const tabRaw = router.query.tab;
+    const tabStr = Array.isArray(tabRaw) ? tabRaw[0] : tabRaw;
+    const srcRaw = router.query.source;
+    const srcStr = Array.isArray(srcRaw) ? srcRaw[0] : srcRaw;
+    if (tabStr === "orders") setActiveTab("orders");
+    if (typeof srcStr === "string") {
+      const u = srcStr.toUpperCase();
+      if (u === "POS" || u === "WEBSITE" || u === "FOODPANDA") {
+        setOrdersSourceFilter(u);
+      }
+    }
+  }, [router.isReady, router.query.tab, router.query.source]);
 
   useEffect(() => {
     async function init() {
@@ -2422,7 +2439,8 @@ export default function HistoryPage() {
           >
             <option value="ALL">All Sources</option>
             <option value="POS">POS</option>
-            <option value="ONLINE">Online</option>
+            <option value="WEBSITE">Website</option>
+            <option value="FOODPANDA">Foodpanda</option>
           </FilterSelect>
 
           <FilterSelect

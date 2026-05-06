@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getOverview,
@@ -79,6 +80,7 @@ import {
   Utensils,
   CalendarClock,
   ArrowRight,
+  Globe,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -485,6 +487,28 @@ function computeRevenueBreakdown(orders) {
   return { orderCount, salesAmount, deliveryFees, grandTotal: salesAmount + deliveryFees };
 }
 
+/** Paid + completed/delivered revenue by order source (POS / WEBSITE / FOODPANDA). */
+function emptySourceChannelBreakdown() {
+  return {
+    POS: { orders: 0, revenue: 0 },
+    WEBSITE: { orders: 0, revenue: 0 },
+    FOODPANDA: { orders: 0, revenue: 0 },
+    OTHER: { orders: 0, revenue: 0 },
+  };
+}
+
+function computeSourceChannelBreakdown(orders) {
+  const buckets = emptySourceChannelBreakdown();
+  for (const order of Array.isArray(orders) ? orders : []) {
+    if (!isRevenueOrder(order)) continue;
+    const raw = String(order?.source || "POS").toUpperCase();
+    const key = buckets[raw] ? raw : "OTHER";
+    buckets[key].orders += 1;
+    buckets[key].revenue += Number(order?.grandTotal ?? order?.total) || 0;
+  }
+  return buckets;
+}
+
 function Skeleton({ className = "" }) {
   return (
     <div
@@ -556,7 +580,8 @@ function OverviewPeriodContentSkeleton() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-5 mb-5">
+      <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-5 mb-5">
+        <OverviewSectionSkeleton bodyHeightClass="h-36" />
         <OverviewSectionSkeleton bodyHeightClass="h-36" />
         <OverviewSectionSkeleton bodyHeightClass="h-36" />
         <OverviewSectionSkeleton bodyHeightClass="h-36" />
@@ -649,6 +674,7 @@ export default function OverviewPage() {
     paymentAccountRows: [],
     upcomingPayments: { rows: [], totalCount: 0, totalAmount: 0 },
     deliveredUnpaid: { count: 0, amount: 0 },
+    sourceChannelBreakdown: emptySourceChannelBreakdown(),
   });
   const [reportPeriod, setReportPeriod] = useState("today");
   const [periodLoading, setPeriodLoading] = useState(true);
@@ -1300,6 +1326,8 @@ export default function OverviewPage() {
             paymentAccountRows: report.paymentAccountRows ?? [],
             upcomingPayments: computeUpcomingPayments(ordersForMetrics),
             deliveredUnpaid: computeDeliveredUnpaid(ordersForMetrics),
+            sourceChannelBreakdown:
+              computeSourceChannelBreakdown(ordersForMetrics),
           });
           setPeriodAccountingPl(accountingPlJson);
         }
@@ -1390,6 +1418,36 @@ export default function OverviewPage() {
   const totalUnpaidExposure =
     Number(upcomingPayments.totalAmount || 0) +
     Number(deliveredUnpaid.amount || 0);
+
+  const sourceChannelBreakdown =
+    periodReport.sourceChannelBreakdown || emptySourceChannelBreakdown();
+
+  const sourceChannelRows = (() => {
+    const base = [
+      { key: "POS", label: "POS", color: "#8b5cf6" },
+      { key: "WEBSITE", label: "Website", color: "#db2777" },
+      { key: "FOODPANDA", label: "Foodpanda", color: "#ea580c" },
+    ].map((r) => ({
+      ...r,
+      orders: sourceChannelBreakdown[r.key]?.orders ?? 0,
+      revenue: sourceChannelBreakdown[r.key]?.revenue ?? 0,
+    }));
+    if ((sourceChannelBreakdown.OTHER?.orders ?? 0) > 0) {
+      base.push({
+        key: "OTHER",
+        label: "Other",
+        color: "#9ca3af",
+        orders: sourceChannelBreakdown.OTHER.orders,
+        revenue: sourceChannelBreakdown.OTHER.revenue,
+      });
+    }
+    return base;
+  })();
+
+  const totalSourceChannelRevenue = sourceChannelRows.reduce(
+    (s, r) => s + Number(r.revenue || 0),
+    0,
+  );
 
   const receivedRows = [
     { key: "CASH", label: "Cash", color: "#0ea5e9" },
@@ -1906,8 +1964,103 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          {/* ─── Received + Upcoming + Top Items ──────────────────────────── */}
-          <div className="grid lg:grid-cols-3 gap-5 mb-5">
+          {/* ─── Sales by channel + Received + Upcoming + Top Items ───────── */}
+          <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-5 mb-5">
+            {/* Orders by source (website vs POS vs Foodpanda) */}
+            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-fuchsia-50 dark:bg-fuchsia-500/10 flex items-center justify-center">
+                  <Globe className="w-4 h-4 text-fuchsia-600 dark:text-fuchsia-400" />
+                </div>
+                <div className="flex items-center justify-between w-full flex-1 min-w-0">
+                  <div>
+                    <h3 className="font-bold text-gray-900 dark:text-white">
+                      Orders by source
+                    </h3>
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                      Completed &amp; paid · same period as revenue above
+                    </p>
+                  </div>
+                  <h2 className="font-bold text-base text-gray-900 dark:text-white shrink-0 ml-2">
+                    {currencySymbol}{" "}
+                    {Math.round(totalSourceChannelRevenue).toLocaleString()}
+                  </h2>
+                </div>
+              </div>
+
+              {hasOrders ? (
+                <div className="space-y-2.5">
+                  {sourceChannelRows.map((row) => {
+                      const pct =
+                        totalSourceChannelRevenue > 0
+                          ? Math.round(
+                              (Number(row.revenue || 0) /
+                                totalSourceChannelRevenue) *
+                                100,
+                            )
+                          : 0;
+                      return (
+                        <div key={row.key}>
+                          <div className="flex items-center justify-between mb-1 gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: row.color }}
+                              />
+                              <span className="text-xs text-gray-700 dark:text-neutral-300 truncate">
+                                {row.label}
+                              </span>
+                              <span className="text-[10px] text-gray-400 dark:text-neutral-500 whitespace-nowrap">
+                                {Number(row.orders || 0).toLocaleString()}{" "}
+                                orders
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-xs font-bold text-gray-900 dark:text-white tabular-nums">
+                                {currencySymbol}{" "}
+                                {Math.round(Number(row.revenue || 0)).toLocaleString()}
+                              </span>
+                              <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
+                                {pct}%
+                              </span>
+                            </div>
+                          </div>
+                          <div className="h-1.5 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-700"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: row.color,
+                              }}
+                            />
+                          </div>
+                          <div className="pt-0.5 text-right">
+                            <Link
+                              href={
+                                row.key === "OTHER"
+                                  ? "/dashboard/sales-report?tab=orders"
+                                  : `/dashboard/sales-report?tab=orders&source=${row.key}`
+                              }
+                              className="text-[10px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5"
+                            >
+                              List {row.label} orders
+                              <ArrowRight className="w-3 h-3" />
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8">
+                  <Globe className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-2" />
+                  <p className="text-xs text-gray-400 dark:text-neutral-600">
+                    No channel data this period
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Received Payments */}
             <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
               <div className="flex items-center gap-2.5 mb-4">
