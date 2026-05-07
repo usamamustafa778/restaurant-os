@@ -13,6 +13,7 @@ import {
   SubscriptionInactiveError,
   getCurrencySymbol,
 } from "../../lib/apiClient";
+import { classifySessionReportPaymentLine } from "../../lib/sessionReportBreakdown";
 import { useBranch } from "../../contexts/BranchContext";
 import {
   BarChart3,
@@ -515,14 +516,14 @@ function deriveSessionRevenueSummaryFromOrders(orders) {
   let cardSales = 0;
   for (const o of revenue) {
     const g = gt(o);
-    const pm = String(o.paymentMethod || "").toUpperCase();
-    if (pm === "CASH") {
-      cashSales += g;
-    } else if (pm === "CARD") {
-      cardSales += g;
-    } else if (pm === "SPLIT") {
+    const line = classifySessionReportPaymentLine(o);
+    if (line.kind === "SPLIT") {
       cashSales += Number(o.splitCashAmount) || 0;
       cardSales += Number(o.splitCardAmount) || 0;
+    } else if (line.kind === "CASH") {
+      cashSales += g;
+    } else if (line.kind === "CARD") {
+      cardSales += g;
     }
   }
   const totalSales = revenue.reduce((sum, o) => sum + gt(o), 0);

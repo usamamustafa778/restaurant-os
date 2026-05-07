@@ -25,7 +25,10 @@ import {
   getCurrencySymbol,
   getDailyCurrency,
 } from "../../lib/apiClient";
-import { buildTodayReportBreakdown } from "../../lib/sessionReportBreakdown";
+import {
+  buildTodayReportBreakdown,
+  auditSessionReportPayments,
+} from "../../lib/sessionReportBreakdown";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import {
   getBusinessDate,
@@ -376,6 +379,8 @@ export default function OrdersPage() {
   const isOrderTaker = role === "order_taker";
   const isCashier = role === "cashier";
   const isAdmin = ["restaurant_admin", "admin", "super_admin", "manager"].includes(role);
+  /** Session report: cashiers see only headline totals; owners/managers see full breakdown. */
+  const showFullSessionReport = !isCashier;
 
   // POS view state (merged into orders page for instant switching)
   const [activeView, setActiveView] = useState("orders");
@@ -980,6 +985,22 @@ export default function OrdersPage() {
     return buildTodayReportBreakdown(todayReportData.orders || []);
   }, [todayReportData]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !todayReportData?.orders?.length)
+      return;
+    if (isCashier) return;
+    try {
+      if (window.localStorage.getItem("DEBUG_SESSION_PAYMENTS") !== "1")
+        return;
+      const audit = auditSessionReportPayments(todayReportData.orders);
+      console.log("[Today's session report — payment audit]", {
+        cashKpiShownInModal: todayReportBreakdown?.payment?.cash,
+        ...audit,
+      });
+    } catch (e) {
+      console.warn("[Today's session report — payment audit failed]", e);
+    }
+  }, [todayReportData, todayReportBreakdown, isCashier]);
   useEffect(() => {
     if (!todayReportData?.meta?.startAt) {
       setTodayReportCurrency({});
@@ -2133,11 +2154,11 @@ export default function OrdersPage() {
                 <>
                   {todayReportBreakdown && (
                     <>
-                      {/* KPI row */}
+                      {/* KPI row — cashiers: headline totals only */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
-                            Total revenue
+                            {showFullSessionReport ? "Total revenue" : "Total sales"}
                           </p>
                           <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                             {sym}{" "}
@@ -2145,37 +2166,39 @@ export default function OrdersPage() {
                               todayReportBreakdown.totalRevenue || 0,
                             ).toLocaleString()}
                           </p>
-                          {todayReportBreakdown.unpaid.totalCount > 0 ? (
-                            <div className="mt-1.5 space-y-0.5 text-[9px] text-amber-600 dark:text-amber-400">
-                              <p className="font-semibold leading-snug">
-                                Unpaid total: {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.unpaid.totalAmt,
-                                ).toLocaleString()}{" "}
-                                · {todayReportBreakdown.unpaid.totalCount}{" "}
-                                orders
+                          {showFullSessionReport ? (
+                            todayReportBreakdown.unpaid.totalCount > 0 ? (
+                              <div className="mt-1.5 space-y-0.5 text-[9px] text-amber-600 dark:text-amber-400">
+                                <p className="font-semibold leading-snug">
+                                  Unpaid total: {sym}{" "}
+                                  {Math.round(
+                                    todayReportBreakdown.unpaid.totalAmt,
+                                  ).toLocaleString()}{" "}
+                                  · {todayReportBreakdown.unpaid.totalCount}{" "}
+                                  orders
+                                </p>
+                                <p className="text-[8px] leading-snug opacity-95">
+                                  In progress: {sym}{" "}
+                                  {Math.round(
+                                    todayReportBreakdown.unpaid.pipelineAmt,
+                                  ).toLocaleString()}{" "}
+                                  ({todayReportBreakdown.unpaid.pipelineCount}) ·
+                                  Delivered, payment pending: {sym}{" "}
+                                  {Math.round(
+                                    todayReportBreakdown.unpaid.deliveredAmt,
+                                  ).toLocaleString()}{" "}
+                                  ({todayReportBreakdown.unpaid.deliveredCount})
+                                  {todayReportBreakdown.unpaid.otherCount > 0
+                                    ? ` · Other unpaid: ${sym} ${Math.round(todayReportBreakdown.unpaid.otherAmt).toLocaleString()} (${todayReportBreakdown.unpaid.otherCount})`
+                                    : ""}
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="mt-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                All recorded orders paid
                               </p>
-                              <p className="text-[8px] leading-snug opacity-95">
-                                In progress: {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.unpaid.pipelineAmt,
-                                ).toLocaleString()}{" "}
-                                ({todayReportBreakdown.unpaid.pipelineCount}) ·
-                                Delivered, payment pending: {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.unpaid.deliveredAmt,
-                                ).toLocaleString()}{" "}
-                                ({todayReportBreakdown.unpaid.deliveredCount})
-                                {todayReportBreakdown.unpaid.otherCount > 0
-                                  ? ` · Other unpaid: ${sym} ${Math.round(todayReportBreakdown.unpaid.otherAmt).toLocaleString()} (${todayReportBreakdown.unpaid.otherCount})`
-                                  : ""}
-                              </p>
-                            </div>
-                          ) : (
-                            <p className="mt-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
-                              All recorded orders paid
-                            </p>
-                          )}
+                            )
+                          ) : null}
                         </div>
                         <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
@@ -2184,21 +2207,27 @@ export default function OrdersPage() {
                           <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                             {(todayReportBreakdown.totalOrders ?? 0).toLocaleString()}
                           </p>
-                          <p className="mt-1.5 text-[9px] text-gray-500 dark:text-neutral-400 leading-snug">
-                            Paid orders in session (closed sales)
-                          </p>
-                          {(todayReportBreakdown.totalOrders ?? 0) > 0 && (
-                            <p className="mt-1 text-[10px] font-semibold text-gray-700 dark:text-neutral-300">
-                              Avg {sym}{" "}
-                              {Math.round(
-                                todayReportBreakdown.totalRevenue /
-                                  todayReportBreakdown.totalOrders,
-                              ).toLocaleString()}
-                            </p>
-                          )}
+                          {showFullSessionReport ? (
+                            <>
+                              <p className="mt-1.5 text-[9px] text-gray-500 dark:text-neutral-400 leading-snug">
+                                Paid orders in session (closed sales)
+                              </p>
+                              {(todayReportBreakdown.totalOrders ?? 0) > 0 && (
+                                <p className="mt-1 text-[10px] font-semibold text-gray-700 dark:text-neutral-300">
+                                  Avg {sym}{" "}
+                                  {Math.round(
+                                    todayReportBreakdown.totalRevenue /
+                                      todayReportBreakdown.totalOrders,
+                                  ).toLocaleString()}
+                                </p>
+                              )}
+                            </>
+                          ) : null}
                         </div>
                       </div>
 
+                      {showFullSessionReport ? (
+                        <>
                       {/* Payment method KPIs */}
                       <div className="grid grid-cols-3 gap-2">
                         <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
@@ -2417,7 +2446,9 @@ export default function OrdersPage() {
                               ).toLocaleString()}
                             </p>
                             <p className="text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.orderTypes.DINE_IN.n} orders
+                              {todayReportBreakdown.orderTypes.DINE_IN.n} paid ·{" "}
+                              {todayReportBreakdown.orderTypes.DINE_IN.unpaidN}{" "}
+                              unpaid
                             </p>
                           </div>
                           <div className="rounded-lg border border-emerald-200/80 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-2 py-2 flex flex-col justify-between gap-1">
@@ -2432,8 +2463,11 @@ export default function OrdersPage() {
                               ).toLocaleString()}
                             </p>
                             <p className="text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.orderTypes.TAKEAWAY.n}{" "}
-                              orders
+                              {todayReportBreakdown.orderTypes.TAKEAWAY.n} paid ·{" "}
+                              {
+                                todayReportBreakdown.orderTypes.TAKEAWAY.unpaidN
+                              }{" "}
+                              unpaid
                             </p>
                           </div>
                           <div className="rounded-lg border border-sky-200/80 dark:border-sky-500/25 bg-sky-50/60 dark:bg-sky-500/10 px-2 py-2 flex flex-col gap-1">
@@ -2464,8 +2498,12 @@ export default function OrdersPage() {
                               </p>
                             )}
                             <p className="mt-auto pt-1 text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.orderTypes.DELIVERY.n}{" "}
-                              orders
+                              {todayReportBreakdown.orderTypes.DELIVERY.n} paid ·{" "}
+                              {
+                                todayReportBreakdown.orderTypes.DELIVERY
+                                  .unpaidN
+                              }{" "}
+                              unpaid
                             </p>
                           </div>
                           <div className="rounded-lg border border-rose-200/80 dark:border-rose-500/25 bg-rose-50/60 dark:bg-rose-500/10 px-2 py-2 flex flex-col justify-between gap-1">
@@ -2480,8 +2518,9 @@ export default function OrdersPage() {
                               ).toLocaleString()}
                             </p>
                             <p className="text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.sources.WEBSITE.n} paid
-                              orders
+                              {todayReportBreakdown.sources.WEBSITE.n} paid ·{" "}
+                              {todayReportBreakdown.sources.WEBSITE.unpaidN}{" "}
+                              unpaid
                             </p>
                           </div>
                         </div>
@@ -2504,7 +2543,9 @@ export default function OrdersPage() {
                                 ).toLocaleString()}
                               </p>
                               <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.POS.n} orders
+                                {todayReportBreakdown.sources.POS.n} paid ·{" "}
+                                {todayReportBreakdown.sources.POS.unpaidN}{" "}
+                                unpaid
                               </p>
                             </div>
                             <div>
@@ -2518,7 +2559,9 @@ export default function OrdersPage() {
                                 ).toLocaleString()}
                               </p>
                               <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.WEBSITE.n} orders
+                                {todayReportBreakdown.sources.WEBSITE.n} paid ·{" "}
+                                {todayReportBreakdown.sources.WEBSITE.unpaidN}{" "}
+                                unpaid
                               </p>
                             </div>
                             <div>
@@ -2532,7 +2575,11 @@ export default function OrdersPage() {
                                 ).toLocaleString()}
                               </p>
                               <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.FOODPANDA.n} orders
+                                {todayReportBreakdown.sources.FOODPANDA.n} paid ·{" "}
+                                {
+                                  todayReportBreakdown.sources.FOODPANDA.unpaidN
+                                }{" "}
+                                unpaid
                               </p>
                             </div>
                             <div>
@@ -2546,7 +2593,9 @@ export default function OrdersPage() {
                                 ).toLocaleString()}
                               </p>
                               <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.OTHER.n} orders
+                                {todayReportBreakdown.sources.OTHER.n} paid ·{" "}
+                                {todayReportBreakdown.sources.OTHER.unpaidN}{" "}
+                                unpaid
                               </p>
                             </div>
                           </div>
@@ -2608,6 +2657,8 @@ export default function OrdersPage() {
                           </div>
                         </div>
                       </div>
+                        </>
+                      ) : null}
                     </>
                   )}
                 </>
@@ -2615,17 +2666,23 @@ export default function OrdersPage() {
             </div>
 
             <div className="px-4 py-2 border-t border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowTodayReportModal(false);
-                  loadSessionHistory();
-                  setShowLegacySessionsModal(true);
-                }}
-                className="text-xs font-semibold text-primary hover:underline text-left"
-              >
-                View session history →
-              </button>
+              {showFullSessionReport ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTodayReportModal(false);
+                    loadSessionHistory();
+                    setShowLegacySessionsModal(true);
+                  }}
+                  className="text-xs font-semibold text-primary hover:underline text-left"
+                >
+                  View session history →
+                </button>
+              ) : (
+                <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                  Detailed breakdown is available to restaurant owners and managers.
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setShowTodayReportModal(false)}

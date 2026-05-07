@@ -5,12 +5,13 @@ import {
   Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown,
   AlertTriangle, X, Loader2, CheckCircle2, XCircle,
   ArrowUp, ArrowDown, ArrowUpDown, Printer, Minus, FileDown, FileText, ChevronDown, Upload,
-  Search, SlidersHorizontal,
+  Search, SlidersHorizontal, History,
 } from "lucide-react";
 import DataTable from "../../components/ui/DataTable";
 import {
   getInventory, createInventoryItem, updateInventoryItem,
-  deleteInventoryItem, SubscriptionInactiveError, getCurrencySymbol,
+  deleteInventoryItem, getInventoryStockMovements,
+  SubscriptionInactiveError, getCurrencySymbol,
 } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -258,6 +259,17 @@ function fmtQty(quantity) {
   return String(n % 1 === 0 ? n : parseFloat(n.toFixed(3)));
 }
 
+function fmtStockTimestamp(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return "—";
+  }
+}
+
 function costPriceLabel(unit) {
   if (["gram", "kilogram", "kg"].includes(unit))       return "Price per kg";
   if (["milliliter", "ml", "liter"].includes(unit))    return "Price per liter";
@@ -365,6 +377,15 @@ export default function InventoryPage() {
   const [importAttachedFile, setImportAttachedFile] = useState(null); // { name, size } | null
   const importFileRef = useRef(null);
   const filtersRef = useRef(null);
+  const [historyModal, setHistoryModal] = useState({
+    open: false,
+    itemId: null,
+    itemName: "",
+    unit: "gram",
+    loading: false,
+    rows: [],
+    error: "",
+  });
 
   const { confirm } = useConfirmDialog();
   const { currentBranch } = useBranch() || {};
@@ -536,7 +557,7 @@ export default function InventoryPage() {
           lowStockThreshold: form.lowStockThreshold ? Number(form.lowStockThreshold) : 0,
           costPrice: form.costPrice ? Number(form.costPrice) : 0,
         });
-        setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+        setItems((prev) => prev.map((i) => (i.id === updated.id ? { ...i, ...updated } : i)));
         toast.success("Inventory item updated!", { id: toastId });
       } else {
         const created = await createInventoryItem({
@@ -562,7 +583,7 @@ export default function InventoryPage() {
     const toastId = toast.loading(delta > 0 ? "Adding stock..." : "Removing stock...");
     try {
       const updated = await updateInventoryItem(id, { stockAdjustment: delta });
-      setItems((prev) => prev.map((i) => (i.id === id ? updated : i)));
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...updated } : i)));
       toast.success(delta > 0 ? "Stock added!" : "Stock removed!", { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to adjust stock", { id: toastId }); throw err;
@@ -576,6 +597,40 @@ export default function InventoryPage() {
     finally {
       setInlineAdjusting((prev) => { const s = new Set(prev); s.delete(item.id); return s; });
     }
+  }
+
+  async function openStockHistory(item) {
+    setHistoryModal({
+      open: true,
+      itemId: item.id,
+      itemName: item.name,
+      unit: item.unit,
+      loading: true,
+      rows: [],
+      error: "",
+    });
+    try {
+      const rows = await getInventoryStockMovements(item.id, { limit: 50 });
+      setHistoryModal((prev) => ({ ...prev, loading: false, rows: Array.isArray(rows) ? rows : [] }));
+    } catch (err) {
+      setHistoryModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || "Failed to load stock history",
+      }));
+    }
+  }
+
+  function closeStockHistory() {
+    setHistoryModal({
+      open: false,
+      itemId: null,
+      itemName: "",
+      unit: "gram",
+      loading: false,
+      rows: [],
+      error: "",
+    });
   }
 
   function openAdjustDialog(item, mode) {
@@ -757,6 +812,11 @@ export default function InventoryPage() {
   const sortedFiltered = [...searchFiltered].sort((a, b) => {
     // Column-header sort takes priority if set
     if (sortKey) {
+      if (sortKey === "stockLastUpdatedAt") {
+        const ta = a.stockLastUpdatedAt ? new Date(a.stockLastUpdatedAt).getTime() : 0;
+        const tb = b.stockLastUpdatedAt ? new Date(b.stockLastUpdatedAt).getTime() : 0;
+        return sortDir === "asc" ? ta - tb : tb - ta;
+      }
       const va = a[sortKey] ?? (sortKey === "name" ? "" : 0);
       const vb = b[sortKey] ?? (sortKey === "name" ? "" : 0);
       if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
@@ -1432,11 +1492,36 @@ export default function InventoryPage() {
                 ),
               },
               {
+                key: "stockLastUpdatedAt",
+                header: (
+                  <SortHeader label="Last updated" colKey="stockLastUpdatedAt" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                ),
+                hideOnMobile: true,
+                render: (_, item) => (
+                  <div className="max-w-[11rem]">
+                    <div className="text-xs font-medium text-gray-800 dark:text-neutral-200 tabular-nums leading-snug">
+                      {fmtStockTimestamp(item.stockLastUpdatedAt)}
+                    </div>
+                    {item.stockLastUpdatedBy ? (
+                      <div className="text-[10px] text-gray-400 dark:text-neutral-500 truncate mt-0.5" title={item.stockLastUpdatedBy}>
+                        {item.stockLastUpdatedBy}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-gray-300 dark:text-neutral-600 mt-0.5">—</div>
+                    )}
+                  </div>
+                ),
+              },
+              {
                 key: "actions",
                 header: "Actions",
                 align: "right",
                 render: (_, item) => (
-                  <div className="inline-flex items-center gap-1">
+                  <div className="inline-flex items-center gap-1 flex-wrap justify-end">
+                    <button type="button" onClick={() => openStockHistory(item)}
+                      className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-violet-50 dark:hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400 transition-colors" title="Stock change history">
+                      <History className="w-3.5 h-3.5" />
+                    </button>
                     <button type="button" onClick={() => startEditItem(item)}
                       className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors" title="Edit">
                       <Edit2 className="w-3.5 h-3.5" />
@@ -1657,6 +1742,97 @@ export default function InventoryPage() {
                   <><TrendingDown className="w-4 h-4" />Confirm Remove</>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Stock history (audit) ─────────────────────────────────────────── */}
+      {historyModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-2xl flex flex-col max-h-[min(560px,85vh)]">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <History className="w-5 h-5 text-violet-500 flex-shrink-0" />
+                  Stock history
+                </h2>
+                <p className="text-sm text-gray-600 dark:text-neutral-400 truncate mt-0.5" title={historyModal.itemName}>
+                  {historyModal.itemName}
+                  <span className="text-gray-400 dark:text-neutral-500">
+                    {" "}· {ALL_UNITS.find((u) => u.value === historyModal.unit)?.label ?? historyModal.unit}
+                  </span>
+                </p>
+                <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-1">
+                  Dashboard adjustments and initial stock only — POS sales are not listed here yet.
+                </p>
+              </div>
+              <button type="button" onClick={closeStockHistory}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {historyModal.loading && (
+                <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500 dark:text-neutral-400">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" /> Loading…
+                </div>
+              )}
+              {!historyModal.loading && historyModal.error && (
+                <p className="text-sm text-red-600 dark:text-red-400 py-6 text-center">{historyModal.error}</p>
+              )}
+              {!historyModal.loading && !historyModal.error && historyModal.rows.length === 0 && (
+                <p className="text-sm text-gray-500 dark:text-neutral-400 py-10 text-center">
+                  No recorded stock changes yet for this branch. Changes will appear after you add items or adjust quantities from this screen.
+                </p>
+              )}
+              {!historyModal.loading && !historyModal.error && historyModal.rows.length > 0 && (
+                <ul className="space-y-2">
+                  {historyModal.rows.map((row) => {
+                    const d = Number(row.delta);
+                    const signed =
+                      d > 0 ? `+${fmtQty(d)}` : d < 0 ? `−${fmtQty(Math.abs(d))}` : fmtQty(d);
+                    const src =
+                      row.source === "initial" ? "Initial stock" : "Manual adjustment";
+                    return (
+                      <li
+                        key={row.id}
+                        className="rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/60 px-3 py-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span
+                              className={`text-sm font-bold tabular-nums ${
+                                d > 0
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : d < 0
+                                  ? "text-orange-600 dark:text-orange-400"
+                                  : "text-gray-600 dark:text-neutral-400"
+                              }`}
+                            >
+                              {signed} {unitAbbr(historyModal.unit)}
+                            </span>
+                            <span className="text-xs text-gray-400 dark:text-neutral-500 ml-2">
+                              → {fmtQty(row.stockAfter)} {unitAbbr(historyModal.unit)} after
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 whitespace-nowrap">
+                            {src}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500 dark:text-neutral-400">
+                          <span>{fmtStockTimestamp(row.createdAt)}</span>
+                          <span className="text-gray-300 dark:text-neutral-600">·</span>
+                          <span>{row.performedByName?.trim() || "—"}</span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-gray-200 dark:border-neutral-800 flex justify-end">
+              <Button type="button" variant="ghost" className="px-4" onClick={closeStockHistory}>Close</Button>
             </div>
           </div>
         </div>
