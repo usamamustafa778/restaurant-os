@@ -9,6 +9,7 @@ import {
   getSuperBranches,
   createRestaurantForSuperAdmin,
   updateRestaurantSubscription,
+  verifyRestaurantOwnerEmailsForSuperAdmin,
   setActingAsRestaurant,
   deleteRestaurantForSuperAdmin,
   restoreRestaurantForSuperAdmin,
@@ -22,6 +23,7 @@ import {
   X,
   Loader2,
   Plus,
+  MailCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -87,6 +89,7 @@ export default function SuperRestaurantsPage() {
   const [restaurants, setRestaurants] = useState([]);
   const [deletedRestaurants, setDeletedRestaurants] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
+  const [verifyingOwnerEmailId, setVerifyingOwnerEmailId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusDropdownId, setStatusDropdownId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -234,13 +237,19 @@ export default function SuperRestaurantsPage() {
     const email = (r.website?.contactEmail || "").toLowerCase();
     const plan = (r.subscription?.plan || "").toLowerCase();
     const status = (r.subscription?.status || "").toLowerCase();
+    const loginEmailState = r.ownerEmail
+      ? r.ownerEmail.allVerified
+        ? "verified"
+        : "pending"
+      : "";
     return (
       name.includes(q) ||
       sub.includes(q) ||
       phone.includes(q) ||
       email.includes(q) ||
       plan.includes(q) ||
-      status.includes(q)
+      status.includes(q) ||
+      loginEmailState.includes(q)
     );
   });
 
@@ -317,6 +326,35 @@ export default function SuperRestaurantsPage() {
       );
     } finally {
       setUpdatingId(null);
+    }
+  }
+
+  async function handleVerifyOwnerEmails(restaurantId) {
+    const row = restaurants.find((x) => x.id === restaurantId);
+    const name = row?.website?.name || "this restaurant";
+    const ok = await confirm({
+      title: "Verify admin emails without OTP?",
+      message:
+        `Mark all restaurant_admin and admin dashboard accounts for "${name}" as email-verified and clear any verification codes? They can log in without entering an OTP.`,
+      confirmLabel: "Verify emails",
+    });
+    if (!ok) return;
+    setVerifyingOwnerEmailId(restaurantId);
+    const toastId = toast.loading("Updating email verification…");
+    try {
+      const out = await verifyRestaurantOwnerEmailsForSuperAdmin(restaurantId);
+      const mod = Number(out?.modifiedCount ?? 0);
+      toast.success(
+        mod > 0
+          ? `Marked ${mod} admin account(s) as verified.`
+          : "All matching admins were already verified, or there are no admin users for this tenant.",
+        { id: toastId },
+      );
+      await loadRestaurants();
+    } catch (err) {
+      toast.error(err.message || "Failed to verify emails", { id: toastId });
+    } finally {
+      setVerifyingOwnerEmailId(null);
     }
   }
 
@@ -613,6 +651,46 @@ export default function SuperRestaurantsPage() {
               render: (_, r) => r.website?.contactEmail || "—",
               cellClassName:
                 "text-gray-700 dark:text-neutral-300 truncate max-w-[180px]",
+            },
+            {
+              key: "adminLoginEmail",
+              header: "Admin login email",
+              cellClassName: "whitespace-normal max-w-[200px]",
+              render: (_, r) => {
+                const oe = r.ownerEmail;
+                if (!oe) {
+                  return (
+                    <span className="text-[11px] text-neutral-500" title="No restaurant_admin or admin user">
+                      —
+                    </span>
+                  );
+                }
+                const busy = verifyingOwnerEmailId === r.id;
+                return (
+                  <div className="flex flex-col gap-1.5">
+                    <span
+                      className={`inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        oe.allVerified
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                          : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+                      }`}
+                    >
+                      <MailCheck className="w-3 h-3 shrink-0" />
+                      {oe.allVerified ? "Verified" : `${oe.pendingCount} pending`}
+                    </span>
+                    {!oe.allVerified ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleVerifyOwnerEmails(r.id)}
+                        className="w-fit text-left text-[10px] font-semibold text-primary hover:underline disabled:opacity-50"
+                      >
+                        {busy ? "Updating…" : "Verify without OTP"}
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              },
             },
             {
               key: "plan",
