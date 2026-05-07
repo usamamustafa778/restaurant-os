@@ -27,7 +27,6 @@ import {
   MailCheck,
   Pencil,
   RefreshCw,
-  LogIn,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -319,11 +318,7 @@ export default function SuperRestaurantsPage() {
     const sub = (r.website?.subdomain || "").toLowerCase();
     const phone = (r.website?.contactPhone || "").toLowerCase();
     const email = (r.website?.contactEmail || "").toLowerCase();
-    const ownerName = (
-      r.ownerAccount?.displayName ||
-      r.ownerAccount?.loginEmail ||
-      ""
-    ).toLowerCase();
+    const ownerDisplay = (r.ownerAccount?.displayName || "").toLowerCase();
     const ownerLogin = (r.ownerAccount?.loginEmail || "").toLowerCase();
     const plan = (r.subscription?.plan || "").toLowerCase();
     const status = (r.subscription?.status || "").toLowerCase();
@@ -337,7 +332,7 @@ export default function SuperRestaurantsPage() {
       sub.includes(q) ||
       phone.includes(q) ||
       email.includes(q) ||
-      ownerName.includes(q) ||
+      ownerDisplay.includes(q) ||
       ownerLogin.includes(q) ||
       plan.includes(q) ||
       status.includes(q) ||
@@ -510,20 +505,20 @@ export default function SuperRestaurantsPage() {
     <AdminLayout title="Restaurants & Subscriptions">
       <div className="flex flex-col">
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
+          <div className="relative flex flex-1 min-w-[200px] max-w-sm items-center">
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-neutral-500" />
             <input
               type="text"
               placeholder="Search by name, subdomain, phone, email, plan or status..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              className="box-border h-9 w-full rounded-lg border border-gray-200 bg-white py-0 pl-9 pr-4 text-sm leading-normal text-gray-900 placeholder:text-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
             />
           </div>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs font-medium text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
           >
             <option value="all">All statuses</option>
             <option value="TRIAL">Trial</option>
@@ -533,7 +528,7 @@ export default function SuperRestaurantsPage() {
           <select
             value={filterHealth}
             onChange={(e) => setFilterHealth(e.target.value)}
-            className="h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs font-medium text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
           >
             <option value="all">All health</option>
             <option value="active">Active</option>
@@ -545,7 +540,7 @@ export default function SuperRestaurantsPage() {
           <select
             value={sortSales}
             onChange={(e) => setSortSales(e.target.value)}
-            className="h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs font-medium text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
             title="Sort by 30-day revenue"
           >
             <option value="desc">Sales: High → Low</option>
@@ -554,7 +549,7 @@ export default function SuperRestaurantsPage() {
           {(searchQuery ||
             filterStatus !== "all" ||
             filterHealth !== "all") && (
-            <span className="text-xs text-neutral-500">
+            <span className="inline-flex h-9 shrink-0 items-center text-xs text-neutral-500">
               {filtered.length} of {restaurants.length}
             </span>
           )}
@@ -562,7 +557,7 @@ export default function SuperRestaurantsPage() {
             type="button"
             onClick={handleRefreshList}
             disabled={listRefreshing}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="box-border inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
             title="Refresh list"
             aria-label="Refresh restaurants list"
           >
@@ -573,7 +568,7 @@ export default function SuperRestaurantsPage() {
           <Button
             type="button"
             onClick={handleOpenCreate}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold"
+            className="box-border !h-9 !min-h-0 shrink-0 !py-0 inline-flex items-center gap-1.5 px-3 text-xs font-semibold"
           >
             <Plus className="w-3.5 h-3.5" />
             Create restaurant
@@ -583,7 +578,7 @@ export default function SuperRestaurantsPage() {
               <button
                 type="button"
                 onClick={() => setDeletedDropdownOpen((prev) => !prev)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50/60 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
+                className="box-border inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50/60 px-3 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
               >
                 Recently deleted
                 <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-amber-700 text-[10px] text-white">
@@ -729,16 +724,27 @@ export default function SuperRestaurantsPage() {
               render: (_, r) => {
                 const website = r.website || {};
                 return (
-                  <div className="inline-flex flex-nowrap items-center gap-1 justify-start shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => openEditRestaurant(r)}
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-                      title="Edit restaurant details and health"
-                      aria-label="Edit restaurant"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                  <div className="inline-flex min-h-[1.25rem] flex-nowrap items-center gap-3 justify-start shrink-0">
+                    <span className="inline-flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openEditRestaurant(r)}
+                        className="p-0 m-0 border-0 bg-transparent text-neutral-600 dark:text-neutral-300 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
+                        title="Edit restaurant details and health"
+                        aria-label="Edit restaurant"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(r)}
+                        className="p-0 m-0 border-0 bg-transparent text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 rounded"
+                        title="Soft-delete (recoverable within 48 hours)"
+                        aria-label="Delete restaurant"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </span>
                     <button
                       type="button"
                       disabled={!website.subdomain}
@@ -749,20 +755,11 @@ export default function SuperRestaurantsPage() {
                           window.open("/overview", "_blank");
                         }
                       }}
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary"
+                      className="p-0 m-0 border-0 bg-transparent text-xs font-medium leading-none text-primary underline underline-offset-2 decoration-primary hover:text-primary/80 disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
                       title="Open this restaurant's dashboard in a new tab"
                       aria-label="Open restaurant dashboard"
                     >
-                      <LogIn className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(r)}
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
-                      title="Soft-delete (recoverable within 48 hours)"
-                      aria-label="Delete restaurant"
-                    >
-                      <Trash2 className="w-4 h-4" />
+                      Login
                     </button>
                   </div>
                 );
@@ -774,9 +771,29 @@ export default function SuperRestaurantsPage() {
               render: (_, r) => {
                 const oa = r.ownerAccount;
                 const name = (oa?.displayName || "").trim();
-                const login = (oa?.loginEmail || "").trim();
-                const primary = name || login;
-                if (!primary) {
+                if (!name) {
+                  return (
+                    <span
+                      className="text-[11px] text-neutral-500"
+                      title="No name on file for restaurant_admin / admin user"
+                    >
+                      —
+                    </span>
+                  );
+                }
+                return (
+                  <div className="min-w-0 max-w-[200px] truncate text-sm font-medium leading-snug text-gray-900 dark:text-white">
+                    {name}
+                  </div>
+                );
+              },
+            },
+            {
+              key: "ownerLoginEmail",
+              header: "Owner login email",
+              render: (_, r) => {
+                const login = (r.ownerAccount?.loginEmail || "").trim();
+                if (!login) {
                   return (
                     <span
                       className="text-[11px] text-neutral-500"
@@ -787,31 +804,20 @@ export default function SuperRestaurantsPage() {
                   );
                 }
                 return (
-                  <div className="min-w-0 max-w-[220px]">
-                    <div
-                      className="font-medium text-gray-900 dark:text-white truncate text-sm"
-                      title={name ? `${name}${login ? ` · ${login}` : ""}` : login}
-                    >
-                      {primary}
-                    </div>
-                    {name && login ? (
-                      <div
-                        className="text-[10px] text-neutral-500 font-mono truncate mt-0.5"
-                        title="Dashboard login email"
-                      >
-                        {login}
-                      </div>
-                    ) : null}
+                  <div
+                    className="min-w-0 max-w-[200px] truncate font-mono text-xs leading-snug text-neutral-800 dark:text-neutral-200"
+                    title="Dashboard login email"
+                  >
+                    {login}
                   </div>
                 );
               },
-              cellClassName: "align-top",
             },
             {
               key: "restaurant",
               header: "Restaurant",
               render: (_, r) => (
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="truncate text-sm font-medium leading-snug text-gray-900 dark:text-white">
                   {r.website?.name || "Untitled restaurant"}
                 </div>
               ),
@@ -831,15 +837,15 @@ export default function SuperRestaurantsPage() {
             },
             {
               key: "email",
-              header: "Owner email",
+              header: "Contact email",
               render: (_, r) => r.website?.contactEmail || "—",
               cellClassName:
                 "text-gray-700 dark:text-neutral-300 truncate max-w-[180px]",
             },
             {
               key: "adminLoginEmail",
-              header: "Admin login email",
-              cellClassName: "whitespace-normal max-w-[220px]",
+              header: "Email verification",
+              cellClassName: "whitespace-normal max-w-[200px]",
               render: (_, r) => {
                 const oa = r.ownerAccount;
                 if (!oa) {
@@ -850,19 +856,8 @@ export default function SuperRestaurantsPage() {
                   );
                 }
                 const busy = verifyingOwnerEmailId === r.id;
-                const login = (oa.loginEmail || "").trim();
                 return (
                   <div className="flex flex-col gap-1.5 min-w-0">
-                    {login ? (
-                      <div
-                        className="text-xs font-mono text-neutral-800 dark:text-neutral-200 truncate"
-                        title="Dashboard login email"
-                      >
-                        {login}
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-neutral-500">—</span>
-                    )}
                     <span
                       className={`inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                         oa.allVerified
@@ -897,7 +892,7 @@ export default function SuperRestaurantsPage() {
               key: "status",
               header: "Status",
               render: (_, r) => renderSubscriptionStatusControl(r),
-              cellClassName: "whitespace-normal align-middle",
+              cellClassName: "whitespace-normal",
             },
             {
               key: "orders7d",
