@@ -320,6 +320,69 @@ export default function SuperRestaurantsPage() {
     }
   }
 
+  /** Subscription Trial / Active / Suspend — lives in Status column so it is not hidden past horizontal scroll. */
+  function renderSubscriptionStatusControl(r) {
+    const sub = r.subscription || {};
+    const isDropdownOpen = statusDropdownId === r.id;
+    const badgeClass =
+      sub.status === "ACTIVE"
+        ? "badge-success"
+        : sub.status === "TRIAL"
+          ? "badge-warning"
+          : "badge-danger";
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`badge text-[10px] shrink-0 ${badgeClass}`}>
+          {sub.status || "TRIAL"}
+        </span>
+        <div
+          className="relative shrink-0"
+          ref={isDropdownOpen ? dropdownRef : null}
+        >
+          <button
+            type="button"
+            disabled={updatingId === r.id}
+            onClick={() =>
+              setStatusDropdownId(isDropdownOpen ? null : r.id)
+            }
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-700 dark:text-neutral-200 text-[10px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Change subscription status"
+          >
+            Change
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {isDropdownOpen && (
+            <div className="absolute left-0 top-full mt-1 z-30 w-36 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
+              <button
+                type="button"
+                onClick={() => handleStatusChange(r.id, "TRIAL")}
+                className="w-full text-left px-4 py-2 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10"
+              >
+                Trial
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStatusChange(r.id, "ACTIVE")}
+                className="w-full text-left px-4 py-2 text-[11px] text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStatusChange(r.id, "SUSPENDED")}
+                className="w-full text-left px-4 py-2 text-[11px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
+              >
+                Suspend
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AdminLayout title="Restaurants & Subscriptions">
       <div className="flex flex-col">
@@ -560,22 +623,8 @@ export default function SuperRestaurantsPage() {
             {
               key: "status",
               header: "Status",
-              render: (_, r) => {
-                const sub = r.subscription || {};
-                return (
-                  <span
-                    className={`badge text-[10px] ${
-                      sub.status === "ACTIVE"
-                        ? "badge-success"
-                        : sub.status === "TRIAL"
-                          ? "badge-warning"
-                          : "badge-danger"
-                    }`}
-                  >
-                    {sub.status || "TRIAL"}
-                  </span>
-                );
-              },
+              render: (_, r) => renderSubscriptionStatusControl(r),
+              cellClassName: "whitespace-normal align-middle",
             },
             {
               key: "orders7d",
@@ -734,11 +783,14 @@ export default function SuperRestaurantsPage() {
               key: "actions",
               header: "Actions",
               align: "right",
+              className:
+                "sticky right-0 z-[2] bg-gray-50 dark:bg-neutral-900/50 border-l border-gray-200 dark:border-neutral-800 shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.12)] dark:shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.35)]",
+              cellClassName:
+                "sticky right-0 z-[2] bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.12)] dark:shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.35)] hover:bg-gray-50 dark:hover:bg-neutral-900/30",
               render: (_, r) => {
                 const website = r.website || {};
-                const isDropdownOpen = statusDropdownId === r.id;
                 return (
-                  <div className="inline-flex items-center gap-1.5 justify-end">
+                  <div className="inline-flex items-center gap-1.5 justify-end min-w-[9.5rem]">
                     <Button
                       type="button"
                       variant="primary"
@@ -763,51 +815,6 @@ export default function SuperRestaurantsPage() {
                       <Trash2 className="w-3.5 h-3.5" />
                       Delete
                     </button>
-                    <div
-                      className="relative"
-                      ref={isDropdownOpen ? dropdownRef : null}
-                    >
-                      <button
-                        type="button"
-                        disabled={updatingId === r.id}
-                        onClick={() =>
-                          setStatusDropdownId(isDropdownOpen ? null : r.id)
-                        }
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-700 dark:text-neutral-200 text-[11px] font-medium hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Status
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
-                        />
-                      </button>
-                      {isDropdownOpen && (
-                        <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1 z-20">
-                          <button
-                            type="button"
-                            onClick={() => handleStatusChange(r.id, "TRIAL")}
-                            className="w-full text-left px-4 py-2 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-                          >
-                            Trial
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleStatusChange(r.id, "ACTIVE")}
-                            className="w-full text-left px-4 py-2 text-[11px] text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-                          >
-                            Active
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleStatusChange(r.id, "SUSPENDED")
-                            }
-                            className="w-full text-left px-4 py-2 text-[11px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
-                          >
-                            Suspend
-                          </button>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 );
               },
