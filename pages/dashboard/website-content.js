@@ -694,10 +694,30 @@ export default function WebsiteContentPage() {
     domain: "@",
     value: "216.150.1.1",
   };
-  const displayDnsRecords =
-    domainInvalidConfig && domainVerificationRecords.length === 0
-      ? [STATIC_INVALID_CONFIG_A_RECORD]
-      : domainVerificationRecords;
+
+  /** One subsection per hostname (apex + www), matching Vercel’s domain list. */
+  const dnsRecordGroupsBase = Array.isArray(domainStatus?.dnsRecordGroups)
+    ? domainStatus.dnsRecordGroups
+    : pairedWwwHost && (domainStatus?.apexStatus || domainStatus?.wwwStatus)
+      ? [
+          { hostname: connectedDomain, records: domainStatus?.apexStatus?.dnsRecords ?? [] },
+          { hostname: pairedWwwHost, records: domainStatus?.wwwStatus?.dnsRecords ?? [] },
+        ]
+      : [{ hostname: connectedDomain || "Domain", records: domainVerificationRecords }];
+
+  const dnsDisplayGroups = dnsRecordGroupsBase.map((g) => {
+    let recs = Array.isArray(g.records) ? [...g.records] : [];
+    if (
+      domainInvalidConfig &&
+      recs.length === 0 &&
+      g.hostname === connectedDomain
+    ) {
+      recs = [STATIC_INVALID_CONFIG_A_RECORD];
+    }
+    return { hostname: g.hostname, records: recs };
+  });
+
+  const hasAnyDnsRows = dnsDisplayGroups.some((g) => g.records.length > 0);
 
   const stagingRoot = process.env.NEXT_PUBLIC_STOREFRONT_STAGING_DOMAIN || "";
   const stagingUrl =
@@ -1305,63 +1325,97 @@ export default function WebsiteContentPage() {
                       </div>
                     )}
 
-                    {displayDnsRecords.length > 0 && (
-                      <div className="m-5 rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden">
-                        <div className="grid grid-cols-12 bg-gray-50 dark:bg-neutral-900 text-xs font-semibold text-gray-600 dark:text-neutral-300">
-                          <div className="col-span-2 px-3 py-2.5">Type</div>
-                          <div className="col-span-4 px-3 py-2.5 border-l border-gray-200 dark:border-neutral-800">
-                            Name
+                    {dnsDisplayGroups.map((group, gIdx) => (
+                      <div
+                        key={group.hostname}
+                        className={`mx-5 rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden ${
+                          gIdx === 0 ? "mt-3" : "mt-4"
+                        }`}
+                      >
+                        <div className="px-3 py-2 bg-gray-50 dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {!domainVerified || domainInvalidConfig ? (
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                            ) : (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                            )}
+                            <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                              {group.hostname}
+                            </span>
                           </div>
-                          <div className="col-span-6 px-3 py-2.5 border-l border-gray-200 dark:border-neutral-800">
-                            Value
-                          </div>
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                            DNS records
+                          </span>
                         </div>
-                        {displayDnsRecords.map((record, idx) => (
-                          <div
-                            key={`${record.type || "record"}-${idx}`}
-                            className="grid grid-cols-12 text-xs border-t border-gray-200 dark:border-neutral-800"
-                          >
-                            <div className="col-span-2 px-3 py-3 text-gray-900 dark:text-neutral-100 font-medium">
-                              {record.type || "TXT"}
-                            </div>
-                            <div className="col-span-4 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
-                              <span className="flex-1">{record.domain || "_vercel"}</span>
-                              <button
-                                type="button"
-                                onClick={() => copyText(record.domain || "_vercel", `name-${idx}`)}
-                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
-                                title="Copy name"
-                              >
-                                {copiedKey === `name-${idx}` ? (
-                                  <Check className="w-3.5 h-3.5" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </div>
-                            <div className="col-span-6 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
-                              <span className="flex-1">{record.value || "—"}</span>
-                              {record.value ? (
-                                <button
-                                  type="button"
-                                  onClick={() => copyText(record.value, `value-${idx}`)}
-                                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
-                                  title="Copy value"
-                                >
-                                  {copiedKey === `value-${idx}` ? (
-                                    <Check className="w-3.5 h-3.5" />
-                                  ) : (
-                                    <Copy className="w-3.5 h-3.5" />
-                                  )}
-                                </button>
-                              ) : null}
-                            </div>
+                        {group.records.length === 0 ? (
+                          <div className="px-3 py-3 text-xs text-gray-600 dark:text-neutral-400">
+                            No DNS rows returned for this hostname yet. Click{" "}
+                            <span className="font-semibold">Refresh</span> or compare with your
+                            Vercel project&apos;s Domains page.
                           </div>
-                        ))}
+                        ) : (
+                          <>
+                            <div className="grid grid-cols-12 bg-gray-50/80 dark:bg-neutral-900/80 text-xs font-semibold text-gray-600 dark:text-neutral-300">
+                              <div className="col-span-2 px-3 py-2.5">Type</div>
+                              <div className="col-span-4 px-3 py-2.5 border-l border-gray-200 dark:border-neutral-800">
+                                Name
+                              </div>
+                              <div className="col-span-6 px-3 py-2.5 border-l border-gray-200 dark:border-neutral-800">
+                                Value
+                              </div>
+                            </div>
+                            {group.records.map((record, idx) => (
+                              <div
+                                key={`${group.hostname}-${record.type || "r"}-${idx}`}
+                                className="grid grid-cols-12 text-xs border-t border-gray-200 dark:border-neutral-800"
+                              >
+                                <div className="col-span-2 px-3 py-3 text-gray-900 dark:text-neutral-100 font-medium">
+                                  {record.type || "TXT"}
+                                </div>
+                                <div className="col-span-4 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
+                                  <span className="flex-1">{record.domain || "_vercel"}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyText(record.domain || "_vercel", `name-${gIdx}-${idx}`)
+                                    }
+                                    className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                                    title="Copy name"
+                                  >
+                                    {copiedKey === `name-${gIdx}-${idx}` ? (
+                                      <Check className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="col-span-6 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
+                                  <span className="flex-1">{record.value || "—"}</span>
+                                  {record.value ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        copyText(record.value, `value-${gIdx}-${idx}`)
+                                      }
+                                      className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
+                                      title="Copy value"
+                                    >
+                                      {copiedKey === `value-${gIdx}-${idx}` ? (
+                                        <Check className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </div>
-                    )}
+                    ))}
 
-                    {domainVerificationRecords.length === 0 && !domainInvalidConfig && (
+                    {!hasAnyDnsRows && !domainInvalidConfig && (
                       <div className="m-5 rounded-lg border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 p-3 text-xs text-gray-600 dark:text-neutral-400">
                         No DNS verification records are required right now.
                       </div>
