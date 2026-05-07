@@ -8,6 +8,7 @@ import {
   getDeletedRestaurantsForSuperAdmin,
   getSuperBranches,
   createRestaurantForSuperAdmin,
+  updateRestaurantForSuperAdmin,
   updateRestaurantSubscription,
   verifyRestaurantOwnerEmailsForSuperAdmin,
   setActingAsRestaurant,
@@ -24,6 +25,9 @@ import {
   Loader2,
   Plus,
   MailCheck,
+  Pencil,
+  RefreshCw,
+  LogIn,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -43,11 +47,16 @@ function formatDateTime(iso) {
 }
 
 const ENGAGEMENT_STYLES = {
-  active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  quiet: "bg-amber-500/15 text-amber-200 border-amber-500/30",
-  new: "bg-sky-500/15 text-sky-200 border-sky-500/30",
-  configured: "bg-violet-500/15 text-violet-200 border-violet-500/30",
-  dormant: "bg-neutral-500/20 text-neutral-300 border-neutral-600",
+  /** Soft pills on white table — matches platform health column reference */
+  active:
+    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-700/60",
+  quiet:
+    "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50",
+  new: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/45 dark:text-sky-300 dark:border-sky-700/55",
+  configured:
+    "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-700/50",
+  dormant:
+    "bg-gray-100 text-gray-600 border-gray-400 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-500",
 };
 
 function slugifyForSubdomain(name) {
@@ -111,6 +120,18 @@ export default function SuperRestaurantsPage() {
   });
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [listRefreshing, setListRefreshing] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    subdomain: "",
+    contactPhone: "",
+    contactEmail: "",
+    address: "",
+    platformHealthOverride: "",
+  });
+  const [editError, setEditError] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
   const dropdownRef = useRef(null);
   const { confirm } = useConfirmDialog();
 
@@ -144,6 +165,54 @@ export default function SuperRestaurantsPage() {
     });
     setCreateError("");
     setShowCreateForm(true);
+  }
+
+  function openEditRestaurant(r) {
+    const w = r.website || {};
+    setEditForm({
+      name: w.name || "",
+      subdomain: w.subdomain || "",
+      contactPhone: w.contactPhone || "",
+      contactEmail: w.contactEmail || "",
+      address: w.address || "",
+      platformHealthOverride: r.platformHealthOverride || "",
+    });
+    setEditError("");
+    setEditTarget(r);
+  }
+
+  async function handleEditRestaurantSave(e) {
+    e.preventDefault();
+    if (!editTarget) return;
+    setEditError("");
+    const name = editForm.name.trim();
+    const subdomain = editForm.subdomain.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (!name) {
+      setEditError("Restaurant name is required.");
+      return;
+    }
+    if (!subdomain) {
+      setEditError("Subdomain is required.");
+      return;
+    }
+    try {
+      setEditSaving(true);
+      await updateRestaurantForSuperAdmin(editTarget.id, {
+        name,
+        subdomain,
+        contactPhone: editForm.contactPhone.trim(),
+        contactEmail: editForm.contactEmail.trim(),
+        address: editForm.address.trim(),
+        platformHealthOverride: editForm.platformHealthOverride || null,
+      });
+      toast.success("Restaurant updated.");
+      setEditTarget(null);
+      loadRestaurants();
+    } catch (err) {
+      setEditError(err.message || "Failed to update restaurant");
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   async function handleCreateRestaurant(e) {
@@ -200,6 +269,21 @@ export default function SuperRestaurantsPage() {
       .catch(() => setDeletedRestaurants([]));
   }
 
+  async function handleRefreshList() {
+    if (listRefreshing) return;
+    setListRefreshing(true);
+    try {
+      await Promise.all([
+        loadRestaurants(),
+        getDeletedRestaurantsForSuperAdmin()
+          .then(setDeletedRestaurants)
+          .catch(() => setDeletedRestaurants([])),
+      ]);
+    } finally {
+      setListRefreshing(false);
+    }
+  }
+
   useEffect(() => {
     loadRestaurants();
     loadDeleted();
@@ -235,10 +319,16 @@ export default function SuperRestaurantsPage() {
     const sub = (r.website?.subdomain || "").toLowerCase();
     const phone = (r.website?.contactPhone || "").toLowerCase();
     const email = (r.website?.contactEmail || "").toLowerCase();
+    const ownerName = (
+      r.ownerAccount?.displayName ||
+      r.ownerAccount?.loginEmail ||
+      ""
+    ).toLowerCase();
+    const ownerLogin = (r.ownerAccount?.loginEmail || "").toLowerCase();
     const plan = (r.subscription?.plan || "").toLowerCase();
     const status = (r.subscription?.status || "").toLowerCase();
-    const loginEmailState = r.ownerEmail
-      ? r.ownerEmail.allVerified
+    const loginEmailState = r.ownerAccount
+      ? r.ownerAccount.allVerified
         ? "verified"
         : "pending"
       : "";
@@ -247,6 +337,8 @@ export default function SuperRestaurantsPage() {
       sub.includes(q) ||
       phone.includes(q) ||
       email.includes(q) ||
+      ownerName.includes(q) ||
+      ownerLogin.includes(q) ||
       plan.includes(q) ||
       status.includes(q) ||
       loginEmailState.includes(q)
@@ -358,9 +450,10 @@ export default function SuperRestaurantsPage() {
     }
   }
 
-  /** Subscription Trial / Active / Suspend — lives in Status column so it is not hidden past horizontal scroll. */
+  /** Single status control: current subscription as one pill + chevron; menu to switch. */
   function renderSubscriptionStatusControl(r) {
     const sub = r.subscription || {};
+    const statusLabel = String(sub.status || "TRIAL").toUpperCase();
     const isDropdownOpen = statusDropdownId === r.id;
     const badgeClass =
       sub.status === "ACTIVE"
@@ -369,30 +462,23 @@ export default function SuperRestaurantsPage() {
           ? "badge-warning"
           : "badge-danger";
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`badge text-[10px] shrink-0 ${badgeClass}`}>
-          {sub.status || "TRIAL"}
-        </span>
-        <div
-          className="relative shrink-0"
-          ref={isDropdownOpen ? dropdownRef : null}
+      <div className="relative shrink-0 w-fit" ref={isDropdownOpen ? dropdownRef : null}>
+        <button
+          type="button"
+          disabled={updatingId === r.id}
+          onClick={() =>
+            setStatusDropdownId(isDropdownOpen ? null : r.id)
+          }
+          className={`badge items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide cursor-pointer hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed ${badgeClass}`}
+          title="Change subscription status"
         >
-          <button
-            type="button"
-            disabled={updatingId === r.id}
-            onClick={() =>
-              setStatusDropdownId(isDropdownOpen ? null : r.id)
-            }
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-700 dark:text-neutral-200 text-[10px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Change subscription status"
-          >
-            Change
-            <ChevronDown
-              className={`w-3 h-3 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          {isDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1 z-30 w-36 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
+          {statusLabel}
+          <ChevronDown
+            className={`w-3 h-3 shrink-0 opacity-80 ${isDropdownOpen ? "rotate-180" : ""} transition-transform`}
+          />
+        </button>
+        {isDropdownOpen && (
+          <div className="absolute left-0 top-full mt-1 z-30 w-36 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
               <button
                 type="button"
                 onClick={() => handleStatusChange(r.id, "TRIAL")}
@@ -416,7 +502,6 @@ export default function SuperRestaurantsPage() {
               </button>
             </div>
           )}
-        </div>
       </div>
     );
   }
@@ -473,6 +558,18 @@ export default function SuperRestaurantsPage() {
               {filtered.length} of {restaurants.length}
             </span>
           )}
+          <button
+            type="button"
+            onClick={handleRefreshList}
+            disabled={listRefreshing}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh list"
+            aria-label="Refresh restaurants list"
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${listRefreshing ? "animate-spin" : ""}`}
+            />
+          </button>
           <Button
             type="button"
             onClick={handleOpenCreate}
@@ -615,6 +712,7 @@ export default function SuperRestaurantsPage() {
           )}
         </div>
         <DataTable
+          variant="card"
           showSno
           data={sorted}
           emptyMessage={
@@ -623,6 +721,92 @@ export default function SuperRestaurantsPage() {
               : "No restaurants match your search or filters."
           }
           columns={[
+            {
+              key: "actions",
+              header: "Actions",
+              align: "left",
+              cellClassName: "whitespace-nowrap",
+              render: (_, r) => {
+                const website = r.website || {};
+                return (
+                  <div className="inline-flex flex-nowrap items-center gap-1 justify-start shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEditRestaurant(r)}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                      title="Edit restaurant details and health"
+                      aria-label="Edit restaurant"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!website.subdomain}
+                      onClick={() => {
+                        const slug = website.subdomain || null;
+                        if (slug) {
+                          setActingAsRestaurant(slug);
+                          window.open("/overview", "_blank");
+                        }
+                      }}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary"
+                      title="Open this restaurant's dashboard in a new tab"
+                      aria-label="Open restaurant dashboard"
+                    >
+                      <LogIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(r)}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40"
+                      title="Soft-delete (recoverable within 48 hours)"
+                      aria-label="Delete restaurant"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              },
+            },
+            {
+              key: "ownerName",
+              header: "Owner name",
+              render: (_, r) => {
+                const oa = r.ownerAccount;
+                const name = (oa?.displayName || "").trim();
+                const login = (oa?.loginEmail || "").trim();
+                const primary = name || login;
+                if (!primary) {
+                  return (
+                    <span
+                      className="text-[11px] text-neutral-500"
+                      title="No restaurant_admin or admin user for this tenant"
+                    >
+                      —
+                    </span>
+                  );
+                }
+                return (
+                  <div className="min-w-0 max-w-[220px]">
+                    <div
+                      className="font-medium text-gray-900 dark:text-white truncate text-sm"
+                      title={name ? `${name}${login ? ` · ${login}` : ""}` : login}
+                    >
+                      {primary}
+                    </div>
+                    {name && login ? (
+                      <div
+                        className="text-[10px] text-neutral-500 font-mono truncate mt-0.5"
+                        title="Dashboard login email"
+                      >
+                        {login}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              },
+              cellClassName: "align-top",
+            },
             {
               key: "restaurant",
               header: "Restaurant",
@@ -655,10 +839,10 @@ export default function SuperRestaurantsPage() {
             {
               key: "adminLoginEmail",
               header: "Admin login email",
-              cellClassName: "whitespace-normal max-w-[200px]",
+              cellClassName: "whitespace-normal max-w-[220px]",
               render: (_, r) => {
-                const oe = r.ownerEmail;
-                if (!oe) {
+                const oa = r.ownerAccount;
+                if (!oa) {
                   return (
                     <span className="text-[11px] text-neutral-500" title="No restaurant_admin or admin user">
                       —
@@ -666,19 +850,30 @@ export default function SuperRestaurantsPage() {
                   );
                 }
                 const busy = verifyingOwnerEmailId === r.id;
+                const login = (oa.loginEmail || "").trim();
                 return (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 min-w-0">
+                    {login ? (
+                      <div
+                        className="text-xs font-mono text-neutral-800 dark:text-neutral-200 truncate"
+                        title="Dashboard login email"
+                      >
+                        {login}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-neutral-500">—</span>
+                    )}
                     <span
                       className={`inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                        oe.allVerified
+                        oa.allVerified
                           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                           : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
                       }`}
                     >
                       <MailCheck className="w-3 h-3 shrink-0" />
-                      {oe.allVerified ? "Verified" : `${oe.pendingCount} pending`}
+                      {oa.allVerified ? "Verified" : `${oa.pendingCount} pending`}
                     </span>
-                    {!oe.allVerified ? (
+                    {!oa.allVerified ? (
                       <button
                         type="button"
                         disabled={busy}
@@ -811,20 +1006,31 @@ export default function SuperRestaurantsPage() {
             {
               key: "health",
               header: "Health",
+              align: "center",
               render: (_, r) => {
                 const eg = r.engagement || {};
                 const badgeClass =
                   ENGAGEMENT_STYLES[eg.key] || ENGAGEMENT_STYLES.dormant;
+                const manual = Boolean(r.platformHealthOverride);
                 return (
                   <span
-                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeClass}`}
-                    title={eg.description}
+                    className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${badgeClass}`}
+                    title={
+                      manual
+                        ? `${eg.description} Override: ${r.platformHealthOverride}.`
+                        : eg.description
+                    }
                   >
                     {eg.label || "—"}
+                    {manual ? (
+                      <span className="ml-1 opacity-70 font-normal" aria-hidden>
+                        *
+                      </span>
+                    ) : null}
                   </span>
                 );
               },
-              cellClassName: "whitespace-nowrap",
+              cellClassName: "whitespace-nowrap text-center",
             },
             {
               key: "trialEnds",
@@ -856,46 +1062,6 @@ export default function SuperRestaurantsPage() {
                     })
                   : "—",
               cellClassName: "text-neutral-400 whitespace-nowrap",
-            },
-            {
-              key: "actions",
-              header: "Actions",
-              align: "right",
-              className:
-                "sticky right-0 z-[2] bg-gray-50 dark:bg-neutral-900/50 border-l border-gray-200 dark:border-neutral-800 shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.12)] dark:shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.35)]",
-              cellClassName:
-                "sticky right-0 z-[2] bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.12)] dark:shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.35)] hover:bg-gray-50 dark:hover:bg-neutral-900/30",
-              render: (_, r) => {
-                const website = r.website || {};
-                return (
-                  <div className="inline-flex items-center gap-1.5 justify-end min-w-[9.5rem]">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      onClick={() => {
-                        const slug = website.subdomain || null;
-                        if (slug) {
-                          setActingAsRestaurant(slug);
-                          window.open("/overview", "_blank");
-                        }
-                      }}
-                      className="px-3 text-[11px] font-semibold"
-                      title="Open this restaurant's dashboard in a new tab"
-                    >
-                      Login
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(r)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[11px] font-semibold hover:bg-red-100 dark:hover:bg-red-900/40"
-                      title="Soft-delete (recoverable 48h)"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete
-                    </button>
-                  </div>
-                );
-              },
             },
           ]}
         />
@@ -977,6 +1143,208 @@ export default function SuperRestaurantsPage() {
                   );
                 })()}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit restaurant modal */}
+        {editTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50 mb-1">
+                Edit restaurant
+              </h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                Update listing details and subdomain. Platform health can follow
+                activity automatically, or you can pin a manual label for this
+                tenant.
+              </p>
+              {(() => {
+                const oa = editTarget.ownerAccount;
+                if (!oa?.displayName && !oa?.loginEmail) {
+                  return (
+                    <div className="rounded-lg border border-dashed border-neutral-200 dark:border-neutral-700 bg-neutral-50/80 dark:bg-neutral-900/40 px-3 py-2 mb-3 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      Owner name is not available (no{" "}
+                      <span className="font-mono">restaurant_admin</span> or{" "}
+                      <span className="font-mono">admin</span> user for this
+                      tenant).
+                    </div>
+                  );
+                }
+                return (
+                  <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/50 px-3 py-2.5 mb-3 space-y-1">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      Owner account
+                    </div>
+                    <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      {oa.displayName || "—"}
+                    </div>
+                    {oa.loginEmail ? (
+                      <div
+                        className="text-[11px] text-neutral-600 dark:text-neutral-400 font-mono truncate"
+                        title="Dashboard login email"
+                      >
+                        {oa.loginEmail}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
+              {editError && (
+                <p className="text-xs text-red-600 dark:text-red-400 mb-2">
+                  {editError}
+                </p>
+              )}
+              <form
+                onSubmit={handleEditRestaurantSave}
+                className="space-y-3"
+                autoComplete="off"
+              >
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                    Restaurant name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={editForm.name}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                    className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                    Subdomain <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1 text-sm">
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={editForm.subdomain}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          subdomain: e.target.value
+                            .replace(/[^a-z0-9-]/gi, "")
+                            .toLowerCase(),
+                        }))
+                      }
+                      className="flex-1 min-w-0 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 font-mono text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
+                      required
+                    />
+                    <span className="text-neutral-400 dark:text-neutral-500 font-mono text-xs shrink-0">
+                      .eatsdesk.app
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                      Contact phone
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={editForm.contactPhone}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          contactPhone: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                      Contact email
+                    </label>
+                    <input
+                      type="email"
+                      autoComplete="off"
+                      value={editForm.contactEmail}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          contactEmail: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                    Address
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editForm.address}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, address: e.target.value }))
+                    }
+                    className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent resize-y min-h-[2.75rem]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                    Platform health
+                  </label>
+                  <select
+                    value={editForm.platformHealthOverride || ""}
+                    onChange={(e) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        platformHealthOverride: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
+                  >
+                    <option value="">
+                      Automatic (from orders and setup)
+                    </option>
+                    <option value="active">Active</option>
+                    <option value="quiet">Quiet</option>
+                    <option value="new">New</option>
+                    <option value="configured">Configured</option>
+                    <option value="dormant">Dormant</option>
+                  </select>
+                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                    Manual health shows an asterisk in the table and overrides the
+                    computed pill until you switch back to automatic.
+                  </p>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editSaving) return;
+                      setEditTarget(null);
+                      setEditError("");
+                    }}
+                    className="flex-1 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-700 dark:text-neutral-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editSaving}
+                    className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {editSaving ? (
+                      <span className="inline-flex items-center gap-1 justify-center">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Saving…
+                      </span>
+                    ) : (
+                      "Save changes"
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

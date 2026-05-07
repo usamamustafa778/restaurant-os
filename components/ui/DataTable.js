@@ -35,8 +35,10 @@ export default function DataTable({
 
   const tableContent = (
     <div className="overflow-x-auto">
-      <table className={`w-full ${tableClassName}`.trim()}>
-        <thead className="bg-gray-50 dark:bg-neutral-900/50 border-b border-gray-200 dark:border-neutral-800">
+      <table
+        className={`w-full bg-white dark:bg-neutral-950 text-gray-900 dark:text-neutral-100 ${tableClassName}`.trim()}
+      >
+        <thead className="bg-gray-50 dark:bg-neutral-900/60 border-b border-gray-200 dark:border-neutral-800">
           <tr>
             {allColumns.map((col) => (
               <th
@@ -54,12 +56,12 @@ export default function DataTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200 dark:divide-neutral-800">
+        <tbody className="divide-y divide-gray-100 dark:divide-neutral-800 bg-white dark:bg-neutral-950">
           {loading ? (
             <tr>
               <td
                 colSpan={allColumns.length}
-                className="py-8 text-center text-neutral-500"
+                className="py-8 text-center text-neutral-500 bg-white dark:bg-neutral-950"
               >
                 <span className="inline-flex items-center gap-2">
                   <svg
@@ -90,7 +92,7 @@ export default function DataTable({
             <tr>
               <td
                 colSpan={allColumns.length}
-                className="py-12 text-center text-sm text-gray-500 dark:text-neutral-400"
+                className="py-12 text-center text-sm text-gray-500 dark:text-neutral-400 bg-white dark:bg-neutral-950"
               >
                 {emptyMessage}
               </td>
@@ -106,7 +108,7 @@ export default function DataTable({
               return (
                 <tr
                   key={resolveRowId(row, rowIndex)}
-                  className={`hover:bg-gray-50 dark:hover:bg-neutral-900/30 transition-colors whitespace-nowrap ${extraRowCls}`.trim()}
+                  className={`bg-white dark:bg-neutral-950 hover:bg-gray-50/90 dark:hover:bg-neutral-900/40 transition-colors whitespace-nowrap ${extraRowCls}`.trim()}
                 >
                   {allColumns.map((col) => {
                     const value = row[col.key];
@@ -118,7 +120,7 @@ export default function DataTable({
                     return (
                       <td
                         key={col.key || col.header}
-                        className={`px-4 py-2.5 text-sm ${
+                        className={`px-4 py-3 text-sm bg-white dark:bg-neutral-950 ${
                           col.align === "right"
                             ? "text-right"
                             : col.align === "center"
@@ -139,14 +141,12 @@ export default function DataTable({
     </div>
   );
 
-  if (variant === "card") {
-    return (
-      <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
-        {tableContent}
-      </div>
-    );
-  }
+  /** Rounded white shell (reference: clean bordered table on light gray page). */
+  const shellClass =
+    variant === "card"
+      ? "bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden shadow-sm"
+      : "bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden";
 
-  return tableContent;
+  return <div className={shellClass}>{tableContent}</div>;
 }
 
