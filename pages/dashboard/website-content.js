@@ -416,11 +416,13 @@ export default function WebsiteContentPage() {
   }
 
   function normalizeDomainInput(value) {
-    return String(value || "")
+    let v = String(value || "")
       .trim()
       .toLowerCase()
       .replace(/^https?:\/\//i, "")
       .replace(/\/+$/, "");
+    if (v.startsWith("www.")) v = v.slice(4);
+    return v;
   }
 
   async function handleSave() {
@@ -668,6 +670,16 @@ export default function WebsiteContentPage() {
   const normalizedDomain = normalizeDomainInput(domainInput);
   const connectedDomain = normalizeDomainInput(ws.customDomain);
   const domainStatus = ws.customDomainConnection?.status || null;
+  /** Backend registers apex + www on Vercel; status may include wwwHost. */
+  const pairedWwwHost =
+    domainStatus?.wwwHost ||
+    (connectedDomain &&
+    connectedDomain.includes(".") &&
+    !connectedDomain.endsWith(".local") &&
+    connectedDomain !== "localhost"
+      ? `www.${connectedDomain}`
+      : null);
+  const wwwDomainUrl = pairedWwwHost ? `https://${pairedWwwHost}` : null;
   const domainVerified = domainStatus?.verified === true;
   const domainInvalidConfig = domainStatus?.invalidConfig === true;
   const domainVerificationRecords = Array.isArray(domainStatus?.dnsRecords)
@@ -1143,7 +1155,7 @@ export default function WebsiteContentPage() {
                         setDomainInput(e.target.value);
                       }}
                       onBlur={(e) => setDomainInput(normalizeDomainInput(e.target.value))}
-                      placeholder="orders.yourrestaurant.com"
+                      placeholder="yourbrand.com"
                       className={`${inp} flex-1`}
                     />
                     <button
@@ -1165,15 +1177,24 @@ export default function WebsiteContentPage() {
                     </button>
                   </div>
                   <p className="mt-1.5 text-xs text-gray-500 dark:text-neutral-400">
-                    Enter only domain/subdomain (without `https://`).
+                    Enter only the hostname (no <code className="text-[11px]">https://</code>). We save the
+                    apex form (e.g. <code className="text-[11px]">yourbrand.com</code>) and automatically
+                    register both <code className="text-[11px]">yourbrand.com</code> and{" "}
+                    <code className="text-[11px]">www.yourbrand.com</code> on Vercel when applicable.
                   </p>
                   {connectedDomain && (
-                    <p className="mt-1 text-xs text-gray-600 dark:text-neutral-400">
-                      Connected domain:{" "}
-                      <span className="font-semibold text-gray-900 dark:text-white">
-                        {connectedDomain}
-                      </span>
-                    </p>
+                    <div className="mt-2 text-xs text-gray-600 dark:text-neutral-400 space-y-0.5">
+                      <p>
+                        <span className="font-semibold text-gray-900 dark:text-white">Apex:</span>{" "}
+                        <span className="font-mono">{connectedDomain}</span>
+                      </p>
+                      {pairedWwwHost ? (
+                        <p>
+                          <span className="font-semibold text-gray-900 dark:text-white">WWW:</span>{" "}
+                          <span className="font-mono">{pairedWwwHost}</span>
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                 </div>
 
@@ -1212,6 +1233,12 @@ export default function WebsiteContentPage() {
                         )}
                         <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
                           {connectedDomain}
+                          {pairedWwwHost ? (
+                            <span className="font-normal text-gray-500 dark:text-neutral-400">
+                              {" "}
+                              + {pairedWwwHost}
+                            </span>
+                          ) : null}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1352,7 +1379,7 @@ export default function WebsiteContentPage() {
                       </a>
                     </div>
                     {customDomainUrl && (
-                      <div className="mx-5 mb-4">
+                      <div className="mx-5 mb-4 flex flex-col gap-1.5">
                         <a
                           href={effectiveLiveWebsiteUrl || customDomainUrl}
                           target="_blank"
@@ -1360,10 +1387,23 @@ export default function WebsiteContentPage() {
                           className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
                         >
                           {customDomainDnsLive
-                            ? "Open your site"
-                            : "Open preview site (DNS pending)"}
+                            ? "Open your site (apex)"
+                            : "Open preview site — apex (DNS pending)"}
                           <ExternalLink className="w-3 h-3" />
                         </a>
+                        {wwwDomainUrl ? (
+                          <a
+                            href={customDomainDnsLive ? wwwDomainUrl : effectiveLiveWebsiteUrl || wwwDomainUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                          >
+                            {customDomainDnsLive
+                              ? "Open your site (www)"
+                              : "Open preview site — www (DNS pending)"}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -1378,9 +1418,15 @@ export default function WebsiteContentPage() {
                     </h3>
                     <p className="text-xs text-gray-600 dark:text-neutral-400 mb-4 leading-relaxed">
                       This will disconnect{" "}
-                      <span className="font-semibold">{connectedDomain}</span> from
-                      your EatsDesk website and attempt to remove it from the Vercel
-                      project. Your website will no longer be served on this domain.
+                      <span className="font-semibold">{connectedDomain}</span>
+                      {pairedWwwHost ? (
+                        <>
+                          {" "}
+                          and <span className="font-semibold">{pairedWwwHost}</span>
+                        </>
+                      ) : null}{" "}
+                      from your EatsDesk website and remove both from the Vercel project when possible.
+                      Your site will no longer be served on these hostnames.
                     </p>
                     <div className="flex items-center justify-end gap-2">
                       <button
