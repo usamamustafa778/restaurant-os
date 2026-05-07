@@ -682,6 +682,15 @@ export default function WebsiteContentPage() {
   const wwwDomainUrl = pairedWwwHost ? `https://${pairedWwwHost}` : null;
   const domainVerified = domainStatus?.verified === true;
   const domainInvalidConfig = domainStatus?.invalidConfig === true;
+  const apexDnsVerified =
+    domainStatus?.apexStatus != null
+      ? domainStatus.apexStatus.verified === true
+      : domainVerified;
+  const wwwDnsVerified = !pairedWwwHost
+    ? true
+    : domainStatus?.wwwStatus != null
+      ? domainStatus.wwwStatus.verified === true
+      : false;
   const domainVerificationRecords = Array.isArray(domainStatus?.dnsRecords)
     ? domainStatus.dnsRecords
     : Array.isArray(domainStatus?.verification)
@@ -705,17 +714,50 @@ export default function WebsiteContentPage() {
         ]
       : [{ hostname: connectedDomain || "Domain", records: domainVerificationRecords }];
 
+  const apexNorm = (connectedDomain || "").toLowerCase();
+  const wwwNorm = (pairedWwwHost || "").toLowerCase();
+
   const dnsDisplayGroups = dnsRecordGroupsBase.map((g) => {
-    let recs = Array.isArray(g.records) ? [...g.records] : [];
-    if (
-      domainInvalidConfig &&
-      recs.length === 0 &&
-      g.hostname === connectedDomain
-    ) {
-      recs = [STATIC_INVALID_CONFIG_A_RECORD];
+    const raw = Array.isArray(g.records) ? [...g.records] : [];
+    let recs = [...raw];
+    const h = String(g.hostname || "").toLowerCase();
+
+    if (apexNorm && h === apexNorm) {
+      if (domainInvalidConfig && recs.length === 0) {
+        recs = [STATIC_INVALID_CONFIG_A_RECORD];
+      }
+      recs = recs.filter((r) => String(r.type || "").toUpperCase() === "A");
+    } else if (wwwNorm && h === wwwNorm) {
+      recs = recs.filter((r) => String(r.type || "").toUpperCase() === "CNAME");
+      if (domainInvalidConfig && recs.length === 0) {
+        const fallback =
+          raw.find((r) => String(r.type || "").toUpperCase() === "CNAME") ||
+          (Array.isArray(domainStatus?.wwwStatus?.dnsRecords)
+            ? domainStatus.wwwStatus.dnsRecords.find(
+                (r) => String(r.type || "").toUpperCase() === "CNAME",
+              )
+            : null);
+        if (fallback) {
+          recs = [
+            {
+              type: "CNAME",
+              domain: fallback.domain ?? "www",
+              value: fallback.value ?? "",
+            },
+          ];
+        }
+      }
     }
+
     return { hostname: g.hostname, records: recs };
   });
+
+  const groupDnsVerified = (hostname) => {
+    const hn = String(hostname || "").toLowerCase();
+    if (wwwNorm && hn === wwwNorm) return wwwDnsVerified;
+    if (apexNorm && hn === apexNorm) return apexDnsVerified;
+    return domainVerified;
+  };
 
   const hasAnyDnsRows = dnsDisplayGroups.some((g) => g.records.length > 0);
 
@@ -729,6 +771,8 @@ export default function WebsiteContentPage() {
   const hasCustomDomain = !!connectedDomain;
   const customDomainDnsLive =
     hasCustomDomain && domainVerified && !domainInvalidConfig;
+  const domainOverallActive = domainVerified && !domainInvalidConfig;
+  const domainPendingDns = !domainInvalidConfig && !domainVerified;
   const effectiveLiveWebsiteUrl = !hasCustomDomain
     ? liveUrl
     : customDomainDnsLive
@@ -1246,10 +1290,12 @@ export default function WebsiteContentPage() {
                   <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden">
                     <div className="px-5 py-3.5 border-b border-gray-200 dark:border-neutral-800 flex items-center justify-between gap-4">
                       <div className="min-w-0 flex items-center gap-2">
-                        {!domainVerified || domainInvalidConfig ? (
+                        {domainInvalidConfig ? (
                           <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
-                        ) : (
+                        ) : domainOverallActive ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
                         )}
                         <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
                           {connectedDomain}
@@ -1286,18 +1332,18 @@ export default function WebsiteContentPage() {
                         <div className="mt-0.5 flex items-center gap-2">
                           <span
                             className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                              domainVerified
-                                ? domainInvalidConfig
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
-                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                                : "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                              domainInvalidConfig
+                                ? "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                                : domainOverallActive
+                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                  : "bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100"
                             }`}
                           >
                             {domainInvalidConfig
-                              ? "Invalid Configuration"
-                              : domainVerified
-                                ? "Verified"
-                                : "Verification Needed"}
+                              ? "Invalid configuration"
+                              : domainOverallActive
+                                ? "Active"
+                                : "DNS pending"}
                           </span>
                           <a
                             href="https://vercel.com/docs/domains"
@@ -1314,14 +1360,20 @@ export default function WebsiteContentPage() {
                       </div>
                     </div>
 
-                    {(!domainVerified || domainInvalidConfig) && (
+                    {domainInvalidConfig && (
+                      <div className="mx-5 mt-3 rounded-lg border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-3 text-xs leading-relaxed text-rose-900 dark:text-rose-100">
+                        Vercel reports a DNS problem for this domain. Use the records below (apex: A only,
+                        www: CNAME only) at your DNS provider, then click{" "}
+                        <span className="font-semibold">Refresh</span>.
+                      </div>
+                    )}
+                    {domainPendingDns && (
                       <div className="mx-5 mt-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-100">
-                        {domainInvalidConfig
-                          ? "The DNS records at your provider must match the records below to verify and connect this domain."
-                          : "This domain is linked to another Vercel account. Add the TXT verification record to confirm ownership, then click "}
-                        {!domainInvalidConfig && (
-                          <span className="font-semibold">Check DNS Status</span>
-                        )}
+                        Point your <span className="font-semibold">apex</span> to the{" "}
+                        <span className="font-semibold">A</span> record and <span className="font-semibold">www</span>{" "}
+                        to the <span className="font-semibold">CNAME</span> shown below, then click{" "}
+                        <span className="font-semibold">Check DNS Status</span> or{" "}
+                        <span className="font-semibold">Refresh</span>. Propagation can take a while.
                       </div>
                     )}
 
@@ -1334,13 +1386,30 @@ export default function WebsiteContentPage() {
                       >
                         <div className="px-3 py-2 bg-gray-50 dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            {!domainVerified || domainInvalidConfig ? (
+                            {domainInvalidConfig ? (
                               <AlertCircle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
-                            ) : (
+                            ) : groupDnsVerified(group.hostname) ? (
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                            ) : (
+                              <Clock className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
                             )}
                             <span className="text-xs font-semibold text-gray-900 dark:text-white truncate">
                               {group.hostname}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                domainInvalidConfig
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"
+                                  : groupDnsVerified(group.hostname)
+                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
+                                    : "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100"
+                              }`}
+                            >
+                              {domainInvalidConfig
+                                ? "Issue"
+                                : groupDnsVerified(group.hostname)
+                                  ? "OK"
+                                  : "Pending"}
                             </span>
                           </div>
                           <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-neutral-400">

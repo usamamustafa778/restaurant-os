@@ -814,35 +814,6 @@ export default function SuperRestaurantsPage() {
               },
             },
             {
-              key: "restaurant",
-              header: "Restaurant",
-              render: (_, r) => (
-                <div className="truncate text-sm font-medium leading-snug text-gray-900 dark:text-white">
-                  {r.website?.name || "Untitled restaurant"}
-                </div>
-              ),
-            },
-            {
-              key: "subdomain",
-              header: "Subdomain",
-              render: (_, r) => r.website?.subdomain || "—",
-              cellClassName: "text-gray-700 dark:text-neutral-300",
-            },
-            {
-              key: "phone",
-              header: "Owner phone",
-              render: (_, r) => r.website?.contactPhone || "—",
-              cellClassName:
-                "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
-            },
-            {
-              key: "email",
-              header: "Contact email",
-              render: (_, r) => r.website?.contactEmail || "—",
-              cellClassName:
-                "text-gray-700 dark:text-neutral-300 truncate max-w-[180px]",
-            },
-            {
               key: "adminLoginEmail",
               header: "Email verification",
               cellClassName: "whitespace-normal max-w-[200px]",
@@ -881,6 +852,35 @@ export default function SuperRestaurantsPage() {
                   </div>
                 );
               },
+            },
+            {
+              key: "restaurant",
+              header: "Restaurant",
+              render: (_, r) => (
+                <div className="truncate text-sm font-medium leading-snug text-gray-900 dark:text-white">
+                  {r.website?.name || "Untitled restaurant"}
+                </div>
+              ),
+            },
+            {
+              key: "subdomain",
+              header: "Subdomain",
+              render: (_, r) => r.website?.subdomain || "—",
+              cellClassName: "text-gray-700 dark:text-neutral-300",
+            },
+            {
+              key: "phone",
+              header: "Owner phone",
+              render: (_, r) => r.website?.contactPhone || "—",
+              cellClassName:
+                "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
+            },
+            {
+              key: "email",
+              header: "Contact email",
+              render: (_, r) => r.website?.contactEmail || "—",
+              cellClassName:
+                "text-gray-700 dark:text-neutral-300 truncate max-w-[180px]",
             },
             {
               key: "plan",
