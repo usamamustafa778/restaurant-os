@@ -1136,6 +1136,14 @@ export default function OrdersPage() {
     0,
   );
   const cancelledCount = groupedOrders.CANCELLED?.length || 0;
+  const cancelledTotalAmount = (groupedOrders.CANCELLED || []).reduce(
+    (sum, order) => sum + getOrderTotal(order),
+    0,
+  );
+  const awaitingTotalAmount = (groupedOrders.AWAITING_PAYMENT || []).reduce(
+    (sum, order) => sum + getOrderTotal(order),
+    0,
+  );
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -1376,10 +1384,21 @@ export default function OrdersPage() {
                       <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">
                         {col.label}
                       </span>
-                      <span
-                        className={`ml-auto text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
-                      >
-                        {allColOrders.length}
+                      <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                        <span
+                          className={`text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
+                        >
+                          {allColOrders.length}
+                        </span>
+                        {col.status === "AWAITING_PAYMENT" &&
+                          allColOrders.length > 0 && (
+                            <span
+                              className={`text-[11px] font-bold text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
+                            >
+                              {sym}{" "}
+                              {Math.round(awaitingTotalAmount).toLocaleString()}
+                            </span>
+                          )}
                       </span>
                     </div>
                     <div className="flex-1 overflow-y-auto px-1.5 pb-1.5 pt-1.5 space-y-1.5 min-h-0">
@@ -1494,6 +1513,9 @@ export default function OrdersPage() {
                   <span className="text-sm font-semibold">Cancelled</span>
                   <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
                     {cancelledCount}
+                  </span>
+                  <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
+                    {sym} {Math.round(cancelledTotalAmount).toLocaleString()}
                   </span>
                 </div>
                 <ChevronDown
