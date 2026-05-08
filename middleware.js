@@ -61,7 +61,12 @@ async function resolveCustomDomainToSubdomain(hostHeader) {
   const root = (ROOT_DOMAIN || "").split(":")[0].toLowerCase();
   if (root && (raw === root || raw === `www.${root}`)) return null;
 
-  if (STOREFRONT_DOMAIN && raw === STOREFRONT_DOMAIN) return null;
+  if (
+    STOREFRONT_DOMAIN &&
+    (raw === STOREFRONT_DOMAIN || raw === `www.${STOREFRONT_DOMAIN}`)
+  ) {
+    return null;
+  }
 
   if (raw.endsWith(".vercel.app")) return null;
 
