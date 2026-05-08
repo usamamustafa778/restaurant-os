@@ -184,6 +184,7 @@ export default function MenuItemsPage() {
   const [copySourceLoading, setCopySourceLoading] = useState(false);
   const [copySelectedItemIds, setCopySelectedItemIds] = useState([]);
   const [copySubmitting, setCopySubmitting] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState([]);
 
   useEffect(() => {
     if (!exportMenuOpen) return;
@@ -217,6 +218,7 @@ export default function MenuItemsPage() {
     document.addEventListener("mousedown", handleDown);
     return () => document.removeEventListener("mousedown", handleDown);
   }, [filtersOpen]);
+
 
   // Single branch: fetch that branch's menu
   useEffect(() => {
@@ -504,6 +506,10 @@ export default function MenuItemsPage() {
         error: "Failed to update availability"
       }
     );
+
+    if (deleted > 0) {
+      toast.success(`Deleted ${deleted} selected item${deleted === 1 ? "" : "s"}`);
+    }
   }
 
   async function handleFileUpload(e) {
@@ -537,6 +543,7 @@ export default function MenuItemsPage() {
           ...prev,
           items: prev.items.filter(i => i.id !== id)
         }));
+        setSelectedItemIds((prev) => prev.filter((x) => x !== id));
       },
       {
         loading: "Deleting menu item...",
@@ -694,13 +701,35 @@ export default function MenuItemsPage() {
       return 0;
     });
 
+  const selectedItems = filtered.filter((item) => selectedItemIds.includes(item.id));
+  const allVisibleSelected = filtered.length > 0 && selectedItemIds.length === filtered.length;
+
+  useEffect(() => {
+    const visibleIds = new Set(filtered.map((item) => item.id));
+    setSelectedItemIds((prev) => prev.filter((id) => visibleIds.has(id)));
+  }, [filtered]);
+
+  function toggleItemSelection(id) {
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAllVisible() {
+    setSelectedItemIds((prev) => {
+      if (allVisibleSelected) return [];
+      const visible = filtered.map((item) => item.id);
+      return visible;
+    });
+  }
+
   // ─── Export helpers ──────────────────────────────────────────────────────────
 
   function toCSVRow(cells) {
     return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
   }
 
-  function exportCSV() {
+  function exportCSV(targetItems = filtered) {
     const date = new Date().toLocaleDateString("en-PK");
     const branchName = currentBranch?.name || "All Branches";
     const rows = [
@@ -709,7 +738,7 @@ export default function MenuItemsPage() {
       ["Generated", date],
       [],
       ["Name", "Category", "Price", "Dietary", "Status", "Trending", "Must Try"],
-      ...filtered.map((item) => {
+      ...targetItems.map((item) => {
         const cat = categories.find((c) => c.id === item.categoryId)?.name || "Uncategorized";
         const price = item.finalPrice ?? item.price ?? 0;
         const available = (item.finalAvailable ?? item.available ?? true) ? "Enabled" : "Disabled";
@@ -718,9 +747,9 @@ export default function MenuItemsPage() {
       }),
       [],
       ["SUMMARY"],
-      ["Total Items", filtered.length],
-      ["Enabled", filtered.filter((i) => (i.finalAvailable ?? i.available ?? true)).length],
-      ["Disabled", filtered.filter((i) => !(i.finalAvailable ?? i.available ?? true)).length],
+      ["Total Items", targetItems.length],
+      ["Enabled", targetItems.filter((i) => (i.finalAvailable ?? i.available ?? true)).length],
+      ["Disabled", targetItems.filter((i) => !(i.finalAvailable ?? i.available ?? true)).length],
     ];
     const content = rows.map(toCSVRow).join("\n");
     const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
@@ -732,6 +761,43 @@ export default function MenuItemsPage() {
     URL.revokeObjectURL(url);
     toast.success("CSV exported — open in Excel");
     setExportMenuOpen(false);
+  }
+
+  async function handleBulkDelete() {
+    if (!selectedItemIds.length) return;
+    const ok = await confirm({
+      title: "Delete selected menu items",
+      message: `Delete ${selectedItemIds.length} selected item(s)? This cannot be undone.`,
+    });
+    if (!ok) return;
+
+    const selectedSet = new Set(selectedItemIds);
+    const targets = items.filter((item) => selectedSet.has(item.id));
+    let deleted = 0;
+    let failed = 0;
+
+    await handleAsyncAction(
+      async () => {
+        for (const item of targets) {
+          try {
+            await deleteItem(item.id);
+            deleted++;
+          } catch {
+            failed++;
+          }
+        }
+        setData((prev) => ({
+          ...prev,
+          items: prev.items.filter((i) => !selectedSet.has(i.id)),
+        }));
+        setSelectedItemIds([]);
+      },
+      {
+        loading: "Deleting selected menu items...",
+        success: `Deleted ${deleted} item(s)${failed ? `, ${failed} failed` : ""}`,
+        error: "Failed to delete selected items",
+      }
+    );
   }
 
   function buildMenuHTML(title, extraStyle = "") {
@@ -1251,6 +1317,41 @@ export default function MenuItemsPage() {
 
         <ViewToggle viewMode={viewMode} onChange={setViewMode} />
 
+        <button
+          type="button"
+          onClick={toggleSelectAllVisible}
+          disabled={!filtered.length}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          title="Select all visible items"
+        >
+          {allVisibleSelected ? <Check className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0" />}
+          <span className="hidden sm:inline">{allVisibleSelected ? "Clear selection" : "Select all"}</span>
+        </button>
+
+        {selectedItemIds.length > 0 && (
+          <>
+            <span className="inline-flex h-9 items-center rounded-xl bg-primary/10 px-3 text-xs font-semibold text-primary">
+              {selectedItemIds.length} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => exportCSV(selectedItems)}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              <FileDown className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Export selected</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-red-200 px-3 text-sm font-semibold text-red-600 transition-all hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
+            >
+              <Trash2 className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Delete selected</span>
+            </button>
+          </>
+        )}
+
         <div className="relative" ref={exportMenuRef}>
           <button
             type="button"
@@ -1401,6 +1502,7 @@ export default function MenuItemsPage() {
                 const displayPrice = item.finalPrice ?? item.price;
                 const isAvailable = item.finalAvailable ?? item.available;
                 const hasPriceOverride = false;
+                const isSelected = selectedItemIds.includes(item.id);
                 
                 return (
                   <div
@@ -1411,6 +1513,14 @@ export default function MenuItemsPage() {
                         : "border-gray-200 dark:border-neutral-800 opacity-60"
                     }`}
                   >
+                    <label className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-md bg-white/90 px-1.5 py-1 dark:bg-neutral-900/90">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleItemSelection(item.id)}
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary/30"
+                      />
+                    </label>
                     <div className="flex items-start justify-between mb-3">
                       {item.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -1511,6 +1621,25 @@ export default function MenuItemsPage() {
         <DataTable
           variant="card"
           columns={[
+            {
+              key: "select",
+              header: (
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAllVisible}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary/30"
+                />
+              ),
+              render: (_, item) => (
+                <input
+                  type="checkbox"
+                  checked={selectedItemIds.includes(item.id)}
+                  onChange={() => toggleItemSelection(item.id)}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary/30"
+                />
+              ),
+            },
             {
               key: "item",
               header: "Item",

@@ -5,6 +5,7 @@ import {
   getWebsiteSettings,
   updateWebsiteSettings,
   getMenu,
+  getDeals,
   uploadImage,
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
@@ -365,20 +366,29 @@ export default function WebsiteContentPage() {
   const [ws, setWs] = useState({});
   const [hoursDraft, setHoursDraft] = useState(DEFAULT_HOURS_DRAFT);
   const [menuItems, setMenuItems] = useState([]);
+  const [deals, setDeals] = useState([]);
+  const [websiteSectionItemSearch, setWebsiteSectionItemSearch] = useState({});
   const [activeSection, setActiveSection] = useState("template");
   const [envView, setEnvView] = useState("live");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [settings, menu] = await Promise.all([
+      const [settings, menu, dealsResp] = await Promise.all([
         getWebsiteSettings(),
         getMenu(activeBranch?.id).catch(() => ({ items: [] })),
+        getDeals(false).catch(() => []),
       ]);
       setWs(settings || {});
       setHoursDraft(parseOpeningHoursDraft(settings?.openingHours || {}));
       const items = menu?.items || menu?.menu || [];
       setMenuItems(Array.isArray(items) ? items : []);
+      const allDeals = Array.isArray(dealsResp)
+        ? dealsResp
+        : Array.isArray(dealsResp?.deals)
+          ? dealsResp.deals
+          : [];
+      setDeals(allDeals);
     } catch {
       toast.error("Failed to load website settings");
     } finally {
@@ -780,6 +790,10 @@ export default function WebsiteContentPage() {
       : stagingUrl || liveUrl;
   const displayWebsiteUrl =
     envView === "staging" ? stagingUrl || liveUrl : effectiveLiveWebsiteUrl;
+  const dealItems = deals.map((deal) => ({
+    ...deal,
+    price: deal.comboPrice ?? deal.price ?? 0,
+  }));
 
   return (
     <AdminLayout title="Website Settings">
@@ -2081,6 +2095,32 @@ export default function WebsiteContentPage() {
                     key={sIdx}
                     className="border-2 border-gray-100 dark:border-neutral-800 rounded-xl p-4"
                   >
+                    {(() => {
+                      const sectionSearch = String(
+                        websiteSectionItemSearch[sIdx] || "",
+                      )
+                        .trim()
+                        .toLowerCase();
+                      const visibleMenuItems = sectionSearch
+                        ? menuItems.filter((item) =>
+                            String(item?.name || "")
+                              .toLowerCase()
+                              .includes(sectionSearch),
+                          )
+                        : menuItems;
+                      const visibleDeals = sectionSearch
+                        ? dealItems.filter((deal) =>
+                            String(deal?.name || "")
+                              .toLowerCase()
+                              .includes(sectionSearch),
+                          )
+                        : dealItems;
+                      const hasAnySelectableItems =
+                        menuItems.length > 0 || dealItems.length > 0;
+                      const hasAnyVisibleItems =
+                        visibleMenuItems.length > 0 || visibleDeals.length > 0;
+                      return (
+                        <>
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
                         Section {sIdx + 1}
@@ -2135,82 +2175,151 @@ export default function WebsiteContentPage() {
                       </div>
                     </div>
                     <label className={labelCls}>
-                      Select Menu Items ({(section.items || []).length}{" "}
-                      selected)
+                      Select Items ({(section.items || []).length} selected)
                     </label>
-                    <div className="max-h-48 overflow-y-auto rounded-xl border-2 border-gray-100 dark:border-neutral-800">
-                      {menuItems.length === 0 ? (
+                    <div className="relative mb-2">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={websiteSectionItemSearch[sIdx] || ""}
+                        onChange={(e) =>
+                          setWebsiteSectionItemSearch((prev) => ({
+                            ...prev,
+                            [sIdx]: e.target.value,
+                          }))
+                        }
+                        placeholder="Search menu items or deals..."
+                        className="h-10 w-full rounded-xl border-2 border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+                      />
+                    </div>
+                    <div className="max-h-64 overflow-y-auto rounded-xl border-2 border-gray-100 dark:border-neutral-800 divide-y divide-gray-100 dark:divide-neutral-800">
+                      {!hasAnySelectableItems ? (
                         <p className="p-4 text-xs text-gray-400 text-center">
-                          No menu items found. Add items in the Menu section
-                          first.
+                          No menu items or deals found. Add items in Menu or
+                          deals in Deals first.
+                        </p>
+                      ) : !hasAnyVisibleItems ? (
+                        <p className="p-4 text-xs text-gray-400 text-center">
+                          No menu items or deals match your search.
                         </p>
                       ) : (
-                        menuItems.map((item) => {
-                          const itemId =
-                            item._id || item.id || item.id?.toString?.();
-                          const sectionItems = (section.items || []).map(
-                            (id) => id?._id || id?.toString?.() || id,
-                          );
-                          const selected = sectionItems.includes(itemId);
-                          return (
-                            <button
-                              key={itemId}
-                              type="button"
-                              onClick={() => toggleSectionItem(sIdx, itemId)}
-                              className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors border-b border-gray-50 dark:border-neutral-800 last:border-b-0 ${
-                                selected
-                                  ? "bg-primary/5 text-gray-900 dark:text-white"
-                                  : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
-                              }`}
-                            >
-                              <div
-                                className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                  selected
-                                    ? "bg-primary border-primary"
-                                    : "border-gray-300 dark:border-neutral-600"
-                                }`}
-                              >
-                                {selected && (
-                                  <Check className="w-3 h-3 text-white" />
-                                )}
+                        <>
+                          {visibleMenuItems.length > 0 && (
+                            <div>
+                              <div className="sticky top-0 z-[1] bg-gray-50 dark:bg-neutral-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                                Menu Items
                               </div>
-                              {item.imageUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={item.imageUrl}
-                                  alt=""
-                                  className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
-                                />
-                              )}
-                              <span className="flex-1 truncate font-medium">
-                                {item.name}
-                              </span>
-                              <span className="text-xs text-gray-400 flex-shrink-0">
-                                PKR {item.price}
-                              </span>
-                            </button>
-                          );
-                        })
+                              {visibleMenuItems.map((item) => {
+                                const itemId =
+                                  item._id || item.id || item.id?.toString?.();
+                                const sectionItems = (section.items || []).map(
+                                  (id) => id?._id || id?.toString?.() || id,
+                                );
+                                const selected = sectionItems.includes(itemId);
+                                return (
+                                  <button
+                                    key={itemId}
+                                    type="button"
+                                    onClick={() =>
+                                      toggleSectionItem(sIdx, itemId)
+                                    }
+                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors border-t border-gray-50 dark:border-neutral-800 ${
+                                      selected
+                                        ? "bg-primary/5 text-gray-900 dark:text-white"
+                                        : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                                    }`}
+                                  >
+                                    <div
+                                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                        selected
+                                          ? "bg-primary border-primary"
+                                          : "border-gray-300 dark:border-neutral-600"
+                                      }`}
+                                    >
+                                      {selected && (
+                                        <Check className="w-3 h-3 text-white" />
+                                      )}
+                                    </div>
+                                    {item.imageUrl && (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={item.imageUrl}
+                                        alt=""
+                                        className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                                      />
+                                    )}
+                                    <span className="flex-1 truncate font-medium">
+                                      {item.name}
+                                    </span>
+                                    <span className="text-xs text-gray-400 flex-shrink-0">
+                                      PKR {item.price}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {visibleDeals.length > 0 && (
+                            <div>
+                              <div className="sticky top-0 z-[1] bg-gray-50 dark:bg-neutral-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                                Deals
+                              </div>
+                              {visibleDeals.map((deal) => {
+                                const itemId =
+                                  deal._id || deal.id || deal.id?.toString?.();
+                                const sectionItems = (section.items || []).map(
+                                  (id) => id?._id || id?.toString?.() || id,
+                                );
+                                const selected = sectionItems.includes(itemId);
+                                return (
+                                  <button
+                                    key={itemId}
+                                    type="button"
+                                    onClick={() =>
+                                      toggleSectionItem(sIdx, itemId)
+                                    }
+                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors border-t border-gray-50 dark:border-neutral-800 ${
+                                      selected
+                                        ? "bg-primary/5 text-gray-900 dark:text-white"
+                                        : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                                    }`}
+                                  >
+                                    <div
+                                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                        selected
+                                          ? "bg-primary border-primary"
+                                          : "border-gray-300 dark:border-neutral-600"
+                                      }`}
+                                    >
+                                      {selected && (
+                                        <Check className="w-3 h-3 text-white" />
+                                      )}
+                                    </div>
+                                    {deal.imageUrl && (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={deal.imageUrl}
+                                        alt=""
+                                        className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                                      />
+                                    )}
+                                    <span className="flex-1 truncate font-medium">
+                                      {deal.name}
+                                    </span>
+                                    <span className="text-xs text-gray-400 flex-shrink-0">
+                                      PKR {deal.price}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900 p-4">
-                  <p className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
-                    How to connect your domain
-                  </p>
-                  <ol className="mt-2 space-y-1.5 text-xs text-gray-600 dark:text-neutral-400 list-decimal pl-4">
-                    <li>Enter your domain (e.g. menu.sufi-eats.com).</li>
-                    <li>Add a CNAME record pointing to `sites.eatsdesk.com` in your DNS settings.</li>
-                    <li>Click Connect. Verification may take up to 24 hours.</li>
-                  </ol>
-                  <a
-                    href="https://vercel.com/docs/domains/working-with-dns"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 inline-flex text-xs font-semibold text-primary hover:underline"
-                  >
-                    How to connect a domain
-                  </a>
-                </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
                 {(ws.websiteSections || []).length > 0 &&

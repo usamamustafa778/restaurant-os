@@ -1,13 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import DataTable from "../../components/ui/DataTable";
 import PageLoader from "../../components/ui/PageLoader";
 import ViewToggle from "../../components/ui/ViewToggle";
-import ActionDropdown from "../../components/ui/ActionDropdown";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
 import { useViewMode } from "../../hooks/useViewMode";
-import { useDropdown } from "../../hooks/useDropdown";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { handleAsyncAction } from "../../utils/toastActions";
 import {
@@ -34,8 +32,47 @@ import {
   ArrowUpDown,
   RefreshCw,
   ChevronDown,
+  FileDown,
+  FileText,
+  Printer,
+  Building2,
 } from "lucide-react";
 import toast from "react-hot-toast";
+
+function parseCSVLine(line) {
+  const out = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQ = !inQ;
+      continue;
+    }
+    if (!inQ && c === ",") {
+      out.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  out.push(cur.trim());
+  return out.map((s) => s.replace(/^"|"$/g, "").replace(/""/g, '"'));
+}
+
+function toCSVRow(cells) {
+  return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
+}
+
+function ensureEndDateISO(startDateLike, endDateLike) {
+  const start = new Date(startDateLike || new Date());
+  const safeStart = Number.isNaN(start.getTime()) ? new Date() : start;
+  if (endDateLike) {
+    const end = new Date(endDateLike);
+    if (!Number.isNaN(end.getTime())) return end.toISOString();
+  }
+  return new Date(safeStart.getTime() + 86400000).toISOString();
+}
 
 function getEmptyForm() {
   const today = new Date().toISOString().slice(0, 10);
@@ -54,10 +91,9 @@ function getEmptyForm() {
 
 export default function DealsPage() {
   const sym = getCurrencySymbol();
-  const { currentBranch } = useBranch() || {};
+  const { currentBranch, branches } = useBranch() || {};
   const { confirm } = useConfirmDialog();
   const { viewMode, setViewMode } = useViewMode("table");
-  const { toggle: toggleDropdown, close: closeDropdown, isOpen: isDropdownOpen } = useDropdown();
 
   const fetchDeals = () => getDeals();
   const { data: deals, loading: pageLoading, error, suspended, setData: setDeals, refetch } = usePageData(fetchDeals);
@@ -82,8 +118,75 @@ export default function DealsPage() {
   const [itemSearch, setItemSearch] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState({});
   const [showImageFields, setShowImageFields] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [branchImportModalOpen, setBranchImportModalOpen] = useState(false);
+  const [branchImportSourceId, setBranchImportSourceId] = useState("");
+  const [branchImportSourceDeals, setBranchImportSourceDeals] = useState([]);
+  const [branchImportSourceLoading, setBranchImportSourceLoading] = useState(false);
+  const [branchImportSelectedIds, setBranchImportSelectedIds] = useState([]);
+  const [branchImportSubmitting, setBranchImportSubmitting] = useState(false);
+  const fileInputRef = useRef(null);
+  const exportMenuRef = useRef(null);
+  const importMenuRef = useRef(null);
 
   const dealsList = Array.isArray(deals) ? deals : [];
+  const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
+  const canImportFromBranch = !!currentBranch?.id && sourceBranches.length > 0;
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    function handleDown(e) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setExportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [exportMenuOpen]);
+
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    function handleDown(e) {
+      if (importMenuRef.current && !importMenuRef.current.contains(e.target)) {
+        setImportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [importMenuOpen]);
+
+  useEffect(() => {
+    if (!branchImportModalOpen || !branchImportSourceId) {
+      setBranchImportSourceDeals([]);
+      setBranchImportSelectedIds([]);
+      return;
+    }
+    let cancelled = false;
+    setBranchImportSourceLoading(true);
+    getDeals(true)
+      .then((allDeals) => {
+        if (cancelled) return;
+        const sourceDeals = (Array.isArray(allDeals) ? allDeals : []).filter((deal) =>
+          (deal.branches || []).some((branchRef) => {
+            const id = typeof branchRef === "string" ? branchRef : branchRef?.id || branchRef?._id;
+            return String(id || "") === String(branchImportSourceId);
+          })
+        );
+        setBranchImportSourceDeals(sourceDeals);
+        setBranchImportSelectedIds([]);
+      })
+      .catch(() => {
+        if (!cancelled) setBranchImportSourceDeals([]);
+      })
+      .finally(() => {
+        if (!cancelled) setBranchImportSourceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [branchImportModalOpen, branchImportSourceId]);
 
   const filtered = dealsList
     .filter((deal) => {
@@ -276,7 +379,7 @@ export default function DealsPage() {
       })),
       comboPrice: Number(form.comboPrice),
       startDate: new Date(form.startDate || new Date()).toISOString(),
-      endDate: form.endDate ? new Date(form.endDate).toISOString() : undefined,
+      endDate: ensureEndDateISO(form.startDate || new Date(), form.endDate),
       showOnPOS: form.showOnPOS,
       branches: currentBranch?.id ? [currentBranch.id] : [],
       imageUrl: form.imageUrl.trim() || undefined,
@@ -339,8 +442,487 @@ export default function DealsPage() {
     return deal.isActive && deal.endDate && new Date(deal.endDate) >= new Date();
   }
 
+  function exportCSV() {
+    const date = new Date().toLocaleDateString("en-PK");
+    const branchName = currentBranch?.name || "All Branches";
+    const rows = [
+      ["Deals Report"],
+      ["Branch", branchName],
+      ["Generated", date],
+      [],
+      ["Name", "Description", "Items", "Deal Price", "Start Date", "End Date", "Show On POS", "Status"],
+      ...filtered.map((deal) => {
+        const comboItems = (deal.comboItems || [])
+          .map((ci) => `${ci.menuItem?.name || "Item"} x${Number(ci.quantity) || 1}`)
+          .join(" | ");
+        const startDate = deal.startDate ? String(deal.startDate).slice(0, 10) : "";
+        const endDate = deal.endDate ? String(deal.endDate).slice(0, 10) : "";
+        return [
+          deal.name || "",
+          deal.description || "",
+          comboItems,
+          deal.comboPrice ?? "",
+          startDate,
+          endDate,
+          deal.showOnPOS ?? true ? "Yes" : "No",
+          getDealStatus(deal) ? "Active" : "Inactive",
+        ];
+      }),
+      [],
+      ["SUMMARY"],
+      ["Total Deals", filtered.length],
+      ["Active", filtered.filter((d) => getDealStatus(d)).length],
+      ["Inactive", filtered.filter((d) => !getDealStatus(d)).length],
+    ];
+    const content = rows.map(toCSVRow).join("\n");
+    const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `deals-${branchName.replace(/\s/g, "-")}-${date.replace(/\//g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("CSV exported — open in Excel");
+    setExportMenuOpen(false);
+  }
+
+  function buildDealsHTML(title, extraStyle = "") {
+    const date = new Date().toLocaleDateString("en-PK", { year: "numeric", month: "long", day: "numeric" });
+    const branchName = currentBranch?.name || "All Branches";
+    const activeCount = filtered.filter((d) => getDealStatus(d)).length;
+    const inactiveCount = filtered.length - activeCount;
+    const rows = filtered
+      .map((deal) => {
+        const comboItems = (deal.comboItems || [])
+          .map((ci) => `${ci.menuItem?.name || "Item"} x${Number(ci.quantity) || 1}`)
+          .join(", ");
+        const status = getDealStatus(deal);
+        const statusStyle = status ? "background:#f0fdf4;color:#16a34a;" : "background:#f3f4f6;color:#4b5563;";
+        return `<tr>
+          <td><strong>${deal.name || ""}</strong>${deal.description ? `<br><span style="font-size:11px;color:#6b7280">${deal.description}</span>` : ""}</td>
+          <td>${comboItems || "-"}</td>
+          <td style="font-weight:700">${sym} ${Number(deal.comboPrice || 0).toLocaleString()}</td>
+          <td>${deal.startDate ? String(deal.startDate).slice(0, 10) : "-"}</td>
+          <td>${deal.endDate ? String(deal.endDate).slice(0, 10) : "-"}</td>
+          <td><span style="font-weight:700;padding:2px 8px;border-radius:4px;font-size:11px;${statusStyle}">${status ? "Active" : "Inactive"}</span></td>
+        </tr>`;
+      })
+      .join("");
+
+    return `<!DOCTYPE html><html><head><title>${title}</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:1100px;margin:0 auto}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  .meta{font-size:12px;color:#6b7280;margin-bottom:20px}
+  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+  .stat{border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px}
+  .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:4px}
+  .stat-value{font-size:22px;font-weight:800}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;padding:8px 12px;border-bottom:2px solid #e5e7eb}
+  td{padding:9px 12px;border-bottom:1px solid #f3f4f6;font-size:13px;vertical-align:middle}
+  tr:hover td{background:#fafafa}
+  ${extraStyle}
+  @media print{body{padding:0}button{display:none}}
+</style></head><body>
+<h1>Deals Report</h1>
+<p class="meta">${branchName} &nbsp;·&nbsp; ${date}</p>
+<div class="summary">
+  <div class="stat"><div class="stat-label">Total Deals</div><div class="stat-value" style="color:#1d4ed8">${filtered.length}</div></div>
+  <div class="stat"><div class="stat-label">Active</div><div class="stat-value" style="color:#16a34a">${activeCount}</div></div>
+  <div class="stat"><div class="stat-label">Inactive</div><div class="stat-value" style="color:#6b7280">${inactiveCount}</div></div>
+</div>
+<table>
+  <thead><tr><th>Name</th><th>Items</th><th>Deal Price</th><th>Start Date</th><th>End Date</th><th>Status</th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:32px">No deals match current filter</td></tr>'}</tbody>
+</table>
+</body></html>`;
+  }
+
+  function exportPDF() {
+    const win = window.open("", "_blank");
+    if (!win) {
+      toast.error("Pop-up blocked — please allow pop-ups.");
+      return;
+    }
+    win.document.write(buildDealsHTML("Deals - PDF", "@media print{@page{size:A4 landscape}}"));
+    win.document.close();
+    setTimeout(() => {
+      win.print();
+    }, 300);
+    setExportMenuOpen(false);
+  }
+
+  function printDeals() {
+    const win = window.open("", "_blank");
+    if (!win) {
+      toast.error("Pop-up blocked — please allow pop-ups.");
+      return;
+    }
+    win.document.write(buildDealsHTML("Deals - Print"));
+    win.document.close();
+    setTimeout(() => {
+      win.print();
+    }, 300);
+    setExportMenuOpen(false);
+  }
+
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!currentBranch?.id) {
+      toast.error("Select a branch in the header before importing.");
+      return;
+    }
+    if (!menuItems.length) {
+      toast.error("Add menu items before importing deals.");
+      return;
+    }
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      toast.error("Could not read file");
+      return;
+    }
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trimEnd())
+      .filter((l) => l.trim());
+    if (!lines.length) {
+      toast.error("CSV is empty");
+      return;
+    }
+
+    const normHeader = (h) =>
+      String(h ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+    const rowLooksLikeHeader = (cells) => {
+      const set = new Set(cells.map((c) => normHeader(c)));
+      return set.has("name") && (set.has("deal price") || set.has("price") || set.has("combo price"));
+    };
+
+    const buildColMap = (cells) => {
+      const col = {};
+      cells.forEach((raw, i) => {
+        const k = normHeader(raw);
+        if (k === "name" || k === "deal name") col.name = i;
+        else if (k === "description") col.description = i;
+        else if (k === "items" || k === "combo items") col.items = i;
+        else if (k === "deal price" || k === "price" || k === "combo price") col.price = i;
+        else if (k === "start date" || k === "start") col.startDate = i;
+        else if (k === "end date" || k === "end" || k === "expiry date") col.endDate = i;
+        else if (k === "show on pos" || k === "showonpos") col.showOnPos = i;
+      });
+      return col;
+    };
+
+    const isStopRow = (cells) => {
+      const a = normHeader(cells[0]);
+      return (
+        a === "summary" ||
+        a === "total deals" ||
+        a === "active" ||
+        a === "inactive" ||
+        a === "deals report" ||
+        a === "branch" ||
+        a === "generated"
+      );
+    };
+
+    let headerIdx = -1;
+    let col = null;
+    for (let i = 0; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i]);
+      if (rowLooksLikeHeader(cells)) {
+        headerIdx = i;
+        col = buildColMap(cells);
+        break;
+      }
+    }
+    if (col == null) {
+      col = { name: 0, price: 1 };
+      headerIdx = -1;
+    }
+    if (col.name == null || col.price == null) {
+      toast.error("CSV needs columns: name and deal price (or export from this page).");
+      return;
+    }
+
+    const parseYesNoCell = (s) => {
+      const t = String(s ?? "").trim().toLowerCase();
+      if (!t) return true;
+      return t === "yes" || t === "true" || t === "1" || t === "y";
+    };
+
+    const parsePriceCell = (raw) => {
+      let t = String(raw ?? "").trim().replace(/,/g, "");
+      if (sym) {
+        const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        t = t.replace(new RegExp(esc, "g"), "").trim();
+      }
+      const n = parseFloat(t);
+      return Number.isFinite(n) && n >= 0 ? n : NaN;
+    };
+
+    const parseItemsCell = (raw) => {
+      const itemMap = new Map(menuItems.map((m) => [String(m.name || "").trim().toLowerCase(), m]));
+      const value = String(raw ?? "").trim();
+      if (!value) return { comboItems: [], unknown: [] };
+      const parts = value
+        .split(/\s*\|\s*|\s*;\s*/g)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const comboItems = [];
+      const unknown = [];
+      for (const part of parts) {
+        const match = part.match(/^(.+?)(?:\s*[xX]\s*(\d+))?$/);
+        const name = String(match?.[1] || "").trim();
+        const qty = Math.max(1, Number(match?.[2]) || 1);
+        const menuItem = itemMap.get(name.toLowerCase());
+        if (!menuItem) {
+          unknown.push(name);
+          continue;
+        }
+        comboItems.push({ menuItem: menuItem.id, quantity: qty });
+      }
+      return { comboItems, unknown };
+    };
+
+    const existingNames = new Set(dealsList.map((d) => String(d.name || "").trim().toLowerCase()));
+    const dataStart = headerIdx < 0 ? 0 : headerIdx + 1;
+    const rows = [];
+    for (let i = dataStart; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i]);
+      if (!cells.some((c) => String(c).trim())) continue;
+      if (isStopRow(cells)) break;
+      const name = String(cells[col.name] ?? "").trim();
+      if (!name) continue;
+      rows.push({
+        name,
+        description: col.description != null ? String(cells[col.description] ?? "").trim() : "",
+        itemsRaw: col.items != null ? String(cells[col.items] ?? "").trim() : "",
+        priceRaw: cells[col.price],
+        startDate: col.startDate != null ? String(cells[col.startDate] ?? "").trim() : "",
+        endDate: col.endDate != null ? String(cells[col.endDate] ?? "").trim() : "",
+        showOnPosRaw: col.showOnPos != null ? cells[col.showOnPos] : undefined,
+      });
+    }
+
+    if (!rows.length) {
+      toast.error("No deal rows found in CSV");
+      return;
+    }
+
+    setImportLoading(true);
+    const newDeals = [];
+    let created = 0;
+    let skipped = 0;
+    const failReasons = [];
+
+    try {
+      for (const row of rows) {
+        const key = row.name.toLowerCase();
+        if (existingNames.has(key)) {
+          skipped++;
+          continue;
+        }
+
+        const price = parsePriceCell(row.priceRaw);
+        if (Number.isNaN(price)) {
+          skipped++;
+          failReasons.push(`Invalid deal price (${row.name})`);
+          continue;
+        }
+
+        const { comboItems, unknown } = parseItemsCell(row.itemsRaw);
+        if (!comboItems.length) {
+          skipped++;
+          failReasons.push(
+            unknown.length
+              ? `Unknown items (${row.name}): ${unknown.slice(0, 2).join(", ")}`
+              : `No items found (${row.name})`,
+          );
+          continue;
+        }
+
+        const startDate = row.startDate ? new Date(row.startDate) : new Date();
+        if (Number.isNaN(startDate.getTime())) {
+          skipped++;
+          failReasons.push(`Invalid start date (${row.name})`);
+          continue;
+        }
+        const endDate = row.endDate ? new Date(row.endDate) : null;
+        if (endDate && Number.isNaN(endDate.getTime())) {
+          skipped++;
+          failReasons.push(`Invalid end date (${row.name})`);
+          continue;
+        }
+
+        const payload = {
+          name: row.name,
+          description: row.description || "",
+          dealType: "COMBO",
+          comboItems,
+          comboPrice: price,
+          startDate: startDate.toISOString(),
+          endDate: ensureEndDateISO(startDate, endDate),
+          showOnPOS:
+            row.showOnPosRaw !== undefined && row.showOnPosRaw !== ""
+              ? parseYesNoCell(row.showOnPosRaw)
+              : true,
+          branches: [currentBranch.id],
+        };
+
+        try {
+          const createdDeal = await createDeal(payload);
+          existingNames.add(key);
+          newDeals.push(createdDeal);
+          created++;
+        } catch (err) {
+          skipped++;
+          const msg = err?.message || String(err);
+          if (/already exists/i.test(msg)) existingNames.add(key);
+          failReasons.push(`${row.name}: ${msg}`);
+        }
+      }
+    } finally {
+      setImportLoading(false);
+    }
+
+    if (newDeals.length) {
+      setDeals((prev) => (Array.isArray(prev) ? [...prev, ...newDeals] : newDeals));
+    }
+
+    if (created > 0) {
+      toast.success(
+        `Imported ${created} deal${created === 1 ? "" : "s"}${
+          skipped ? ` · ${skipped} skipped` : ""
+        }`,
+      );
+      if (failReasons.length) {
+        toast(failReasons.slice(0, 2).join(" · "), { duration: 5000 });
+      }
+    } else if (skipped > 0) {
+      toast.error(
+        failReasons.length
+          ? failReasons.slice(0, 2).join(" · ") + (failReasons.length > 2 ? " …" : "")
+          : "No rows imported (duplicates or invalid data).",
+      );
+    } else {
+      toast.error("Nothing to import");
+    }
+  }
+
+  async function handleImportFromBranch() {
+    if (!currentBranch?.id) {
+      toast.error("Select a destination branch in the header before importing.");
+      return;
+    }
+    if (!branchImportSourceId || branchImportSelectedIds.length === 0) {
+      toast.error("Select at least one deal to import.");
+      return;
+    }
+
+    setBranchImportSubmitting(true);
+    const existingNames = new Set(dealsList.map((d) => String(d.name || "").trim().toLowerCase()));
+    const menuItemIds = new Set(menuItems.map((m) => String(m.id)));
+    let created = 0;
+    let skipped = 0;
+    const failReasons = [];
+
+    try {
+      const selectedSet = new Set(branchImportSelectedIds);
+      const sourceDeals = branchImportSourceDeals.filter((deal) =>
+        selectedSet.has(String(deal._id || deal.id))
+      );
+      if (!sourceDeals.length) {
+        toast("No deals found in selected branch.");
+        return;
+      }
+
+      const createdDeals = [];
+      for (const deal of sourceDeals) {
+        const key = String(deal.name || "").trim().toLowerCase();
+        if (!key || existingNames.has(key)) {
+          skipped++;
+          continue;
+        }
+
+        const comboItems = (deal.comboItems || [])
+          .map((ci) => {
+            const rawId = ci.menuItem?._id || ci.menuItem?.id || ci.menuItem;
+            const menuItemId = String(rawId || "");
+            if (!menuItemIds.has(menuItemId)) return null;
+            return { menuItem: menuItemId, quantity: Math.max(1, Number(ci.quantity) || 1) };
+          })
+          .filter(Boolean);
+
+        if (!comboItems.length) {
+          skipped++;
+          failReasons.push(`Missing menu items for ${deal.name}`);
+          continue;
+        }
+
+        const payload = {
+          name: deal.name || "",
+          description: deal.description || "",
+          dealType: "COMBO",
+          comboItems,
+          comboPrice: Number(deal.comboPrice) || 0,
+          startDate: deal.startDate ? new Date(deal.startDate).toISOString() : new Date().toISOString(),
+          endDate: ensureEndDateISO(deal.startDate || new Date(), deal.endDate),
+          showOnPOS: deal.showOnPOS ?? true,
+          imageUrl: deal.imageUrl || undefined,
+          branches: [currentBranch.id],
+        };
+
+        try {
+          const createdDeal = await createDeal(payload);
+          createdDeals.push(createdDeal);
+          existingNames.add(key);
+          created++;
+        } catch (err) {
+          skipped++;
+          failReasons.push(`${deal.name}: ${err?.message || "Failed to create"}`);
+        }
+      }
+
+      if (createdDeals.length) {
+        setDeals((prev) => (Array.isArray(prev) ? [...prev, ...createdDeals] : createdDeals));
+      }
+
+      if (created > 0) {
+        toast.success(`Imported ${created} deal${created === 1 ? "" : "s"}${skipped ? ` · ${skipped} skipped` : ""}`);
+        if (failReasons.length) toast(failReasons.slice(0, 2).join(" · "), { duration: 5000 });
+        setBranchImportModalOpen(false);
+        setBranchImportSourceId("");
+        setBranchImportSourceDeals([]);
+        setBranchImportSelectedIds([]);
+      } else {
+        toast.error(failReasons[0] || "No deals imported from selected branch.");
+      }
+    } catch (err) {
+      toast.error(err?.message || "Failed to import from branch");
+    } finally {
+      setBranchImportSubmitting(false);
+    }
+  }
+
   return (
     <AdminLayout title="Deals" suspended={suspended}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={handleImportFile}
+      />
       {error && !pageLoading && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
           {error}
@@ -367,6 +949,80 @@ export default function DealsPage() {
           >
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => setExportMenuOpen((o) => !o)}
+              disabled={filtered.length === 0}
+              title="Export deals"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              <FileDown className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Export</span>
+              <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${exportMenuOpen ? "rotate-180" : ""}`} />
+            </button>
+            {exportMenuOpen && (
+              <div className="absolute right-0 top-full z-[100] mt-1.5 w-56 overflow-hidden rounded-xl border-2 border-gray-200 bg-white py-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900" role="menu">
+                <button type="button" role="menuitem" onClick={exportCSV} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800">
+                  <FileDown className="h-4 w-4 shrink-0 text-gray-400" />
+                  Download CSV
+                </button>
+                <button type="button" role="menuitem" onClick={exportPDF} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800">
+                  <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                  Export PDF...
+                </button>
+                <button type="button" role="menuitem" onClick={printDeals} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800">
+                  <Printer className="h-4 w-4 shrink-0 text-gray-400" />
+                  Print
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="relative" ref={importMenuRef}>
+            <button
+              type="button"
+              onClick={() => setImportMenuOpen((o) => !o)}
+              disabled={importLoading || !currentBranch?.id}
+              title={!currentBranch?.id ? "Select a branch in the header first" : "Import deals"}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              {importLoading ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Upload className="h-4 w-4 shrink-0" />}
+              <span className="hidden sm:inline">Import</span>
+              <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${importMenuOpen ? "rotate-180" : ""}`} />
+            </button>
+            {importMenuOpen && (
+              <div className="absolute right-0 top-full z-[100] mt-1.5 w-56 overflow-hidden rounded-xl border-2 border-gray-200 bg-white py-1 shadow-xl dark:border-neutral-700 dark:bg-neutral-900" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!canImportFromBranch}
+                  title={!canImportFromBranch ? "No other branches available" : undefined}
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    setBranchImportSourceId("");
+                    setBranchImportModalOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                >
+                  <Building2 className="h-4 w-4 shrink-0 text-gray-400" />
+                  Import from a branch
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!currentBranch?.id || importLoading}
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                >
+                  <Upload className="h-4 w-4 shrink-0 text-gray-400" />
+                  Upload from device
+                </button>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={startCreate}
@@ -1008,6 +1664,123 @@ export default function DealsPage() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+      {branchImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Import deals from branch</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  if (branchImportSubmitting) return;
+                  setBranchImportModalOpen(false);
+                }}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">Source branch</label>
+                <select
+                  value={branchImportSourceId}
+                  onChange={(e) => setBranchImportSourceId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="">Select branch</option>
+                  {sourceBranches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {branchImportSourceId && currentBranch?.name && (
+                <p className="text-xs text-gray-600 dark:text-neutral-400">
+                  Copying from <strong>{sourceBranches.find((b) => b.id === branchImportSourceId)?.name ?? "source"}</strong> to <strong>{currentBranch.name}</strong> (this branch). Select deals to import.
+                </p>
+              )}
+              {branchImportSourceLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              )}
+              {!branchImportSourceLoading && branchImportSourceId && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400">Deals from source branch</p>
+                    {branchImportSourceDeals.length > 0 && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setBranchImportSelectedIds(branchImportSourceDeals.map((d) => String(d._id || d.id)))}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBranchImportSelectedIds([])}
+                          className="text-xs text-gray-500 hover:underline"
+                        >
+                          Deselect all
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-800">
+                    {branchImportSourceDeals.map((deal) => {
+                      const id = String(deal._id || deal.id);
+                      const checked = branchImportSelectedIds.includes(id);
+                      return (
+                        <label key={id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800/50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setBranchImportSelectedIds((prev) =>
+                                prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                              )
+                            }
+                            className="rounded border-gray-300 text-primary"
+                          />
+                          <span className="text-sm text-gray-900 dark:text-white flex-1">{deal.name}</span>
+                          <span className="text-xs text-gray-500">{sym} {Number(deal.comboPrice || 0).toFixed(0)}</span>
+                        </label>
+                      );
+                    })}
+                    {branchImportSourceDeals.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-gray-500">No deals in selected branch</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-neutral-800 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (branchImportSubmitting) return;
+                  setBranchImportModalOpen(false);
+                }}
+                className="rounded-xl border-2 border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleImportFromBranch}
+                disabled={!branchImportSourceId || branchImportSelectedIds.length === 0 || branchImportSubmitting}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {branchImportSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
+                {branchImportSubmitting ? "Importing..." : "Import selected"}
+              </button>
+            </div>
           </div>
         </div>
       )}
