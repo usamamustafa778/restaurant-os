@@ -286,9 +286,14 @@ const DEFAULT_REPORT = {
 };
 
 // Calendar-based fallback dates (used when no session data is available)
+function normalizeReportPreset(preset) {
+  return preset;
+}
+
 function getCalendarDates(preset) {
+  const safePreset = normalizeReportPreset(preset);
   const today = new Date();
-  switch (preset) {
+  switch (safePreset) {
     case "today": {
       const s = new Date(today);
       s.setHours(0, 0, 0, 0);
@@ -355,7 +360,8 @@ function getCalendarDates(preset) {
  * smart date-range in that case so the backend returns all of today's orders.
  */
 function getSalesReportQuery(preset, sessions) {
-  if (preset === "today" && sessions && sessions.length > 0) {
+  const safePreset = normalizeReportPreset(preset);
+  if (safePreset === "today" && sessions && sessions.length > 0) {
     const open = sessions.find((s) => s.status === "OPEN");
     if (open?.id) {
       // Count how many sessions started on the same calendar day as the open session
@@ -367,15 +373,16 @@ function getSalesReportQuery(preset, sessions) {
       if (todaySessions.length === 1) return { daySessionId: open.id };
     }
   }
-  return getSmartDates(preset, sessions);
+  return getSmartDates(safePreset, sessions);
 }
 
 // Session-aware date resolver: uses actual session start/end times for Today and Yesterday
 // so that reports match the business day rather than calendar midnight boundaries.
 function getSmartDates(preset, sessions) {
+  const safePreset = normalizeReportPreset(preset);
   const now = new Date();
   if (sessions && sessions.length > 0) {
-    if (preset === "today") {
+    if (safePreset === "today") {
       const openSess = sessions.find((s) => s.status === "OPEN");
       if (openSess?.startAt) {
         // Find ALL sessions from the same calendar day as the open session.
@@ -406,14 +413,14 @@ function getSmartDates(preset, sessions) {
           to: todaySess.endAt || now.toISOString(),
         };
     }
-    if (preset === "yesterday") {
+    if (safePreset === "yesterday") {
       // The most recently CLOSED session = the previous business day
       const lastClosed = sessions.find((s) => s.status === "CLOSED");
       if (lastClosed?.startAt && lastClosed?.endAt)
         return { from: lastClosed.startAt, to: lastClosed.endAt };
     }
   }
-  return getCalendarDates(preset);
+  return getCalendarDates(safePreset);
 }
 
 // Keep old name as alias so any remaining callers still work
@@ -437,7 +444,8 @@ function downloadCSV(filename, rows) {
 }
 
 function buildPeriodLabel(preset, customFrom, customTo) {
-  if (preset === "custom") {
+  const safePreset = normalizeReportPreset(preset);
+  if (safePreset === "custom") {
     if (customFrom && customTo)
       return `${new Date(customFrom).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} — ${new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
     if (customFrom)
@@ -446,7 +454,7 @@ function buildPeriodLabel(preset, customFrom, customTo) {
       return `Up to ${new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
     return "Custom range";
   }
-  return PRESETS.find((p) => p.id === preset)?.label || "All Time";
+  return PRESETS.find((p) => p.id === safePreset)?.label || "All Time";
 }
 
 function fmtRs(v) {
@@ -1087,9 +1095,10 @@ export default function HistoryPage() {
   }, [currentBranch?.id, preset]);
 
   function applyPreset(id) {
-    setPreset(id);
-    if (id === "custom") return;
-    const q = getSalesReportQuery(id, sessions);
+    const safeId = normalizeReportPreset(id);
+    setPreset(safeId);
+    if (safeId === "custom") return;
+    const q = getSalesReportQuery(safeId, sessions);
     setLoading(true);
     setOrdersPage(0);
     loadReport(q);
