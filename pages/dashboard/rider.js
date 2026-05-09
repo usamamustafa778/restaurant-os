@@ -171,20 +171,6 @@ function lastStatusAtFromHistory(history, status) {
   return last;
 }
 
-/** Bold status line + relative time for overview “active now” cards. */
-function getActiveOrderStatusHeadline(order) {
-  const raw = String(order?.status || "");
-  const st = raw === "PREPARING" ? "PROCESSING" : raw;
-  const refAt =
-    st === "OUT_FOR_DELIVERY"
-      ? lastStatusAtFromHistory(order.statusHistory, "OUT_FOR_DELIVERY") || parseOrderDate(order.createdAt)
-      : parseOrderDate(order.createdAt);
-  const sc = getStatusConfig(st);
-  const label = String(sc?.label || raw || "Active").toUpperCase();
-  const timePart = refAt ? getTimeAgo(refAt) : "—";
-  return { label, timePart, isOut: st === "OUT_FOR_DELIVERY" };
-}
-
 export default function RiderPortalPage() {
   const sym = getCurrencySymbol();
   const { socket } = useSocket() || {};
@@ -1137,16 +1123,16 @@ export default function RiderPortalPage() {
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {/* ══════ HOME TAB ══════ */}
           {tab === TABS.HOME && (
-            <div className="p-4 sm:p-5 pb-28 space-y-5">
-              <div className="flex items-center gap-3 rounded-2xl border border-gray-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-4 py-3.5">
-                <div className="w-11 h-11 rounded-xl bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
-                  <Bike className="w-[19px] h-[19px] text-primary" />
+            <div className="p-3 sm:p-4 pb-24 space-y-3">
+              <div className="flex items-center gap-2.5 rounded-xl border border-gray-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2.5">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
+                  <Bike className="w-[17px] h-[17px] text-primary" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-base font-extrabold text-gray-900 dark:text-white leading-tight truncate">
+                  <p className="text-[15px] font-extrabold text-gray-900 dark:text-white leading-tight truncate">
                     {userName ? `Hi, ${userName.split(" ")[0]}` : "Rider"}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1 leading-snug">
+                  <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-0.5 leading-snug">
                     {userName ? "Good luck on your route today." : "Sign in to continue."}
                   </p>
                 </div>
@@ -1154,17 +1140,17 @@ export default function RiderPortalPage() {
 
               {/* Hand in at shop — primary */}
               <div
-                className={`rounded-2xl border p-4 sm:p-5 ${
+                className={`rounded-xl border p-3 ${
                   riderPendingPaymentTotal > 0
                     ? "border-amber-400/40 dark:border-amber-500/35 bg-amber-500/12 dark:bg-amber-950/50"
                     : "border-emerald-400/35 dark:border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-950/40"
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-2.5">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <p
-                        className={`text-[11px] font-extrabold uppercase tracking-wider ${
+                        className={`text-[10px] font-extrabold uppercase tracking-wider ${
                           riderPendingPaymentTotal > 0
                             ? "text-amber-950 dark:text-amber-100"
                             : "text-emerald-950 dark:text-emerald-100"
@@ -1173,24 +1159,24 @@ export default function RiderPortalPage() {
                         Hand in at shop
                       </p>
                       {riderPendingPaymentTotal > 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-600/20 dark:bg-amber-500/25 px-2 py-0.5 text-[10px] font-black text-amber-900 dark:text-amber-200 uppercase tracking-wide">
-                          <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden />
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-600/20 dark:bg-amber-500/25 px-1.5 py-0.5 text-[9px] font-black text-amber-900 dark:text-amber-200 uppercase tracking-wide">
+                          <AlertTriangle className="w-2.5 h-2.5 shrink-0" aria-hidden />
                           Pending
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600/20 dark:bg-emerald-500/25 px-2 py-0.5 text-[10px] font-black text-emerald-900 dark:text-emerald-200 uppercase tracking-wide">
-                          <Check className="w-3 h-3 shrink-0" aria-hidden />
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600/20 dark:bg-emerald-500/25 px-1.5 py-0.5 text-[9px] font-black text-emerald-900 dark:text-emerald-200 uppercase tracking-wide">
+                          <Check className="w-2.5 h-2.5 shrink-0" aria-hidden />
                           Done
                         </span>
                       )}
                     </div>
                     {riderPendingPaymentTotal > 0 ? (
                       <>
-                        <p className="text-2xl sm:text-3xl font-black text-amber-950 dark:text-amber-50 tabular-nums mt-2 tracking-tight">
+                        <p className="text-xl font-black text-amber-950 dark:text-amber-50 tabular-nums mt-1.5 tracking-tight">
                           {sym === "Rs" ? "Rs. " : `${sym} `}
                           {Math.round(riderPendingPaymentTotal).toLocaleString()}
                         </p>
-                        <p className="text-sm font-semibold text-amber-900/95 dark:text-amber-100/90 mt-1.5 leading-snug">
+                        <p className="text-[12px] font-semibold text-amber-900/95 dark:text-amber-100/90 mt-1 leading-snug">
                           {riderPendingPaymentOrders.length} order{riderPendingPaymentOrders.length !== 1 ? "s" : ""}{" "}
                           — cash not submitted yet
                         </p>
@@ -1200,32 +1186,32 @@ export default function RiderPortalPage() {
                             setTab(TABS.HISTORY);
                             setHistoryFilter("pending_payment");
                           }}
-                          className="mt-4 w-full py-3 rounded-xl bg-amber-600 text-white text-sm font-extrabold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform shadow-md shadow-amber-600/25"
+                          className="mt-2.5 w-full py-2 rounded-lg bg-amber-600 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform shadow-sm shadow-amber-600/20"
                         >
                           View pending orders
-                          <ChevronRight className="w-4 h-4 shrink-0 opacity-90" />
+                          <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
                         </button>
                       </>
                     ) : (
                       <>
-                        <p className="text-lg font-extrabold text-emerald-950 dark:text-emerald-50 mt-2 leading-snug">
+                        <p className="text-[15px] font-extrabold text-emerald-950 dark:text-emerald-50 mt-1.5 leading-snug">
                           All cash submitted
                         </p>
-                        <p className="text-sm font-medium text-emerald-900/90 dark:text-emerald-100/85 mt-1.5">
+                        <p className="text-[12px] font-medium text-emerald-900/90 dark:text-emerald-100/85 mt-0.5">
                           Nothing pending
                         </p>
                       </>
                     )}
                   </div>
                   <div
-                    className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                       riderPendingPaymentTotal > 0
                         ? "bg-amber-500/25 dark:bg-amber-500/20"
                         : "bg-emerald-500/25 dark:bg-emerald-500/20"
                     }`}
                   >
                     <Wallet
-                      className={`w-6 h-6 ${
+                      className={`w-[18px] h-[18px] ${
                         riderPendingPaymentTotal > 0
                           ? "text-amber-800 dark:text-amber-300"
                           : "text-emerald-800 dark:text-emerald-300"
@@ -1237,10 +1223,10 @@ export default function RiderPortalPage() {
 
               {/* Today’s runs */}
               <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-neutral-500 mb-2 px-0.5">
+                <p className="text-[9px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-neutral-500 mb-1.5 px-0.5">
                   Today&apos;s runs
                 </p>
-                <div className="grid grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-3 gap-2">
                   {[
                     { label: "Delivered", value: deliveredCount },
                     { label: "Active", value: activeOrders.length },
@@ -1248,19 +1234,19 @@ export default function RiderPortalPage() {
                   ].map((cell) => (
                     <div
                       key={cell.label}
-                      className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-2 py-3.5 text-center"
+                      className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-1.5 py-2 text-center"
                     >
-                      <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500 leading-none">
+                      <p className="text-[8px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500 leading-none">
                         {cell.label}
                       </p>
-                      <div className="flex items-center justify-center gap-1.5 mt-2">
+                      <div className="flex items-center justify-center gap-1 mt-1">
                         {cell.label === "Active" && cell.value > 0 && (
                           <span
-                            className="inline-block w-2 h-2 rounded-full bg-primary shrink-0 animate-pulse"
+                            className="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0 animate-pulse"
                             aria-hidden
                           />
                         )}
-                        <p className="text-2xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
+                        <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-none">
                           {cell.value}
                         </p>
                       </div>
@@ -1269,119 +1255,23 @@ export default function RiderPortalPage() {
                 </div>
               </div>
 
-              {/* Active right now */}
-              <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-neutral-500 mb-2 px-0.5">
-                  Active right now
-                </p>
-                {activeOrders.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-neutral-500 px-1 py-2">
-                    No active deliveries right now
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {[...activeOrders]
-                      .sort((a, b) => {
-                        const pri = (o) =>
-                          String(o.status) === "OUT_FOR_DELIVERY" ? 0 : String(o.status) === "READY" ? 1 : 2;
-                        return pri(a) - pri(b);
-                      })
-                      .map((order) => {
-                        const orderId = order.id || order._id;
-                        const orderKey = String(orderId);
-                        const head = getActiveOrderStatusHeadline(order);
-                        const tokenLabel =
-                          order.orderNumber && String(order.orderNumber).trim()
-                            ? String(order.orderNumber).trim().startsWith("#")
-                              ? String(order.orderNumber).trim()
-                              : `#${order.orderNumber}`
-                            : `#${order.tokenNumber || getOrderId(order).toString().slice(-4)}`;
-                        const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
-                        const cust =
-                          (order.customerName || "").trim() ||
-                          (order.customerPhone || order.phone || "").trim() ||
-                          "Customer";
-                        const riderLine =
-                          (order.assignedRiderName || "").trim() ||
-                          (userName ? userName.split(" ")[0] : "You");
-                        return (
-                          <div
-                            key={orderKey}
-                            className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden shadow-sm"
-                          >
-                            <div
-                              className={`px-4 py-2.5 flex items-center justify-between gap-2 ${
-                                head.isOut
-                                  ? "bg-primary/10 dark:bg-primary/15"
-                                  : "bg-gray-50 dark:bg-neutral-900/90"
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                {head.isOut && (
-                                  <span className="relative flex h-2 w-2 shrink-0">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
-                                  </span>
-                                )}
-                                <span
-                                  className={`text-xs font-black uppercase tracking-wide truncate ${
-                                    head.isOut ? "text-primary" : "text-gray-700 dark:text-neutral-300"
-                                  }`}
-                                >
-                                  {head.label} · {head.timePart}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="px-4 py-4 space-y-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums">
-                                  {tokenLabel}
-                                </p>
-                                <p className="text-lg font-black text-primary tabular-nums shrink-0">
-                                  {sym === "Rs" ? "Rs. " : `${sym} `}
-                                  {totalAmt}
-                                </p>
-                              </div>
-                              <p className="text-sm text-gray-600 dark:text-neutral-400 leading-snug">
-                                <span className="font-semibold text-gray-800 dark:text-neutral-200">Customer:</span>{" "}
-                                {cust}
-                                <span className="text-gray-400 dark:text-neutral-600"> · </span>
-                                <span className="font-semibold text-gray-800 dark:text-neutral-200">Rider:</span>{" "}
-                                {riderLine}
-                              </p>
-                              <button
-                                type="button"
-                                disabled
-                                className="w-full py-3 rounded-xl border border-dashed border-gray-300 dark:border-neutral-700 text-sm font-bold text-gray-400 dark:text-neutral-500 flex items-center justify-center gap-2 cursor-not-allowed opacity-80"
-                              >
-                                <MapPin className="w-4 h-4 shrink-0" />
-                                View on map — soon
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-
               {/* My pay today */}
-              <div className="rounded-2xl border border-dashed border-gray-400/60 dark:border-neutral-600 bg-neutral-100/40 dark:bg-neutral-900/50 p-4 sm:p-5">
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-gray-600 dark:text-neutral-400">
+              <div className="rounded-xl border border-dashed border-gray-400/60 dark:border-neutral-600 bg-neutral-100/40 dark:bg-neutral-900/50 p-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-600 dark:text-neutral-400">
                   My pay today
                 </p>
-                <p className="text-base font-bold text-gray-600 dark:text-neutral-400 mt-3 leading-relaxed">
+                <p className="text-xs font-bold text-gray-600 dark:text-neutral-400 mt-1.5 leading-snug">
                   Pay details not set up yet — ask your manager
                 </p>
               </div>
 
               {/* Waiting at kitchen — only when queue exists */}
               {preparingOrders.length + readyOrders.length + outForDeliveryOrders.length > 0 && (
-                <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 sm:p-5">
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-neutral-500 mb-3">
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3">
+                  <p className="text-[9px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-neutral-500 mb-2">
                     Waiting at kitchen
                   </p>
-                  <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="grid grid-cols-3 gap-2 text-center">
                     {[
                       { label: "Kitchen", n: preparingOrders.length },
                       { label: "Ready", n: readyOrders.length },
@@ -1389,14 +1279,14 @@ export default function RiderPortalPage() {
                     ].map((row) => (
                       <div
                         key={row.label}
-                        className="rounded-xl bg-gray-50 dark:bg-neutral-900/80 py-3 px-1.5"
+                        className="rounded-lg bg-gray-50 dark:bg-neutral-900/80 py-2 px-1"
                       >
-                        <p className="text-xl font-black text-primary tabular-nums leading-none">{row.n}</p>
-                        <div className="mt-1 flex items-center justify-center gap-1">
+                        <p className="text-base font-black text-primary tabular-nums leading-none">{row.n}</p>
+                        <div className="mt-0.5 flex items-center justify-center gap-1">
                           {row.label === "Kitchen" && row.n > 0 && (
                             <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                           )}
-                          <p className="text-[10px] font-bold text-gray-500 dark:text-neutral-500 uppercase tracking-wide">
+                          <p className="text-[9px] font-bold text-gray-500 dark:text-neutral-500 uppercase tracking-wide">
                             {row.label}
                           </p>
                         </div>
