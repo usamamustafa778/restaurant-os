@@ -466,9 +466,10 @@ export default function RiderPortalPage() {
       o.status === "OUT_FOR_DELIVERY"
     );
   });
+  // API already scopes to this rider; keep a safe client-side guard (id types may vary).
   const historyOrders = orders
     .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED" || o.status === "CANCELLED")
-    .filter((o) => riderId && o.assignedRiderId === riderId)
+    .filter((o) => riderId && String(o.assignedRiderId || "") === String(riderId))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const deliveredHistory = historyOrders.filter(
