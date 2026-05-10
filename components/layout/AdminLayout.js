@@ -146,8 +146,8 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
-    path: "/rider-payouts",
-    label: "Rider Payouts",
+    path: "/riders",
+    label: "Riders",
     icon: Truck,
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
   },
@@ -331,7 +331,7 @@ const tenantNav = [
 const DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH = [
   "/overview",
   "/sales-report",
-  "/rider-payouts",
+  "/riders",
   "/subscription",
   "/profile",
 ];
