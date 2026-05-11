@@ -96,36 +96,33 @@ function getCalendarDates(preset) {
 
 function getSmartDates(preset, sessions) {
   const now = new Date();
-  if (sessions && sessions.length > 0) {
-    if (preset === "today") {
-      const openSess = sessions.find((s) => s.status === "OPEN");
-      if (openSess?.startAt) {
-        const openDateStr = new Date(openSess.startAt).toDateString();
-        const todaySessions = sessions.filter(
-          (s) =>
-            s.startAt && new Date(s.startAt).toDateString() === openDateStr,
-        );
-        const earliestStartMs = todaySessions.reduce(
-          (min, s) => Math.min(min, new Date(s.startAt).getTime()),
-          new Date(openSess.startAt).getTime(),
-        );
-        const fromMs = earliestStartMs - 10 * 60 * 1000;
-        return { from: new Date(fromMs).toISOString(), to: now.toISOString() };
-      }
-      const todayStr = now.toDateString();
-      const todaySess = sessions.find(
-        (s) => new Date(s.startAt).toDateString() === todayStr,
+  if (preset === "today" && Array.isArray(sessions) && sessions.length > 0) {
+    const openSessions = sessions
+      .filter((s) => s?.status === "OPEN" && s?.startAt)
+      .sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+    if (openSessions[0]?.startAt) {
+      const openDate = new Date(openSessions[0].startAt).toDateString();
+      const sameDaySessions = sessions.filter(
+        (s) => s?.startAt && new Date(s.startAt).toDateString() === openDate,
       );
-      if (todaySess?.startAt)
-        return {
-          from: todaySess.startAt,
-          to: todaySess.endAt || now.toISOString(),
-        };
+      const earliestStartMs = sameDaySessions.reduce(
+        (min, s) => Math.min(min, new Date(s.startAt).getTime()),
+        new Date(openSessions[0].startAt).getTime(),
+      );
+      return {
+        from: new Date(earliestStartMs).toISOString(),
+        to: now.toISOString(),
+      };
     }
-    if (preset === "yesterday") {
-      const lastClosed = sessions.find((s) => s.status === "CLOSED");
-      if (lastClosed?.startAt && lastClosed?.endAt)
-        return { from: lastClosed.startAt, to: lastClosed.endAt };
+
+    const latestClosed = sessions
+      .filter((s) => s?.status === "CLOSED" && s?.startAt && s?.endAt)
+      .sort((a, b) => new Date(b.endAt) - new Date(a.endAt))[0];
+    if (latestClosed?.startAt && latestClosed?.endAt) {
+      return {
+        from: new Date(latestClosed.startAt).toISOString(),
+        to: new Date(latestClosed.endAt).toISOString(),
+      };
     }
   }
   return getCalendarDates(preset);
@@ -372,24 +369,6 @@ export default function RidersPage() {
         from: customFrom ? new Date(customFrom + "T00:00:00") : null,
         to: customTo ? new Date(customTo + "T23:59:59.999") : null,
       };
-    }
-    if (preset === "today" && sessions?.length) {
-      const open = sessions.find((s) => s.status === "OPEN");
-      if (open?.startAt) {
-        const openDateStr = new Date(open.startAt).toDateString();
-        const todaySessions = sessions.filter(
-          (s) =>
-            s.startAt && new Date(s.startAt).toDateString() === openDateStr,
-        );
-        const earliestStartMs = todaySessions.reduce(
-          (min, s) => Math.min(min, new Date(s.startAt).getTime()),
-          new Date(open.startAt).getTime(),
-        );
-        return {
-          from: new Date(earliestStartMs - 10 * 60 * 1000),
-          to: new Date(),
-        };
-      }
     }
     const d = getSmartDates(preset, sessions);
     return {
@@ -761,9 +740,16 @@ export default function RidersPage() {
             <p className="text-sm text-gray-700 dark:text-neutral-400 font-medium">
               Live tracking · Performance · Payouts
             </p>
-            <p className="text-xs text-gray-400 dark:text-neutral-500">
-              Last updated: {secAgo === "—" ? "—" : `${secAgo}s ago`} ·
-              Auto-refresh every 60s
+            <p className="text-xs text-gray-400 dark:text-neutral-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>
+                Last updated: {secAgo === "—" ? "—" : `${secAgo}s ago`} · Auto-refresh every 60s
+              </span>
+              {refreshing && !loading && (
+                <span className="inline-flex items-center gap-1.5 text-primary font-semibold">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
+                  Updating…
+                </span>
+              )}
             </p>
           </div>
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
@@ -881,11 +867,23 @@ export default function RidersPage() {
           </form>
         )}
 
-        {loading && allOrders.length === 0 ? (
-          <div className="flex justify-center py-24">
-            <Loader2 className="w-10 h-10 animate-spin text-primary" />
-          </div>
-        ) : (
+        <div
+          className="relative min-h-[min(50vh,24rem)]"
+          aria-busy={loading || refreshing}
+        >
+          {loading && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-2xl border border-gray-200/90 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur-sm">
+              <Loader2
+                className="w-10 h-10 animate-spin text-primary"
+                aria-hidden
+              />
+              <p className="text-sm font-bold text-gray-800 dark:text-neutral-200">
+                {allOrders.length > 0 || staffRiders.length > 0
+                  ? "Updating…"
+                  : "Loading riders…"}
+              </p>
+            </div>
+          )}
           <>
             {/* Section 2 — Fleet */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3">
@@ -1722,18 +1720,30 @@ export default function RidersPage() {
               )}
             </div>
           </>
-        )}
+        </div>
 
         {/* Payout modal */}
         {payoutModalOpen && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="relative w-full max-w-lg rounded-2xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+              {modalSaving && (
+                <div
+                  className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/90 dark:bg-neutral-950/92 backdrop-blur-sm"
+                  aria-live="polite"
+                >
+                  <Loader2 className="w-10 h-10 animate-spin text-primary" aria-hidden />
+                  <p className="text-sm font-bold text-gray-800 dark:text-neutral-200">
+                    Processing…
+                  </p>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-lg font-black">Record rider payout</h3>
                 <button
                   type="button"
+                  disabled={modalSaving}
                   onClick={() => setPayoutModalOpen(false)}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800"
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:pointer-events-none"
                   aria-label="Close"
                 >
                   <X className="w-5 h-5" />
@@ -1746,7 +1756,8 @@ export default function RidersPage() {
                 <select
                   value={modalRiderId}
                   onChange={(e) => setModalRiderId(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                  disabled={modalSaving}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm disabled:opacity-50"
                 >
                   {mergedRiders
                     .filter((x) => x.riderId)
@@ -1791,7 +1802,8 @@ export default function RidersPage() {
                   min={0}
                   value={modalAmount}
                   onChange={(e) => setModalAmount(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-bold tabular-nums"
+                  disabled={modalSaving}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-bold tabular-nums disabled:opacity-50"
                 />
               </div>
               <div>
@@ -1801,7 +1813,8 @@ export default function RidersPage() {
                 <select
                   value={modalPayMethod}
                   onChange={(e) => setModalPayMethod(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                  disabled={modalSaving}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm disabled:opacity-50"
                 >
                   <option value="Cash">Cash</option>
                   <option value="Bank">Bank</option>
@@ -1817,14 +1830,16 @@ export default function RidersPage() {
                   onChange={(e) => setModalNotes(e.target.value)}
                   rows={2}
                   placeholder="Rider daily payout…"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                  disabled={modalSaving}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm disabled:opacity-50"
                 />
               </div>
-              <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <label className={`flex items-start gap-2 text-sm ${modalSaving ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
                   checked={modalPostCpv}
                   onChange={(e) => setModalPostCpv(e.target.checked)}
+                  disabled={modalSaving}
                   className="mt-1 rounded border-gray-300"
                 />
                 <span>
@@ -1835,8 +1850,9 @@ export default function RidersPage() {
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
+                  disabled={modalSaving}
                   onClick={() => setPayoutModalOpen(false)}
-                  className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-neutral-700 font-bold text-sm"
+                  className="flex-1 h-11 rounded-xl border border-gray-200 dark:border-neutral-700 font-bold text-sm disabled:opacity-40 disabled:pointer-events-none"
                 >
                   Cancel
                 </button>
@@ -1844,8 +1860,11 @@ export default function RidersPage() {
                   type="button"
                   disabled={modalSaving}
                   onClick={submitPayoutModal}
-                  className="flex-1 h-11 rounded-xl bg-primary text-white font-bold text-sm disabled:opacity-50"
+                  className="flex-1 h-11 rounded-xl bg-primary text-white font-bold text-sm disabled:opacity-90 inline-flex items-center justify-center gap-2"
                 >
+                  {modalSaving && (
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden />
+                  )}
                   {modalSaving ? "Saving…" : "Record payout"}
                 </button>
               </div>
