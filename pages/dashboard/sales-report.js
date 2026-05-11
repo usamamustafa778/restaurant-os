@@ -2806,11 +2806,20 @@ export default function HistoryPage() {
                       <td className={TD_CLS}>{o.customerPhone || "—"}</td>
                       <td className={TD_CLS}>{o.tableName || "—"}</td>
                       <td className={TD_CLS}>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${o.source === "POS" ? "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400" : "bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400"}`}
-                        >
-                          {o.source}
-                        </span>
+                        {(() => {
+                          const src = (o.source || "POS").toUpperCase();
+                          const LABEL_MAP = { POS: "POS", WEBSITE: "Website", FOODPANDA: "Foodpanda" };
+                          const STYLE_MAP = {
+                            POS: "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
+                            WEBSITE: "bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
+                            FOODPANDA: "bg-pink-100 dark:bg-pink-500/10 text-pink-700 dark:text-pink-400",
+                          };
+                          return (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${STYLE_MAP[src] || "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
+                              {LABEL_MAP[src] || src}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className={TD_CLS}>
                         {o.orderTakerName
@@ -2967,7 +2976,7 @@ export default function HistoryPage() {
           return false;
         }
         if (!q) return true;
-        const staff = o.riderName || o.waiterName || o.orderTakerName || "";
+        const staff = o.assignedRiderName || o.riderName || o.waiterName || o.orderTakerName || "";
         const payment = o.isPaid ? o.paymentMethod || "" : "Unpaid";
         const haystack = [
           o.orderNumber || o.id,
@@ -3049,7 +3058,7 @@ export default function HistoryPage() {
       );
       const header = exportColumns.map((k) => csvEscape(labelsByKey[k] || k));
       const rows = filteredSessionOrders.map((o) => {
-        const staff = o.riderName || o.waiterName || o.orderTakerName || "";
+        const staff = o.assignedRiderName || o.riderName || o.waiterName || o.orderTakerName || "";
         const items = (o.items || [])
           .map((it) => `${it.name} x${it.qty || 1}`)
           .join(" | ");
@@ -3086,7 +3095,7 @@ export default function HistoryPage() {
       );
       const body = filteredSessionOrders
         .map((o) => {
-          const staff = o.riderName || o.waiterName || o.orderTakerName || "";
+          const staff = o.assignedRiderName || o.riderName || o.waiterName || o.orderTakerName || "";
           const items = (o.items || [])
             .map((it) => `${it.name} x${it.qty || 1}`)
             .join(" | ");
@@ -3945,6 +3954,7 @@ export default function HistoryPage() {
                                   "Type",
                                   "Status",
                                   "Customer",
+                                  "Source",
                                   "Staff",
                                   "Items",
                                   "Total",
@@ -3966,13 +3976,15 @@ export default function HistoryPage() {
                                   (s, i) => s + (i.qty || 1),
                                   0,
                                 );
-                                const staff = o.riderName
-                                  ? `Rider: ${o.riderName}`
-                                  : o.waiterName
-                                    ? `Waiter: ${o.waiterName}`
-                                    : o.orderTakerName
-                                      ? `Taker: ${o.orderTakerName}`
-                                      : "—";
+                                const staff = o.assignedRiderName
+                                  ? `Rider: ${o.assignedRiderName}`
+                                  : o.riderName
+                                    ? `Rider: ${o.riderName}`
+                                    : o.waiterName
+                                      ? `Waiter: ${o.waiterName}`
+                                      : o.orderTakerName
+                                        ? `Taker: ${o.orderTakerName}`
+                                        : "—";
                                 return (
                                   <tr
                                     key={o.id}
@@ -4043,6 +4055,15 @@ export default function HistoryPage() {
                                     </td>
                                     <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
                                       {o.customerName || "—"}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-[12px] whitespace-nowrap">
+                                      {o.source === "WEBSITE" ? (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 font-bold">Website</span>
+                                      ) : o.source === "FOODPANDA" ? (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 dark:bg-pink-500/15 text-pink-700 dark:text-pink-400 font-bold">Foodpanda</span>
+                                      ) : (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 font-bold">POS</span>
+                                      )}
                                     </td>
                                     <td className="py-2.5 px-3 text-[12px] text-gray-600 dark:text-neutral-400 whitespace-nowrap">
                                       {staff}

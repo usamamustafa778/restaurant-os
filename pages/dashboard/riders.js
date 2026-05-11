@@ -132,6 +132,17 @@ function getOrdersQuery(preset, sessions) {
   return getSmartDates(preset, sessions) || getCalendarDates(preset);
 }
 
+function getActiveSessionForToday(sessions) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return null;
+  const open = sessions
+    .filter((s) => s?.status === "OPEN" && s?.startAt)
+    .sort((a, b) => new Date(b.startAt) - new Date(a.startAt))[0];
+  if (open) return open;
+  return sessions
+    .filter((s) => s?.status === "CLOSED" && s?.startAt && s?.endAt)
+    .sort((a, b) => new Date(b.endAt) - new Date(a.endAt))[0] || null;
+}
+
 function toCSVRow(cells) {
   return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
 }
@@ -263,6 +274,7 @@ export default function RidersPage() {
       const params = { limit: 2000 };
       if (dates?.from) params.from = dates.from;
       if (dates?.to) params.to = dates.to;
+      if (dates?.daySessionId) params.daySessionId = dates.daySessionId;
       const data = await getOrders(params);
       if (data && typeof data === "object" && Array.isArray(data.orders)) {
         let all = data.orders;
@@ -326,6 +338,19 @@ export default function RidersPage() {
             from: new Date(customRange.from + "T00:00:00").toISOString(),
             to: new Date(customRange.to + "T23:59:59.999").toISOString(),
           };
+        } else if (presetId === "today") {
+          const activeSession = getActiveSessionForToday(loadedSessions);
+          if (activeSession?._id) {
+            q = {
+              daySessionId: String(activeSession._id),
+              from: new Date(activeSession.startAt).toISOString(),
+              to: activeSession.endAt
+                ? new Date(activeSession.endAt).toISOString()
+                : new Date().toISOString(),
+            };
+          } else {
+            q = getOrdersQuery(presetId, loadedSessions);
+          }
         } else {
           q = getOrdersQuery(presetId, loadedSessions);
         }
@@ -370,6 +395,15 @@ export default function RidersPage() {
         to: customTo ? new Date(customTo + "T23:59:59.999") : null,
       };
     }
+    if (preset === "today") {
+      const activeSession = getActiveSessionForToday(sessions);
+      if (activeSession?.startAt) {
+        return {
+          from: new Date(activeSession.startAt),
+          to: activeSession.endAt ? new Date(activeSession.endAt) : new Date(),
+        };
+      }
+    }
     const d = getSmartDates(preset, sessions);
     return {
       from: d?.from ? new Date(d.from) : null,
@@ -378,6 +412,9 @@ export default function RidersPage() {
   }, [preset, customFrom, customTo, sessions]);
 
   const dateFilteredOrders = useMemo(() => {
+    if (preset === "today" && getActiveSessionForToday(sessions)?._id) {
+      return allOrders;
+    }
     const { from, to } = activeDateRange;
     return allOrders.filter((o) => {
       const t = new Date(o.createdAt);
@@ -385,7 +422,7 @@ export default function RidersPage() {
       if (to && t > to) return false;
       return true;
     });
-  }, [allOrders, activeDateRange]);
+  }, [allOrders, activeDateRange, preset, sessions]);
 
   const deliveryOrders = useMemo(
     () =>
