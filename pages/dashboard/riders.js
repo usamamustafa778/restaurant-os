@@ -95,6 +95,17 @@ function getCalendarDates(preset) {
 }
 
 function getSmartDates(preset, sessions) {
+  console.log(
+    "[SmartDates] preset:",
+    preset,
+    "sessions:",
+    sessions?.length,
+    sessions?.map((s) => ({
+      id: s._id,
+      status: s.status,
+      startAt: s.startAt,
+    })),
+  );
   const now = new Date();
   if (preset === "today" && Array.isArray(sessions) && sessions.length > 0) {
     const openSessions = sessions
@@ -127,6 +138,7 @@ function getSmartDates(preset, sessions) {
   }
   if (preset === "yesterday" && Array.isArray(sessions) && sessions.length > 0) {
     const lastClosed = sessions.find((s) => s?.status === "CLOSED");
+    console.log("[SmartDates] lastClosed:", lastClosed);
     if (lastClosed?.startAt && lastClosed?.endAt) {
       const sessionId = lastClosed.id || lastClosed._id;
       return {
@@ -286,6 +298,7 @@ export default function RidersPage() {
       if (dates?.from) params.from = dates.from;
       if (dates?.to) params.to = dates.to;
       if (dates?.daySessionId) params.daySessionId = dates.daySessionId;
+      console.log("[loadOrders] params:", params);
       const data = await getOrders(params);
       if (data && typeof data === "object" && Array.isArray(data.orders)) {
         let all = data.orders;
@@ -557,7 +570,7 @@ export default function RidersPage() {
         .filter((o) => isDelivered(o.status))
         .reduce((s, o) => s + Math.round(Number(o.deliveryCharges) || 0), 0);
       const orderValue = orders
-        .filter((o) => !isCancelled(o.status))
+        .filter((o) => isDelivered(o.status))
         .reduce(
           (s, o) => s + Math.round(Number(o.grandTotal ?? o.total) || 0),
           0,
@@ -719,7 +732,7 @@ export default function RidersPage() {
           "Delivered",
           "Cancelled",
           "Del fees (delivered)",
-          "Order value",
+          "Delivered value",
           "COD owed",
           "Avg trip min",
         ],
@@ -1038,7 +1051,7 @@ export default function RidersPage() {
                             Del fees
                           </th>
                           <th className="px-3 py-3 font-bold text-right hidden sm:table-cell">
-                            Order value
+                            Delivered value
                           </th>
                           <th className="px-3 py-3 font-bold text-right">
                             COD owed
@@ -1230,7 +1243,7 @@ export default function RidersPage() {
                     </div>
                     <div className="text-center rounded-lg bg-white dark:bg-neutral-950 border border-gray-100 dark:border-neutral-800 py-2">
                       <p className="text-[9px] font-bold text-gray-400 uppercase">
-                        Order value
+                        Delivered value
                       </p>
                       <p className="text-lg font-black tabular-nums">
                         {fmtRs(sidebarRider.orderValue)}
