@@ -373,6 +373,17 @@ function getSalesReportQuery(preset, sessions) {
       if (todaySessions.length === 1) return { daySessionId: open.id };
     }
   }
+  if (safePreset === "yesterday" && sessions && sessions.length > 0) {
+    const lastClosed = sessions.find((s) => s.status === "CLOSED");
+    if (lastClosed?.startAt && lastClosed?.endAt) {
+      const sessionId = lastClosed.id || lastClosed._id;
+      return {
+        from: lastClosed.startAt,
+        to: lastClosed.endAt,
+        ...(sessionId ? { daySessionId: String(sessionId) } : {}),
+      };
+    }
+  }
   return getSmartDates(safePreset, sessions);
 }
 
@@ -1036,6 +1047,7 @@ export default function HistoryPage() {
       const params = { limit: 2000 };
       if (dates?.from) params.from = dates.from;
       if (dates?.to) params.to = dates.to;
+      if (dates?.daySessionId) params.daySessionId = dates.daySessionId;
 
       const data = await getOrders(params);
 
@@ -1337,6 +1349,12 @@ export default function HistoryPage() {
   }, [preset, customFrom, customTo, sessions]);
 
   const dateFilteredOrders = useMemo(() => {
+    if (preset === "yesterday") {
+      const lastClosed = sessions.find((s) => s?.status === "CLOSED");
+      if (lastClosed?.startAt && lastClosed?.endAt) {
+        return allOrders;
+      }
+    }
     const { from, to } = activeDateRange;
     return allOrders.filter((o) => {
       const t = new Date(o.createdAt);
@@ -1344,7 +1362,7 @@ export default function HistoryPage() {
       if (to && t > to) return false;
       return true;
     });
-  }, [allOrders, activeDateRange]);
+  }, [allOrders, activeDateRange, preset, sessions]);
 
   /** Split grand total into menu sales vs delivery fees (matches rider portal breakdown). */
   const revenueBreakdown = useMemo(() => {

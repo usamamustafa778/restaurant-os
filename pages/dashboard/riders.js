@@ -125,6 +125,17 @@ function getSmartDates(preset, sessions) {
       };
     }
   }
+  if (preset === "yesterday" && Array.isArray(sessions) && sessions.length > 0) {
+    const lastClosed = sessions.find((s) => s?.status === "CLOSED");
+    if (lastClosed?.startAt && lastClosed?.endAt) {
+      const sessionId = lastClosed.id || lastClosed._id;
+      return {
+        from: new Date(lastClosed.startAt).toISOString(),
+        to: new Date(lastClosed.endAt).toISOString(),
+        ...(sessionId ? { daySessionId: String(sessionId) } : {}),
+      };
+    }
+  }
   return getCalendarDates(preset);
 }
 
@@ -414,6 +425,12 @@ export default function RidersPage() {
   const dateFilteredOrders = useMemo(() => {
     if (preset === "today" && getActiveSessionForToday(sessions)?._id) {
       return allOrders;
+    }
+    if (preset === "yesterday") {
+      const lastClosed = sessions.find((s) => s?.status === "CLOSED");
+      if (lastClosed?.startAt && lastClosed?.endAt) {
+        return allOrders;
+      }
     }
     const { from, to } = activeDateRange;
     return allOrders.filter((o) => {
