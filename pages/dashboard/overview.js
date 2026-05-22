@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
@@ -25,6 +25,7 @@ import {
 } from "../../lib/apiClient";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { localISODate, localToday } from "../../lib/accountingFormat";
+import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 
 /**
  * Derive the P&L calendar date range for a given period.
@@ -676,7 +677,7 @@ export default function OverviewPage() {
     deliveredUnpaid: { count: 0, amount: 0 },
     sourceChannelBreakdown: emptySourceChannelBreakdown(),
   });
-  const [reportPeriod, setReportPeriod] = useState("today");
+  const [reportPeriod, setReportPeriod] = useState(null);
   const [periodLoading, setPeriodLoading] = useState(true);
   /** Accounting P&L for the same calendar range as the sales period (ledger net profit). */
   const [periodAccountingPl, setPeriodAccountingPl] = useState(null);
@@ -853,7 +854,7 @@ export default function OverviewPage() {
   const [defaultDenominations, setDefaultDenominations] = useState([]);
   const [currencyRows, setCurrencyRows] = useState(() => buildGenericRows());
   const [editingDenomId, setEditingDenomId] = useState(null);
-  const [currencyDate, setCurrencyDate] = useState("today");
+  const [currencyDate, setCurrencyDate] = useState(null);
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [currencySaving, setCurrencySaving] = useState(false);
   const [drawerOpening, setDrawerOpening] = useState(false);
@@ -861,17 +862,16 @@ export default function OverviewPage() {
   const [expectedCashLoading, setExpectedCashLoading] = useState(false);
   const currencySaveTimeoutRef = useRef(null);
   const currencyDirtyRef = useRef(false);
-  const currencyDateValue =
-    currencyDate === "today"
-      ? (() => {
-          const d = new Date();
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        })()
-      : (() => {
-          const d = new Date();
-          d.setDate(d.getDate() - 1);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        })();
+  const currencyDateValue = useMemo(() => {
+    if (!currencyDate) return null;
+    if (currencyDate === "today") {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, [currencyDate]);
   const currencySymbol = getCurrencySymbol();
   const isCurrencyEditable = true;
   const currencyTotal = currencyRows.reduce((sum, row) => {
@@ -957,6 +957,7 @@ export default function OverviewPage() {
   }
 
   useEffect(() => {
+    if (!currencyDateValue) return;
     let cancelled = false;
     currencyDirtyRef.current = false;
     setCurrencyLoading(true);
@@ -997,6 +998,7 @@ export default function OverviewPage() {
   }, [currencyDateValue, defaultDenominations]);
 
   useEffect(() => {
+    if (!currencyDate || !currencyDateValue) return;
     let cancelled = false;
     setExpectedCashLoading(true);
     (async () => {
@@ -1187,6 +1189,27 @@ export default function OverviewPage() {
   }, [currentBranch?.id]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let loadedSessions = [];
+      try {
+        const res = await getDaySessions(currentBranch?.id, { limit: 10 });
+        loadedSessions = Array.isArray(res?.sessions) ? res.sessions : [];
+      } catch {
+        loadedSessions = [];
+      }
+      if (cancelled) return;
+      const def = getDefaultReportPreset(loadedSessions);
+      setReportPeriod(def);
+      setCurrencyDate(def);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
+    if (!reportPeriod) return;
     let cancelled = false;
     setPeriodLoading(true);
     setPeriodAccountingPl(null);

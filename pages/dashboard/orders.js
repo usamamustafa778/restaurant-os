@@ -35,6 +35,7 @@ import {
   getBusinessDayRange,
   formatBusinessDate,
 } from "../../lib/businessDay";
+import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import toast from "react-hot-toast";
@@ -63,6 +64,7 @@ import {
   Truck,
   RefreshCw,
   ChevronDown,
+  Download,
   Power,
   Plus,
   Wallet,
@@ -270,6 +272,68 @@ function getOrderTypeLabel(order) {
   return "Walk-in";
 }
 
+function toCSVRow(cells) {
+  return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
+}
+
+function downloadCSV(filename, rows) {
+  const content = rows.map(toCSVRow).join("\n");
+  const blob = new Blob(["\uFEFF" + content], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildClosedOrdersCSVRows(orders) {
+  const header = [
+    "Order #",
+    "Date/Time",
+    "Type",
+    "Customer",
+    "Phone",
+    "Rider",
+    "Table",
+    "Items",
+    "Total",
+    "Payment",
+    "Source",
+  ];
+  const rows = (orders || []).map((o) => {
+    const items = (o.items || [])
+      .map((it) => `${it.name || ""} x${it.qty ?? it.quantity ?? 1}`)
+      .join(" | ");
+    const payment =
+      getPaymentStatus(o) === "paid"
+        ? String(o.paymentMethod || "Paid")
+        : "Unpaid";
+    return [
+      getDisplayOrderId(o),
+      o.createdAt ? new Date(o.createdAt).toLocaleString("en-PK") : "",
+      getOrderTypeLabel(o),
+      o.customerName || "",
+      o.customerPhone || "",
+      o.assignedRiderName || o.orderTakerName || "",
+      o.tableName || o.tableNumber || "",
+      items,
+      Math.round(getOrderTotal(o)),
+      payment,
+      o.source || "POS",
+    ];
+  });
+  return [header, ...rows];
+}
+
+function downloadClosedOrdersCSV(orders) {
+  if (!orders?.length) return;
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadCSV(`closed-orders-${stamp}.csv`, buildClosedOrdersCSVRows(orders));
+}
+
 const ORDER_TYPE_ICON = {
   Delivery: Truck,
   "Dine In": UtensilsCrossed,
@@ -321,12 +385,13 @@ export default function OrdersPage() {
   const [deletingId, setDeletingId] = useState(null);
   const [search, setSearch] = useState("");
   const [orderTypeFilter, setOrderTypeFilter] = useState("All");
+  const [riderFilter, setRiderFilter] = useState("All");
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [showCancelled, setShowCancelled] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
-  const [datePreset, setDatePreset] = useState("today");
+  const [datePreset, setDatePreset] = useState(null);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showDateDropdown, setShowDateDropdown] = useState(false);
@@ -509,7 +574,7 @@ export default function OrdersPage() {
   }, []);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !dateRange) return;
     const onOrderEvent = () => loadOrders(dateRange);
     socket.on("order:created", onOrderEvent);
     socket.on("order:updated", onOrderEvent);
@@ -517,7 +582,7 @@ export default function OrdersPage() {
       socket.off("order:created", onOrderEvent);
       socket.off("order:updated", onOrderEvent);
     };
-  }, [socket]);
+  }, [socket, dateRange]);
 
   // Load delivery riders once on mount so inline dropdowns are ready
   useEffect(() => {
@@ -898,6 +963,7 @@ export default function OrdersPage() {
   }
 
   const dateRange = useMemo(() => {
+    if (!datePreset) return null;
     if (datePreset === "today") return getBusinessDayRange(businessDateStr, cutoffHour);
     if (datePreset === "yesterday") return getBusinessDayRange(shiftBusinessDateStr(businessDateStr, -1), cutoffHour);
 
@@ -1058,10 +1124,29 @@ export default function OrdersPage() {
     };
   }, [todayReportCurrency, todayReportBreakdown?.payment?.cash]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let loadedSessions = [];
+      try {
+        const res = await getDaySessions(currentBranch?.id, { limit: 30 });
+        loadedSessions = Array.isArray(res?.sessions) ? res.sessions : [];
+      } catch {
+        loadedSessions = [];
+      }
+      if (cancelled) return;
+      setDatePreset(getDefaultReportPreset(loadedSessions));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch?.id]);
+
   const dateRangeKey = `${dateRange?.from?.getTime() ?? ""}-${dateRange?.to?.getTime() ?? ""}`;
   useEffect(() => {
+    if (!datePreset || !dateRange) return;
     loadOrders(dateRange);
-  }, [dateRangeKey]);
+  }, [dateRangeKey, datePreset, dateRange]);
 
   // ── Session gate check ───────────────────────────────────────────────────
   // Runs on mount and whenever the branch changes.
@@ -1106,6 +1191,20 @@ export default function OrdersPage() {
         (o.customerPhone || "").toLowerCase().includes(term)
       )) return false;
       if (filterType && getOrderTypeLabel(o) !== orderTypeFilter) return false;
+      if (riderFilter !== "All") {
+        const rider = riders.find((r) => r.id === riderFilter);
+        const riderName = rider?.name?.trim().toLowerCase() || "";
+        const orderRiderId = String(o.assignedRiderId || "");
+        const orderRiderName = String(o.assignedRiderName || "")
+          .trim()
+          .toLowerCase();
+        if (
+          orderRiderId !== String(riderFilter) &&
+          (!riderName || orderRiderName !== riderName)
+        ) {
+          return false;
+        }
+      }
       return true;
     });
 
@@ -1116,6 +1215,8 @@ export default function OrdersPage() {
     cashierBaseOrders,
     search,
     orderTypeFilter,
+    riderFilter,
+    riders,
     dateRange,
   ]);
 
@@ -1169,6 +1270,7 @@ export default function OrdersPage() {
   // ── Render ─────────────────────────────────────────────────────────────
 
   const handlePosOrderChanged = useCallback(() => {
+    if (!dateRange) return;
     loadOrders(dateRange);
   }, [dateRange]);
 
@@ -1209,25 +1311,40 @@ export default function OrdersPage() {
           <div className="flex flex-col gap-3 mb-4 flex-shrink-0">
             {/* Row 1: Filters (left) + Search (middle) + New Order + Refresh (right) */}
             <div className="flex items-center gap-2">
-              {/* Left: order type filters */}
-              <div className="flex items-center gap-1.5 overflow-x-auto max-w-[35vw]">
+              {/* Order type */}
+              <select
+                value={orderTypeFilter}
+                onChange={(e) => setOrderTypeFilter(e.target.value)}
+                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[7.5rem]"
+                aria-label="Filter by order type"
+              >
                 {ORDER_TYPE_FILTERS.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setOrderTypeFilter(t)}
-                    className={`h-7 px-3 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                      orderTypeFilter === t
-                        ? "bg-gray-900 dark:bg-white text-white dark:text-black"
-                        : "bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-gray-400 dark:hover:border-neutral-500"
-                    }`}
-                  >
+                  <option key={t} value={t}>
                     {t === "All" ? `All (${totalActive})` : t}
-                  </button>
+                  </option>
                 ))}
+              </select>
+
+              {/* Rider */}
+              <div className="relative flex-shrink-0">
+                <select
+                  value={riderFilter}
+                  onChange={(e) => setRiderFilter(e.target.value)}
+                  disabled={ridersLoading}
+                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[8.5rem] disabled:opacity-60"
+                  aria-label="Filter by rider"
+                >
+                  <option value="All">All riders</option>
+                  {riders.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                <Bike className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-neutral-500" />
               </div>
 
-              {/* Middle: search */}
+              {/* Search */}
               <input
                 type="text"
                 value={search}
@@ -1261,7 +1378,7 @@ export default function OrdersPage() {
                         "7days": "Last 7 Days",
                         "30days": "Last Month",
                         custom: "Custom",
-                      }[datePreset]
+                      }[datePreset] || "Today"
                     }
                     <ChevronDown
                       className={`w-3 h-3 text-gray-400 transition-transform ${
@@ -1347,6 +1464,7 @@ export default function OrdersPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (!dateRange) return;
                     const toastId = toast.loading("Refreshing...");
                     loadOrders(dateRange)
                       .then(() => toast.success("Refreshed!", { id: toastId }))
@@ -1483,6 +1601,18 @@ export default function OrdersPage() {
                   <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
                     {sym} {Math.round(closedTotalAmount).toLocaleString()}
                   </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      downloadClosedOrdersCSV(groupedOrders.DELIVERED);
+                    }}
+                    className="p-1 rounded-md hover:bg-white/20 transition-colors"
+                    aria-label="Download closed orders"
+                    title="Download closed orders (CSV)"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
                 </div>
                 <ChevronDown
                   className={`w-4 h-4 transition-transform ${showClosed ? "" : "rotate-180"}`}

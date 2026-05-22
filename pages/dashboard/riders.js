@@ -11,6 +11,7 @@ import {
   getRiders,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
+import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import {
   Truck,
   Loader2,
@@ -95,17 +96,6 @@ function getCalendarDates(preset) {
 }
 
 function getSmartDates(preset, sessions) {
-  console.log(
-    "[SmartDates] preset:",
-    preset,
-    "sessions:",
-    sessions?.length,
-    sessions?.map((s) => ({
-      id: s._id,
-      status: s.status,
-      startAt: s.startAt,
-    })),
-  );
   const now = new Date();
   if (preset === "today" && Array.isArray(sessions) && sessions.length > 0) {
     const openSessions = sessions
@@ -138,7 +128,6 @@ function getSmartDates(preset, sessions) {
   }
   if (preset === "yesterday" && Array.isArray(sessions) && sessions.length > 0) {
     const lastClosed = sessions.find((s) => s?.status === "CLOSED");
-    console.log("[SmartDates] lastClosed:", lastClosed);
     if (lastClosed?.startAt && lastClosed?.endAt) {
       const sessionId = lastClosed.id || lastClosed._id;
       return {
@@ -269,7 +258,7 @@ function hoursSpan(from, to) {
 export default function RidersPage() {
   const router = useRouter();
   const { currentBranch } = useBranch();
-  const [preset, setPreset] = useState("today");
+  const [preset, setPreset] = useState(null);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [sessions, setSessions] = useState([]);
@@ -298,7 +287,6 @@ export default function RidersPage() {
       if (dates?.from) params.from = dates.from;
       if (dates?.to) params.to = dates.to;
       if (dates?.daySessionId) params.daySessionId = dates.daySessionId;
-      console.log("[loadOrders] params:", params);
       const data = await getOrders(params);
       if (data && typeof data === "object" && Array.isArray(data.orders)) {
         let all = data.orders;
@@ -394,6 +382,26 @@ export default function RidersPage() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let loadedSessions = [];
+      try {
+        const res = await getDaySessions(currentBranch?.id, { limit: 30 });
+        loadedSessions = Array.isArray(res?.sessions) ? res.sessions : [];
+      } catch {
+        loadedSessions = [];
+      }
+      if (cancelled) return;
+      setSessions(loadedSessions);
+      setPreset(getDefaultReportPreset(loadedSessions));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
+    if (preset == null) return;
     if (preset === "custom") {
       setAllOrders([]);
       setPayouts([]);
@@ -406,7 +414,7 @@ export default function RidersPage() {
 
   useEffect(() => {
     autoRef.current = setInterval(() => {
-      if (preset === "custom") return;
+      if (preset === "custom" || preset == null) return;
       loadAll(preset, null);
     }, 60000);
     return () => clearInterval(autoRef.current);

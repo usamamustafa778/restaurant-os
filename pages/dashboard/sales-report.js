@@ -15,6 +15,7 @@ import {
 } from "../../lib/apiClient";
 import { classifySessionReportPaymentLine } from "../../lib/sessionReportBreakdown";
 import { useBranch } from "../../contexts/BranchContext";
+import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import {
   BarChart3,
   DollarSign,
@@ -858,7 +859,7 @@ export default function HistoryPage() {
 
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
-  const [preset, setPreset] = useState("today");
+  const [preset, setPreset] = useState(null);
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [ordersExportColumns, setOrdersExportColumns] = useState([
@@ -1088,23 +1089,31 @@ export default function HistoryPage() {
   }, [router.isReady, router.query.tab, router.query.source]);
 
   useEffect(() => {
-    async function init() {
-      // Load sessions first so we can use OPEN day session (same scope as Business Day Report)
+    let cancelled = false;
+    (async () => {
       let loadedSessions = [];
       try {
         const res = await getDaySessions(currentBranch?.id, { limit: 30 });
         loadedSessions = Array.isArray(res?.sessions) ? res.sessions : [];
-        setSessions(loadedSessions);
       } catch {
-        // Falls back to calendar dates
+        loadedSessions = [];
       }
-      const q = getSalesReportQuery(preset, loadedSessions);
-      loadReport(q);
-      loadOrders(q);
-    }
-    init();
+      if (cancelled) return;
+      setSessions(loadedSessions);
+      setPreset(getDefaultReportPreset(loadedSessions));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
+    if (!preset) return;
+    const q = getSalesReportQuery(preset, sessions);
+    loadReport(q);
+    loadOrders(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentBranch?.id, preset]);
+  }, [currentBranch?.id, preset, sessions]);
 
   function applyPreset(id) {
     const safeId = normalizeReportPreset(id);
@@ -1132,7 +1141,7 @@ export default function HistoryPage() {
   }
 
   useEffect(() => {
-    if (activeTab !== "discounts") return;
+    if (activeTab !== "discounts" || !preset) return;
     let cancelled = false;
     async function run() {
       setDiscountReportLoading(true);
