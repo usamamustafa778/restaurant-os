@@ -34,7 +34,6 @@ import {
   Globe,
   Mail,
   Bike,
-  Bot,
   BookOpen,
   FileText,
   TrendingDown,
@@ -92,12 +91,6 @@ const tenantNav = [
     path: "/kitchen",
     label: "Kitchen (KDS)",
     icon: ChefHat,
-    roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
-  },
-  {
-    path: "/ai-agents",
-    label: "AI Agents",
-    icon: Bot,
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
   },
   {

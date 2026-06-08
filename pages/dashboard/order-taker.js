@@ -9,6 +9,7 @@ import {
   clearStoredAuth,
   SubscriptionInactiveError,
   updateOrder,
+  updateOrderStatus,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
@@ -83,6 +84,14 @@ function getPaymentStatus(order) {
   return "unpaid";
 }
 
+function isOrderLocked(order) {
+  const status = String(order?.status || "").toUpperCase();
+  if (status === "CANCELLED") return true;
+  const paid = getPaymentStatus(order) === "paid";
+  const delivered = status === "DELIVERED";
+  return paid && delivered;
+}
+
 export default function OrderTakerPage() {
   const { currentBranch, branches, setCurrentBranch, loading: branchLoading } = useBranch() || {};
   const { socket } = useSocket() || {};
@@ -121,6 +130,7 @@ export default function OrderTakerPage() {
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
   const [appendTargetOrder, setAppendTargetOrder] = useState(null);
   const [appendingOrderId, setAppendingOrderId] = useState(null);
+  const [markingServedId, setMarkingServedId] = useState(null);
   const [otCustomerName, setOtCustomerName] = useState("");
   const [otCustomerPhone, setOtCustomerPhone] = useState("");
   const [otTableName, setOtTableName] = useState("");
@@ -454,12 +464,17 @@ export default function OrderTakerPage() {
   const newOrders = nonCancelledOrders.filter((o) => o.status === "NEW_ORDER");
   const preparingOrders = nonCancelledOrders.filter((o) => o.status === "PROCESSING");
   const readyOrders = nonCancelledOrders.filter((o) => o.status === "READY");
-  // DELIVERED orders that can still receive additions — shown in a separate section.
+  // DELIVERED + unpaid — waiter can still add items before cashier collects payment.
   const servedOrders = activeOrders
-    .filter((o) => o.status === "DELIVERED")
+    .filter((o) => o.status === "DELIVERED" && !isOrderLocked(o))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const historyOrders = activeOrders
-    .filter((o) => o.status === "COMPLETED" || o.status === "CANCELLED")
+    .filter(
+      (o) =>
+        o.status === "COMPLETED" ||
+        o.status === "CANCELLED" ||
+        (o.status === "DELIVERED" && isOrderLocked(o)),
+    )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const historyRevenue = [...historyOrders, ...servedOrders]
@@ -522,20 +537,46 @@ export default function OrderTakerPage() {
   }
 
   function orderCanAppend(order) {
-    const status = String(order?.status || "").toUpperCase();
-    if (status === "CANCELLED") {
-      toast.error("This order is cancelled.");
+    if (isOrderLocked(order)) {
+      const status = String(order?.status || "").toUpperCase();
+      if (status === "CANCELLED") {
+        toast.error("This order is cancelled.");
+      } else {
+        toast.error("Payment collected — order is locked.");
+      }
       return false;
     }
-    if (status === "OUT_FOR_DELIVERY") {
+    if (String(order?.status || "").toUpperCase() === "OUT_FOR_DELIVERY") {
       toast.error("Order is out for delivery — call the rider to add items.");
       return false;
     }
-    if (status === "COMPLETED") {
-      toast.error("You can't change this order anymore");
-      return false;
-    }
     return true;
+  }
+
+  async function markOrderServed(order) {
+    const orderId = order?._id || order?.id;
+    if (!orderId) return;
+    const status = String(order?.status || "").toUpperCase();
+    if (status !== "READY") {
+      toast.error("Order is not ready to serve yet.");
+      return;
+    }
+    const isDelivery =
+      order.orderType === "DELIVERY" || order.type === "delivery";
+    if (isDelivery) {
+      toast.error("Delivery orders must go through a rider.");
+      return;
+    }
+    setMarkingServedId(orderId);
+    try {
+      await updateOrderStatus(orderId, "DELIVERED");
+      toast.success("Order marked as served");
+      await fetchActiveOrders();
+    } catch (err) {
+      toast.error(err.message || "Could not mark as served");
+    } finally {
+      setMarkingServedId(null);
+    }
   }
 
   function startAppendItems(order) {
@@ -1366,6 +1407,11 @@ export default function OrderTakerPage() {
                     const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
                       String(order.status || "").toUpperCase(),
                     );
+                    const canMarkServed =
+                      String(order.status || "").toUpperCase() === "READY" &&
+                      order.orderType !== "DELIVERY" &&
+                      order.type !== "delivery";
+                    const isMarkingServed = markingServedId === (order.id || order._id);
                     const tokenLabel = `#${order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}`;
                     const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
                     const otLabel =
@@ -1389,9 +1435,27 @@ export default function OrderTakerPage() {
                             <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${sc.text}`} />
                             <span className={`text-[11px] font-bold truncate ${sc.text}`}>{sc.label}</span>
                           </div>
-                          <div className={`flex items-center gap-1 text-[10px] shrink-0 ${sc.text} opacity-85`}>
-                            <Clock className="w-3 h-3" />
-                            {getTimeAgo(order.createdAt)}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {canMarkServed && (
+                              <button
+                                type="button"
+                                onClick={() => markOrderServed(order)}
+                                disabled={!!markingServedId}
+                                title="Mark served"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-900 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold shadow-md shadow-emerald-900/10 dark:shadow-black/30 border border-emerald-100 dark:border-emerald-500/20 hover:shadow-lg hover:border-emerald-200 dark:hover:border-emerald-500/35 active:scale-[0.97] transition-all disabled:opacity-60 disabled:shadow-none"
+                              >
+                                {isMarkingServed ? (
+                                  <Loader2 className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
+                                ) : (
+                                  <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                )}
+                                Served
+                              </button>
+                            )}
+                            <div className={`flex items-center gap-1 text-[10px] ${sc.text} opacity-85`}>
+                              <Clock className="w-3 h-3" />
+                              {getTimeAgo(order.createdAt)}
+                            </div>
                           </div>
                         </div>
 
@@ -1574,14 +1638,23 @@ export default function OrderTakerPage() {
                             </div>
 
                             <div className="flex gap-2 mb-1">
-                              <button
-                                type="button"
-                                onClick={() => startAppendItems(order)}
-                                className="flex-1 py-2.5 rounded-xl border border-orange-400 bg-orange-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform hover:bg-orange-600"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                Add Items
-                              </button>
+                              {(() => {
+                                const locked = isOrderLocked(order);
+                                return locked ? (
+                                  <div className="flex-1 py-2.5 rounded-xl border border-gray-700 bg-gray-800/40 text-gray-600 text-[11px] font-bold flex items-center justify-center gap-1.5">
+                                    🔒 Paid & Closed
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => startAppendItems(order)}
+                                    className="flex-1 py-2.5 rounded-xl border border-orange-400 bg-orange-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform hover:bg-orange-600"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Add Items
+                                  </button>
+                                );
+                              })()}
                               <button
                                 type="button"
                                 onClick={() => toggleOrderDetails(orderKey)}
