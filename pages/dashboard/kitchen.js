@@ -177,19 +177,9 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
   const urgency = getUrgency(minutes);
   const ug = URGENCY[urgency];
   const { AdvIcon } = column;
-  // An order has "additions" when extra items were appended after it was placed.
-  const orderWasServed = ["DELIVERED", "COMPLETED"].includes(order.status);
   const hasAdditions = (order.items || []).some((i) => i.isAddition);
-  // Only filter to additions-only when the order was already served —
-  // the kitchen already cooked the original items once.
-  // If still cooking (NEW_ORDER / PROCESSING / READY), show ALL items so
-  // the kitchen prepares everything together.
-  const itemsToShow =
-    orderWasServed && hasAdditions
-      ? (order.items || []).filter((i) => i.isAddition)
-      : order.items || [];
-  // Badge / notice only shown when kitchen truly needs to cook just the new items.
-  const showAdditionBadge = orderWasServed && hasAdditions;
+  const itemsToShow = order.items || [];
+  const showAdditionBadge = hasAdditions;
   const totalQty = itemsToShow.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
   const stale = isStaleReady(order);
 
@@ -257,7 +247,7 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
       <div className="mx-3 border-t border-gray-100 dark:border-neutral-800" />
       <div className="px-3 pt-2 pb-0.5 flex items-center justify-between gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
-          {showAdditionBadge ? "Cook only these:" : "Items"}
+          Items
         </span>
         {totalQty > 0 && (
           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-[10px] font-bold text-gray-500 dark:text-neutral-400 tabular-nums">
@@ -265,13 +255,6 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
           </span>
         )}
       </div>
-      {showAdditionBadge && (
-        <div className="px-3 pb-1">
-          <p className="text-[10px] text-orange-500 dark:text-orange-400 font-medium">
-            Addition to existing order — original items already cooked
-          </p>
-        </div>
-      )}
       <div className="px-3 py-2 space-y-1.5 flex-1">
         {itemsToShow.map((item, idx) => (
           <div key={idx}>
@@ -486,14 +469,11 @@ export default function KitchenPage() {
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
-  // Active = not closed/cancelled AND not dismissed from KDS view.
-  // Exception: DELIVERED orders that have addition items are included so the
-  // kitchen can see the new items that need to be cooked.
   const activeOrders = orders.filter((o) => {
     if (dismissedIds.has(String(o._id || o.id || ""))) return false;
     if (["CANCELLED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(o.status)) return false;
     if (o.status === "DELIVERED") {
-      return (o.items || []).some((i) => i.isAddition);
+      return false;
     }
     return true;
   });
@@ -517,15 +497,7 @@ export default function KitchenPage() {
 
   const columnOrders = COLUMNS.map((col) =>
     applyTypeFilter(
-      visibleOrders.filter(
-        (o) =>
-          col.statuses.includes(o.status) ||
-          // DELIVERED orders with additions always show in the New Orders column
-          // regardless of their status, so the kitchen can see new items.
-          (col.key === "new" &&
-            o.status === "DELIVERED" &&
-            (o.items || []).some((i) => i.isAddition)),
-      ),
+      visibleOrders.filter((o) => col.statuses.includes(o.status)),
     ),
   );
 

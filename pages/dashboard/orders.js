@@ -1239,18 +1239,7 @@ export default function OrdersPage() {
       const status = orderStatusForTab(order.status);
 
       if (status === "DELIVERED") {
-        // Check for uncooked addition items
-        // Mirror the same logic KDS uses
-        const hasUncookedAdditions = (order.items || []).some(
-          (i) => i.isAddition === true,
-        );
-
-        if (hasUncookedAdditions) {
-          // Route to New Orders so cashier/manager
-          // can see kitchen is still working on
-          // additional items for this order
-          groups.NEW_ORDER.push(order);
-        } else if (isOrderFullyClosed(order)) {
+        if (isOrderFullyClosed(order)) {
           groups.DELIVERED.push(order);
         } else {
           groups.AWAITING_PAYMENT.push(order);
@@ -1615,21 +1604,25 @@ export default function OrdersPage() {
                   <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
                     {closedCount}
                   </span>
-                  <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                    {sym} {Math.round(closedTotalAmount).toLocaleString()}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      downloadClosedOrdersCSV(groupedOrders.DELIVERED);
-                    }}
-                    className="p-1 rounded-md hover:bg-white/20 transition-colors"
-                    aria-label="Download closed orders"
-                    title="Download closed orders (CSV)"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
+                  {!isCashier && (
+                    <>
+                      <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
+                        {sym} {Math.round(closedTotalAmount).toLocaleString()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadClosedOrdersCSV(groupedOrders.DELIVERED);
+                        }}
+                        className="p-1 rounded-md hover:bg-white/20 transition-colors"
+                        aria-label="Download closed orders"
+                        title="Download closed orders (CSV)"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
                 </div>
                 <ChevronDown
                   className={`w-4 h-4 transition-transform ${showClosed ? "" : "rotate-180"}`}
@@ -2301,8 +2294,10 @@ export default function OrdersPage() {
                 <>
                   {todayReportBreakdown && (
                     <>
-                      {/* KPI row — cashiers: headline totals only */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {/* KPI row — cashiers: total sales only (no order count) */}
+                      <div
+                        className={`grid gap-2 ${showFullSessionReport ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
+                      >
                         <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
                             {showFullSessionReport ? "Total revenue" : "Total sales"}
@@ -2347,6 +2342,7 @@ export default function OrdersPage() {
                             )
                           ) : null}
                         </div>
+                        {showFullSessionReport && (
                         <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
                           <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
                             Orders
@@ -2354,8 +2350,7 @@ export default function OrdersPage() {
                           <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
                             {(todayReportBreakdown.totalOrders ?? 0).toLocaleString()}
                           </p>
-                          {showFullSessionReport ? (
-                            <>
+                          <>
                               <p className="mt-1.5 text-[9px] text-gray-500 dark:text-neutral-400 leading-snug">
                                 Paid orders in session (closed sales)
                               </p>
@@ -2369,8 +2364,8 @@ export default function OrdersPage() {
                                 </p>
                               )}
                             </>
-                          ) : null}
                         </div>
+                        )}
                       </div>
 
                       {showFullSessionReport ? (
