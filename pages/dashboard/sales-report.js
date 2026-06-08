@@ -2835,11 +2835,12 @@ export default function HistoryPage() {
                       <td className={TD_CLS}>
                         {(() => {
                           const src = (o.source || "POS").toUpperCase();
-                          const LABEL_MAP = { POS: "POS", WEBSITE: "Website", FOODPANDA: "Foodpanda" };
+                          const LABEL_MAP = { POS: "POS", WEBSITE: "Website", FOODPANDA: "Foodpanda", WHATSAPP: "WhatsApp" };
                           const STYLE_MAP = {
                             POS: "bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-400",
                             WEBSITE: "bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
                             FOODPANDA: "bg-pink-100 dark:bg-pink-500/10 text-pink-700 dark:text-pink-400",
+                            WHATSAPP: "bg-teal-100 dark:bg-teal-500/10 text-teal-700 dark:text-teal-400",
                           };
                           return (
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${STYLE_MAP[src] || "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}>
@@ -4088,6 +4089,8 @@ export default function HistoryPage() {
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 font-bold">Website</span>
                                       ) : o.source === "FOODPANDA" ? (
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 dark:bg-pink-500/15 text-pink-700 dark:text-pink-400 font-bold">Foodpanda</span>
+                                      ) : o.source === "WHATSAPP" ? (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-400 font-bold">WhatsApp</span>
                                       ) : (
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 font-bold">POS</span>
                                       )}

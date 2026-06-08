@@ -3271,6 +3271,11 @@ function OrderCard({
               Website
             </span>
           )}
+          {order.source === "WHATSAPP" && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-400 font-bold">
+              WhatsApp
+            </span>
+          )}
           {isDeliveryOrder(order) && order.assignedRiderName && (
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#25343F] bg-[#25343F]/10 dark:bg-[#25343F]/20 px-1.5 py-0.5 rounded">
               <Bike className="w-3 h-3" />

@@ -53,6 +53,7 @@ import {
   Truck,
   Boxes,
   ShoppingCart,
+  MessageCircle,
   PackageCheck,
   Package,
   LayoutList,
@@ -97,6 +98,12 @@ const tenantNav = [
     path: "/ai-agents",
     label: "AI Agents",
     icon: Bot,
+    roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
+  },
+  {
+    path: "/whatsapp",
+    label: "AI Receptionist",
+    icon: MessageCircle,
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
   },
   {
@@ -334,6 +341,7 @@ const DASHBOARD_PATHS_ALLOWED_WITHOUT_BRANCH = [
   "/riders",
   "/subscription",
   "/profile",
+  "/whatsapp",
 ];
 
 const superNav = [
@@ -354,6 +362,7 @@ const superNav = [
     icon: Users,
   },
   { href: "/super/leads", label: "Leads", icon: Mail },
+  { href: "/super/whatsapp", label: "WhatsApp", icon: MessageCircle },
   {
     href: "/super/settings",
     label: "System Settings",
