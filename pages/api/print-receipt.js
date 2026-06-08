@@ -40,11 +40,12 @@ function buildEscPos(o) {
   ln(DASH_LINE);
 
   if (o.branchName) ln(pad("Branch Name:", o.branchName));
-  ln(pad("Invoice #:", String(o.orderId || "")));
-  ln(pad("Order Time:", o.createdAt || ""));
-  ln(pad("Order Type:", o.type || "dine-in"));
+  ln(pad(String(o.orderId || ""), o.orderDate || ""));
+  ln(pad("Time:", o.createdAt || ""));
   ln(pad("Payment:", o.paymentMethod || "To be paid"));
-  if (o.customerName) ln(pad("Customer:", o.customerName));
+  ln(pad("Type:", o.type || "dine-in"));
+  if (o.waiter && o.waiter !== "N/A") ln(pad("Order Taker:", o.waiter));
+  if (o.customerName) ln(pad("Name:", o.customerName));
   if (o.deliveryAddress && o.deliveryAddress !== "-")
     ln(pad("Address:", o.deliveryAddress));
   if (
@@ -54,7 +55,6 @@ function buildEscPos(o) {
   ) {
     ln(pad("Table No:", o.tableName));
   }
-  if (o.waiter && o.waiter !== "N/A") ln(pad("Order Taker:", o.waiter));
 
   if (o.amountReceived) {
     ln(pad("Received:", "Rs " + Number(o.amountReceived).toFixed(2)));
@@ -76,8 +76,17 @@ function buildEscPos(o) {
     totalItems++;
     totalQty += qty;
     ln(it.name || "");
+    if (it.variantLabel) ln(`(${it.variantLabel})`);
     const detail = `${unit.toFixed(2)}  ${String(qty).padStart(3)}  ${lineTotal.toFixed(2)}`;
     ln(pad("", detail));
+    for (const sel of (it.modifierSelections || [])) {
+      const optTotal = (sel.options || []).reduce((s, o) => s + (o.price || 0), 0);
+      // Skip required groups (price = item price, already shown via variantLabel)
+      // and free add-ons. Only print genuine paid add-ons.
+      if (optTotal === 0 || optTotal === it.unitPrice) continue;
+      const optNames = (sel.options || []).map((o) => o.name).join(', ');
+      ln(`  + ${optNames} (+${optTotal.toFixed(2)})`);
+    }
     if (it.note) ln(`  > ${it.note}`);
   }
 

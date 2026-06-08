@@ -164,9 +164,13 @@ function getOrderId(order) {
 
 function getDisplayOrderId(order) {
   const id = order.id || order.orderNumber || order._id || "";
-  if (typeof id === "string" && id.startsWith("ORD-"))
-    return id.replace(/^ORD-/, "");
-  return id;
+  if (typeof id !== "string") return id;
+  // Strip all known prefixes so short display numbers are consistent across sources.
+  // WEB- → W- and WAP- → WA- so website/WhatsApp orders stay visually distinct.
+  return id
+    .replace(/^ORD-/, "")
+    .replace(/^WEB-/, "W-")
+    .replace(/^WAP-/, "WA-");
 }
 
 function getShortOrderId(order) {
@@ -572,17 +576,6 @@ export default function OrdersPage() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!socket || !dateRange) return;
-    const onOrderEvent = () => loadOrders(dateRange);
-    socket.on("order:created", onOrderEvent);
-    socket.on("order:updated", onOrderEvent);
-    return () => {
-      socket.off("order:created", onOrderEvent);
-      socket.off("order:updated", onOrderEvent);
-    };
-  }, [socket, dateRange]);
 
   // Load delivery riders once on mount so inline dropdowns are ready
   useEffect(() => {
@@ -994,6 +987,18 @@ export default function OrdersPage() {
 
     return getBusinessDayRange(businessDateStr, cutoffHour);
   }, [datePreset, customFrom, customTo, businessDateStr, cutoffHour]);
+
+  // Re-subscribe socket listeners whenever dateRange changes (must be after dateRange is declared)
+  useEffect(() => {
+    if (!socket || !dateRange) return;
+    const onOrderEvent = () => loadOrders(dateRange);
+    socket.on("order:created", onOrderEvent);
+    socket.on("order:updated", onOrderEvent);
+    return () => {
+      socket.off("order:created", onOrderEvent);
+      socket.off("order:updated", onOrderEvent);
+    };
+  }, [socket, dateRange]);
 
   const loadTodaySessionReport = useCallback(async () => {
     setLoadingTodayReport(true);
@@ -1470,7 +1475,7 @@ export default function OrdersPage() {
                       .then(() => toast.success("Refreshed!", { id: toastId }))
                       .catch(() => toast.dismiss(toastId));
                   }}
-                  className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
+                  className="h-9 px-3 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
                 >
                   <RefreshCw className="w-3.5 h-3.5" /> Refresh
                 </button>
@@ -3357,9 +3362,21 @@ function OrderCard({
           {expanded && (
             <div className="px-2.5 py-2 mt-1 rounded-lg bg-gray-50 dark:bg-neutral-900/80 space-y-1">
               {items.map((it, idx) => (
-                <div key={idx} className="flex items-center justify-between text-[11px]">
-                  <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">{it.name}</span>
-                  <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">×{it.qty}</span>
+                <div key={idx} className="text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
+                      {it.name}
+                      {it.variantLabel && (
+                        <span className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-1">({it.variantLabel})</span>
+                      )}
+                    </span>
+                    <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">×{it.qty}</span>
+                  </div>
+                  {(it.modifierSelections || []).map((sel, si) => (
+                    <div key={si} className="text-[10px] text-gray-400 dark:text-neutral-500 ml-2 leading-tight">
+                      {sel.groupName}: {(sel.options || []).map((o) => o.name).join(", ")}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -3370,16 +3387,18 @@ function OrderCard({
         <div className="mx-3 mb-2 px-2.5 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900/80">
           <div className="space-y-1">
             {visibleItems.map((it, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between text-[11px]"
-              >
-                <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
-                  {it.name}
-                </span>
-                <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
-                  ×{it.qty}
-                </span>
+              <div key={idx} className="text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
+                    {it.name}
+                    {it.variantLabel && (
+                      <span className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-1">({it.variantLabel})</span>
+                    )}
+                  </span>
+                  <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
+                    ×{it.qty}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -3395,16 +3414,23 @@ function OrderCard({
           {expanded && hiddenCount > 0 && (
             <div className="space-y-1 mt-1 pt-1 border-t border-gray-200/60 dark:border-neutral-800">
               {items.slice(3).map((it, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between text-[11px]"
-                >
-                  <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
-                    {it.name}
-                  </span>
-                  <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
-                    ×{it.qty}
-                  </span>
+                <div key={idx} className="text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
+                      {it.name}
+                      {it.variantLabel && (
+                        <span className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-1">({it.variantLabel})</span>
+                      )}
+                    </span>
+                    <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
+                      ×{it.qty}
+                    </span>
+                  </div>
+                  {(it.modifierSelections || []).map((sel, si) => (
+                    <div key={si} className="text-[10px] text-gray-400 dark:text-neutral-500 ml-2 leading-tight">
+                      {sel.groupName}: {(sel.options || []).map((o) => o.name).join(", ")}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -3457,10 +3483,10 @@ function OrderCard({
                 <Printer className="w-3.5 h-3.5" />
               </button>
             )}
-            {paymentStatus === "unpaid" &&
-              status !== "CANCELLED" &&
-              (!["DELIVERED", "COMPLETED"].includes(status) ||
-                (isAdmin && ["DELIVERED", "COMPLETED"].includes(status))) && (
+            {status !== "CANCELLED" &&
+              (isAdmin ||
+                (paymentStatus === "unpaid" &&
+                  !["DELIVERED", "COMPLETED"].includes(status))) && (
                 <button
                   type="button"
                   onClick={() => onEdit(order)}

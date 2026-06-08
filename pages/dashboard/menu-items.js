@@ -17,7 +17,7 @@ import {
   updateBranchMenuItem,
   getCurrencySymbol,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePageData } from "../../hooks/usePageData";
@@ -143,7 +143,9 @@ export default function MenuItemsPage() {
     description: "",
     availableAtAllBranches: true,
     isTrending: false,
-    isMustTry: false
+    isMustTry: false,
+    hasModifiers: false,
+    modifierGroups: [],
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -361,7 +363,9 @@ export default function MenuItemsPage() {
       description: "",
       availableAtAllBranches: true,
       isTrending: false,
-      isMustTry: false
+      isMustTry: false,
+      hasModifiers: false,
+      modifierGroups: [],
     });
   }
 
@@ -384,7 +388,9 @@ export default function MenuItemsPage() {
       description: item.description || "",
       availableAtAllBranches: item.availableAtAllBranches ?? true,
       isTrending: item.isTrending ?? false,
-      isMustTry: item.isMustTry ?? false
+      isMustTry: item.isMustTry ?? false,
+      hasModifiers: item.hasModifiers || false,
+      modifierGroups: item.modifierGroups || [],
     });
     setImageTab(item.imageUrl ? "link" : "link");
     setUploadError("");
@@ -399,10 +405,36 @@ export default function MenuItemsPage() {
       toast.error("Item name is required");
       return; 
     }
-    if (!form.price) { 
+    if (!form.hasModifiers && !form.price) { 
       setModalError("Price is required"); 
       toast.error("Price is required");
       return; 
+    }
+    if (form.hasModifiers) {
+      if (form.modifierGroups.length === 0) {
+        const msg = 'Add at least one modifier group (e.g. Choose Your Size)';
+        setModalError(msg); toast.error(msg); return;
+      }
+      if (form.modifierGroups.some(g => !g.groupName.trim())) {
+        const msg = 'All modifier groups need a name';
+        setModalError(msg); toast.error(msg); return;
+      }
+      if (form.modifierGroups.some(g => (g.options || []).length < 2)) {
+        const msg = 'Each modifier group needs at least 2 options';
+        setModalError(msg); toast.error(msg); return;
+      }
+      if (form.modifierGroups.some(g => (g.options || []).some(o => !o.name.trim()))) {
+        const msg = 'All modifier options need a name';
+        setModalError(msg); toast.error(msg); return;
+      }
+      if (form.modifierGroups.some(g => (g.options || []).some(o => Number(o.price) < 0))) {
+        const msg = 'Option prices cannot be negative';
+        setModalError(msg); toast.error(msg); return;
+      }
+      if (!form.modifierGroups.some(g => g.required)) {
+        const msg = 'At least one group must be marked as Required';
+        setModalError(msg); toast.error(msg); return;
+      }
     }
     if (!form.categoryId) { 
       setModalError("Please select a category"); 
@@ -419,17 +451,35 @@ export default function MenuItemsPage() {
     
     const result = await handleAsyncAction(
       async () => {
+        const modifierPayload = {
+          hasModifiers: form.hasModifiers,
+          modifierGroups: form.hasModifiers
+            ? form.modifierGroups.map((g, gi) => ({
+                groupName: g.groupName,
+                required: g.required,
+                maxSelections: g.maxSelections || 1,
+                sortOrder: gi,
+                options: (g.options || []).map((o, oi) => ({
+                  name: o.name,
+                  price: Number(o.price) || 0,
+                  isAvailable: o.isAvailable !== false,
+                  sortOrder: oi,
+                })),
+              }))
+            : [],
+        };
         if (form.id) {
           const updated = await updateItem(form.id, {
             name: form.name,
-            price: parseFloat(form.price),
+            ...(form.hasModifiers ? {} : { price: parseFloat(form.price) }),
             categoryId: form.categoryId,
             dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
             description: form.description,
             availableAtAllBranches: form.availableAtAllBranches,
             isTrending: form.isTrending,
-            isMustTry: form.isMustTry
+            isMustTry: form.isMustTry,
+            ...modifierPayload,
           });
           setData(prev => ({
             ...prev,
@@ -439,7 +489,7 @@ export default function MenuItemsPage() {
         } else {
           const created = await createItem({
             name: form.name,
-            price: parseFloat(form.price),
+            ...(form.hasModifiers ? {} : { price: parseFloat(form.price) }),
             categoryId: form.categoryId,
             dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
@@ -448,6 +498,7 @@ export default function MenuItemsPage() {
             isTrending: form.isTrending,
             isMustTry: form.isMustTry,
             ...(currentBranch?.id && { branchId: currentBranch.id }),
+            ...modifierPayload,
           });
           setData(prev => ({
             ...prev,
@@ -639,6 +690,112 @@ export default function MenuItemsPage() {
         )
       };
     });
+  }
+
+  // ─── Modifier group helpers ───────────────────────────────────────────────────
+
+  function addGroup() {
+    setForm(prev => ({
+      ...prev,
+      modifierGroups: [
+        ...prev.modifierGroups,
+        {
+          id: Date.now().toString(),
+          groupName: '',
+          required: true,
+          maxSelections: 1,
+          sortOrder: prev.modifierGroups.length,
+          options: [],
+        },
+      ],
+    }));
+  }
+
+  function removeGroup(groupIndex) {
+    setForm(prev => ({
+      ...prev,
+      modifierGroups: prev.modifierGroups.filter((_, i) => i !== groupIndex),
+    }));
+  }
+
+  function updateGroup(groupIndex, field, value) {
+    setForm(prev => ({
+      ...prev,
+      modifierGroups: prev.modifierGroups.map((g, i) =>
+        i === groupIndex ? { ...g, [field]: value } : g
+      ),
+    }));
+  }
+
+  function moveGroup(groupIndex, direction) {
+    setForm(prev => {
+      const groups = [...prev.modifierGroups];
+      const target = groupIndex + direction;
+      if (target < 0 || target >= groups.length) return prev;
+      [groups[groupIndex], groups[target]] = [groups[target], groups[groupIndex]];
+      return { ...prev, modifierGroups: groups };
+    });
+  }
+
+  function addOption(groupIndex) {
+    setForm(prev => ({
+      ...prev,
+      modifierGroups: prev.modifierGroups.map((g, i) => {
+        if (i !== groupIndex) return g;
+        return {
+          ...g,
+          options: [
+            ...(g.options || []),
+            {
+              id: Date.now().toString(),
+              name: '',
+              price: 0,
+              isAvailable: true,
+              sortOrder: (g.options || []).length,
+            },
+          ],
+        };
+      }),
+    }));
+  }
+
+  function removeOption(groupIndex, optionIndex) {
+    setForm(prev => ({
+      ...prev,
+      modifierGroups: prev.modifierGroups.map((g, i) => {
+        if (i !== groupIndex) return g;
+        return { ...g, options: (g.options || []).filter((_, oi) => oi !== optionIndex) };
+      }),
+    }));
+  }
+
+  function updateOption(groupIndex, optionIndex, field, value) {
+    setForm(prev => ({
+      ...prev,
+      modifierGroups: prev.modifierGroups.map((g, i) => {
+        if (i !== groupIndex) return g;
+        return {
+          ...g,
+          options: (g.options || []).map((o, oi) =>
+            oi === optionIndex ? { ...o, [field]: value } : o
+          ),
+        };
+      }),
+    }));
+  }
+
+  function moveOption(groupIndex, optionIndex, direction) {
+    setForm(prev => ({
+      ...prev,
+      modifierGroups: prev.modifierGroups.map((g, i) => {
+        if (i !== groupIndex) return g;
+        const opts = [...(g.options || [])];
+        const target = optionIndex + direction;
+        if (target < 0 || target >= opts.length) return g;
+        [opts[optionIndex], opts[target]] = [opts[target], opts[optionIndex]];
+        return { ...g, options: opts };
+      }),
+    }));
   }
 
   async function handleSaveRecipe() {
@@ -1374,7 +1531,7 @@ export default function MenuItemsPage() {
               <button
                 type="button"
                 role="menuitem"
-                onClick={exportCSV}
+                onClick={() => exportCSV()}
                 className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
               >
                 <FileDown className="h-4 w-4 shrink-0 text-gray-400" />
@@ -1566,7 +1723,12 @@ export default function MenuItemsPage() {
                       />
                     </div>
                     
-                    <h3 className="font-bold text-gray-900 dark:text-white mb-1">{item.name}</h3>
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                      <h3 className="font-bold text-gray-900 dark:text-white">{item.name}</h3>
+                      {item.hasModifiers && (
+                        <span className="inline-flex px-1.5 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 text-[10px] font-medium text-gray-500 dark:text-neutral-400">Variations</span>
+                      )}
+                    </div>
                     {item.description && (
                       <p className="text-xs text-gray-500 dark:text-neutral-500 mb-2 line-clamp-2 min-h-[2rem]">
                         {item.description}
@@ -1578,7 +1740,9 @@ export default function MenuItemsPage() {
                         {category ? category.name : "Uncategorized"}
                       </span>
                       <div className="text-right">
-                        <div className="font-bold text-gray-900 dark:text-white">{sym} {displayPrice?.toFixed(0)}</div>
+                        <div className="font-bold text-gray-900 dark:text-white">
+                          {sym} {displayPrice?.toFixed(0)}{item.hasModifiers ? '+' : ''}
+                        </div>
                         {/* Branch-specific special price UI removed */}
                       </div>
                     </div>
@@ -1660,7 +1824,12 @@ export default function MenuItemsPage() {
                     </div>
                   )}
                   <div className="min-w-0">
-                    <div className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</span>
+                      {item.hasModifiers && (
+                        <span className="inline-flex px-1.5 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 text-[10px] font-medium text-gray-500 dark:text-neutral-400">Variations</span>
+                      )}
+                    </div>
                     {item.description && (
                       <div className="text-xs text-gray-500 dark:text-neutral-500 truncate max-w-[200px] mt-0.5">
                         {item.description}
@@ -1690,7 +1859,9 @@ export default function MenuItemsPage() {
                 const displayPrice = item.finalPrice ?? item.price;
                 return (
                   <div>
-                    <div className="font-bold text-gray-900 dark:text-white">{sym} {displayPrice?.toFixed(0)}</div>
+                    <div className="font-bold text-gray-900 dark:text-white">
+                      {sym} {displayPrice?.toFixed(0)}{item.hasModifiers ? '+' : ''}
+                    </div>
                   </div>
                 );
               }
@@ -1849,17 +2020,163 @@ export default function MenuItemsPage() {
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Price</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.price}
-                  onChange={e => setForm(prev => ({ ...prev, price: e.target.value }))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
+              {/* Price — hidden when hasModifiers is true */}
+              {!form.hasModifiers ? (
+                <div className="space-y-1">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Price</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.price}
+                    onChange={e => setForm(prev => ({ ...prev, price: e.target.value }))}
+                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Starting price</label>
+                  <div className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-500 dark:text-neutral-400">
+                    {(() => {
+                      const rg = form.modifierGroups.filter(g => g.required);
+                      const prices = rg.flatMap(g => (g.options || []).map(o => Number(o.price) || 0));
+                      return prices.length > 0 ? `Starting from Rs ${Math.min(...prices)}` : 'Starting from Rs \u2014';
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Modifier toggle + builder */}
+              <div className="border-t border-gray-100 dark:border-neutral-800 pt-3 mt-1">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-medium text-gray-700 dark:text-neutral-300">This item has variations or add-ons</span>
+                    {!form.hasModifiers && (
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-0.5">e.g. sizes (Small/Large) or optional toppings</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({
+                      ...prev,
+                      hasModifiers: !prev.hasModifiers,
+                      modifierGroups: prev.hasModifiers ? [] : prev.modifierGroups,
+                    }))}
+                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                      form.hasModifiers ? 'bg-primary' : 'bg-gray-200 dark:bg-neutral-700'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                        form.hasModifiers ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
+
+              {/* Choice groups builder */}
+              {form.hasModifiers && (
+                <div className="space-y-2">
+                  {form.modifierGroups.map((group, gi) => (
+                    <div key={group.id || gi} className="rounded-xl border border-gray-200 dark:border-neutral-700 overflow-hidden">
+                      {/* Group header */}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-neutral-800/60">
+                        <span className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wide w-4 flex-shrink-0">
+                          {gi + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={group.groupName}
+                          onChange={e => updateGroup(gi, 'groupName', e.target.value)}
+                          placeholder="Group name, e.g. Size"
+                          className="flex-1 min-w-0 bg-transparent text-xs font-medium text-gray-900 dark:text-white outline-none placeholder:text-gray-400 dark:placeholder:text-neutral-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateGroup(gi, 'required', !group.required)}
+                          className={`flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors ${
+                            group.required
+                              ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400'
+                              : 'bg-gray-200 dark:bg-neutral-700 text-gray-500 dark:text-neutral-400'
+                          }`}
+                        >
+                          {group.required ? 'Required' : 'Optional'}
+                        </button>
+                        <button type="button" onClick={() => removeGroup(gi)} className="flex-shrink-0 text-gray-300 dark:text-neutral-600 hover:text-red-400 transition-colors">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Max picks — only for optional groups */}
+                      {!group.required && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-gray-100 dark:border-neutral-700/50 bg-white dark:bg-neutral-900">
+                          <span className="text-[10px] text-gray-400 dark:text-neutral-500">Customer can pick up to</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            value={group.maxSelections || 1}
+                            onChange={e => updateGroup(gi, 'maxSelections', Math.max(1, parseInt(e.target.value) || 1))}
+                            className="w-10 px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-neutral-700 text-[10px] text-center bg-gray-50 dark:bg-neutral-800 text-gray-900 dark:text-white outline-none focus:border-primary"
+                          />
+                          <span className="text-[10px] text-gray-400 dark:text-neutral-500">choices</span>
+                        </div>
+                      )}
+
+                      {/* Choices */}
+                      <div className="px-3 pt-2 pb-2 space-y-1.5 bg-white dark:bg-neutral-900">
+                        {(group.options || []).map((opt, oi) => (
+                          <div key={opt.id || oi} className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-neutral-600 flex-shrink-0 mt-px" />
+                            <input
+                              type="text"
+                              value={opt.name}
+                              onChange={e => updateOption(gi, oi, 'name', e.target.value)}
+                              placeholder="Name, e.g. Large"
+                              className="flex-1 min-w-0 px-2 py-1 rounded-md bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                            />
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <span className="text-[10px] text-gray-400 dark:text-neutral-500">Rs</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={opt.price}
+                                onChange={e => updateOption(gi, oi, 'price', e.target.value)}
+                                placeholder="0"
+                                className="w-14 px-1.5 py-1 rounded-md bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-xs text-right text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeOption(gi, oi)}
+                              className="flex-shrink-0 text-gray-300 dark:text-neutral-600 hover:text-red-400 transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => addOption(gi)}
+                          className="w-full py-1.5 rounded-md border border-dashed border-gray-200 dark:border-neutral-700 text-[11px] text-gray-400 dark:text-neutral-500 hover:border-primary/40 hover:text-primary transition-colors"
+                        >
+                          + Add choice
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addGroup}
+                    className="w-full py-2 rounded-xl border border-dashed border-orange-300 dark:border-orange-500/40 text-orange-500 dark:text-orange-400 text-xs font-medium hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors"
+                  >
+                    + Add group
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Category</label>
                 <select

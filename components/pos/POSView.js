@@ -77,6 +77,7 @@ import {
   Smartphone,
   MapPin,
   Search,
+  Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -89,6 +90,7 @@ function isBranchRequiredError(msg) {
 }
 
 const ALL_POS_ORDER_TYPES = ["DINE_IN", "TAKEAWAY", "DELIVERY"];
+const POS_ORDER_TYPES_KEY = "eatsdesk_pos_order_types";
 
 function normalizePosAllowedOrderTypesFromApi(raw) {
   if (!Array.isArray(raw) || raw.length === 0) return [...ALL_POS_ORDER_TYPES];
@@ -264,7 +266,9 @@ export default function POSView({
   const [tableNumber, setTableNumber] = useState("");
   const [tableName, setTableName] = useState("");
   const [tables, setTables] = useState([]);
-  const [itemNotes, setItemNotes] = useState({}); // { itemId: "note text" }
+  const [itemNotes, setItemNotes] = useState({}); // { cartKey: "note text" }
+  const [modifierPickerItem, setModifierPickerItem] = useState(null);
+  const [modifierSelections, setModifierSelections] = useState({});
   const [recentOrders, setRecentOrders] = useState([]);
   const [currentOrderIndex, setCurrentOrderIndex] = useState(0);
   const [focusedOrderIndex, setFocusedOrderIndex] = useState(0);
@@ -289,6 +293,13 @@ export default function POSView({
   const [showWaiterPos, setShowWaiterPos] = useState(true);
   const [showCustomerPos, setShowCustomerPos] = useState(true);
   const [posOptionsLoaded, setPosOptionsLoaded] = useState(false);
+  // Local display preference: flatten required-variation items into individual cards
+  const [flattenVariations, setFlattenVariations] = useState(() => {
+    try {
+      const v = typeof window !== 'undefined' && localStorage.getItem('pos_flatten_variations');
+      return v === null ? true : v !== 'false';
+    } catch { return true; }
+  });
   const [showPosTableSettingsModal, setShowPosTableSettingsModal] =
     useState(false);
   const [posTableSettingsDraft, setPosTableSettingsDraft] = useState(true);
@@ -355,11 +366,14 @@ export default function POSView({
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("newest");
 
-  // Take payment modal (Cash/Card)
+  // Take payment modal (Cash/Card/Online/Split)
   const [showTakePaymentModal, setShowTakePaymentModal] = useState(false);
   const [amountReceived, setAmountReceived] = useState("");
   const [paymentError, setPaymentError] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [splitCashAmount, setSplitCashAmount] = useState("");
+  const [splitCardAmount, setSplitCardAmount] = useState("");
+  const [splitOnlineAmount, setSplitOnlineAmount] = useState("");
 
   // Customer modal (select or add)
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -546,9 +560,15 @@ export default function POSView({
           setShowTablePos(b?.showTablePos !== false);
           setShowWaiterPos(b?.showWaiterPos !== false);
           setShowCustomerPos(b?.showCustomerPos !== false);
-          setPosAllowedOrderTypes(
-            normalizePosAllowedOrderTypesFromApi(b?.posAllowedOrderTypes),
-          );
+          // Order types are a per-terminal preference stored in localStorage,
+          // not a branch-wide restriction — read from localStorage, not the API.
+          try {
+            const stored = localStorage.getItem(POS_ORDER_TYPES_KEY);
+            const localTypes = stored ? JSON.parse(stored) : ALL_POS_ORDER_TYPES;
+            setPosAllowedOrderTypes(normalizePosAllowedOrderTypesFromApi(localTypes));
+          } catch {
+            setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
+          }
           setPosOptionsLoaded(true);
         }
       })
@@ -736,15 +756,41 @@ export default function POSView({
               price = mi.finalPrice ?? mi.price ?? price;
             }
           }
+          // Build _cartKey using the same fingerprint logic as addToCart so
+          // that deduplication works when the cashier adds more of the same item.
+          let cartKey = id;
+          const modSels = it.modifierSelections || [];
+          if (modSels.length > 0) {
+            const fingerprint = modSels
+              .flatMap((s) => (s.options || []).map((o) => o.optionId))
+              .sort()
+              .join(",");
+            if (fingerprint) cartKey = id + "|" + fingerprint;
+          }
           return {
             id,
             name: it.name,
             price,
-            quantity: it.qty ?? 1,
+            quantity: it.qty ?? it.quantity ?? 1,
             imageUrl,
+            _cartKey: cartKey,
+            _modifierSelectionsForOrder: modSels,
+            size: it.variantLabel || "",
           };
         });
+
+        // Pre-populate itemNotes from the saved order so existing notes are
+        // visible when editing, and clear any stale notes from unrelated orders.
+        const initialNotes = {};
+        items.forEach((it) => {
+          if (it.note && it.note.trim()) {
+            const noteKey = it.menuItemId || it.id;
+            if (noteKey) initialNotes[noteKey] = it.note.trim();
+          }
+        });
+
         setCart(cartItems);
+        setItemNotes(initialNotes);
         setCustomerName(order.customerName || "");
         setCustomerPhone(order.customerPhone || "");
         setCustomerAddress(order.deliveryAddress || "");
@@ -915,6 +961,9 @@ export default function POSView({
     setPaymentMethod(method);
     setOnlineProvider(null);
     setAmountReceived("");
+    setSplitCashAmount("");
+    setSplitCardAmount("");
+    setSplitOnlineAmount("");
     setPaymentError("");
     setShowTakePaymentModal(true);
   }
@@ -922,6 +971,9 @@ export default function POSView({
   function closeTakePaymentModal() {
     setShowTakePaymentModal(false);
     setOnlineProvider(null);
+    setSplitCashAmount("");
+    setSplitCardAmount("");
+    setSplitOnlineAmount("");
     setPaymentError("");
   }
 
@@ -969,6 +1021,25 @@ export default function POSView({
         return;
       }
     }
+    if (paymentMethod === "SPLIT") {
+      const cashPart = Number(splitCashAmount) || 0;
+      const cardPart = Number(splitCardAmount) || 0;
+      const onlinePart = Number(splitOnlineAmount) || 0;
+      const positiveParts = [cashPart, cardPart, onlinePart].filter((n) => n > 0).length;
+      if (positiveParts < 2) {
+        setPaymentError("Split payment needs at least 2 non-zero parts.");
+        return;
+      }
+      const splitTotal = cashPart + cardPart + onlinePart;
+      if (Math.abs(splitTotal - billTotal) > 0.01) {
+        setPaymentError(`Split amounts must add up to Rs ${billTotal.toFixed(2)}.`);
+        return;
+      }
+      if (onlinePart > 0 && !onlineProvider) {
+        setPaymentError("Select an online account for the online split part.");
+        return;
+      }
+    }
     setPaymentLoading(true);
     setPaymentError("");
     const toastId = toast.loading("Processing...");
@@ -1007,19 +1078,37 @@ export default function POSView({
           ...(paymentMethod === "ONLINE" && onlineProvider
             ? { paymentProvider: onlineProvider }
             : {}),
+          ...(paymentMethod === "SPLIT"
+            ? {
+                cashAmount: Number(splitCashAmount) || 0,
+                cardAmount: Number(splitCardAmount) || 0,
+                onlineAmount: Number(splitOnlineAmount) || 0,
+                ...((Number(splitOnlineAmount) || 0) > 0 && onlineProvider
+                  ? { paymentProvider: onlineProvider }
+                  : {}),
+              }
+            : {}),
         });
         orderNum =
           editingOrder?.orderNumber ?? editingOrder?.id ?? editingOrderId;
         toast.success("Order updated and payment recorded", { id: toastId });
       } else {
-        // New order: create and pay in one shot
-        const result = await createPosOrder({
+        // New order: place the order first (PENDING payment), then record payment.
+        // This ensures the order goes through the normal KDS pipeline before
+        // payment is attached — same two-step flow as editing an existing order.
+        const placed = await createPosOrder({
           items: cart.map((item) => ({
             menuItemId: item.id,
             quantity: item.quantity,
+            note: itemNotes[item._cartKey || item.id] || undefined,
+            modifierSelections:
+              item._modifierSelectionsForOrder?.length > 0
+                ? item._modifierSelectionsForOrder
+                : undefined,
+            variantLabel: item.size || item.variantLabel || undefined,
           })),
           orderType,
-          paymentMethod,
+          paymentMethod: "PENDING",
           discountAmount: totalDiscount,
           ...buildPosDiscountApiFields(),
           appliedDeals:
@@ -1042,15 +1131,36 @@ export default function POSView({
           branchId: currentBranch?.id ?? undefined,
           tableName:
             orderType === "DINE_IN" && tableName ? tableName : undefined,
-          ...(paymentMethod === "CASH" && amountReceived !== ""
-            ? { amountReceived: Number(amountReceived) }
-            : {}),
-          ...(paymentMethod === "ONLINE" && onlineProvider
-            ? { paymentProvider: onlineProvider }
-            : {}),
           ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
         });
-        orderNum = result?.orderNumber ?? result?.id ?? "";
+        const newOrderId = placed?.id ?? placed?._id ?? placed?.orderId;
+        if (newOrderId) {
+          const receivedAmt =
+            paymentMethod === "CASH" ? Number(amountReceived) : undefined;
+          const returnedAmt =
+            paymentMethod === "CASH"
+              ? Math.max(0, Number(amountReceived) - billTotal)
+              : undefined;
+          await recordOrderPayment(newOrderId, {
+            paymentMethod,
+            ...(receivedAmt != null ? { amountReceived: receivedAmt } : {}),
+            ...(returnedAmt != null ? { amountReturned: returnedAmt } : {}),
+            ...(paymentMethod === "ONLINE" && onlineProvider
+              ? { paymentProvider: onlineProvider }
+              : {}),
+            ...(paymentMethod === "SPLIT"
+              ? {
+                  cashAmount: Number(splitCashAmount) || 0,
+                  cardAmount: Number(splitCardAmount) || 0,
+                  onlineAmount: Number(splitOnlineAmount) || 0,
+                  ...((Number(splitOnlineAmount) || 0) > 0 && onlineProvider
+                    ? { paymentProvider: onlineProvider }
+                    : {}),
+                }
+              : {}),
+          });
+        }
+        orderNum = placed?.orderNumber ?? placed?.id ?? "";
         toast.success("Order placed and payment recorded", { id: toastId });
       }
 
@@ -1123,6 +1233,7 @@ export default function POSView({
         data = await getMenu();
       }
 
+      console.log('menu API response — item count:', (data?.items || []).length, 'ids:', (data?.items || []).map((i) => i.id));
       setMenu(data);
       setPageLoading(false);
     } catch (err) {
@@ -1265,7 +1376,61 @@ export default function POSView({
 
   const allItemsForGrid = [...menu.items, ...dealMenuItems];
 
-  const filteredItems = allItemsForGrid.filter((item) => {
+  // Flatten items with required size groups into individual cards (one per required option)
+  const flattenedMenuItems = useMemo(() => {
+    if (!flattenVariations) {
+      console.log('flatten OFF, items count:', allItemsForGrid.length);
+      return allItemsForGrid;
+    }
+    const result = [];
+    for (const item of allItemsForGrid) {
+      if (!item.hasModifiers || !item.modifierGroups?.length) {
+        result.push(item);
+        continue;
+      }
+      const requiredGroups = item.modifierGroups.filter((g) => g.required);
+      const optionalGroups = item.modifierGroups.filter((g) => !g.required);
+      if (requiredGroups.length === 0) {
+        // Only optional groups — keep as single card, modal shows all options
+        result.push(item);
+        continue;
+      }
+      // Pick the required group that has price variance (any option > Rs 0) as the
+      // primary flatten axis. Falls back to first required group if all prices are 0.
+      const primaryGroup =
+        requiredGroups.find((g) => (g.options || []).some((o) => o.price > 0)) ||
+        requiredGroups[0];
+      // Remaining required groups (e.g. flavour at Rs 0) appear in the per-card modal
+      const remainingRequiredGroups = requiredGroups.filter((g) => g !== primaryGroup);
+      const availableOptions = (primaryGroup.options || [])
+        .filter((o) => o.isAvailable !== false)
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      if (availableOptions.length === 0) {
+        result.push(item);
+        continue;
+      }
+      // Push one card per option. Original item is NOT pushed — only the flattened cards.
+      for (const option of availableOptions) {
+        result.push({
+          ...item,
+          _flattenedName: `${item.name} ${option.name}`,
+          _flattenedPrice: option.price,
+          _preselectedRequired: {
+            groupId: primaryGroup.id,
+            groupName: primaryGroup.groupName,
+            option: { optionId: option.id, name: option.name, price: option.price },
+          },
+          _optionalGroups: optionalGroups,
+          _remainingRequiredGroups: remainingRequiredGroups,
+          _flattenedId: `${item.id}|${option.id}`,
+        });
+      }
+      // DO NOT result.push(item) here — original is replaced by the flattened cards above
+    }
+    return result;
+  }, [allItemsForGrid, flattenVariations]);
+
+  const filteredItems = flattenedMenuItems.filter((item) => {
     const matchesCategory =
       selectedCategory === "all" ||
       (selectedCategory === "deals"
@@ -1275,8 +1440,9 @@ export default function POSView({
     const categoryName = (
       menu.categories.find((c) => c.id === item.categoryId)?.name || ""
     ).toLowerCase();
+    const displayName = (item._flattenedName || item.name).toLowerCase();
     const matchesSearch =
-      !q || item.name.toLowerCase().includes(q) || categoryName.includes(q);
+      !q || displayName.includes(q) || categoryName.includes(q);
 
     // Dietary filter (mock - in production, items should have a dietaryType field)
     const matchesDietary =
@@ -1365,6 +1531,64 @@ export default function POSView({
   }, [filteredItems.length, focusedItemIndex]);
 
   const addToCart = (item, qty = 1) => {
+    // Cases 1 & 2: flattened card (has a pre-baked required selection)
+    if (item._preselectedRequired) {
+      // Combine remaining required groups + optional groups for the modal
+      const modalGroups = [
+        ...(item._remainingRequiredGroups || []),
+        ...(item._optionalGroups || []),
+      ];
+      if (modalGroups.length === 0) {
+        // Case 1: no further choices needed — add directly to cart
+        const presel = item._preselectedRequired;
+        const cartKey = item._flattenedId || item.id;
+        const unitPrice = presel.option.price;
+        const variantLabel = presel.option.name;
+        const modifierSelectionsForOrder = [{
+          groupId: presel.groupId,
+          groupName: presel.groupName,
+          options: [presel.option],
+        }];
+        const existing = cart.find((i) => i._cartKey === cartKey);
+        if (existing) {
+          setCart(cart.map((i) =>
+            i._cartKey === cartKey
+              ? { ...i, quantity: i.quantity + Math.max(1, Math.floor(Number(qty)) || 1) }
+              : i,
+          ));
+        } else {
+          setCart([...cart, {
+            ...item,
+            id: item.id,
+            _cartKey: cartKey,
+            price: unitPrice,
+            quantity: Math.max(1, Math.floor(Number(qty)) || 1),
+            size: variantLabel,
+            _modifierSelectionsForOrder: modifierSelectionsForOrder,
+          }]);
+        }
+        setBulkAddQtyInput("1");
+      } else {
+        // Case 2: open modal showing remaining required + optional groups
+        setModifierPickerItem({
+          ...item,
+          modifierGroups: modalGroups,
+          _preselectedRequired: item._preselectedRequired,
+          _pendingQty: qty,
+        });
+        setModifierSelections({});
+      }
+      return;
+    }
+
+    // Case 3: item has only optional groups (no required) — open full modal as before
+    if (item.hasModifiers && item.modifierGroups?.length > 0) {
+      setModifierPickerItem({ ...item, _pendingQty: qty });
+      setModifierSelections({});
+      return;
+    }
+
+    // Case 4: no modifiers — existing direct-add behavior
     const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
     const existingItem = cart.find((i) => i.id === item.id);
     const isDeal = item.isDeal;
@@ -1388,11 +1612,11 @@ export default function POSView({
     setBulkAddQtyInput("1");
   };
 
-  const updateQuantity = (itemId, change) => {
+  const updateQuantity = (cartKey, change) => {
     setCart(
       cart
         .map((item) => {
-          if (item.id === itemId) {
+          if ((item._cartKey || item.id) === cartKey) {
             const newQty = item.quantity + change;
             return { ...item, quantity: Math.max(0, newQty) };
           }
@@ -1402,8 +1626,118 @@ export default function POSView({
     );
   };
 
-  const removeFromCart = (itemId) => {
-    setCart(cart.filter((item) => item.id !== itemId));
+  const removeFromCart = (cartKey) => {
+    setCart(cart.filter((item) => (item._cartKey || item.id) !== cartKey));
+  };
+
+  const confirmModifierSelection = () => {
+    const item = modifierPickerItem;
+    if (!item) return;
+
+    const qty = Math.max(1, Math.floor(Number(item._pendingQty)) || 1);
+
+    // Build a fingerprint so same item with different modifiers = different cart entries
+    const selectionFingerprint = Object.entries(modifierSelections)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([gId, opts]) => gId + ':' + opts.map((o) => o.optionId).sort().join(','))
+      .join('|');
+
+    // Use _flattenedId as the cart key base when this is a flattened card (Case 2)
+    const cartKeyBase = item._flattenedId || item.id;
+    const cartKey = cartKeyBase + (selectionFingerprint ? '|' + selectionFingerprint : '');
+
+    // Compute unit price from all groups shown in the modal
+    const allModalGroups = item.modifierGroups || [];
+    const requiredInModal = allModalGroups.filter((g) => g.required);
+    const optionalInModal = allModalGroups.filter((g) => !g.required);
+    const requiredModalTotal = requiredInModal.reduce((sum, g) => {
+      const sel = modifierSelections[g.id] || [];
+      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
+    }, 0);
+    const optionalModalTotal = optionalInModal.reduce((sum, g) => {
+      const sel = modifierSelections[g.id] || [];
+      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
+    }, 0);
+
+    let unitPrice;
+    if (item._preselectedRequired) {
+      // Pre-baked required price + any remaining-required + optional prices from modal
+      unitPrice = item._preselectedRequired.option.price + requiredModalTotal + optionalModalTotal;
+    } else {
+      if (requiredInModal.length > 0 && requiredModalTotal > 0) {
+        unitPrice = requiredModalTotal + optionalModalTotal;
+      } else {
+        unitPrice = (item.finalPrice ?? item.price) + optionalModalTotal;
+      }
+    }
+
+    // Build variant label
+    let variantLabel;
+    if (item._preselectedRequired) {
+      const modalSelectedNames = Object.values(modifierSelections).flat().map((o) => o.name);
+      variantLabel = modalSelectedNames.length
+        ? `${item._preselectedRequired.option.name} (${modalSelectedNames.join(', ')})`
+        : item._preselectedRequired.option.name;
+    } else {
+      const allSelectedNames = Object.values(modifierSelections).flat().map((o) => o.name);
+      variantLabel = allSelectedNames.join(', ') || 'Regular';
+    }
+
+    // Build modifierSelections array for the order payload
+    const modifierSelectionsForOrder = (item.modifierGroups || [])
+      .map((g) => {
+        const selected = modifierSelections[g.id] || [];
+        if (selected.length === 0) return null;
+        return {
+          groupId: g.id,
+          groupName: g.groupName,
+          options: selected.map((o) => ({
+            optionId: o.optionId,
+            name: o.name,
+            price: o.price,
+          })),
+        };
+      })
+      .filter(Boolean);
+
+    // Prepend the pre-baked required selection when present (Case 2)
+    if (item._preselectedRequired) {
+      const presel = item._preselectedRequired;
+      modifierSelectionsForOrder.unshift({
+        groupId: presel.groupId,
+        groupName: presel.groupName,
+        options: [presel.option],
+      });
+    }
+
+    const existingItem = cart.find((i) => i._cartKey === cartKey);
+    if (existingItem) {
+      setCart(cart.map((i) => (i._cartKey === cartKey ? { ...i, quantity: i.quantity + qty } : i)));
+    } else {
+      setCart([
+        ...cart,
+        {
+          ...item,
+          _cartKey: cartKey,
+          price: unitPrice,
+          quantity: qty,
+          size: variantLabel,
+          _modifierSelectionsForOrder: modifierSelectionsForOrder,
+        },
+      ]);
+    }
+
+    setModifierPickerItem(null);
+    setModifierSelections({});
+  };
+
+  const isModifierSelectionComplete = () => {
+    if (!modifierPickerItem) return false;
+    const requiredGroups = (modifierPickerItem.modifierGroups || []).filter((g) => g.required);
+    return requiredGroups.every((g) => {
+      const sel = modifierSelections[g.id] || [];
+      return sel.length > 0;
+    });
   };
 
   const clearCart = () => {
@@ -1658,7 +1992,11 @@ export default function POSView({
         items: cart.map((item) => ({
           menuItemId: item.id,
           quantity: item.quantity,
-          note: itemNotes[item.id] || undefined,
+          note: itemNotes[item._cartKey || item.id] || undefined,
+          modifierSelections:
+            item._modifierSelectionsForOrder?.length > 0
+              ? item._modifierSelectionsForOrder
+              : undefined,
         })),
         orderType,
         paymentMethod: "PENDING",
@@ -1790,7 +2128,7 @@ export default function POSView({
           quantity: item.quantity,
           unitPrice: item.price,
           name: item.name,
-          note: itemNotes[item.id] || undefined,
+          note: itemNotes[item._cartKey || item.id] || undefined,
         })),
         discountAmount: totalDiscount,
         ...buildPosDiscountApiFields(),
@@ -1865,7 +2203,7 @@ export default function POSView({
         name: it.name,
         qty: it.quantity,
         unitPrice: it.price,
-        note: itemNotes[it.id] || undefined,
+        note: itemNotes[it._cartKey || it.id] || undefined,
       })),
       ...overrides,
     };
@@ -1918,6 +2256,11 @@ export default function POSView({
         items: cart.map((item) => ({
           menuItemId: item.id,
           quantity: item.quantity,
+          note: itemNotes[item._cartKey || item.id] || undefined,
+          modifierSelections:
+            item._modifierSelectionsForOrder?.length > 0
+              ? item._modifierSelectionsForOrder
+              : undefined,
         })),
         orderType,
         paymentMethod: "PENDING",
@@ -2617,7 +2960,10 @@ export default function POSView({
                     className={`grid gap-2 ${effectiveSidebarOpen ? "grid-cols-3 xl:grid-cols-4" : "grid-cols-4 xl:grid-cols-5"}`}
                   >
                     {filteredItems.map((item, idx) => {
-                      const inCart = cart.find((c) => c.id === item.id);
+                      const cardKey = item._flattenedId || item.id;
+                      const inCart = cart.find(
+                        (c) => (c._cartKey || c.id) === cardKey,
+                      );
                       const outOfStock = item.inventorySufficient === false;
                       const category = menu.categories.find(
                         (c) => c.id === item.categoryId,
@@ -2627,7 +2973,7 @@ export default function POSView({
 
                       return (
                         <div
-                          key={item.id}
+                          key={cardKey}
                           ref={idx === focusedItemIndex ? focusedCardRef : null}
                           onClick={() => setFocusedItemIndex(idx)}
                           className={`group relative flex flex-col rounded-lg overflow-hidden transition-all ${
@@ -2708,7 +3054,7 @@ export default function POSView({
                             <h3
                               className={`text-xs font-bold mb-1 line-clamp-1 ${outOfStock ? "text-gray-400 dark:text-neutral-500" : "text-gray-900 dark:text-white"}`}
                             >
-                              {item.name}
+                              {item._flattenedName || item.name}
                             </h3>
 
                             {/* Price and Add to Cart */}
@@ -2717,7 +3063,7 @@ export default function POSView({
                                 <span
                                   className={`text-sm font-bold ${outOfStock ? "text-gray-400" : "text-primary"}`}
                                 >
-                                  Rs {item.finalPrice ?? item.price}
+                                  Rs {item._flattenedPrice ?? item.finalPrice ?? item.price}
                                 </span>
                               </div>
 
@@ -2729,7 +3075,7 @@ export default function POSView({
                                   >
                                     <button
                                       onClick={() =>
-                                        updateQuantity(item.id, -1)
+                                        updateQuantity(cardKey, -1)
                                       }
                                       className="w-5 h-5 flex items-center justify-center rounded hover:bg-white dark:hover:bg-neutral-700 transition-colors"
                                     >
@@ -2739,7 +3085,7 @@ export default function POSView({
                                       {inCart.quantity}
                                     </span>
                                     <button
-                                      onClick={() => updateQuantity(item.id, 1)}
+                                      onClick={() => updateQuantity(cardKey, 1)}
                                       className="w-5 h-5 flex items-center justify-center rounded bg-primary text-white hover:bg-primary/90 transition-colors"
                                     >
                                       <Plus className="w-3 h-3" />
@@ -3001,16 +3347,29 @@ export default function POSView({
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
                             <h4 className="text-base font-bold text-gray-900 dark:text-white line-clamp-1">
-                              {item.name}{" "}
-                              <span className="text-xs font-normal text-gray-500 dark:text-neutral-500">
-                                ({item.size || "Regular"})
-                              </span>
+                              {item.name}
+                              {item.size && (
+                                <span className="text-xs font-normal text-gray-500 dark:text-neutral-500">
+                                  {" "}({item.size})
+                                </span>
+                              )}
                             </h4>
+                            {item._modifierSelectionsForOrder
+                              ?.filter((s) => {
+                                const group = item.modifierGroups?.find((g) => g.id === s.groupId);
+                                return group && !group.required;
+                              })
+                              .flatMap((s) => s.options)
+                              .map((o, i) => (
+                                <div key={i} className="text-xs text-gray-400 dark:text-neutral-500 leading-tight">
+                                  + {o.name}{o.price > 0 && <span> (Rs {o.price})</span>}
+                                </div>
+                              ))}
                           </div>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              removeFromCart(item.id);
+                              removeFromCart(item._cartKey || item.id);
                             }}
                             className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
                           >
@@ -3027,7 +3386,7 @@ export default function POSView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                updateQuantity(item.id, -1);
+                                updateQuantity(item._cartKey || item.id, -1);
                               }}
                               className="w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors"
                             >
@@ -3039,7 +3398,7 @@ export default function POSView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                updateQuantity(item.id, 1);
+                                updateQuantity(item._cartKey || item.id, 1);
                               }}
                               className="w-4 h-4 flex items-center justify-center bg-primary hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors"
                             >
@@ -3049,7 +3408,7 @@ export default function POSView({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              addNoteToItem(item.id);
+                              addNoteToItem(item._cartKey || item.id);
                             }}
                             className="text-sm text-primary hover:underline font-medium"
                           >
@@ -3060,10 +3419,10 @@ export default function POSView({
                     </div>
 
                     {/* Note Display */}
-                    {itemNotes[item.id] && (
+                    {itemNotes[item._cartKey || item.id] && (
                       <div className="mt-3 p-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
                         <p className="text-xs text-blue-700 dark:text-blue-400">
-                          📝 {itemNotes[item.id]}
+                          📝 {itemNotes[item._cartKey || item.id]}
                         </p>
                       </div>
                     )}
@@ -4235,11 +4594,11 @@ export default function POSView({
                   Bill Total
                 </p>
                 <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
-                  Rs {Math.round(total).toLocaleString()}
+                  Rs {Math.round(amountDue).toLocaleString()}
                 </p>
-                {total % 1 !== 0 && (
+                {amountDue % 1 !== 0 && (
                   <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
-                    {total.toFixed(2)}
+                    {amountDue.toFixed(2)}
                   </p>
                 )}
               </div>
@@ -4263,7 +4622,7 @@ export default function POSView({
                 <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
                   Payment method
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("CASH")}
@@ -4303,11 +4662,94 @@ export default function POSView({
                     <Smartphone className="w-5 h-5" />
                     Online
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod("SPLIT");
+                      setOnlineProvider(null);
+                    }}
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${
+                      paymentMethod === "SPLIT"
+                        ? "border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                        : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"
+                    }`}
+                  >
+                    <Wallet className="w-5 h-5" />
+                    Split
+                  </button>
                 </div>
               </div>
 
-              {/* Online provider sub-options — dynamic from Business Settings */}
-              {paymentMethod === "ONLINE" && (
+              {/* Split payment inputs */}
+              {paymentMethod === "SPLIT" &&
+                (() => {
+                  const cashPart = Number(splitCashAmount) || 0;
+                  const cardPart = Number(splitCardAmount) || 0;
+                  const onlinePart = Number(splitOnlineAmount) || 0;
+                  const splitSum = cashPart + cardPart + onlinePart;
+                  const diff = amountDue - splitSum;
+                  return (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                            Cash (Rs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={splitCashAmount}
+                            onChange={(e) => setSplitCashAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                            Card (Rs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={splitCardAmount}
+                            onChange={(e) => setSplitCardAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                            Online (Rs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={splitOnlineAmount}
+                            onChange={(e) => setSplitOnlineAmount(e.target.value)}
+                            placeholder="0"
+                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                          Remaining
+                        </span>
+                        <span className={`text-sm font-black tabular-nums ${Math.abs(diff) < 0.01 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                          Rs {diff.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+              {/* Online provider sub-options — shown for ONLINE or SPLIT with online amount */}
+              {(paymentMethod === "ONLINE" ||
+                (paymentMethod === "SPLIT" &&
+                  (Number(splitOnlineAmount) || 0) > 0)) && (
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
                     Paid to
@@ -4365,7 +4807,7 @@ export default function POSView({
               {/* Cash-specific fields */}
               {paymentMethod === "CASH" &&
                 (() => {
-                  const exactAmt = Math.ceil(total);
+                  const exactAmt = Math.ceil(amountDue);
                   const roundDenominations = [
                     100, 200, 500, 1000, 2000, 5000, 10000,
                   ];
@@ -4377,11 +4819,11 @@ export default function POSView({
                   const isUnderpaid =
                     amountReceived !== "" &&
                     !isNaN(receivedNum) &&
-                    receivedNum < total;
+                    receivedNum < amountDue;
                   const isOverpaid =
                     amountReceived !== "" &&
                     !isNaN(receivedNum) &&
-                    receivedNum >= total;
+                    receivedNum >= amountDue;
                   return (
                     <>
                       {/* Quick-amount presets */}
@@ -4420,7 +4862,7 @@ export default function POSView({
                           required={paymentMethod === "CASH"}
                           value={amountReceived}
                           onChange={(e) => setAmountReceived(e.target.value)}
-                          placeholder={`${Math.ceil(total).toLocaleString()}`}
+                          placeholder={`${Math.ceil(amountDue).toLocaleString()}`}
                           className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                         />
                       </div>
@@ -4435,7 +4877,7 @@ export default function POSView({
                             </span>
                           </div>
                           <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
-                            Rs {(receivedNum - total).toFixed(2)}
+                            Rs {(receivedNum - amountDue).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -4450,7 +4892,7 @@ export default function POSView({
                             </span>
                           </div>
                           <span className="text-xl font-black text-red-700 dark:text-red-400 tabular-nums">
-                            Rs {(total - receivedNum).toFixed(2)}
+                            Rs {(amountDue - receivedNum).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -4474,7 +4916,17 @@ export default function POSView({
                     (paymentMethod === "CASH" &&
                       (amountReceived === "" ||
                         Number(amountReceived) < total)) ||
-                    (paymentMethod === "ONLINE" && !onlineProvider)
+                    (paymentMethod === "ONLINE" && !onlineProvider) ||
+                    (paymentMethod === "SPLIT" && (() => {
+                      const cashPart = Number(splitCashAmount) || 0;
+                      const cardPart = Number(splitCardAmount) || 0;
+                      const onlinePart = Number(splitOnlineAmount) || 0;
+                      const splitSum = cashPart + cardPart + onlinePart;
+                      const positiveParts = [cashPart, cardPart, onlinePart].filter((n) => n > 0).length;
+                      return positiveParts < 2 ||
+                        Math.abs(splitSum - total) > 0.01 ||
+                        (onlinePart > 0 && !onlineProvider);
+                    })())
                   }
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
                 >
@@ -4623,6 +5075,34 @@ export default function POSView({
                   </label>
                 </div>
               </section>
+
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
+                  Menu display
+                </h3>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden bg-gray-50/40 dark:bg-neutral-900/25">
+                  <label className="flex items-start justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white block">
+                        Show variations as separate items
+                      </span>
+                      <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5">
+                        Items with size variations appear as individual cards. Faster for cashiers who search by name.
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={flattenVariations}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setFlattenVariations(v);
+                        try { localStorage.setItem('pos_flatten_variations', String(v)); } catch {}
+                      }}
+                      className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                    />
+                  </label>
+                </div>
+              </section>
             </div>
 
             <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/40 flex gap-2">
@@ -4650,16 +5130,17 @@ export default function POSView({
                     showTablePos: posTableSettingsDraft,
                     showWaiterPos: posWaiterSettingsDraft,
                     showCustomerPos: posCustomerSettingsDraft,
-                    posAllowedOrderTypes: chosen,
                   })
                     .then((b) => {
                       setShowTablePos(posTableSettingsDraft);
                       setShowWaiterPos(posWaiterSettingsDraft);
                       setShowCustomerPos(posCustomerSettingsDraft);
+                      // Save order types to localStorage (per-terminal, not per-branch)
+                      try {
+                        localStorage.setItem(POS_ORDER_TYPES_KEY, JSON.stringify(chosen));
+                      } catch {}
                       setPosAllowedOrderTypes(
-                        normalizePosAllowedOrderTypesFromApi(
-                          b?.posAllowedOrderTypes,
-                        ),
+                        normalizePosAllowedOrderTypesFromApi(chosen),
                       );
                       if (
                         typeof setCurrentBranch === "function" &&
@@ -5817,6 +6298,215 @@ export default function POSView({
                 className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold"
               >
                 Discard & Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modifier Picker Modal ───────────────────────────────────────────── */}
+      {modifierPickerItem && (
+        <div
+          className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => {
+            setModifierPickerItem(null);
+            setModifierSelections({});
+          }}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+          {/* Modal panel */}
+          <div
+            className="relative bg-white dark:bg-neutral-900 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Item header */}
+            <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-start gap-4">
+                {modifierPickerItem.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={modifierPickerItem.imageUrl}
+                    alt={modifierPickerItem.name}
+                    className="w-16 h-16 rounded-xl object-cover flex-shrink-0"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">
+                    {modifierPickerItem.name}
+                  </h3>
+                  {modifierPickerItem.description && (
+                    <p className="text-sm text-gray-500 dark:text-neutral-400 mt-0.5 line-clamp-2">
+                      {modifierPickerItem.description}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setModifierPickerItem(null);
+                    setModifierSelections({});
+                  }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 flex-shrink-0 text-xl leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Modifier groups */}
+            <div className="p-5 space-y-6">
+              {(modifierPickerItem.modifierGroups || [])
+                .slice()
+                .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                .map((group) => (
+                  <div key={group.id}>
+                    {/* Group header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {group.groupName}
+                      </span>
+                      <span
+                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          group.required
+                            ? "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400"
+                            : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
+                        }`}
+                      >
+                        {group.required ? "REQUIRED" : "OPTIONAL"}
+                      </span>
+                    </div>
+
+                    {/* Options */}
+                    <div className="space-y-2">
+                      {(group.options || [])
+                        .filter((o) => o.isAvailable !== false)
+                        .slice()
+                        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                        .map((option) => {
+                          const groupSel = modifierSelections[group.id] || [];
+                          const isSelected = groupSel.some((s) => s.optionId === option.id);
+
+                          const toggleOption = () => {
+                            setModifierSelections((prev) => {
+                              const existing = prev[group.id] || [];
+                              if (group.maxSelections === 1) {
+                                // Radio behaviour
+                                return {
+                                  ...prev,
+                                  [group.id]: isSelected
+                                    ? []
+                                    : [{ optionId: option.id, name: option.name, price: option.price }],
+                                };
+                              } else {
+                                // Checkbox behaviour
+                                if (isSelected) {
+                                  return {
+                                    ...prev,
+                                    [group.id]: existing.filter((s) => s.optionId !== option.id),
+                                  };
+                                } else if (existing.length < group.maxSelections) {
+                                  return {
+                                    ...prev,
+                                    [group.id]: [
+                                      ...existing,
+                                      { optionId: option.id, name: option.name, price: option.price },
+                                    ],
+                                  };
+                                }
+                                return prev;
+                              }
+                            });
+                          };
+
+                          return (
+                            <button
+                              key={option.id}
+                              onClick={toggleOption}
+                              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all ${
+                                isSelected
+                                  ? "border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                                  : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                {/* Radio / checkbox indicator */}
+                                <div
+                                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                                    isSelected
+                                      ? "border-orange-500 bg-orange-500"
+                                      : "border-gray-300 dark:border-neutral-600"
+                                  }`}
+                                >
+                                  {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                                </div>
+                                <span
+                                  className={`text-sm font-medium ${
+                                    isSelected
+                                      ? "text-orange-700 dark:text-orange-400"
+                                      : "text-gray-700 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  {option.name}
+                                </span>
+                              </div>
+                              <span
+                                className={`text-sm font-semibold ${
+                                  isSelected
+                                    ? "text-orange-600 dark:text-orange-400"
+                                    : "text-gray-500 dark:text-neutral-400"
+                                }`}
+                              >
+                                {option.price > 0 ? `Rs ${option.price.toLocaleString()}` : ""}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {/* Footer — live total + add button */}
+            <div className="sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-gray-100 dark:border-neutral-800 p-5">
+              {(() => {
+                const requiredTotal = (modifierPickerItem.modifierGroups || [])
+                  .filter((g) => g.required)
+                  .reduce((sum, g) => {
+                    const sel = modifierSelections[g.id] || [];
+                    return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
+                  }, 0);
+                const optionalTotal = (modifierPickerItem.modifierGroups || [])
+                  .filter((g) => !g.required)
+                  .reduce((sum, g) => {
+                    const sel = modifierSelections[g.id] || [];
+                    return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
+                  }, 0);
+                const displayTotal =
+                  requiredTotal > 0
+                    ? requiredTotal + optionalTotal
+                    : (modifierPickerItem.finalPrice ?? modifierPickerItem.price) + optionalTotal;
+
+                return (
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-gray-500 dark:text-neutral-400">Total</span>
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">
+                      Rs {displayTotal.toLocaleString()}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              <button
+                onClick={confirmModifierSelection}
+                disabled={!isModifierSelectionComplete()}
+                className={`w-full py-3.5 rounded-xl text-base font-bold transition-all ${
+                  isModifierSelectionComplete()
+                    ? "bg-orange-500 hover:bg-orange-600 text-white"
+                    : "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-600 cursor-not-allowed"
+                }`}
+              >
+                {isModifierSelectionComplete() ? "Add to Order" : "Select required options"}
               </button>
             </div>
           </div>

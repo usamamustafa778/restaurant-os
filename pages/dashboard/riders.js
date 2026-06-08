@@ -24,6 +24,9 @@ import {
   X,
   Clock,
   MapPin,
+  FileDown,
+  Printer,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -761,6 +764,110 @@ export default function RidersPage() {
     toast.success("CSV exported");
   }
 
+  function exportRiderCsv(rider) {
+    const rows = [
+      ["Rider", "Period", rider.riderName, periodLabel],
+      [],
+      ["Order", "Time", "Customer", "Area", "Amount", "Del Fee", "Status", "Payment", "COD Collected"],
+      ...rider.orders
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .map((o) => {
+          const { label } = getOrderDisplayFields(o);
+          return [
+            label,
+            o.createdAt ? new Date(o.createdAt).toLocaleString() : "",
+            o.customerName || "",
+            o.deliveryAddress || "",
+            Math.round(Number(o.grandTotal ?? o.total) || 0),
+            Math.round(Number(o.deliveryCharges) || 0),
+            o.status || "",
+            o.paymentMethod || "",
+            o.deliveryPaymentCollected ? "Yes" : "Collect",
+          ];
+        }),
+      [],
+      ["Summary"],
+      ["Delivered", rider.delivered],
+      ["Delivery fees earned", rider.delFeesEarned],
+      ["Delivered value", rider.orderValue],
+      ["COD owed", rider.codOwed],
+    ];
+    const safeName = rider.riderName.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    downloadCSV(`rider-${safeName}-${preset}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+    toast.success("CSV exported");
+  }
+
+  function openRiderPrintWindow(rider, mode) {
+    const sym = getCurrencySymbol();
+    const rs = (v) => `${sym === "Rs" ? "Rs." : sym} ${Math.round(Number(v) || 0).toLocaleString()}`;
+    const sortedOrders = rider.orders.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const rows = sortedOrders.map((o) => {
+      const { label, mongoId } = getOrderDisplayFields(o);
+      const unpaid = isDelivered(o.status) && !o.isPaid;
+      return `<tr style="background:${unpaid ? "#fffbeb" : ""}">
+        <td>${label}</td>
+        <td>${o.createdAt ? new Date(o.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—"}</td>
+        <td>${o.customerName || "—"}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${o.deliveryAddress || "—"}</td>
+        <td style="text-align:right">${rs(o.grandTotal ?? o.total)}</td>
+        <td style="text-align:right;color:#FF5400">${rs(o.deliveryCharges)}</td>
+        <td>${o.status || "—"}</td>
+        <td>${o.paymentMethod || "—"}</td>
+        <td style="color:${o.deliveryPaymentCollected ? "#059669" : "#d97706"}">${o.deliveryPaymentCollected ? "Collected" : "Collect"}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><title>Rider Report — ${rider.riderName}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #111; padding: 24px; }
+  h1 { font-size: 18px; font-weight: 800; margin-bottom: 2px; }
+  .meta { font-size: 11px; color: #555; margin-bottom: 16px; }
+  .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 16px; min-width: 100px; }
+  .stat-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #6b7280; }
+  .stat-val { font-size: 16px; font-weight: 800; margin-top: 2px; }
+  .stat-val.primary { color: #FF5400; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { text-align: left; padding: 6px 8px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: #6b7280; font-weight: 700; }
+  td { padding: 6px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .footer { margin-top: 20px; font-size: 10px; color: #9ca3af; border-top: 1px dashed #e5e7eb; padding-top: 10px; }
+  @media print { @page { size: A4 landscape; margin: 12mm; } body { padding: 0; } }
+</style></head><body>
+<h1>🚚 ${rider.riderName}</h1>
+<div class="meta">${rider.phone ? rider.phone + " · " : ""}Period: ${periodLabel} · Printed ${new Date().toLocaleString()}</div>
+<div class="stats">
+  <div class="stat"><div class="stat-label">Delivered</div><div class="stat-val">${rider.delivered}</div></div>
+  <div class="stat"><div class="stat-label">Del Fees</div><div class="stat-val primary">${rs(rider.delFeesEarned)}</div></div>
+  <div class="stat"><div class="stat-label">Order Value</div><div class="stat-val">${rs(rider.orderValue)}</div></div>
+  <div class="stat"><div class="stat-label">COD Owed</div><div class="stat-val" style="color:${rider.codOwed > 0 ? "#d97706" : "#059669"}">${rider.codOwed > 0 ? rs(rider.codOwed) : "All clear"}</div></div>
+  <div class="stat"><div class="stat-label">Payout Status</div><div class="stat-val" style="font-size:12px">${rider.lastPayout ? "Paid " + rs(rider.lastPayout.amountPaid) : "Unpaid · " + rs(rider.delFeesEarned)}</div></div>
+</div>
+<table>
+  <thead><tr>
+    <th>Order</th><th>Time</th><th>Customer</th><th>Area</th>
+    <th style="text-align:right">Amount</th><th style="text-align:right">Del Fee</th>
+    <th>Status</th><th>Payment</th><th>COD</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="footer">EatsDesk Rider Report · ${rider.riderName} · ${periodLabel}</div>
+</body></html>`;
+
+    const win = window.open("", "_blank", "width=1100,height=750");
+    if (!win) { toast.error("Pop-up blocked. Allow pop-ups and try again."); return; }
+    win.document.write(html);
+    win.document.close();
+    if (mode === "print") {
+      win.onload = () => { win.focus(); win.print(); };
+    } else {
+      win.onload = () => { win.focus(); win.print(); };
+      toast("Print dialog opened — choose 'Save as PDF' to export.", { icon: "📄" });
+    }
+  }
+
   const filteredPipelineTable = useMemo(() => {
     let list = livePipelineOrders;
     if (pipelineFilter === "kitchen")
@@ -1386,6 +1493,41 @@ export default function RidersPage() {
 
                   <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 pb-24">
                     {detailTab === "orders" && (
+                      <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
+                          {sidebarRider.orders.length} order{sidebarRider.orders.length !== 1 ? "s" : ""}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => exportRiderCsv(sidebarRider)}
+                            title="Download CSV"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:border-primary/40 transition-colors"
+                          >
+                            <FileDown className="w-3.5 h-3.5" />
+                            CSV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openRiderPrintWindow(sidebarRider, "pdf")}
+                            title="Export as PDF"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:border-primary/40 transition-colors"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            PDF
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openRiderPrintWindow(sidebarRider, "print")}
+                            title="Print"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:border-primary/40 transition-colors"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            Print
+                          </button>
+                        </div>
+                      </div>
                       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
                         <table className="w-full text-xs min-w-[640px]">
                           <thead>
@@ -1478,6 +1620,7 @@ export default function RidersPage() {
                               })}
                           </tbody>
                         </table>
+                      </div>
                       </div>
                     )}
 

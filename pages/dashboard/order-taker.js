@@ -46,6 +46,7 @@ import {
   Sun,
   Moon,
   Tag,
+  CheckCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -97,6 +98,8 @@ export default function OrderTakerPage() {
   const [tables, setTables] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
   const [cart, setCart] = useState([]);
+  const [modifierPickerItem, setModifierPickerItem] = useState(null);
+  const [modifierSelections, setModifierSelections] = useState({});
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -280,6 +283,12 @@ export default function OrderTakerPage() {
       toast.error(`${item.name} is out of stock`);
       return;
     }
+    // If item has modifiers, open picker instead of adding directly
+    if (item.hasModifiers && item.modifierGroups?.length > 0) {
+      setModifierPickerItem({ ...item, _pendingQty: qty });
+      setModifierSelections({});
+      return;
+    }
     setCart((prev) => {
       const idx = prev.findIndex((c) => c.id === item.id);
       if (idx >= 0) {
@@ -304,18 +313,94 @@ export default function OrderTakerPage() {
     });
   }
 
-  function updateQty(id, delta) {
+  function confirmModifierSelection() {
+    const item = modifierPickerItem;
+    if (!item) return;
+    const qty = Math.max(1, Math.floor(Number(item._pendingQty)) || 1);
+
+    const selectionFingerprint = Object.entries(modifierSelections)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([gId, opts]) => gId + ':' + opts.map((o) => o.optionId).sort().join(','))
+      .join('|');
+    const cartKey = item.id + (selectionFingerprint ? '|' + selectionFingerprint : '');
+
+    const requiredGroups = (item.modifierGroups || []).filter((g) => g.required);
+    const optionalGroups = (item.modifierGroups || []).filter((g) => !g.required);
+    const requiredTotal = requiredGroups.reduce((sum, g) => {
+      const sel = modifierSelections[g.id] || [];
+      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
+    }, 0);
+    const optionalTotal = optionalGroups.reduce((sum, g) => {
+      const sel = modifierSelections[g.id] || [];
+      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
+    }, 0);
+    let unitPrice;
+    if (requiredGroups.length > 0 && requiredTotal > 0) {
+      unitPrice = requiredTotal + optionalTotal;
+    } else {
+      unitPrice = (item.finalPrice ?? item.price) + optionalTotal;
+    }
+
+    const allSelectedNames = Object.values(modifierSelections).flat().map((o) => o.name);
+    const variantLabel = allSelectedNames.join(', ') || 'Regular';
+
+    const modifierSelectionsForOrder = (item.modifierGroups || [])
+      .map((g) => {
+        const selected = modifierSelections[g.id] || [];
+        if (selected.length === 0) return null;
+        return {
+          groupId: g.id,
+          groupName: g.groupName,
+          options: selected.map((o) => ({ optionId: o.optionId, name: o.name, price: o.price })),
+        };
+      })
+      .filter(Boolean);
+
+    setCart((prev) => {
+      const existing = prev.findIndex((c) => c._cartKey === cartKey);
+      if (existing >= 0) {
+        const next = [...prev];
+        next[existing] = { ...next[existing], quantity: next[existing].quantity + qty };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          id: item.id,
+          _cartKey: cartKey,
+          name: item.name,
+          price: unitPrice,
+          quantity: qty,
+          imageUrl: item.imageUrl || "",
+          isDeal: false,
+          size: variantLabel,
+          modifierGroups: item.modifierGroups,
+          _modifierSelectionsForOrder: modifierSelectionsForOrder,
+        },
+      ];
+    });
+    setModifierPickerItem(null);
+    setModifierSelections({});
+  }
+
+  function isModifierSelectionComplete() {
+    if (!modifierPickerItem) return false;
+    const requiredGroups = (modifierPickerItem.modifierGroups || []).filter((g) => g.required);
+    return requiredGroups.every((g) => (modifierSelections[g.id] || []).length > 0);
+  }
+
+  function updateQty(cartKey, delta) {
     setCart((prev) =>
       prev
         .map((c) =>
-          c.id === id ? { ...c, quantity: Math.max(0, c.quantity + delta) } : c,
+          (c._cartKey || c.id) === cartKey ? { ...c, quantity: Math.max(0, c.quantity + delta) } : c,
         )
         .filter((c) => c.quantity > 0),
     );
   }
 
-  function removeFromCart(id) {
-    setCart((prev) => prev.filter((c) => c.id !== id));
+  function removeFromCart(cartKey) {
+    setCart((prev) => prev.filter((c) => (c._cartKey || c.id) !== cartKey));
   }
 
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
@@ -325,7 +410,12 @@ export default function OrderTakerPage() {
     setPlacing(true);
     try {
       const result = await createPosOrder({
-        items: cart.map((c) => ({ menuItemId: c.id, quantity: c.quantity })),
+        items: cart.map((c) => ({
+          menuItemId: c.id,
+          quantity: c.quantity,
+          modifierSelections:
+            c._modifierSelectionsForOrder?.length > 0 ? c._modifierSelectionsForOrder : undefined,
+        })),
         orderType: "DINE_IN",
         paymentMethod: "PENDING",
         tableName: selectedTable?.name || selectedTable?.label || "",
@@ -356,18 +446,26 @@ export default function OrderTakerPage() {
   }
 
   // Active & history derived data
-  const nonCancelledOrders = activeOrders.filter((o) => o.status !== "CANCELLED");
+  // "nonCancelledOrders" drives the main active list — excludes DELIVERED/COMPLETED
+  // (those go to their own "Served" section and history, respectively).
+  const nonCancelledOrders = activeOrders.filter(
+    (o) => !["CANCELLED", "DELIVERED", "COMPLETED"].includes(o.status),
+  );
   const newOrders = nonCancelledOrders.filter((o) => o.status === "NEW_ORDER");
   const preparingOrders = nonCancelledOrders.filter((o) => o.status === "PROCESSING");
   const readyOrders = nonCancelledOrders.filter((o) => o.status === "READY");
+  // DELIVERED orders that can still receive additions — shown in a separate section.
+  const servedOrders = activeOrders
+    .filter((o) => o.status === "DELIVERED")
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const historyOrders = activeOrders
-    .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED" || o.status === "CANCELLED")
+    .filter((o) => o.status === "COMPLETED" || o.status === "CANCELLED")
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  const historyRevenue = historyOrders
+  const historyRevenue = [...historyOrders, ...servedOrders]
     .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
     .reduce((sum, o) => sum + getOrderTotal(o), 0);
-  const paymentPendingOrders = historyOrders.filter(
+  const paymentPendingOrders = [...historyOrders, ...servedOrders].filter(
     (o) =>
       (o.status === "DELIVERED" || o.status === "COMPLETED") &&
       getPaymentStatus(o) === "unpaid",
@@ -378,6 +476,10 @@ export default function OrderTakerPage() {
   );
   const clearedHistoryOrders = historyOrders.filter(
     (o) => o.status === "CANCELLED" || getPaymentStatus(o) !== "unpaid",
+  );
+  const activeRevenueStat = servedOrders.reduce(
+    (sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0),
+    0,
   );
   const filteredHistoryOrders =
     historyFilter === "pending_payment"
@@ -421,8 +523,16 @@ export default function OrderTakerPage() {
 
   function orderCanAppend(order) {
     const status = String(order?.status || "").toUpperCase();
-    if (["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(status)) {
-      toast.error("You can’t change this order anymore");
+    if (status === "CANCELLED") {
+      toast.error("This order is cancelled.");
+      return false;
+    }
+    if (status === "OUT_FOR_DELIVERY") {
+      toast.error("Order is out for delivery — call the rider to add items.");
+      return false;
+    }
+    if (status === "COMPLETED") {
+      toast.error("You can't change this order anymore");
       return false;
     }
     return true;
@@ -479,12 +589,22 @@ export default function OrderTakerPage() {
           name: item.name || "Item",
           quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
           unitPrice: Number(item.unitPrice) || 0,
+          note: item.note || '',
+          variantLabel: item.variantLabel || '',
+          modifierSelections: item.modifierSelections || [],
+          isAddition: item.isAddition || false,
+          addedAt: item.addedAt || null,
         }));
         const addedItems = cart.map((c) => ({
           menuItemId: c.id,
           name: c.name,
           quantity: Math.max(1, Number(c.quantity) || 1),
           unitPrice: Number(c.price) || 0,
+          variantLabel: c.size || c.variantLabel || '',
+          modifierSelections: c._modifierSelectionsForOrder?.length > 0
+            ? c._modifierSelectionsForOrder
+            : [],
+          isAddition: true,
         }));
         const mergedMap = new Map();
         const pushItem = (item) => {
@@ -1379,6 +1499,131 @@ export default function OrderTakerPage() {
                   })}
                 </div>
               )}
+
+              {/* ── SERVED section — tap to add more items ── */}
+              {servedOrders.length > 0 && (
+                <div className="mt-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+                      Served — tap to add items
+                    </span>
+                    <span className="h-px flex-1 bg-orange-200 dark:bg-orange-500/20" />
+                    <span className="text-[10px] font-bold text-orange-500 bg-orange-50 dark:bg-orange-500/10 px-1.5 py-0.5 rounded-full">
+                      {servedOrders.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {servedOrders.map((order) => {
+                      const orderKey = String(order.id || order._id);
+                      const isExpanded = expandedOrderIds.includes(orderKey);
+                      const itemCount = (order.items || []).reduce(
+                        (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+                        0,
+                      );
+                      const tokenLabel = `#${order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}`;
+                      const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
+                      const otLabel =
+                        order.orderType === "DINE_IN" || order.type === "dine-in"
+                          ? "Dine-in"
+                          : order.orderType === "TAKEAWAY" || order.type === "takeaway"
+                            ? "Takeaway"
+                            : "Delivery";
+                      const summaryLine = [order.tableName, order.customerName].filter(Boolean).join(" · ");
+                      return (
+                        <div
+                          key={orderKey}
+                          className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm border border-orange-200/60 dark:border-orange-500/15 opacity-80"
+                        >
+                          <div className="px-3.5 py-2 flex items-center justify-between bg-orange-50/60 dark:bg-orange-950/20">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <CheckCircle className="w-3.5 h-3.5 shrink-0 text-orange-500" />
+                              <span className="text-[11px] font-bold truncate text-orange-600 dark:text-orange-400">
+                                Served
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-orange-500 opacity-75 flex items-center gap-1 shrink-0">
+                              <Clock className="w-3 h-3" />
+                              {getTimeAgo(order.createdAt)}
+                            </div>
+                          </div>
+
+                          <div className="px-3.5 py-3">
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                <span className="text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                  {tokenLabel}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                                  {otLabel}
+                                </span>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <span className="block text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                  Rs. {totalAmt}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <p className="text-[10px] text-gray-500 dark:text-neutral-500 truncate min-w-0">
+                                <span className="font-semibold">
+                                  {itemCount} item{itemCount !== 1 ? "s" : ""}
+                                </span>
+                                {summaryLine ? ` · ${summaryLine}` : ""}
+                              </p>
+                            </div>
+
+                            <div className="flex gap-2 mb-1">
+                              <button
+                                type="button"
+                                onClick={() => startAppendItems(order)}
+                                className="flex-1 py-2.5 rounded-xl border border-orange-400 bg-orange-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform hover:bg-orange-600"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add Items
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleOrderDetails(orderKey)}
+                                className={`flex-1 py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+                                  isExpanded
+                                    ? "bg-orange-50 border-orange-300 text-orange-600"
+                                    : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300"
+                                }`}
+                              >
+                                {isExpanded ? "Hide" : "Details"}
+                                <ChevronDown
+                                  className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                />
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="space-y-0.5 mt-2">
+                                {order.items?.map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-[11px]">
+                                    <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
+                                      <span className="font-bold text-gray-900 dark:text-white">
+                                        {item.quantity || item.qty}x
+                                      </span>{" "}
+                                      {item.name}
+                                      {item.isAddition && (
+                                        <span className="ml-1 text-[9px] font-bold text-orange-500 bg-orange-50 dark:bg-orange-500/10 px-1 rounded">
+                                          +new
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1770,14 +2015,30 @@ export default function OrderTakerPage() {
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold truncate leading-tight">
                                   {item.name}
+                                  {item.size && (
+                                    <span className="text-xs font-normal text-gray-500 ml-1">
+                                      ({item.size})
+                                    </span>
+                                  )}
                                 </p>
+                                {item._modifierSelectionsForOrder
+                                  ?.filter((s) => {
+                                    const g = item.modifierGroups?.find((g) => g.id === s.groupId);
+                                    return g && !g.required;
+                                  })
+                                  .flatMap((s) => s.options)
+                                  .map((o, i) => (
+                                    <p key={i} className="text-[11px] text-gray-400 dark:text-neutral-500 leading-tight">
+                                      + {o.name}{o.price > 0 && ` (Rs ${o.price})`}
+                                    </p>
+                                  ))}
                                 <p className="text-xs font-bold text-primary mt-0.5">
                                   Rs. {(item.price * item.quantity).toLocaleString()}
                                 </p>
                               </div>
                               <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
                                 <button
-                                  onClick={() => updateQty(item.id, -1)}
+                                  onClick={() => updateQty(item._cartKey || item.id, -1)}
                                   className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
                                 >
                                   {item.quantity === 1 ? (
@@ -1790,7 +2051,7 @@ export default function OrderTakerPage() {
                                   {item.quantity}
                                 </span>
                                 <button
-                                  onClick={() => updateQty(item.id, 1)}
+                                  onClick={() => updateQty(item._cartKey || item.id, 1)}
                                   className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
                                 >
                                   <Plus className="w-3.5 h-3.5 text-primary" />
@@ -2050,6 +2311,104 @@ export default function OrderTakerPage() {
         }
         @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
       `}</style>
+
+      {/* ── Modifier Picker Modal ───────────────────────────────────────────── */}
+      {modifierPickerItem && (
+        <div
+          className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => { setModifierPickerItem(null); setModifierSelections({}); }}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative bg-white dark:bg-neutral-900 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
+              <div className="flex items-start gap-4">
+                {modifierPickerItem.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={modifierPickerItem.imageUrl} alt={modifierPickerItem.name} className="w-16 h-16 rounded-xl object-cover flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">{modifierPickerItem.name}</h3>
+                  {modifierPickerItem.description && (
+                    <p className="text-sm text-gray-500 dark:text-neutral-400 mt-0.5 line-clamp-2">{modifierPickerItem.description}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setModifierPickerItem(null); setModifierSelections({}); }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 flex-shrink-0 text-xl leading-none"
+                >✕</button>
+              </div>
+            </div>
+            <div className="p-5 space-y-6">
+              {(modifierPickerItem.modifierGroups || [])
+                .slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                .map((group) => (
+                  <div key={group.id}>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{group.groupName}</span>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${group.required ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400' : 'bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400'}`}>
+                        {group.required ? 'REQUIRED' : 'OPTIONAL'}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {(group.options || []).filter((o) => o.isAvailable !== false).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).map((option) => {
+                        const groupSel = modifierSelections[group.id] || [];
+                        const isSelected = groupSel.some((s) => s.optionId === option.id);
+                        const toggleOption = () => {
+                          setModifierSelections((prev) => {
+                            const existing = prev[group.id] || [];
+                            if (group.maxSelections === 1) {
+                              return { ...prev, [group.id]: isSelected ? [] : [{ optionId: option.id, name: option.name, price: option.price }] };
+                            } else {
+                              if (isSelected) return { ...prev, [group.id]: existing.filter((s) => s.optionId !== option.id) };
+                              else if (existing.length < group.maxSelections) return { ...prev, [group.id]: [...existing, { optionId: option.id, name: option.name, price: option.price }] };
+                              return prev;
+                            }
+                          });
+                        };
+                        return (
+                          <button key={option.id} onClick={toggleOption} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all ${isSelected ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' : 'border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-orange-500 bg-orange-500' : 'border-gray-300 dark:border-neutral-600'}`}>
+                                {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                              </div>
+                              <span className={`text-sm font-medium ${isSelected ? 'text-orange-700 dark:text-orange-400' : 'text-gray-700 dark:text-neutral-300'}`}>{option.name}</span>
+                            </div>
+                            <span className={`text-sm font-semibold ${isSelected ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-neutral-400'}`}>
+                              {option.price === 0 ? 'Free' : `Rs ${option.price.toLocaleString()}`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+            </div>
+            <div className="sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-gray-100 dark:border-neutral-800 p-5">
+              {(() => {
+                const reqTotal = (modifierPickerItem.modifierGroups || []).filter((g) => g.required).reduce((sum, g) => sum + (modifierSelections[g.id] || []).reduce((s, o) => s + o.price, 0), 0);
+                const optTotal = (modifierPickerItem.modifierGroups || []).filter((g) => !g.required).reduce((sum, g) => sum + (modifierSelections[g.id] || []).reduce((s, o) => s + o.price, 0), 0);
+                const display = reqTotal > 0 ? reqTotal + optTotal : (modifierPickerItem.finalPrice ?? modifierPickerItem.price) + optTotal;
+                return (
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-gray-500 dark:text-neutral-400">Total</span>
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">Rs {display.toLocaleString()}</span>
+                  </div>
+                );
+              })()}
+              <button
+                onClick={confirmModifierSelection}
+                disabled={!isModifierSelectionComplete()}
+                className={`w-full py-3.5 rounded-xl text-base font-bold transition-all ${isModifierSelectionComplete() ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-600 cursor-not-allowed'}`}
+              >
+                {isModifierSelectionComplete() ? 'Add to Order' : 'Select required options'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { getOrders, getNextStatuses, updateOrderStatus } from "../../lib/apiClient";
+import { getOrders, getNextStatuses, updateOrderStatus, getDaySessions } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import {
   Clock, User, ChefHat, Loader2, CheckCircle2, RefreshCw,
   Package, UtensilsCrossed, Headset, ShoppingBag, Truck, MapPin,
-  Trash2, CalendarDays, EyeOff,
+  Trash2, EyeOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -177,7 +177,20 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
   const urgency = getUrgency(minutes);
   const ug = URGENCY[urgency];
   const { AdvIcon } = column;
-  const totalQty = order.items?.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
+  // An order has "additions" when extra items were appended after it was placed.
+  const orderWasServed = ["DELIVERED", "COMPLETED"].includes(order.status);
+  const hasAdditions = (order.items || []).some((i) => i.isAddition);
+  // Only filter to additions-only when the order was already served —
+  // the kitchen already cooked the original items once.
+  // If still cooking (NEW_ORDER / PROCESSING / READY), show ALL items so
+  // the kitchen prepares everything together.
+  const itemsToShow =
+    orderWasServed && hasAdditions
+      ? (order.items || []).filter((i) => i.isAddition)
+      : order.items || [];
+  // Badge / notice only shown when kitchen truly needs to cook just the new items.
+  const showAdditionBadge = orderWasServed && hasAdditions;
+  const totalQty = itemsToShow.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
   const stale = isStaleReady(order);
 
   return (
@@ -187,7 +200,7 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
       {/* Card header */}
       <div className="px-3 pt-3 pb-2">
         <div className="flex items-start justify-between gap-2 mb-1.5">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <span className="text-2xl font-black text-gray-900 dark:text-white leading-none tabular-nums">
               #{getTokenNumber(order)}
             </span>
@@ -195,6 +208,11 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
               <typeConf.Icon className="w-2.5 h-2.5" />
               {typeLabel}
             </span>
+            {showAdditionBadge && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500 text-white flex-shrink-0">
+                + ADDITION
+              </span>
+            )}
           </div>
           <div className={`flex items-center gap-1 px-2 py-1 rounded-lg flex-shrink-0 ${ug.timerBg}`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ug.dot}`} />
@@ -238,18 +256,52 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
       {/* Items */}
       <div className="mx-3 border-t border-gray-100 dark:border-neutral-800" />
       <div className="px-3 pt-2 pb-0.5 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">Items</span>
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+          {showAdditionBadge ? "Cook only these:" : "Items"}
+        </span>
         {totalQty > 0 && (
           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-[10px] font-bold text-gray-500 dark:text-neutral-400 tabular-nums">
             {totalQty} qty
           </span>
         )}
       </div>
+      {showAdditionBadge && (
+        <div className="px-3 pb-1">
+          <p className="text-[10px] text-orange-500 dark:text-orange-400 font-medium">
+            Addition to existing order — original items already cooked
+          </p>
+        </div>
+      )}
       <div className="px-3 py-2 space-y-1.5 flex-1">
-        {order.items?.map((item, idx) => (
-          <div key={idx} className="flex items-baseline gap-2">
-            <span className="text-xs font-black text-primary w-5 flex-shrink-0 tabular-nums">{item.qty ?? item.quantity}×</span>
-            <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 leading-snug">{item.name}</span>
+        {itemsToShow.map((item, idx) => (
+          <div key={idx}>
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-black text-primary w-5 flex-shrink-0 tabular-nums">{item.qty ?? item.quantity}×</span>
+              <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 leading-snug">
+                {item.name}
+              </span>
+            </div>
+            {(item.variantLabel || item.size) && (
+              <div className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-7 mt-0.5">
+                ({item.variantLabel || item.size})
+              </div>
+            )}
+            {(item.modifierSelections || [])
+              .filter((sel) => {
+                const optTotal = (sel.options || []).reduce((s, o) => s + (o.price || 0), 0);
+                return optTotal > 0 && optTotal !== (item.unitPrice || item.price);
+              })
+              .map((sel, si) => (
+                <div key={si} className="text-xs text-orange-500 dark:text-orange-400 leading-tight ml-7 mt-0.5">
+                  + {(sel.options || []).map((o) => o.name).join(', ')}
+                </div>
+              ))
+            }
+            {item.note && (
+              <div className="text-xs italic text-blue-500 dark:text-blue-400 ml-7 mt-0.5">
+                📝 {item.note}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -303,7 +355,7 @@ export default function KitchenPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [lastRefreshed, setLastRefreshed] = useState(Date.now());
   const [refreshing, setRefreshing] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [sessionStart, setSessionStart] = useState(null);
   const [dismissedIds, setDismissedIds] = useState(() => {
     try {
       const stored =
@@ -325,6 +377,33 @@ export default function KitchenPage() {
     fetchOrders();
     const iv = setInterval(fetchOrders, 3000);
     return () => clearInterval(iv);
+  }, []);
+
+  // Fetch the active business day session so KDS scope matches POS session scope.
+  useEffect(() => {
+    async function loadSessionStart() {
+      try {
+        const data = await getDaySessions(null, { limit: 5 });
+        const list = Array.isArray(data) ? data : (data?.sessions ?? []);
+        const open = list.find((s) => s.status === "OPEN" && s.startAt);
+        if (open?.startAt) {
+          setSessionStart(new Date(open.startAt));
+          return;
+        }
+        // No open session — use most recent closed session's endAt − 24 h so
+        // evening orders before the session opened are still visible.
+        const closed = list.find((s) => s.status === "CLOSED" && s.endAt);
+        if (closed?.endAt) {
+          setSessionStart(new Date(new Date(closed.endAt).getTime() - 24 * 60 * 60 * 1000));
+          return;
+        }
+      } catch {}
+      // Ultimate fallback: calendar midnight (same as before).
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      setSessionStart(d);
+    }
+    loadSessionStart();
   }, []);
 
   useEffect(() => {
@@ -407,28 +486,23 @@ export default function KitchenPage() {
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
-  // Midnight of today in local time — recomputed every tick so it flips correctly
-  // if the KDS stays open overnight.
-  const todayStart = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
-
   // Active = not closed/cancelled AND not dismissed from KDS view.
-  const activeOrders = orders.filter(
-    (o) =>
-      !["DELIVERED", "CANCELLED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(o.status) &&
-      !dismissedIds.has(String(o._id || o.id || "")),
-  );
+  // Exception: DELIVERED orders that have addition items are included so the
+  // kitchen can see the new items that need to be cooked.
+  const activeOrders = orders.filter((o) => {
+    if (dismissedIds.has(String(o._id || o.id || ""))) return false;
+    if (["CANCELLED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(o.status)) return false;
+    if (o.status === "DELIVERED") {
+      return (o.items || []).some((i) => i.isAddition);
+    }
+    return true;
+  });
 
-  // Today-only vs show-all toggle.
-  const visibleOrders = showAll
-    ? activeOrders
-    : activeOrders.filter((o) => isTodayOrder(o, todayStart));
-
-  const hiddenCount = activeOrders.length - visibleOrders.length;
+  // Show orders from the current business session only (mirrors POS session scope).
+  // Falls back to all active orders while sessionStart is still loading.
+  const visibleOrders = sessionStart
+    ? activeOrders.filter((o) => isTodayOrder(o, sessionStart))
+    : activeOrders;
 
   const applyTypeFilter = (list) => {
     if (typeFilter === "all") return list;
@@ -442,7 +516,17 @@ export default function KitchenPage() {
   };
 
   const columnOrders = COLUMNS.map((col) =>
-    applyTypeFilter(visibleOrders.filter((o) => col.statuses.includes(o.status))),
+    applyTypeFilter(
+      visibleOrders.filter(
+        (o) =>
+          col.statuses.includes(o.status) ||
+          // DELIVERED orders with additions always show in the New Orders column
+          // regardless of their status, so the kitchen can see new items.
+          (col.key === "new" &&
+            o.status === "DELIVERED" &&
+            (o.items || []).some((i) => i.isAddition)),
+      ),
+    ),
   );
 
   // Stale ready orders — drives the "Clear stale" button.
@@ -509,25 +593,6 @@ export default function KitchenPage() {
               ))}
             </div>
 
-            {/* Today / Show all toggle */}
-            <button
-              type="button"
-              onClick={() => setShowAll((v) => !v)}
-              className={`flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs font-semibold transition-all ${
-                showAll
-                  ? "border-primary/40 bg-primary/10 text-primary dark:text-primary"
-                  : "border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:border-gray-400"
-              }`}
-              title={showAll ? "Showing all orders — click to show today only" : "Showing today's orders only"}
-            >
-              <CalendarDays className="w-3.5 h-3.5" />
-              {showAll ? "All orders" : "Today only"}
-              {!showAll && hiddenCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400 text-[10px] font-bold">
-                  +{hiddenCount} older
-                </span>
-              )}
-            </button>
 
             {/* Clear stale Ready orders */}
             {staleReadyCount > 0 && (
