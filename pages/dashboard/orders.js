@@ -1237,8 +1237,20 @@ export default function OrdersPage() {
     };
     baseFiltered.forEach((order) => {
       const status = orderStatusForTab(order.status);
+
       if (status === "DELIVERED") {
-        if (isOrderFullyClosed(order)) {
+        // Check for uncooked addition items
+        // Mirror the same logic KDS uses
+        const hasUncookedAdditions = (order.items || []).some(
+          (i) => i.isAddition === true,
+        );
+
+        if (hasUncookedAdditions) {
+          // Route to New Orders so cashier/manager
+          // can see kitchen is still working on
+          // additional items for this order
+          groups.NEW_ORDER.push(order);
+        } else if (isOrderFullyClosed(order)) {
           groups.DELIVERED.push(order);
         } else {
           groups.AWAITING_PAYMENT.push(order);
