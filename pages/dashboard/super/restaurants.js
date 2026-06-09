@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import Button from "../../../components/ui/Button";
 import DataTable from "../../../components/ui/DataTable";
@@ -6,11 +7,7 @@ import {
   getSuperRestaurantActivitySummary,
   getRestaurantsForSuperAdmin,
   getDeletedRestaurantsForSuperAdmin,
-  getSuperBranches,
   createRestaurantForSuperAdmin,
-  updateRestaurantForSuperAdmin,
-  updateRestaurantSubscription,
-  verifyRestaurantOwnerEmailsForSuperAdmin,
   setActingAsRestaurant,
   deleteRestaurantForSuperAdmin,
   restoreRestaurantForSuperAdmin,
@@ -19,31 +16,66 @@ import {
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 import {
   Search,
-  ChevronDown,
   Trash2,
   X,
   Loader2,
   Plus,
-  MailCheck,
-  Pencil,
   RefreshCw,
+  Eye,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-function formatDateTime(iso) {
-  if (!iso) return "";
+const STOREFRONT_DOMAIN =
+  process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "eatsdesk.app";
+
+function formatRelativeTime(iso) {
+  if (!iso) return null;
   try {
-    return new Date(iso).toLocaleString(undefined, {
+    const diff = Date.now() - new Date(iso).getTime();
+    if (diff < 0) return "just now";
+    const sec = Math.floor(diff / 1000);
+    if (sec < 60) return "just now";
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`;
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+    const years = Math.floor(days / 365);
+    return `${years} year${years === 1 ? "" : "s"} ago`;
+  } catch {
+    return null;
+  }
+}
+
+function formatTrialEndLabel(iso) {
+  if (!iso) return null;
+  try {
+    return `Ends ${new Date(iso).toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
       year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    })}`;
   } catch {
-    return "";
+    return null;
   }
 }
+
+function isExpiringWithinDays(iso, days = 7) {
+  if (!iso) return false;
+  const end = new Date(iso).getTime();
+  const remaining = end - Date.now();
+  return remaining > 0 && remaining <= days * 86400000;
+}
+
+const SUBSCRIPTION_PILL = {
+  TRIAL: "badge-warning",
+  ACTIVE: "badge-success",
+  EXPIRED: "badge-danger",
+  SUSPENDED: "badge-danger",
+};
 
 const ENGAGEMENT_STYLES = {
   /** Soft pills on white table — matches platform health column reference */
@@ -72,41 +104,15 @@ function slugifyForSubdomain(name) {
     .replace(/\s+/g, "-");
 }
 
-const STATUS_CONFIRM = {
-  TRIAL: {
-    title: "Reset to Trial",
-    message:
-      "This will reset the restaurant's subscription status to a 3‑month trial. Are you sure?",
-    confirmLabel: "Set Trial",
-  },
-  ACTIVE: {
-    title: "Activate Subscription",
-    message:
-      "This will activate the restaurant's subscription. Choose how long it should stay active.",
-    confirmLabel: "Activate",
-  },
-  SUSPENDED: {
-    title: "Suspend Restaurant",
-    message:
-      "This will suspend the restaurant. All dashboard and public website access will be blocked until reactivated. Are you sure?",
-    confirmLabel: "Suspend",
-  },
-};
-
 export default function SuperRestaurantsPage() {
+  const router = useRouter();
   const [restaurants, setRestaurants] = useState([]);
   const [deletedRestaurants, setDeletedRestaurants] = useState([]);
-  const [updatingId, setUpdatingId] = useState(null);
-  const [verifyingOwnerEmailId, setVerifyingOwnerEmailId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusDropdownId, setStatusDropdownId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deletedDropdownOpen, setDeletedDropdownOpen] = useState(false);
-  const [branchesModalRestaurant, setBranchesModalRestaurant] = useState(null);
-  const [allBranches, setAllBranches] = useState([]);
-  const [branchesLoading, setBranchesLoading] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createForm, setCreateForm] = useState({
     subdomain: "",
@@ -120,37 +126,7 @@ export default function SuperRestaurantsPage() {
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
   const [listRefreshing, setListRefreshing] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [editForm, setEditForm] = useState({
-    name: "",
-    subdomain: "",
-    contactPhone: "",
-    contactEmail: "",
-    address: "",
-    platformHealthOverride: "",
-  });
-  const [editError, setEditError] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-  const dropdownRef = useRef(null);
   const { confirm } = useConfirmDialog();
-
-  async function loadBranchesIfNeeded() {
-    if (allBranches.length > 0) return;
-    setBranchesLoading(true);
-    try {
-      const res = await getSuperBranches();
-      setAllBranches(res?.branches ?? []);
-    } catch {
-      setAllBranches([]);
-    } finally {
-      setBranchesLoading(false);
-    }
-  }
-
-  async function openBranchesModal(r) {
-    await loadBranchesIfNeeded();
-    setBranchesModalRestaurant(r);
-  }
 
   function handleOpenCreate() {
     setCreateForm({
@@ -164,54 +140,6 @@ export default function SuperRestaurantsPage() {
     });
     setCreateError("");
     setShowCreateForm(true);
-  }
-
-  function openEditRestaurant(r) {
-    const w = r.website || {};
-    setEditForm({
-      name: w.name || "",
-      subdomain: w.subdomain || "",
-      contactPhone: w.contactPhone || "",
-      contactEmail: w.contactEmail || "",
-      address: w.address || "",
-      platformHealthOverride: r.platformHealthOverride || "",
-    });
-    setEditError("");
-    setEditTarget(r);
-  }
-
-  async function handleEditRestaurantSave(e) {
-    e.preventDefault();
-    if (!editTarget) return;
-    setEditError("");
-    const name = editForm.name.trim();
-    const subdomain = editForm.subdomain.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
-    if (!name) {
-      setEditError("Restaurant name is required.");
-      return;
-    }
-    if (!subdomain) {
-      setEditError("Subdomain is required.");
-      return;
-    }
-    try {
-      setEditSaving(true);
-      await updateRestaurantForSuperAdmin(editTarget.id, {
-        name,
-        subdomain,
-        contactPhone: editForm.contactPhone.trim(),
-        contactEmail: editForm.contactEmail.trim(),
-        address: editForm.address.trim(),
-        platformHealthOverride: editForm.platformHealthOverride || null,
-      });
-      toast.success("Restaurant updated.");
-      setEditTarget(null);
-      loadRestaurants();
-    } catch (err) {
-      setEditError(err.message || "Failed to update restaurant");
-    } finally {
-      setEditSaving(false);
-    }
   }
 
   async function handleCreateRestaurant(e) {
@@ -288,19 +216,6 @@ export default function SuperRestaurantsPage() {
     loadDeleted();
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setStatusDropdownId(null);
-      }
-    };
-    if (statusDropdownId) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [statusDropdownId]);
-
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterHealth, setFilterHealth] = useState("all");
   const [sortSales, setSortSales] = useState("desc"); // "desc" = high to low, "asc" = low to high
@@ -346,160 +261,6 @@ export default function SuperRestaurantsPage() {
     const mult = sortSales === "asc" ? 1 : -1;
     return (revA - revB) * mult;
   });
-
-  async function handleStatusChange(id, status) {
-    const cfg = STATUS_CONFIRM[status] || {};
-    // Trial: simple confirm, backend enforces 3-month trial window
-    if (status === "TRIAL") {
-      const ok = await confirm({
-        title: cfg.title || "Change Status",
-        message: cfg.message || `Change subscription status to ${status}?`,
-        confirmLabel: cfg.confirmLabel || "Confirm",
-      });
-      if (!ok) return;
-      setStatusDropdownId(null);
-      setUpdatingId(id);
-      try {
-        const updated = await updateRestaurantSubscription(id, { status });
-        setRestaurants((prev) =>
-          prev.map((r) =>
-            r.id === updated.id
-              ? { ...r, subscription: updated.subscription }
-              : r,
-          ),
-        );
-      } finally {
-        setUpdatingId(null);
-      }
-      return;
-    }
-
-    // Active: ask for duration (in months)
-    let durationMonths = null;
-    if (status === "ACTIVE") {
-      durationMonths = await confirm({
-        title: cfg.title || "Activate Subscription",
-        message:
-          cfg.message || "Choose how long the subscription should stay active.",
-        confirmLabel: cfg.confirmLabel || "Activate",
-        options: [
-          { label: "1 month", value: 1 },
-          { label: "3 months", value: 3 },
-          { label: "6 months", value: 6 },
-          { label: "12 months", value: 12 },
-        ],
-        defaultValue: 1,
-      });
-      if (!durationMonths) return;
-    } else {
-      const ok = await confirm({
-        title: cfg.title || "Change Status",
-        message: cfg.message || `Change subscription status to ${status}?`,
-        confirmLabel: cfg.confirmLabel || "Confirm",
-      });
-      if (!ok) return;
-    }
-    setStatusDropdownId(null);
-    setUpdatingId(id);
-    try {
-      const payload = durationMonths ? { status, durationMonths } : { status };
-      const updated = await updateRestaurantSubscription(id, payload);
-      setRestaurants((prev) =>
-        prev.map((r) =>
-          r.id === updated.id
-            ? { ...r, subscription: updated.subscription }
-            : r,
-        ),
-      );
-    } finally {
-      setUpdatingId(null);
-    }
-  }
-
-  async function handleVerifyOwnerEmails(restaurantId) {
-    const row = restaurants.find((x) => x.id === restaurantId);
-    const name = row?.website?.name || "this restaurant";
-    const ok = await confirm({
-      title: "Verify admin emails without OTP?",
-      message:
-        `Mark all restaurant_admin and admin dashboard accounts for "${name}" as email-verified and clear any verification codes? They can log in without entering an OTP.`,
-      confirmLabel: "Verify emails",
-    });
-    if (!ok) return;
-    setVerifyingOwnerEmailId(restaurantId);
-    const toastId = toast.loading("Updating email verification…");
-    try {
-      const out = await verifyRestaurantOwnerEmailsForSuperAdmin(restaurantId);
-      const mod = Number(out?.modifiedCount ?? 0);
-      toast.success(
-        mod > 0
-          ? `Marked ${mod} admin account(s) as verified.`
-          : "All matching admins were already verified, or there are no admin users for this tenant.",
-        { id: toastId },
-      );
-      await loadRestaurants();
-    } catch (err) {
-      toast.error(err.message || "Failed to verify emails", { id: toastId });
-    } finally {
-      setVerifyingOwnerEmailId(null);
-    }
-  }
-
-  /** Single status control: current subscription as one pill + chevron; menu to switch. */
-  function renderSubscriptionStatusControl(r) {
-    const sub = r.subscription || {};
-    const statusLabel = String(sub.status || "TRIAL").toUpperCase();
-    const isDropdownOpen = statusDropdownId === r.id;
-    const badgeClass =
-      sub.status === "ACTIVE"
-        ? "badge-success"
-        : sub.status === "TRIAL"
-          ? "badge-warning"
-          : "badge-danger";
-    return (
-      <div className="relative shrink-0 w-fit" ref={isDropdownOpen ? dropdownRef : null}>
-        <button
-          type="button"
-          disabled={updatingId === r.id}
-          onClick={() =>
-            setStatusDropdownId(isDropdownOpen ? null : r.id)
-          }
-          className={`badge items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide cursor-pointer hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed ${badgeClass}`}
-          title="Change subscription status"
-        >
-          {statusLabel}
-          <ChevronDown
-            className={`w-3 h-3 shrink-0 opacity-80 ${isDropdownOpen ? "rotate-180" : ""} transition-transform`}
-          />
-        </button>
-        {isDropdownOpen && (
-          <div className="absolute left-0 top-full mt-1 z-30 w-36 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-lg py-1">
-              <button
-                type="button"
-                onClick={() => handleStatusChange(r.id, "TRIAL")}
-                className="w-full text-left px-4 py-2 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-              >
-                Trial
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStatusChange(r.id, "ACTIVE")}
-                className="w-full text-left px-4 py-2 text-[11px] text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-              >
-                Active
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStatusChange(r.id, "SUSPENDED")}
-                className="w-full text-left px-4 py-2 text-[11px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10"
-              >
-                Suspend
-              </button>
-            </div>
-          )}
-      </div>
-    );
-  }
 
   return (
     <AdminLayout title="Restaurants & Subscriptions">
@@ -708,7 +469,6 @@ export default function SuperRestaurantsPage() {
         </div>
         <DataTable
           variant="card"
-          showSno
           data={sorted}
           emptyMessage={
             restaurants.length === 0
@@ -717,6 +477,127 @@ export default function SuperRestaurantsPage() {
           }
           columns={[
             {
+              key: "restaurant",
+              header: "Restaurant",
+              render: (_, r) => {
+                const sub = r.website?.subdomain;
+                return (
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-bold leading-snug text-gray-900 dark:text-white">
+                      {r.website?.name || "Untitled restaurant"}
+                    </div>
+                    {sub ? (
+                      <div className="truncate font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+                        {sub}.{STOREFRONT_DOMAIN}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              },
+            },
+            {
+              key: "owner",
+              header: "Owner",
+              render: (_, r) => {
+                const oa = r.ownerAccount;
+                const name = (oa?.displayName || "").trim();
+                const email = (oa?.loginEmail || "").trim();
+                if (!name && !email) {
+                  return (
+                    <span className="text-[11px] text-neutral-500">—</span>
+                  );
+                }
+                return (
+                  <div className="min-w-0 max-w-[220px]">
+                    {name ? (
+                      <div className="truncate text-sm leading-snug text-gray-900 dark:text-white">
+                        {name}
+                      </div>
+                    ) : null}
+                    {email ? (
+                      <div className="truncate text-[11px] text-neutral-500 dark:text-neutral-400">
+                        {email}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              },
+            },
+            {
+              key: "status",
+              header: "Status",
+              cellClassName: "whitespace-normal",
+              render: (_, r) => {
+                const sub = r.subscription || {};
+                const statusLabel = String(sub.status || "TRIAL").toUpperCase();
+                const badgeClass =
+                  SUBSCRIPTION_PILL[statusLabel] || SUBSCRIPTION_PILL.TRIAL;
+                const trialEnd =
+                  sub.trialEndsAt ||
+                  sub.freeTrialEndDate ||
+                  sub.expiresAt;
+                const endLabel = formatTrialEndLabel(trialEnd);
+                const warn = isExpiringWithinDays(trialEnd);
+                return (
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span
+                      className={`badge w-fit text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}
+                    >
+                      {statusLabel}
+                    </span>
+                    {endLabel ? (
+                      <span
+                        className={`text-[11px] ${
+                          warn
+                            ? "text-red-600 dark:text-red-400 font-medium"
+                            : "text-neutral-500 dark:text-neutral-400"
+                        }`}
+                      >
+                        {endLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              },
+            },
+            {
+              key: "health",
+              header: "Health",
+              align: "center",
+              render: (_, r) => {
+                const eg = r.engagement || {};
+                const badgeClass =
+                  ENGAGEMENT_STYLES[eg.key] || ENGAGEMENT_STYLES.dormant;
+                return (
+                  <span
+                    className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${badgeClass}`}
+                    title={eg.description}
+                  >
+                    {eg.label || "—"}
+                  </span>
+                );
+              },
+              cellClassName: "whitespace-nowrap text-center",
+            },
+            {
+              key: "lastOrderAt",
+              header: "Last order",
+              render: (_, r) => {
+                const rel = formatRelativeTime(r.activity?.lastOrderAt);
+                if (!rel) {
+                  return (
+                    <span className="text-[11px] text-neutral-500">Never</span>
+                  );
+                }
+                return (
+                  <span className="text-[11px] text-gray-700 dark:text-neutral-300 whitespace-nowrap">
+                    {rel}
+                  </span>
+                );
+              },
+              cellClassName: "whitespace-nowrap",
+            },
+            {
               key: "actions",
               header: "Actions",
               align: "left",
@@ -724,27 +605,18 @@ export default function SuperRestaurantsPage() {
               render: (_, r) => {
                 const website = r.website || {};
                 return (
-                  <div className="inline-flex min-h-[1.25rem] flex-nowrap items-center gap-3 justify-start shrink-0">
-                    <span className="inline-flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => openEditRestaurant(r)}
-                        className="p-0 m-0 border-0 bg-transparent text-neutral-600 dark:text-neutral-300 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
-                        title="Edit restaurant details and health"
-                        aria-label="Edit restaurant"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(r)}
-                        className="p-0 m-0 border-0 bg-transparent text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 rounded"
-                        title="Soft-delete (recoverable within 48 hours)"
-                        aria-label="Delete restaurant"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </span>
+                  <div className="inline-flex min-h-[1.25rem] flex-nowrap items-center gap-2 justify-start shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(`/super/restaurants/${r.id}`)
+                      }
+                      className="px-2 py-0.5 rounded-md border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold inline-flex items-center gap-1 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-200"
+                      title="View restaurant details"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      View
+                    </button>
                     <button
                       type="button"
                       disabled={!website.subdomain}
@@ -755,594 +627,26 @@ export default function SuperRestaurantsPage() {
                           window.open("/overview", "_blank");
                         }
                       }}
-                      className="p-0 m-0 border-0 bg-transparent text-xs font-medium leading-none text-primary underline underline-offset-2 decoration-primary hover:text-primary/80 disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
+                      className="px-2 py-0.5 rounded-md border border-primary/30 text-[11px] font-semibold text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed"
                       title="Open this restaurant's dashboard in a new tab"
-                      aria-label="Open restaurant dashboard"
                     >
                       Login
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(r)}
+                      className="p-1 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                      title="Soft-delete (recoverable within 48 hours)"
+                      aria-label="Delete restaurant"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 );
               },
             },
-            {
-              key: "ownerName",
-              header: "Owner name",
-              render: (_, r) => {
-                const oa = r.ownerAccount;
-                const name = (oa?.displayName || "").trim();
-                if (!name) {
-                  return (
-                    <span
-                      className="text-[11px] text-neutral-500"
-                      title="No name on file for restaurant_admin / admin user"
-                    >
-                      —
-                    </span>
-                  );
-                }
-                return (
-                  <div className="min-w-0 max-w-[200px] truncate text-sm font-medium leading-snug text-gray-900 dark:text-white">
-                    {name}
-                  </div>
-                );
-              },
-            },
-            {
-              key: "ownerLoginEmail",
-              header: "Owner login email",
-              render: (_, r) => {
-                const login = (r.ownerAccount?.loginEmail || "").trim();
-                if (!login) {
-                  return (
-                    <span
-                      className="text-[11px] text-neutral-500"
-                      title="No restaurant_admin or admin user for this tenant"
-                    >
-                      —
-                    </span>
-                  );
-                }
-                return (
-                  <div
-                    className="min-w-0 max-w-[200px] truncate font-mono text-xs leading-snug text-neutral-800 dark:text-neutral-200"
-                    title="Dashboard login email"
-                  >
-                    {login}
-                  </div>
-                );
-              },
-            },
-            {
-              key: "adminLoginEmail",
-              header: "Email verification",
-              cellClassName: "whitespace-normal max-w-[200px]",
-              render: (_, r) => {
-                const oa = r.ownerAccount;
-                if (!oa) {
-                  return (
-                    <span className="text-[11px] text-neutral-500" title="No restaurant_admin or admin user">
-                      —
-                    </span>
-                  );
-                }
-                const busy = verifyingOwnerEmailId === r.id;
-                return (
-                  <div className="flex flex-col gap-1.5 min-w-0">
-                    <span
-                      className={`inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                        oa.allVerified
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                          : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-                      }`}
-                    >
-                      <MailCheck className="w-3 h-3 shrink-0" />
-                      {oa.allVerified ? "Verified" : `${oa.pendingCount} pending`}
-                    </span>
-                    {!oa.allVerified ? (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => handleVerifyOwnerEmails(r.id)}
-                        className="w-fit text-left text-[10px] font-semibold text-primary hover:underline disabled:opacity-50"
-                      >
-                        {busy ? "Updating…" : "Verify without OTP"}
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              },
-            },
-            {
-              key: "restaurant",
-              header: "Restaurant",
-              render: (_, r) => (
-                <div className="truncate text-sm font-medium leading-snug text-gray-900 dark:text-white">
-                  {r.website?.name || "Untitled restaurant"}
-                </div>
-              ),
-            },
-            {
-              key: "subdomain",
-              header: "Subdomain",
-              render: (_, r) => r.website?.subdomain || "—",
-              cellClassName: "text-gray-700 dark:text-neutral-300",
-            },
-            {
-              key: "phone",
-              header: "Owner phone",
-              render: (_, r) => r.website?.contactPhone || "—",
-              cellClassName:
-                "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
-            },
-            {
-              key: "email",
-              header: "Contact email",
-              render: (_, r) => r.website?.contactEmail || "—",
-              cellClassName:
-                "text-gray-700 dark:text-neutral-300 truncate max-w-[180px]",
-            },
-            {
-              key: "plan",
-              header: "Plan",
-              render: (_, r) => r.subscription?.plan || "ESSENTIAL",
-              cellClassName: "text-gray-700 dark:text-neutral-300",
-            },
-            {
-              key: "status",
-              header: "Status",
-              render: (_, r) => renderSubscriptionStatusControl(r),
-              cellClassName: "whitespace-normal",
-            },
-            {
-              key: "orders7d",
-              header: "7d",
-              align: "right",
-              render: (_, r) => (
-                <span className="tabular-nums text-gray-700 dark:text-neutral-300">
-                  {r.activity?.ordersLast7Days ?? 0}
-                </span>
-              ),
-              cellClassName: "whitespace-nowrap",
-            },
-            {
-              key: "orders30d",
-              header: "30d",
-              align: "right",
-              render: (_, r) => (
-                <span className="tabular-nums font-semibold text-gray-900 dark:text-white">
-                  {r.activity?.ordersLast30Days ?? 0}
-                </span>
-              ),
-              cellClassName: "whitespace-nowrap",
-            },
-            {
-              key: "revenue30d",
-              header: "Revenue",
-              align: "right",
-              render: (_, r) => {
-                const a = r.activity?.revenueLast30Days;
-                return (
-                  <span className="tabular-nums text-gray-600 dark:text-neutral-400 text-[11px]">
-                    {a != null && a > 0
-                      ? `PKR ${Number(a).toLocaleString("en-PK", { maximumFractionDigits: 0 })}`
-                      : "—"}
-                  </span>
-                );
-              },
-              cellClassName: "whitespace-nowrap",
-            },
-            {
-              key: "ordersLifetime",
-              header: "All-time",
-              align: "right",
-              render: (_, r) => (
-                <span className="tabular-nums text-gray-700 dark:text-neutral-300">
-                  {r.activity?.ordersLifetime ?? 0}
-                </span>
-              ),
-              cellClassName: "whitespace-nowrap",
-            },
-            {
-              key: "lastOrderAt",
-              header: "Last order",
-              align: "left",
-              render: (_, r) => (
-                <span className="text-[11px] text-neutral-500 whitespace-nowrap">
-                  {formatDateTime(r.activity?.lastOrderAt) || "—"}
-                </span>
-              ),
-              cellClassName: "max-w-[120px] truncate",
-            },
-            {
-              key: "menuItemsCount",
-              header: "Menu",
-              align: "right",
-              render: (_, r) => (
-                <span className="tabular-nums text-neutral-500">
-                  {r.activity?.menuItemsCount ?? 0}
-                </span>
-              ),
-              cellClassName: "whitespace-nowrap",
-            },
-            {
-              key: "branchesCount",
-              header: "Branches",
-              align: "right",
-              render: (_, r) => {
-                const count = r.activity?.branchesCount ?? 0;
-                if (count === 0) {
-                  return <span className="tabular-nums text-neutral-500">0</span>;
-                }
-                return (
-                  <button
-                    type="button"
-                    onClick={() => openBranchesModal(r)}
-                    disabled={branchesLoading}
-                    className="tabular-nums text-primary hover:text-primary/80 font-medium underline underline-offset-1"
-                  >
-                    {count}
-                  </button>
-                );
-              },
-              cellClassName: "whitespace-nowrap",
-            },
-            {
-              key: "teamMembersCount",
-              header: "Team",
-              align: "right",
-              render: (_, r) => (
-                <span className="tabular-nums text-neutral-500">
-                  {r.activity?.teamMembersCount ?? 0}
-                </span>
-              ),
-              cellClassName: "whitespace-nowrap",
-            },
-            {
-              key: "health",
-              header: "Health",
-              align: "center",
-              render: (_, r) => {
-                const eg = r.engagement || {};
-                const badgeClass =
-                  ENGAGEMENT_STYLES[eg.key] || ENGAGEMENT_STYLES.dormant;
-                const manual = Boolean(r.platformHealthOverride);
-                return (
-                  <span
-                    className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${badgeClass}`}
-                    title={
-                      manual
-                        ? `${eg.description} Override: ${r.platformHealthOverride}.`
-                        : eg.description
-                    }
-                  >
-                    {eg.label || "—"}
-                    {manual ? (
-                      <span className="ml-1 opacity-70 font-normal" aria-hidden>
-                        *
-                      </span>
-                    ) : null}
-                  </span>
-                );
-              },
-              cellClassName: "whitespace-nowrap text-center",
-            },
-            {
-              key: "trialEnds",
-              header: "Trial ends",
-              render: (_, r) =>
-                r.subscription?.trialEndsAt
-                  ? new Date(r.subscription.trialEndsAt).toLocaleDateString()
-                  : "—",
-              cellClassName: "text-neutral-400",
-            },
-            {
-              key: "expires",
-              header: "Expires",
-              render: (_, r) =>
-                r.subscription?.expiresAt
-                  ? new Date(r.subscription.expiresAt).toLocaleDateString()
-                  : "—",
-              cellClassName: "text-neutral-400",
-            },
-            {
-              key: "created",
-              header: "Created",
-              render: (_, r) =>
-                r.createdAt
-                  ? new Date(r.createdAt).toLocaleDateString(undefined, {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })
-                  : "—",
-              cellClassName: "text-neutral-400 whitespace-nowrap",
-            },
           ]}
         />
-
-        {/* Branches modal */}
-        {branchesModalRestaurant && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 dark:bg-black/60">
-            <div className="bg-white dark:bg-neutral-900 rounded-xl border-2 border-gray-200 dark:border-neutral-700 shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-700 flex-shrink-0">
-                <h3 className="font-bold text-gray-900 dark:text-white">
-                  Branches — {branchesModalRestaurant.website?.name || "Untitled"}
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setBranchesModalRestaurant(null)}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="overflow-y-auto flex-1 px-5 py-4">
-                {branchesLoading ? (
-                  <div className="flex items-center justify-center py-12 gap-2 text-neutral-500">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Loading branches…
-                  </div>
-                ) : (() => {
-                  const sub = branchesModalRestaurant.website?.subdomain;
-                  const restId = branchesModalRestaurant.id;
-                  const restaurantBranches = allBranches.filter(
-                    (b) =>
-                      b.subdomain === sub || b.restaurantId === restId
-                  );
-                  if (restaurantBranches.length === 0) {
-                    return (
-                      <p className="text-sm text-neutral-500 py-6">
-                        No branches found.
-                      </p>
-                    );
-                  }
-                  return (
-                    <ul className="space-y-4">
-                      {restaurantBranches.map((b) => (
-                        <li
-                          key={b.id}
-                          className="border border-gray-200 dark:border-neutral-700 rounded-lg p-4"
-                        >
-                          <div className="font-semibold text-gray-900 dark:text-white">
-                            {b.name}
-                            {b.code && (
-                              <span className="ml-2 text-xs font-normal text-neutral-500">
-                                ({b.code})
-                              </span>
-                            )}
-                          </div>
-                          {b.address && (
-                            <p className="text-sm text-gray-600 dark:text-neutral-400 mt-1">
-                              {b.address}
-                            </p>
-                          )}
-                          <div className="flex flex-wrap gap-3 mt-2 text-sm">
-                            {b.contactPhone && (
-                              <span className="text-gray-700 dark:text-neutral-300">
-                                📞 {b.contactPhone}
-                              </span>
-                            )}
-                            {b.contactEmail && (
-                              <span className="text-gray-700 dark:text-neutral-300">
-                                ✉️ {b.contactEmail}
-                              </span>
-                            )}
-                            {!b.contactPhone && !b.contactEmail && (
-                              <span className="text-neutral-400">—</span>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Edit restaurant modal */}
-        {editTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-            <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50 mb-1">
-                Edit restaurant
-              </h2>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
-                Update listing details and subdomain. Platform health can follow
-                activity automatically, or you can pin a manual label for this
-                tenant.
-              </p>
-              {(() => {
-                const oa = editTarget.ownerAccount;
-                if (!oa?.displayName && !oa?.loginEmail) {
-                  return (
-                    <div className="rounded-lg border border-dashed border-neutral-200 dark:border-neutral-700 bg-neutral-50/80 dark:bg-neutral-900/40 px-3 py-2 mb-3 text-[11px] text-neutral-500 dark:text-neutral-400">
-                      Owner name is not available (no{" "}
-                      <span className="font-mono">restaurant_admin</span> or{" "}
-                      <span className="font-mono">admin</span> user for this
-                      tenant).
-                    </div>
-                  );
-                }
-                return (
-                  <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/50 px-3 py-2.5 mb-3 space-y-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                      Owner account
-                    </div>
-                    <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      {oa.displayName || "—"}
-                    </div>
-                    {oa.loginEmail ? (
-                      <div
-                        className="text-[11px] text-neutral-600 dark:text-neutral-400 font-mono truncate"
-                        title="Dashboard login email"
-                      >
-                        {oa.loginEmail}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })()}
-              {editError && (
-                <p className="text-xs text-red-600 dark:text-red-400 mb-2">
-                  {editError}
-                </p>
-              )}
-              <form
-                onSubmit={handleEditRestaurantSave}
-                className="space-y-3"
-                autoComplete="off"
-              >
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                    Restaurant name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    value={editForm.name}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, name: e.target.value }))
-                    }
-                    className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                    Subdomain <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex items-center gap-1 text-sm">
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      value={editForm.subdomain}
-                      onChange={(e) =>
-                        setEditForm((f) => ({
-                          ...f,
-                          subdomain: e.target.value
-                            .replace(/[^a-z0-9-]/gi, "")
-                            .toLowerCase(),
-                        }))
-                      }
-                      className="flex-1 min-w-0 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 font-mono text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
-                      required
-                    />
-                    <span className="text-neutral-400 dark:text-neutral-500 font-mono text-xs shrink-0">
-                      .eatsdesk.app
-                    </span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                      Contact phone
-                    </label>
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      value={editForm.contactPhone}
-                      onChange={(e) =>
-                        setEditForm((f) => ({
-                          ...f,
-                          contactPhone: e.target.value,
-                        }))
-                      }
-                      className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                      Contact email
-                    </label>
-                    <input
-                      type="email"
-                      autoComplete="off"
-                      value={editForm.contactEmail}
-                      onChange={(e) =>
-                        setEditForm((f) => ({
-                          ...f,
-                          contactEmail: e.target.value,
-                        }))
-                      }
-                      className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                    Address
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={editForm.address}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, address: e.target.value }))
-                    }
-                    className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent resize-y min-h-[2.75rem]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                    Platform health
-                  </label>
-                  <select
-                    value={editForm.platformHealthOverride || ""}
-                    onChange={(e) =>
-                      setEditForm((f) => ({
-                        ...f,
-                        platformHealthOverride: e.target.value,
-                      }))
-                    }
-                    className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
-                  >
-                    <option value="">
-                      Automatic (from orders and setup)
-                    </option>
-                    <option value="active">Active</option>
-                    <option value="quiet">Quiet</option>
-                    <option value="new">New</option>
-                    <option value="configured">Configured</option>
-                    <option value="dormant">Dormant</option>
-                  </select>
-                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
-                    Manual health shows an asterisk in the table and overrides the
-                    computed pill until you switch back to automatic.
-                  </p>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (editSaving) return;
-                      setEditTarget(null);
-                      setEditError("");
-                    }}
-                    className="flex-1 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-700 dark:text-neutral-300"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={editSaving}
-                    className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {editSaving ? (
-                      <span className="inline-flex items-center gap-1 justify-center">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Saving…
-                      </span>
-                    ) : (
-                      "Save changes"
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
 
         {/* Create restaurant modal */}
         {showCreateForm && (

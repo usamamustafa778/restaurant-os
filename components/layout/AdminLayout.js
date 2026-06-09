@@ -350,6 +350,11 @@ const superNav = [
     icon: CreditCard,
   },
   {
+    href: "/super/invoices",
+    label: "Invoices",
+    icon: Receipt,
+  },
+  {
     href: "/super/users",
     label: "Users",
     icon: Users,
