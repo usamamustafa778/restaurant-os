@@ -134,6 +134,18 @@ const styles = StyleSheet.create({
     marginBottom: 3,
     color: "#444",
   },
+  paymentIbanLabel: {
+    fontSize: 9,
+    marginTop: 6,
+    marginBottom: 2,
+    color: "#444",
+  },
+  paymentIban: {
+    fontSize: 10,
+    fontFamily: "Helvetica-Bold",
+    color: "#1a1a1a",
+    letterSpacing: 0.4,
+  },
   notesBox: {
     borderLeftWidth: 3,
     borderLeftColor: "#FF5400",
@@ -184,9 +196,24 @@ function formatMoney(amount) {
   return `Rs ${Math.round(Number(amount) || 0).toLocaleString("en-PK")}`;
 }
 
+const DEFAULT_BANK_DETAILS = {
+  accountTitle: "Reddev Software & Solutions",
+  bankName: "UBL",
+  iban: "PK82UNIL0109000333578142",
+};
+
+export function resolveInvoiceBankDetails(bank) {
+  const b = bank || {};
+  return {
+    accountTitle: b.accountTitle || DEFAULT_BANK_DETAILS.accountTitle,
+    bankName: b.bankName || DEFAULT_BANK_DETAILS.bankName,
+    iban: (b.iban && String(b.iban).trim()) || DEFAULT_BANK_DETAILS.iban,
+  };
+}
+
 export function InvoiceDocument({ invoice }) {
   const snap = invoice.snapshot || {};
-  const bank = invoice.bankDetails || {};
+  const bank = resolveInvoiceBankDetails(invoice.bankDetails);
   const period = invoice.billingPeriod?.label || "";
 
   return (
@@ -253,10 +280,11 @@ export function InvoiceDocument({ invoice }) {
         <View style={styles.paymentBox}>
           <Text style={styles.paymentTitle}>Payment Details</Text>
           <Text style={styles.paymentLine}>
-            Account: {bank.accountTitle || "—"}
+            Account: {bank.accountTitle}
           </Text>
-          <Text style={styles.paymentLine}>Bank: {bank.bankName || "—"}</Text>
-          <Text style={styles.paymentLine}>IBAN: {bank.iban || "—"}</Text>
+          <Text style={styles.paymentLine}>Bank: {bank.bankName}</Text>
+          <Text style={styles.paymentIbanLabel}>IBAN:</Text>
+          <Text style={styles.paymentIban}>{bank.iban}</Text>
         </View>
 
         {invoice.notes ? (
@@ -276,9 +304,24 @@ export function InvoiceDocument({ invoice }) {
   );
 }
 
-export async function downloadInvoicePDF(invoice) {
+export async function getInvoicePDFBlobUrl(invoice) {
   const blob = await pdf(<InvoiceDocument invoice={invoice} />).toBlob();
-  const url = URL.createObjectURL(blob);
+  return URL.createObjectURL(blob);
+}
+
+/** Open invoice PDF in a new browser tab for viewing. */
+export async function viewInvoicePDF(invoice) {
+  const url = await getInvoicePDFBlobUrl(invoice);
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    URL.revokeObjectURL(url);
+    throw new Error("Pop-up blocked. Allow pop-ups to view the PDF.");
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+
+export async function downloadInvoicePDF(invoice) {
+  const url = await getInvoicePDFBlobUrl(invoice);
   const link = document.createElement("a");
   link.href = url;
   link.download = `EatsDesk-${invoice.invoiceNumber || "invoice"}.pdf`;

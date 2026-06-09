@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import DataTable from "../../../components/ui/DataTable";
 import MarkPaidModal from "../../../components/super/MarkPaidModal";
-import { downloadInvoicePDF } from "../../../components/super/InvoicePDF";
+import { viewInvoicePDF } from "../../../components/super/InvoicePDF";
 import {
   deleteSuperInvoice,
   getRestaurantsForSuperAdmin,
@@ -144,16 +144,16 @@ export default function SuperInvoicesPage() {
     return ys;
   }, [now]);
 
-  async function handleDownload(invoice) {
+  async function handleViewPdf(invoice) {
     try {
       setActionId(invoice.id);
       const full =
         invoice.snapshot && invoice.bankDetails
           ? invoice
           : await getSuperInvoice(invoice.id);
-      await downloadInvoicePDF(full);
+      await viewInvoicePDF(full);
     } catch (err) {
-      toast.error(err.message || "PDF download failed");
+      toast.error(err.message || "Could not open PDF");
     } finally {
       setActionId(null);
     }
@@ -409,8 +409,8 @@ export default function SuperInvoicesPage() {
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => handleDownload(row)}
-                          title="Download PDF"
+                          onClick={() => handleViewPdf(row)}
+                          title="View PDF"
                           className="p-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800"
                         >
                           <FileText className="w-4 h-4" />

@@ -6,7 +6,7 @@ import DataTable from "../../../../components/ui/DataTable";
 import Button from "../../../../components/ui/Button";
 import GenerateInvoiceModal from "../../../../components/super/GenerateInvoiceModal";
 import MarkPaidModal from "../../../../components/super/MarkPaidModal";
-import { downloadInvoicePDF } from "../../../../components/super/InvoicePDF";
+import { viewInvoicePDF } from "../../../../components/super/InvoicePDF";
 import {
   deleteRestaurantForSuperAdmin,
   deleteSuperInvoice,
@@ -18,14 +18,17 @@ import {
   setActingAsRestaurant,
   updateRestaurantForSuperAdmin,
   updateRestaurantSubscription,
-  verifyRestaurantOwnerEmailsForSuperAdmin,
 } from "../../../../lib/apiClient";
 import { useConfirmDialog } from "../../../../contexts/ConfirmDialogContext";
 import {
   ArrowLeft,
+  Calendar,
+  CreditCard,
+  ExternalLink,
   Loader2,
   Pencil,
   Trash2,
+  User,
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -35,10 +38,27 @@ const STOREFRONT_DOMAIN =
 
 const TABS = [
   { id: "overview", label: "Overview" },
-  { id: "invoices", label: "Invoices" },
   { id: "subscription", label: "Subscription" },
+  { id: "invoices", label: "Invoices" },
   { id: "settings", label: "Settings" },
 ];
+
+const STATUS_INFO_PILL = {
+  TRIAL: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  ACTIVE:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
+  EXPIRED: "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300",
+  SUSPENDED:
+    "bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300",
+};
+
+const HEALTH_BORDER = {
+  active: "border-l-emerald-500",
+  quiet: "border-l-amber-500",
+  dormant: "border-l-gray-400",
+  new: "border-l-gray-400",
+  configured: "border-l-gray-400",
+};
 
 const ENGAGEMENT_STYLES = {
   active:
@@ -82,30 +102,140 @@ function formatDate(d) {
   });
 }
 
-function formatRelativeTime(iso) {
-  if (!iso) return null;
+function formatRelativeTimeShort(iso) {
+  if (!iso) return "Never";
   try {
     const diff = Date.now() - new Date(iso).getTime();
     if (diff < 0) return "just now";
     const sec = Math.floor(diff / 1000);
     if (sec < 60) return "just now";
     const min = Math.floor(sec / 60);
-    if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`;
+    if (min < 60) return `${min}m ago`;
     const hrs = Math.floor(min / 60);
-    if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+    if (hrs < 24) return `${hrs}h ago`;
     const days = Math.floor(hrs / 24);
-    if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+    if (days < 30) return `${days}d ago`;
     const months = Math.floor(days / 30);
-    if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
-    const years = Math.floor(days / 365);
-    return `${years} year${years === 1 ? "" : "s"} ago`;
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
   } catch {
-    return null;
+    return "Never";
   }
 }
 
-function formatPkr(n) {
-  return `PKR ${Math.round(Number(n) || 0).toLocaleString("en-PK")}`;
+function formatRsReadable(n) {
+  const value = Number(n) || 0;
+  if (value >= 10000000) return `Rs ${(value / 10000000).toFixed(1)} Cr`;
+  if (value >= 100000) return `Rs ${(value / 100000).toFixed(1)} Lac`;
+  if (value >= 1000) return `Rs ${Math.round(value).toLocaleString("en-PK")}`;
+  return `Rs ${Math.round(value)}`;
+}
+
+function restaurantInitials(name) {
+  const cleaned = String(name || "R").replace(/[^a-zA-Z0-9\s]/g, "").trim();
+  if (!cleaned) return "R";
+  return cleaned.slice(0, 2).toUpperCase();
+}
+
+function isExpiringWithinDays(iso, days = 7) {
+  if (!iso) return false;
+  const remaining = new Date(iso).getTime() - Date.now();
+  return remaining > 0 && remaining <= days * 86400000;
+}
+
+function formatTrialEndLabel(iso) {
+  if (!iso) return null;
+  return `Trial ends ${formatDate(iso)}`;
+}
+
+const FORM_LABEL =
+  "block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1.5";
+const FORM_INPUT =
+  "w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500";
+
+function SectionCard({
+  title,
+  description,
+  children,
+  variant = "default",
+  className = "",
+}) {
+  const variants = {
+    default: "border-gray-200 dark:border-neutral-800",
+    success: "border-emerald-200 dark:border-emerald-800",
+    danger: "border-red-200 dark:border-red-900/50",
+  };
+  return (
+    <div
+      className={`rounded-xl bg-white dark:bg-neutral-950 border overflow-hidden ${variants[variant] || variants.default} ${className}`}
+    >
+      <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
+        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+          {title}
+        </h3>
+        {description ? (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-6 px-5 py-3 text-sm">
+      <span className="text-neutral-500 shrink-0">{label}</span>
+      <span className="text-gray-900 dark:text-neutral-100 text-right break-all font-medium">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function Skeleton({ className = "" }) {
+  return (
+    <div
+      className={`animate-pulse rounded-lg bg-gray-200/80 dark:bg-neutral-800 ${className}`}
+    />
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="-mx-4 sm:-mx-6 px-4 sm:px-6 py-6 bg-[#f8f9fa] dark:bg-neutral-950 min-h-[60vh] space-y-6">
+      <Skeleton className="h-4 w-32" />
+      <div className="flex gap-4">
+        <Skeleton className="h-12 w-12 rounded-full shrink-0" />
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-7 w-48" />
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-3 w-56" />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-7 w-28 rounded-full" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-28 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-10 w-full rounded-lg" />
+      <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5 space-y-3">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="flex justify-between gap-4">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function InvoiceStatusPill({ status }) {
@@ -155,6 +285,7 @@ export default function SuperRestaurantDetailPage() {
   const [planSaving, setPlanSaving] = useState(false);
   const [extendDays, setExtendDays] = useState("30");
   const [extendSaving, setExtendSaving] = useState(false);
+  const [endTrialSaving, setEndTrialSaving] = useState(false);
   const [activationStart, setActivationStart] = useState("");
   const [activationEnd, setActivationEnd] = useState("");
   const [activationSaving, setActivationSaving] = useState(false);
@@ -170,7 +301,6 @@ export default function SuperRestaurantDetailPage() {
   const [settingsSaving, setSettingsSaving] = useState(false);
 
   const [welcomeSending, setWelcomeSending] = useState(false);
-  const [verifySending, setVerifySending] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
 
   const loadDetail = useCallback(async () => {
@@ -396,6 +526,37 @@ export default function SuperRestaurantDetailPage() {
     }
   }
 
+  async function handleEndTrial() {
+    if (!restaurant?.id) return;
+    const durationMonths = await confirm({
+      title: "End trial & activate",
+      message:
+        "This ends the trial immediately and starts a paid subscription. Choose how long it should stay active.",
+      confirmLabel: "End trial & activate",
+      options: [
+        { label: "1 month", value: 1 },
+        { label: "3 months", value: 3 },
+        { label: "6 months", value: 6 },
+        { label: "12 months", value: 12 },
+      ],
+      defaultValue: 3,
+    });
+    if (!durationMonths) return;
+    try {
+      setEndTrialSaving(true);
+      await updateRestaurantSubscription(restaurant.id, {
+        status: "ACTIVE",
+        durationMonths,
+      });
+      toast.success("Trial ended. Subscription activated.");
+      loadDetail();
+    } catch (err) {
+      toast.error(err.message || "Failed to end trial");
+    } finally {
+      setEndTrialSaving(false);
+    }
+  }
+
   async function handleManualActivation() {
     if (!restaurant?.id || !activationEnd) {
       toast.error("End date is required.");
@@ -451,27 +612,6 @@ export default function SuperRestaurantDetailPage() {
     }
   }
 
-  async function handleVerifyEmail() {
-    if (!restaurant?.id) return;
-    const ok = await confirm({
-      title: "Verify admin emails without OTP?",
-      message:
-        "Mark all restaurant_admin and admin accounts as email-verified?",
-      confirmLabel: "Verify emails",
-    });
-    if (!ok) return;
-    try {
-      setVerifySending(true);
-      await verifyRestaurantOwnerEmailsForSuperAdmin(restaurant.id);
-      toast.success("Owner emails verified.");
-      loadDetail();
-    } catch (err) {
-      toast.error(err.message || "Failed to verify emails");
-    } finally {
-      setVerifySending(false);
-    }
-  }
-
   async function handlePermanentDelete() {
     if (!restaurant?.id) return;
     const name = website.name || "Restaurant";
@@ -488,16 +628,16 @@ export default function SuperRestaurantDetailPage() {
     }
   }
 
-  async function handleDownloadInvoice(invoice) {
+  async function handleViewInvoicePdf(invoice) {
     try {
       setInvoiceActionId(invoice.id);
       const full =
         invoice.snapshot && invoice.bankDetails
           ? invoice
           : await getSuperInvoice(invoice.id);
-      await downloadInvoicePDF(full);
+      await viewInvoicePDF(full);
     } catch (err) {
-      toast.error(err.message || "PDF download failed");
+      toast.error(err.message || "Could not open PDF");
     } finally {
       setInvoiceActionId(null);
     }
@@ -533,9 +673,7 @@ export default function SuperRestaurantDetailPage() {
   if (loading) {
     return (
       <AdminLayout title="Restaurant">
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-        </div>
+        <DetailSkeleton />
       </AdminLayout>
     );
   }
@@ -560,178 +698,42 @@ export default function SuperRestaurantDetailPage() {
   const healthClass =
     ENGAGEMENT_STYLES[engagement.key] || ENGAGEMENT_STYLES.dormant;
   const statusClass = SUBSCRIPTION_PILL[status] || SUBSCRIPTION_PILL.TRIAL;
-  const showVerifyEmail = owner && owner.allVerified === false;
+  const statusInfoClass =
+    STATUS_INFO_PILL[status] || STATUS_INFO_PILL.TRIAL;
+  const healthBorder =
+    HEALTH_BORDER[engagement.key] || HEALTH_BORDER.dormant;
+  const trialEnd =
+    subscription.trialEndsAt ||
+    subscription.freeTrialEndDate ||
+    subscription.expiresAt;
+  const trialEndLabel = formatTrialEndLabel(trialEnd);
+  const trialExpiringSoon = isExpiringWithinDays(trialEnd);
+  const ownerPhone = owner?.phone || website.contactPhone;
+  const lastActivityText = formatRelativeTimeShort(stats?.lastOrderAt);
 
   return (
     <AdminLayout title={website.name || "Restaurant"}>
-      <div className="space-y-5">
-        {detail?._fallback ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-            Using list data — deploy the latest backend to{" "}
-            <code className="font-mono">api.eatsdesk.com</code> for full detail
-            stats (all-time revenue, active team count, welcome email).
-          </div>
-        ) : null}
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="min-w-0">
-            <Link
-              href="/super/restaurants"
-              className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-primary mb-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Restaurants
-            </Link>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">
-              {website.name || "Untitled restaurant"}
-            </h1>
-            {subdomain ? (
-              <a
-                href={storefrontUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-mono text-primary hover:underline mt-1 inline-block"
-              >
-                {subdomain}.{STOREFRONT_DOMAIN}
-              </a>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap gap-2 shrink-0">
-            <Button
-              type="button"
-              onClick={handleLoginAsAdmin}
-              disabled={!subdomain}
-              className="!h-9 text-xs"
-            >
-              Login as Admin
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={openEditModal}
-              className="!h-9 text-xs inline-flex items-center gap-1.5"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              Edit
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={statusUpdating}
-              onClick={() =>
-                handleSubscriptionStatus(
-                  status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
-                )
-              }
-              className={`!h-9 text-xs ${
-                status === "SUSPENDED"
-                  ? "border-emerald-300 text-emerald-700"
-                  : "border-amber-300 text-amber-800"
-              }`}
-            >
-              {statusUpdating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : status === "SUSPENDED" ? (
-                "Activate"
-              ) : (
-                "Suspend"
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Info bar */}
-        <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 text-sm">
-          {owner?.name ? (
-            <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-900 text-gray-800 dark:text-neutral-200">
-              👤 {owner.name}
-            </span>
-          ) : null}
-          {owner?.email ? (
-            <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-900 text-gray-800 dark:text-neutral-200">
-              📧 {owner.email}
-            </span>
-          ) : null}
-          {(owner?.phone || website.contactPhone) ? (
-            <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-900 text-gray-800 dark:text-neutral-200">
-              📱 {owner?.phone || website.contactPhone}
-            </span>
-          ) : null}
-          <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-900 text-gray-800 dark:text-neutral-200">
-            📦 {(subscription.plan || "ESSENTIAL").toUpperCase()} Plan
-          </span>
-          <span
-            className={`badge text-[10px] font-semibold uppercase ${statusClass}`}
-          >
-            🟢 {status}
-          </span>
-          <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400">
-            📅 Member since {formatDate(restaurant.createdAt)}
-          </span>
-        </div>
-
-        {/* Stats row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          {[
-            {
-              label: "Total orders",
-              value: stats?.totalOrders ?? 0,
-              sub: `${stats?.orders30d ?? 0} in last 30 days`,
-            },
-            {
-              label: "Revenue tracked",
-              value: formatPkr(stats?.totalRevenue),
-              sub: `${formatPkr(stats?.revenue30d)} in last 30 days`,
-            },
-            {
-              label: "Team members",
-              value: stats?.teamCount ?? 0,
-              sub: `${stats?.activeTeamCount ?? 0} active`,
-            },
-            {
-              label: "Health",
-              value: engagement.label || "—",
-              sub: stats?.lastOrderAt
-                ? `Last order: ${formatRelativeTime(stats.lastOrderAt)}`
-                : "Last order: Never",
-              badge: true,
-            },
-          ].map((card) => (
-            <div
-              key={card.label}
-              className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800"
-            >
-              <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">
-                {card.label}
-              </p>
-              {card.badge ? (
-                <span
-                  className={`inline-flex mt-2 rounded-full border px-2.5 py-0.5 text-sm font-semibold ${healthClass}`}
-                >
-                  {card.value}
-                </span>
-              ) : (
-                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
-                  {card.value}
-                </p>
-              )}
-              <p className="text-xs text-neutral-500 mt-1">{card.sub}</p>
-            </div>
-          ))}
-        </div>
+      <div className="-mx-4 sm:-mx-6 px-4 sm:px-6 min-h-full">
+        <Link
+          href="/super/restaurants"
+          className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-primary mb-4"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Restaurants
+        </Link>
 
         {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-neutral-800 overflow-x-auto">
-          <div className="flex gap-1 min-w-max">
+        <div className="border-b border-gray-200 dark:border-neutral-800 overflow-x-auto mb-6 -mx-4 sm:-mx-6 px-4 sm:px-6">
+          <div className="flex gap-0 min-w-max">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+                className={`relative px-4 py-2.5 text-sm transition-colors whitespace-nowrap ${
                   activeTab === tab.id
-                    ? "border-primary text-primary"
-                    : "border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    ? "text-primary font-medium after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-primary"
+                    : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 font-normal"
                 }`}
               >
                 {tab.label}
@@ -742,77 +744,282 @@ export default function SuperRestaurantDetailPage() {
 
         {/* Overview tab */}
         {activeTab === "overview" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="p-5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white mb-4">
-                Restaurant Details
-              </h2>
-              <dl className="space-y-3 text-sm">
+          <div className="space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-4">
+                  <div
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white"
+                    style={{ backgroundColor: "#FF5400" }}
+                  >
+                    {restaurantInitials(website.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">
+                      {website.name || "Untitled restaurant"}
+                    </h1>
+                    {subdomain ? (
+                      <a
+                        href={storefrontUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[13px] font-mono text-primary hover:underline mt-0.5"
+                      >
+                        {subdomain}.{STOREFRONT_DOMAIN}
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                      </a>
+                    ) : null}
+                    {(owner?.name || ownerPhone) && (
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
+                        {owner?.name ? `👤 ${owner.name}` : null}
+                        {owner?.name && ownerPhone ? " · " : null}
+                        {ownerPhone ? `📱 ${ownerPhone}` : null}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <Button
+                  type="button"
+                  onClick={handleLoginAsAdmin}
+                  disabled={!subdomain}
+                  className="!h-9 text-xs"
+                >
+                  Login as Admin
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={openEditModal}
+                  className="!h-9 text-xs inline-flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={statusUpdating}
+                  onClick={() =>
+                    handleSubscriptionStatus(
+                      status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
+                    )
+                  }
+                  className={`!h-9 text-xs ${
+                    status === "SUSPENDED"
+                      ? "border-emerald-300 text-emerald-700"
+                      : "border-amber-300 text-amber-800"
+                  }`}
+                >
+                  {statusUpdating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : status === "SUSPENDED" ? (
+                    "Activate"
+                  ) : (
+                    "Suspend"
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {owner?.email ? (
+                <span className="px-3 py-1 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm text-gray-700 dark:text-neutral-300">
+                  📧 {owner.email}
+                </span>
+              ) : null}
+              <span className="px-3 py-1 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm text-gray-700 dark:text-neutral-300">
+                📦 {(subscription.plan || "ESSENTIAL").toUpperCase()} Plan
+              </span>
+              <span
+                className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfoClass}`}
+              >
+                {status}
+              </span>
+              {status === "TRIAL" && trialEndLabel ? (
+                <span
+                  className={`px-3 py-1 rounded-full text-sm ${
+                    trialExpiringSoon
+                      ? "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400 font-medium"
+                      : "bg-gray-100 text-gray-600 dark:bg-neutral-900 dark:text-neutral-400"
+                  }`}
+                >
+                  {trialEndLabel}
+                </span>
+              ) : null}
+              <span className="px-3 py-1 rounded-full bg-gray-100 dark:bg-neutral-900 text-sm text-gray-600 dark:text-neutral-400">
+                📅 Member since {formatDate(restaurant.createdAt)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
+                <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">
+                  Total orders
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
+                  {(stats?.totalOrders ?? 0).toLocaleString("en-PK")}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {(stats?.orders30d ?? 0).toLocaleString("en-PK")} in last 30
+                  days
+                </p>
+              </div>
+              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
+                <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">
+                  Revenue tracked
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
+                  {formatRsReadable(stats?.totalRevenue)}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {formatRsReadable(stats?.revenue30d)} in last 30 days
+                </p>
+              </div>
+              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
+                <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">
+                  Team members
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
+                  {stats?.teamCount ?? 0}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {stats?.activeTeamCount ?? 0} active
+                </p>
+              </div>
+              <div
+                className={`p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 border-l-[3px] ${healthBorder}`}
+              >
+                <p className="text-xs text-neutral-500 uppercase tracking-wide font-medium">
+                  Last activity
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                  {lastActivityText}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  <span
+                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${healthClass}`}
+                  >
+                    {engagement.label || "—"}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                  Restaurant Details
+                </h2>
+              </div>
+              <div className="divide-y divide-gray-100 dark:divide-neutral-800">
                 {[
                   ["Restaurant name", website.name || "—"],
-                  ["Subdomain", subdomain ? `${subdomain}.${STOREFRONT_DOMAIN}` : "—"],
+                  [
+                    "Subdomain",
+                    subdomain ? `${subdomain}.${STOREFRONT_DOMAIN}` : "—",
+                  ],
                   ["Address", website.address || "—"],
                   ["Contact phone", website.contactPhone || "—"],
                   ["Contact email", website.contactEmail || "—"],
                   ["Created", formatDate(restaurant.createdAt)],
                   ["Plan", (subscription.plan || "ESSENTIAL").toUpperCase()],
-                  ["Subscription status", status],
+                  [
+                    "Status",
+                    <span
+                      key="status"
+                      className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusInfoClass}`}
+                    >
+                      {status}
+                    </span>,
+                  ],
                 ].map(([label, val]) => (
-                  <div key={label} className="flex justify-between gap-4">
-                    <dt className="text-neutral-500 shrink-0">{label}</dt>
-                    <dd className="text-gray-900 dark:text-neutral-100 text-right break-all">
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-6 px-5 py-3 text-sm"
+                  >
+                    <span className="text-neutral-500 shrink-0">{label}</span>
+                    <span className="text-gray-900 dark:text-neutral-100 text-right break-all font-medium">
                       {val}
-                    </dd>
+                    </span>
                   </div>
                 ))}
-              </dl>
+              </div>
             </div>
-            <div className="p-5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white mb-4">
+
+            <div>
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
                 Quick Actions
               </h2>
-              <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setShowInvoiceModal(true)}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 text-sm font-medium"
+                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer"
                 >
-                  📄 Generate Invoice
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    📄 Generate Invoice
+                  </div>
+                  <div className="text-xs text-neutral-500 mt-1">
+                    Create and send invoice
+                  </div>
                 </button>
                 <button
                   type="button"
                   onClick={handleLoginAsAdmin}
                   disabled={!subdomain}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 text-sm font-medium disabled:opacity-50"
+                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:bg-white"
                 >
-                  🔑 Login as Admin
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    🔑 Login as Admin
+                  </div>
+                  <div className="text-xs text-neutral-500 mt-1">
+                    Access restaurant dashboard
+                  </div>
                 </button>
                 <button
                   type="button"
                   disabled={welcomeSending}
                   onClick={handleWelcomeEmail}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 text-sm font-medium disabled:opacity-50"
+                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer disabled:opacity-50"
                 >
-                  {welcomeSending ? "Sending…" : "📧 Send Welcome Email"}
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    {welcomeSending ? "Sending…" : "📧 Send Welcome Email"}
+                  </div>
+                  <div className="text-xs text-neutral-500 mt-1">
+                    Send onboarding email to owner
+                  </div>
                 </button>
-                <button
-                  type="button"
-                  disabled={statusUpdating}
-                  onClick={() => handleSubscriptionStatus("SUSPENDED")}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 text-sm font-medium disabled:opacity-50"
-                >
-                  ⏸ Suspend Restaurant
-                </button>
-                {showVerifyEmail ? (
+                {status === "SUSPENDED" ? (
                   <button
                     type="button"
-                    disabled={verifySending}
-                    onClick={handleVerifyEmail}
-                    className="w-full text-left px-4 py-3 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 text-sm font-medium disabled:opacity-50"
+                    disabled={statusUpdating}
+                    onClick={() => handleSubscriptionStatus("ACTIVE")}
+                    className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition cursor-pointer disabled:opacity-50"
                   >
-                    {verifySending ? "Verifying…" : "✓ Verify Email"}
+                    <div className="font-semibold text-emerald-700 dark:text-emerald-400">
+                      ✓ Activate Restaurant
+                    </div>
+                    <div className="text-xs text-neutral-500 mt-1">
+                      Restore dashboard access
+                    </div>
                   </button>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    disabled={statusUpdating}
+                    onClick={() => handleSubscriptionStatus("SUSPENDED")}
+                    className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-950/20 transition cursor-pointer disabled:opacity-50 group"
+                  >
+                    <div className="font-semibold text-red-600 dark:text-red-400 group-hover:text-red-700">
+                      ⏸ Suspend Restaurant
+                    </div>
+                    <div className="text-xs text-neutral-500 mt-1">
+                      Disable access immediately
+                    </div>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -891,8 +1098,8 @@ export default function SuperRestaurantDetailPage() {
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={() => handleDownloadInvoice(row)}
-                            title="PDF"
+                            onClick={() => handleViewInvoicePdf(row)}
+                            title="View PDF"
                             className="px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold hover:bg-gray-50"
                           >
                             PDF
@@ -938,154 +1145,285 @@ export default function SuperRestaurantDetailPage() {
 
         {/* Subscription tab */}
         {activeTab === "subscription" && (
-          <div className="space-y-4 max-w-2xl">
-            <div className="p-5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-              <h2 className="text-sm font-bold mb-4">Current plan</h2>
-              <dl className="space-y-2 text-sm">
-                {[
-                  ["Plan", (subscription.plan || "ESSENTIAL").toUpperCase()],
-                  ["Status", status],
-                  ["Trial started", formatDate(subscription.trialStartsAt || subscription.freeTrialStartDate)],
-                  ["Trial ends", formatDate(subscription.trialEndsAt || subscription.freeTrialEndDate)],
-                  ["Subscription start", formatDate(subscription.subscriptionStartDate)],
-                  ["Subscription end", formatDate(subscription.subscriptionEndDate || subscription.expiresAt)],
-                ].map(([label, val]) => (
-                  <div key={label} className="flex justify-between gap-4">
-                    <dt className="text-neutral-500">{label}</dt>
-                    <dd className="font-medium">{val}</dd>
-                  </div>
-                ))}
-              </dl>
-              <div className="mt-2">
+          <div className="space-y-6 w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
+                <div className="flex items-center gap-2 text-xs text-neutral-500 uppercase tracking-wide font-medium mb-2">
+                  <CreditCard className="w-3.5 h-3.5" />
+                  Current plan
+                </div>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  {(subscription.plan || "ESSENTIAL").toUpperCase()}
+                </p>
+              </div>
+              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
+                <div className="text-xs text-neutral-500 uppercase tracking-wide font-medium mb-2">
+                  Status
+                </div>
                 <span
-                  className={`badge text-[10px] font-semibold uppercase ${statusClass}`}
+                  className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${statusInfoClass}`}
                 >
                   {status}
                 </span>
               </div>
-            </div>
-
-            <div className="p-5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 space-y-3">
-              <h3 className="text-sm font-bold">Change Plan</h3>
-              <div className="flex flex-wrap gap-2 items-center">
-                <select
-                  value={planDraft}
-                  onChange={(e) => setPlanDraft(e.target.value)}
-                  className="h-9 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                >
-                  <option value="ESSENTIAL">ESSENTIAL</option>
-                  <option value="PROFESSIONAL">PROFESSIONAL</option>
-                  <option value="ENTERPRISE">ENTERPRISE</option>
-                </select>
-                <Button
-                  type="button"
-                  disabled={planSaving}
-                  onClick={handleSavePlan}
-                  className="!h-9 text-xs"
-                >
-                  {planSaving ? "Saving…" : "Save Plan"}
-                </Button>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 space-y-3">
-              <h3 className="text-sm font-bold">Extend Trial</h3>
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-sm text-neutral-500">Extend by:</span>
-                <select
-                  value={extendDays}
-                  onChange={(e) => setExtendDays(e.target.value)}
-                  className="h-9 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                >
-                  {["7", "14", "30", "60", "90"].map((d) => (
-                    <option key={d} value={d}>
-                      {d} days
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  disabled={extendSaving}
-                  onClick={handleExtendTrial}
-                  className="!h-9 text-xs"
-                >
-                  {extendSaving ? "Extending…" : "Extend Trial"}
-                </Button>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 space-y-3">
-              <h3 className="text-sm font-bold">Manual Activation</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">
-                    Start date
-                  </label>
-                  <input
-                    type="date"
-                    value={activationStart}
-                    onChange={(e) => setActivationStart(e.target.value)}
-                    className="w-full h-9 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                  />
+              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
+                <div className="flex items-center gap-2 text-xs text-neutral-500 uppercase tracking-wide font-medium mb-2">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {status === "ACTIVE" ? "Renews / ends" : "Trial ends"}
                 </div>
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">
-                    End date
-                  </label>
-                  <input
-                    type="date"
-                    value={activationEnd}
-                    onChange={(e) => setActivationEnd(e.target.value)}
-                    className="w-full h-9 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                  />
-                </div>
-              </div>
-              <Button
-                type="button"
-                disabled={activationSaving}
-                onClick={handleManualActivation}
-                className="!h-9 text-xs"
-              >
-                {activationSaving ? "Activating…" : "Activate Subscription"}
-              </Button>
-            </div>
-
-            <div className="p-5 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-950/20 space-y-3">
-              <h3 className="text-sm font-bold text-red-800 dark:text-red-300">
-                Danger zone
-              </h3>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={statusUpdating}
-                onClick={() => handleSubscriptionStatus("SUSPENDED")}
-                className="!h-9 text-xs border-red-300 text-red-700"
-              >
-                Suspend Restaurant
-              </Button>
-              <div className="space-y-2 pt-2 border-t border-red-200 dark:border-red-900/40">
-                <p className="text-xs text-red-700 dark:text-red-400">
-                  Type <strong>{website.name || "Restaurant"}</strong> to confirm
-                  soft delete.
+                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                  {status === "ACTIVE"
+                    ? formatDate(
+                        subscription.subscriptionEndDate ||
+                          subscription.expiresAt,
+                      )
+                    : formatDate(
+                        subscription.trialEndsAt ||
+                          subscription.freeTrialEndDate,
+                      )}
                 </p>
-                <input
-                  type="text"
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-lg border border-red-200 bg-white dark:bg-neutral-900 text-sm"
-                  placeholder={website.name || "Restaurant"}
-                />
-                <Button
-                  type="button"
-                  disabled={
-                    deleteSaving ||
-                    deleteConfirmName.trim() !== (website.name || "Restaurant").trim()
-                  }
-                  onClick={handlePermanentDelete}
-                  className="!h-9 text-xs bg-red-600 hover:bg-red-700 text-white"
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-6 items-stretch w-full">
+              <div className="space-y-4 min-w-0">
+                <div className="rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
+                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                      Subscription Details
+                    </h2>
+                  </div>
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    <DetailRow
+                      label="Plan"
+                      value={(subscription.plan || "ESSENTIAL").toUpperCase()}
+                    />
+                    <DetailRow
+                      label="Status"
+                      value={
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusInfoClass}`}
+                        >
+                          {status}
+                        </span>
+                      }
+                    />
+                    <DetailRow
+                      label="Trial started"
+                      value={formatDate(
+                        subscription.trialStartsAt ||
+                          subscription.freeTrialStartDate,
+                      )}
+                    />
+                    <DetailRow
+                      label="Trial ends"
+                      value={formatDate(
+                        subscription.trialEndsAt ||
+                          subscription.freeTrialEndDate,
+                      )}
+                    />
+                    <DetailRow
+                      label="Subscription start"
+                      value={formatDate(subscription.subscriptionStartDate)}
+                    />
+                    <DetailRow
+                      label="Subscription end"
+                      value={formatDate(
+                        subscription.subscriptionEndDate ||
+                          subscription.expiresAt,
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <SectionCard
+                  title="Danger Zone"
+                  description="Irreversible or access-blocking actions"
+                  variant="danger"
                 >
-                  {deleteSaving ? "Deleting…" : "Delete Restaurant"}
-                </Button>
+                  <div className="space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40">
+                      <div>
+                        <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                          Suspend restaurant
+                        </p>
+                        <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
+                          Blocks dashboard and public website access
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={statusUpdating}
+                        onClick={() => handleSubscriptionStatus("SUSPENDED")}
+                        className="!h-9 shrink-0 text-xs border border-red-300 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-400"
+                      >
+                        Suspend Restaurant
+                      </Button>
+                    </div>
+                    <div className="pt-2 border-t border-red-200 dark:border-red-900/40 space-y-3">
+                      <div>
+                        <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                          Delete restaurant
+                        </p>
+                        <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
+                          Soft delete — recoverable within 48 hours. Type{" "}
+                          <strong>{website.name || "Restaurant"}</strong> to confirm.
+                        </p>
+                      </div>
+                      <input
+                        type="text"
+                        value={deleteConfirmName}
+                        onChange={(e) => setDeleteConfirmName(e.target.value)}
+                        className={`${FORM_INPUT} border-red-200 dark:border-red-900/50 focus:ring-red-500 focus:border-red-500`}
+                        placeholder={website.name || "Restaurant"}
+                      />
+                      <Button
+                        type="button"
+                        disabled={
+                          deleteSaving ||
+                          deleteConfirmName.trim() !==
+                            (website.name || "Restaurant").trim()
+                        }
+                        onClick={handlePermanentDelete}
+                        className="!h-9 text-xs bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        {deleteSaving ? "Deleting…" : "Delete Restaurant"}
+                      </Button>
+                    </div>
+                  </div>
+                </SectionCard>
+
+                {status === "TRIAL" && (
+                  <SectionCard
+                    title="Extend Trial"
+                    description="Add more days to the current trial period"
+                  >
+                    <div className="space-y-3">
+                      <div>
+                        <label className={FORM_LABEL} htmlFor="extend-days">
+                          Extend by
+                        </label>
+                        <select
+                          id="extend-days"
+                          value={extendDays}
+                          onChange={(e) => setExtendDays(e.target.value)}
+                          className={FORM_INPUT}
+                        >
+                          {["7", "14", "30", "60", "90"].map((d) => (
+                            <option key={d} value={d}>
+                              {d} days
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button
+                        type="button"
+                        disabled={extendSaving}
+                        onClick={handleExtendTrial}
+                        className="!h-9 w-full text-xs"
+                      >
+                        {extendSaving ? "Extending…" : "Extend Trial"}
+                      </Button>
+                    </div>
+                  </SectionCard>
+                )}
+
+                {status === "TRIAL" && (
+                  <SectionCard
+                    title="End Trial"
+                    description="End trial now and start a paid subscription"
+                    variant="success"
+                  >
+                    <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-3">
+                      You will choose an active period of 1, 3, 6, or 12 months.
+                    </p>
+                    <Button
+                      type="button"
+                      disabled={endTrialSaving || statusUpdating}
+                      onClick={handleEndTrial}
+                      className="!h-9 w-full text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {endTrialSaving ? "Activating…" : "End Trial & Activate"}
+                    </Button>
+                  </SectionCard>
+                )}
+              </div>
+
+              <div className="space-y-4 w-full">
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                  Manage Subscription
+                </h2>
+                <SectionCard
+                  title="Change Plan"
+                  description="Update the billing tier for this restaurant"
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <label className={FORM_LABEL} htmlFor="plan-select">
+                        Plan
+                      </label>
+                      <select
+                        id="plan-select"
+                        value={planDraft}
+                        onChange={(e) => setPlanDraft(e.target.value)}
+                        className={FORM_INPUT}
+                      >
+                        <option value="ESSENTIAL">ESSENTIAL</option>
+                        <option value="PROFESSIONAL">PROFESSIONAL</option>
+                        <option value="ENTERPRISE">ENTERPRISE</option>
+                      </select>
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={planSaving}
+                      onClick={handleSavePlan}
+                      className="!h-9 w-full text-xs"
+                    >
+                      {planSaving ? "Saving…" : "Save Plan"}
+                    </Button>
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  title="Manual Activation"
+                  description="Set custom start and end dates for a paid subscription"
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <label className={FORM_LABEL} htmlFor="activation-start">
+                        Start date
+                      </label>
+                      <input
+                        id="activation-start"
+                        type="date"
+                        value={activationStart}
+                        onChange={(e) => setActivationStart(e.target.value)}
+                        className={FORM_INPUT}
+                      />
+                    </div>
+                    <div>
+                      <label className={FORM_LABEL} htmlFor="activation-end">
+                        End date
+                      </label>
+                      <input
+                        id="activation-end"
+                        type="date"
+                        value={activationEnd}
+                        onChange={(e) => setActivationEnd(e.target.value)}
+                        className={FORM_INPUT}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={activationSaving}
+                      onClick={handleManualActivation}
+                      className="!h-9 w-full text-xs"
+                    >
+                      {activationSaving ? "Activating…" : "Activate Subscription"}
+                    </Button>
+                  </div>
+                </SectionCard>
               </div>
             </div>
           </div>
@@ -1093,90 +1431,124 @@ export default function SuperRestaurantDetailPage() {
 
         {/* Settings tab */}
         {activeTab === "settings" && (
-          <div className="max-w-xl p-5 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-            <form onSubmit={handleSettingsSave} className="space-y-4">
-              <div>
-                <label className="text-xs font-medium text-neutral-600 block mb-1">
-                  Restaurant Name
-                </label>
-                <input
-                  type="text"
-                  value={settingsForm.name}
-                  onChange={(e) =>
-                    setSettingsForm((f) => ({ ...f, name: e.target.value }))
-                  }
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-neutral-600 block mb-1">
-                  Contact Phone
-                </label>
-                <input
-                  type="text"
-                  value={settingsForm.contactPhone}
-                  onChange={(e) =>
-                    setSettingsForm((f) => ({
-                      ...f,
-                      contactPhone: e.target.value,
-                    }))
-                  }
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-neutral-600 block mb-1">
-                  Contact Email
-                </label>
-                <input
-                  type="email"
-                  value={settingsForm.contactEmail}
-                  onChange={(e) =>
-                    setSettingsForm((f) => ({
-                      ...f,
-                      contactEmail: e.target.value,
-                    }))
-                  }
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-neutral-600 block mb-1">
-                  Address
-                </label>
-                <input
-                  type="text"
-                  value={settingsForm.address}
-                  onChange={(e) =>
-                    setSettingsForm((f) => ({ ...f, address: e.target.value }))
-                  }
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
-              </div>
-              <div className="pt-3 border-t border-gray-200 dark:border-neutral-800">
-                <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">
-                  Owner Details (read-only)
-                </p>
-                <dl className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <dt className="text-neutral-500">Name</dt>
-                    <dd>{owner?.name || "—"}</dd>
+          <div className="space-y-6 w-full">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-6 items-stretch w-full">
+              <form onSubmit={handleSettingsSave} className="min-w-0">
+                <SectionCard
+                  title="Restaurant Settings"
+                  description="Contact and listing details shown on the platform"
+                >
+                  <div className="space-y-4">
+                    <div>
+                      <label className={FORM_LABEL} htmlFor="settings-name">
+                        Restaurant name
+                      </label>
+                      <input
+                        id="settings-name"
+                        type="text"
+                        value={settingsForm.name}
+                        onChange={(e) =>
+                          setSettingsForm((f) => ({
+                            ...f,
+                            name: e.target.value,
+                          }))
+                        }
+                        className={FORM_INPUT}
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className={FORM_LABEL} htmlFor="settings-phone">
+                          Contact phone
+                        </label>
+                        <input
+                          id="settings-phone"
+                          type="text"
+                          value={settingsForm.contactPhone}
+                          onChange={(e) =>
+                            setSettingsForm((f) => ({
+                              ...f,
+                              contactPhone: e.target.value,
+                            }))
+                          }
+                          className={FORM_INPUT}
+                        />
+                      </div>
+                      <div>
+                        <label className={FORM_LABEL} htmlFor="settings-email">
+                          Contact email
+                        </label>
+                        <input
+                          id="settings-email"
+                          type="email"
+                          value={settingsForm.contactEmail}
+                          onChange={(e) =>
+                            setSettingsForm((f) => ({
+                              ...f,
+                              contactEmail: e.target.value,
+                            }))
+                          }
+                          className={FORM_INPUT}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={FORM_LABEL} htmlFor="settings-address">
+                        Address
+                      </label>
+                      <textarea
+                        id="settings-address"
+                        rows={3}
+                        value={settingsForm.address}
+                        onChange={(e) =>
+                          setSettingsForm((f) => ({
+                            ...f,
+                            address: e.target.value,
+                          }))
+                        }
+                        className={`${FORM_INPUT} resize-y min-h-[4.5rem]`}
+                      />
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-neutral-500">Email</dt>
-                    <dd className="break-all text-right">{owner?.email || "—"}</dd>
+                  <div className="mt-5 pt-4 border-t border-gray-100 dark:border-neutral-800">
+                    <Button
+                      type="submit"
+                      disabled={settingsSaving}
+                      className="!h-10 w-full sm:w-auto min-w-[140px] bg-[#FF5400] hover:bg-[#e64d00] text-white"
+                    >
+                      {settingsSaving ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Saving…
+                        </span>
+                      ) : (
+                        "Save Changes"
+                      )}
+                    </Button>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-neutral-500">Phone</dt>
-                    <dd>{owner?.phone || "—"}</dd>
+                </SectionCard>
+              </form>
+
+              <div className="space-y-4 w-full">
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                  Owner Account
+                </h2>
+                <div className="rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2">
+                    <User className="w-4 h-4 text-neutral-400 shrink-0" />
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Read-only login credentials
+                    </p>
                   </div>
-                </dl>
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    <DetailRow label="Name" value={owner?.name || "—"} />
+                    <DetailRow label="Email" value={owner?.email || "—"} />
+                    <DetailRow label="Phone" value={owner?.phone || "—"} />
+                  </div>
+                </div>
               </div>
-              <Button type="submit" disabled={settingsSaving} className="!h-9">
-                {settingsSaving ? "Saving…" : "Save Changes"}
-              </Button>
-            </form>
+            </div>
           </div>
         )}
       </div>
