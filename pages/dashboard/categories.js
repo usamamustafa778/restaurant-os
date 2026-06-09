@@ -220,7 +220,7 @@ export default function CategoriesPage() {
   const importMenuRef = useRef(null);
   const exportMenuRef = useRef(null);
   const [modalError, setModalError] = useState("");
-  const { viewMode, setViewMode } = useViewMode("grid");
+  const { viewMode, setViewMode } = useViewMode("table");
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const {
@@ -320,7 +320,6 @@ export default function CategoriesPage() {
 
   const categories = menuData?.categories || [];
   const items = menuData?.items || [];
-  const hasSubcategories = categories.some((c) => c.parentId);
   const topLevelCategories = categories.filter((c) => !c.parentId);
 
   function resetForm() {
@@ -481,7 +480,6 @@ export default function CategoriesPage() {
   const displayCategories = filteredCategories;
 
   const visibleTopLevelCategories = useMemo(() => {
-    if (!hasSubcategories) return filteredCategories;
     const filteredIds = new Set(filteredCategories.map((c) => c.id));
     const parentIdsWithVisibleChildren = new Set(
       filteredCategories.filter((c) => c.parentId).map((c) => c.parentId),
@@ -491,14 +489,7 @@ export default function CategoriesPage() {
         filteredIds.has(parent.id) || parentIdsWithVisibleChildren.has(parent.id),
     );
     return sortCategories(topLevel, sortBy, categories, items);
-  }, [
-    hasSubcategories,
-    filteredCategories,
-    topLevelCategories,
-    sortBy,
-    categories,
-    items,
-  ]);
+  }, [filteredCategories, topLevelCategories, sortBy, categories, items]);
 
   const editingHasSubcategories =
     !!form.id && categories.some((c) => c.parentId === form.id);
@@ -875,9 +866,9 @@ export default function CategoriesPage() {
           ) : viewMode === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {visibleTopLevelCategories.map((cat) => {
-                const subcategories = hasSubcategories
-                  ? filteredCategories.filter((c) => c.parentId === cat.id)
-                  : [];
+                const subcategories = filteredCategories.filter(
+                  (c) => c.parentId === cat.id,
+                );
                 const itemCount = countItemsForCategory(
                   cat.id,
                   categories,
@@ -887,10 +878,10 @@ export default function CategoriesPage() {
                 return (
                   <div
                     key={cat.id}
-                    className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-5 hover:shadow-lg hover:border-primary/30 transition-all relative"
+                    className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 hover:shadow-lg hover:border-primary/30 transition-all"
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-bold text-gray-900 dark:text-white">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h3 className="font-bold text-sm text-gray-900 dark:text-white leading-tight">
                         {cat.name}
                       </h3>
                       <ActionDropdown
@@ -920,88 +911,87 @@ export default function CategoriesPage() {
                       />
                     </div>
 
-                    <div className="mb-2">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${
-                          itemCount === 0
-                            ? "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500"
-                            : "bg-primary/10 text-primary"
-                        }`}
-                      >
-                        {itemCount} items
-                      </span>
-                    </div>
+                    <span
+                      className={`inline-flex w-fit items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold mb-2 ${
+                        itemCount === 0
+                          ? "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500"
+                          : "bg-primary/10 text-primary"
+                      }`}
+                    >
+                      {itemCount} items
+                    </span>
 
-                    <p className="text-sm text-gray-600 dark:text-neutral-400 line-clamp-2 min-h-[2.5rem]">
-                      {cat.description || ""}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5 text-right">
-                      {cat.createdAt
-                        ? new Date(cat.createdAt).toLocaleDateString()
-                        : "—"}
-                    </p>
+                    {cat.description ? (
+                      <p className="text-xs text-gray-600 dark:text-neutral-400 line-clamp-2 mb-2">
+                        {cat.description}
+                      </p>
+                    ) : null}
 
                     {subcategories.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-neutral-800">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-2">
-                          Subcategories
-                        </p>
-                        <div className="space-y-2">
-                          {subcategories.map((sub) => {
-                            const subItemCount = items.filter(
-                              (i) => i.categoryId === sub.id,
-                            ).length;
-                            const subDeleting = deletingId === sub.id;
-                            return (
-                              <div
-                                key={sub.id}
-                                className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 px-3 py-2"
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                    {sub.name}
-                                  </p>
-                                  <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                                    {subItemCount} items
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => startEdit(sub)}
-                                    disabled={subDeleting}
-                                    className="p-1 rounded-md text-gray-400 hover:text-primary hover:bg-white dark:hover:bg-neutral-800 disabled:opacity-50"
-                                    title="Edit"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDelete(sub.id)}
-                                    disabled={subDeleting}
-                                    className="p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-white dark:hover:bg-neutral-800 disabled:opacity-50"
-                                    title="Delete"
-                                  >
-                                    {subDeleting ? (
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    )}
-                                  </button>
-                                </div>
+                      <div className="mb-2 space-y-1 border-l-2 border-orange-200 pl-2 dark:border-orange-500/40">
+                        {subcategories.map((sub) => {
+                          const subItemCount = items.filter(
+                            (i) => i.categoryId === sub.id,
+                          ).length;
+                          const subDeleting = deletingId === sub.id;
+                          return (
+                            <div
+                              key={sub.id}
+                              className="flex items-center justify-between gap-1 rounded-md bg-gray-50/80 px-2 py-1 dark:bg-neutral-900/60"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-medium text-gray-900 dark:text-white truncate">
+                                  {sub.name}
+                                </p>
+                                <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                                  {subItemCount} items
+                                </p>
                               </div>
-                            );
-                          })}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => startCreateSubcategory(cat)}
-                          className="mt-3 w-full py-1.5 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 text-[11px] font-medium text-gray-500 dark:text-neutral-400 hover:border-primary/40 hover:text-primary transition-colors"
-                        >
-                          + Add subcategory
-                        </button>
+                              <div className="flex shrink-0 items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => startEdit(sub)}
+                                  disabled={subDeleting}
+                                  className="p-0.5 rounded text-gray-400 hover:text-primary disabled:opacity-50"
+                                  title="Edit"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(sub.id)}
+                                  disabled={subDeleting}
+                                  className="p-0.5 rounded text-gray-400 hover:text-red-500 disabled:opacity-50"
+                                  title="Delete"
+                                >
+                                  {subDeleting ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-3 h-3" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
+
+                    <div className="mt-auto pt-2 flex items-center justify-between gap-2 border-t border-gray-100 dark:border-neutral-800">
+                      <button
+                        type="button"
+                        onClick={() => startCreateSubcategory(cat)}
+                        className="flex items-center gap-1 text-[11px] font-medium text-orange-500 hover:text-orange-700 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add subcategory
+                      </button>
+                      {cat.createdAt ? (
+                        <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                          {new Date(cat.createdAt).toLocaleDateString()}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
@@ -1016,10 +1006,12 @@ export default function CategoriesPage() {
                   render: (value, row) => (
                     <p
                       className={`font-semibold text-gray-900 dark:text-white ${
-                        row.parentId ? "pl-4 text-sm" : ""
+                        row.parentId
+                          ? "ml-6 border-l-2 border-orange-200 pl-3 text-sm dark:border-orange-500/40"
+                          : ""
                       }`}
                     >
-                      {row.parentId ? `↳ ${value}` : value}
+                      {value}
                     </p>
                   ),
                 },
@@ -1060,7 +1052,18 @@ export default function CategoriesPage() {
                   render: (_, row) => {
                     const isDeleting = deletingId === row.id;
                     return (
-                      <div className="inline-flex items-center gap-1">
+                      <div className="inline-flex items-center gap-1 flex-wrap justify-end">
+                        {!row.parentId && (
+                          <button
+                            type="button"
+                            onClick={() => startCreateSubcategory(row)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-orange-500 hover:bg-orange-50 hover:text-orange-700 dark:hover:bg-orange-500/10 transition-colors"
+                            title="Add subcategory"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add subcategory
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => startEdit(row)}
@@ -1084,33 +1087,26 @@ export default function CategoriesPage() {
                   },
                 },
               ]}
-              rows={(hasSubcategories
-                ? visibleTopLevelCategories.flatMap((cat) => {
-                    const subs = filteredCategories.filter(
-                      (c) => c.parentId === cat.id,
-                    );
-                    return [
-                      {
-                        ...cat,
-                        itemCount: countItemsForCategory(
-                          cat.id,
-                          categories,
-                          items,
-                        ),
-                      },
-                      ...subs.map((sub) => ({
-                        ...sub,
-                        itemCount: items.filter((i) => i.categoryId === sub.id)
-                          .length,
-                      })),
-                    ];
-                  })
-                : displayCategories.map((cat) => ({
+              rows={visibleTopLevelCategories.flatMap((cat) => {
+                const subs = filteredCategories.filter(
+                  (c) => c.parentId === cat.id,
+                );
+                return [
+                  {
                     ...cat,
-                    itemCount: items.filter((i) => i.categoryId === cat.id)
+                    itemCount: countItemsForCategory(
+                      cat.id,
+                      categories,
+                      items,
+                    ),
+                  },
+                  ...subs.map((sub) => ({
+                    ...sub,
+                    itemCount: items.filter((i) => i.categoryId === sub.id)
                       .length,
-                  }))
-              ).map((row) => ({
+                  })),
+                ];
+              }).map((row) => ({
                 ...row,
                 actions: row.id,
               }))}
@@ -1131,11 +1127,20 @@ export default function CategoriesPage() {
                   ? "New subcategory"
                   : "New category"}
             </h2>
-            <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
+            <p
+              className={`text-xs text-gray-500 dark:text-neutral-400 ${
+                parentPreset ? "mb-1" : "mb-4"
+              }`}
+            >
               {parentPreset
                 ? `Adding subcategory under: ${parentPreset.name}`
                 : "Group related menu items together to keep your POS simple."}
             </p>
+            {parentPreset ? (
+              <p className="text-[10px] text-gray-400 dark:text-neutral-500 mb-4">
+                Parent category is pre-selected below.
+              </p>
+            ) : null}
             {modalError && (
               <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
                 {modalError}
@@ -1164,20 +1169,21 @@ export default function CategoriesPage() {
                   Name will appear exactly as entered on POS and customer receipts.
                 </p>
               </div>
-              {!parentPreset && !editingHasSubcategories && (
+              {!form.id && !editingHasSubcategories && (
                 <div className="space-y-1">
                   <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                     Parent category (optional)
                   </label>
                   <select
-                    value={form.parentId || ""}
+                    value={form.parentId || parentPreset?.id || ""}
+                    disabled={!!parentPreset}
                     onChange={(e) =>
                       setForm((prev) => ({
                         ...prev,
                         parentId: e.target.value,
                       }))
                     }
-                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow disabled:opacity-70 disabled:cursor-not-allowed"
                   >
                     <option value="">None — top level</option>
                     {topLevelCategories
@@ -1188,17 +1194,15 @@ export default function CategoriesPage() {
                         </option>
                       ))}
                   </select>
-                  {form.parentId ? (
+                  {(form.parentId || parentPreset?.id) ? (
                     <p className="text-[10px] text-orange-600 dark:text-orange-400">
                       This will be a subcategory under{" "}
-                      {topLevelCategories.find((c) => c.id === form.parentId)
-                        ?.name || "the selected category"}
+                      {parentPreset?.name ||
+                        topLevelCategories.find(
+                          (c) => c.id === (form.parentId || parentPreset?.id),
+                        )?.name ||
+                        "the selected category"}
                       . It will appear nested in the menu.
-                    </p>
-                  ) : form.id && editingParentName ? (
-                    <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                      Currently a top-level category. Select a parent to make
-                      it a subcategory.
                     </p>
                   ) : null}
                 </div>
