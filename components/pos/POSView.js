@@ -191,10 +191,12 @@ export default function POSView({
 }) {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
+  const currentUser = getStoredAuth()?.user;
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [originalOrderItems, setOriginalOrderItems] = useState([]);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   /** Ref avoids React treating the callback as a functional setState updater. */
   const pendingNavigationRef = useRef(null);
@@ -666,6 +668,7 @@ export default function POSView({
   const resetEditOrderState = () => {
     setEditingOrderId(null);
     setEditingOrder(null);
+    setOriginalOrderItems([]);
     setEditSessionDeliveryCharges(0);
     setCart([]);
     setExpandedCartItems([]);
@@ -790,6 +793,13 @@ export default function POSView({
         });
 
         setCart(cartItems);
+        setOriginalOrderItems(
+          cartItems.map((i) => ({
+            cartKey: i._cartKey || i.id,
+            menuItemId: i.id,
+            quantity: i.quantity,
+          })),
+        );
         setItemNotes(initialNotes);
         setCustomerName(order.customerName || "");
         setCustomerPhone(order.customerPhone || "");
@@ -3312,6 +3322,15 @@ export default function POSView({
             ) : (
               cart.map((item) => {
                 const isExpanded = expandedCartItems.includes(item.id);
+                const originalEntry = originalOrderItems.find(
+                  (o) => o.cartKey === (item._cartKey || item.id),
+                );
+                const originalQty = editingOrderId ? (originalEntry?.quantity || 0) : 0;
+                const isPrivilegedEditor =
+                  !editingOrderId ||
+                  ["admin", "manager"].includes(currentUser?.role);
+                const canDecrease =
+                  isPrivilegedEditor || item.quantity > originalQty;
                 return (
                   <div
                     key={item.id}
@@ -3366,15 +3385,17 @@ export default function POSView({
                                 </div>
                               ))}
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeFromCart(item._cartKey || item.id);
-                            }}
-                            className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
-                          >
-                            <span className="text-lg">✕</span>
-                          </button>
+                          {isPrivilegedEditor && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeFromCart(item._cartKey || item.id);
+                              }}
+                              className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                            >
+                              <span className="text-lg">✕</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* Quantity and Add Note Row */}
@@ -3386,9 +3407,13 @@ export default function POSView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (!canDecrease) return;
                                 updateQuantity(item._cartKey || item.id, -1);
                               }}
-                              className="w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors"
+                              disabled={!canDecrease}
+                              className={`w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors ${
+                                !canDecrease ? "opacity-30 cursor-not-allowed" : ""
+                              }`}
                             >
                               <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-400" />
                             </button>
@@ -6179,6 +6204,13 @@ export default function POSView({
                             };
                           });
                           setCart(cartItems);
+                          setOriginalOrderItems(
+                            cartItems.map((i) => ({
+                              cartKey: i._cartKey || i.id,
+                              menuItemId: i.id,
+                              quantity: i.quantity,
+                            })),
+                          );
                           setCustomerName(order.customerName || "");
                           setCustomerPhone(order.customerPhone || "");
                           setCustomerAddress(order.deliveryAddress || "");
