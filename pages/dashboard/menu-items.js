@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import AdminLayout from "../../components/layout/AdminLayout";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
@@ -86,6 +87,191 @@ function getRecipeVolumeMismatchHints(menuName, ingredientNames) {
     );
   }
   return hints;
+}
+
+const VARIATION_SUGGESTIONS = {
+  size: [
+    "Small",
+    "Regular",
+    "Medium",
+    "Large",
+    "Extra Large",
+    "Party Size",
+    "Half",
+    "Full",
+    "Mini",
+  ],
+  drink: [
+    "Regular",
+    "500ml",
+    "1 Liter",
+    "1.5 Liter",
+    "2 Liter",
+    "Pepsi",
+    "7Up",
+    "Mirinda",
+    "Mountain Dew",
+    "Cola Next",
+    "Fizup",
+    "Rango",
+  ],
+  topping: [
+    "Chicken",
+    "Beef",
+    "Cheese",
+    "Extra Cheese",
+    "Mushroom",
+    "Olives",
+    "Jalapeño",
+    "Onion",
+    "Capsicum",
+  ],
+  crust: ["Thin Crust", "Thick Crust", "Stuffed Crust", "Cheese Crust"],
+  sauce: [
+    "Ketchup",
+    "Mayo",
+    "Garlic Sauce",
+    "White Sauce",
+    "BBQ Sauce",
+    "Hot Sauce",
+    "Chilli Garlic",
+    "Tahini",
+  ],
+  spice: ["Mild", "Medium", "Spicy", "Extra Spicy"],
+  default: [
+    "Small",
+    "Regular",
+    "Medium",
+    "Large",
+    "Extra Large",
+    "Half",
+    "Full",
+    "With Salad",
+    "Without Salad",
+    "Extra",
+    "Special",
+  ],
+};
+
+const GROUP_NAME_SUGGESTIONS = [
+  "Choose Your Size",
+  "Choose Your Variation",
+  "Choose Your Drink",
+  "Extra Toppings",
+  "Choose Your Crust",
+  "Choose Your Sauce",
+  "Choose Your Spice Level",
+  "Add-ons",
+];
+
+function getSuggestionsForGroup(groupName) {
+  const name = (groupName || "").toLowerCase();
+  if (
+    name.includes("drink") ||
+    name.includes("beverage") ||
+    name.includes("flavour") ||
+    name.includes("flavor")
+  ) {
+    return VARIATION_SUGGESTIONS.drink;
+  }
+  if (name.includes("topping") || name.includes("extra")) {
+    return VARIATION_SUGGESTIONS.topping;
+  }
+  if (name.includes("crust")) {
+    return VARIATION_SUGGESTIONS.crust;
+  }
+  if (name.includes("sauce") || name.includes("dip")) {
+    return VARIATION_SUGGESTIONS.sauce;
+  }
+  if (name.includes("spice") || name.includes("spicy")) {
+    return VARIATION_SUGGESTIONS.spice;
+  }
+  if (
+    name.includes("size") ||
+    name.includes("variation") ||
+    name.includes("portion")
+  ) {
+    return VARIATION_SUGGESTIONS.size;
+  }
+  return VARIATION_SUGGESTIONS.default;
+}
+
+function hasCategorySubcategories(categories) {
+  return (categories || []).some((c) => c.parentId);
+}
+
+function renderCategorySelectOptions(categories) {
+  const topLevel = (categories || []).filter((c) => !c.parentId);
+  if (!hasCategorySubcategories(categories)) {
+    return topLevel.map((cat) => (
+      <option key={cat.id} value={cat.id}>
+        {cat.name}
+      </option>
+    ));
+  }
+  return topLevel.map((cat) => {
+    const children = categories.filter((c) => c.parentId === cat.id);
+    if (children.length > 0) {
+      return (
+        <optgroup key={cat.id} label={cat.name}>
+          {children.map((sub) => (
+            <option key={sub.id} value={sub.id}>
+              {sub.name}
+            </option>
+          ))}
+        </optgroup>
+      );
+    }
+    return (
+      <option key={cat.id} value={cat.id}>
+        {cat.name}
+      </option>
+    );
+  });
+}
+
+function SuggestionPopover({ anchorEl, open, children }) {
+  const [pos, setPos] = useState(null);
+
+  useLayoutEffect(() => {
+    if (!open || !anchorEl) {
+      setPos(null);
+      return;
+    }
+    const update = () => {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open, anchorEl]);
+
+  if (!open || !pos || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="pointer-events-none fixed inset-0 z-[200]">
+      <div
+        className="pointer-events-auto absolute max-h-[120px] overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-950"
+        style={{
+          top: pos.top,
+          left: pos.left,
+          width: pos.width,
+        }}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 export default function MenuItemsPage() {
@@ -187,6 +373,10 @@ export default function MenuItemsPage() {
   const [copySelectedItemIds, setCopySelectedItemIds] = useState([]);
   const [copySubmitting, setCopySubmitting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState([]);
+  const [focusedOptionKey, setFocusedOptionKey] = useState(null);
+  const [focusedGroupIndex, setFocusedGroupIndex] = useState(null);
+  const [groupNameAnchor, setGroupNameAnchor] = useState(null);
+  const [optionNameAnchor, setOptionNameAnchor] = useState(null);
 
   useEffect(() => {
     if (!exportMenuOpen) return;
@@ -1995,6 +2185,7 @@ export default function MenuItemsPage() {
 
       {/* Item Create/Edit Modal */}
       {isModalOpen && (
+        <>
         <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5 text-xs max-h-[90vh] overflow-y-auto">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
@@ -2077,21 +2268,38 @@ export default function MenuItemsPage() {
 
               {/* Choice groups builder */}
               {form.hasModifiers && (
-                <div className="space-y-2">
+                <div className="space-y-2 overflow-visible">
                   {form.modifierGroups.map((group, gi) => (
-                    <div key={group.id || gi} className="rounded-xl border border-gray-200 dark:border-neutral-700 overflow-hidden">
+                    <div
+                      key={group.id || gi}
+                      className="overflow-visible rounded-xl border border-gray-200 dark:border-neutral-700"
+                    >
                       {/* Group header */}
-                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-neutral-800/60">
+                      <div className="flex items-center gap-2 rounded-t-xl px-3 py-2 bg-gray-50 dark:bg-neutral-800/60">
                         <span className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wide w-4 flex-shrink-0">
                           {gi + 1}
                         </span>
-                        <input
-                          type="text"
-                          value={group.groupName}
-                          onChange={e => updateGroup(gi, 'groupName', e.target.value)}
-                          placeholder="Group name, e.g. Size"
-                          className="flex-1 min-w-0 bg-transparent text-xs font-medium text-gray-900 dark:text-white outline-none placeholder:text-gray-400 dark:placeholder:text-neutral-500"
-                        />
+                        <div className="relative flex-1 min-w-0">
+                          <input
+                            type="text"
+                            value={group.groupName}
+                            onChange={e =>
+                              updateGroup(gi, "groupName", e.target.value)
+                            }
+                            onFocus={(e) => {
+                              setFocusedGroupIndex(gi);
+                              setGroupNameAnchor(e.currentTarget);
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                setFocusedGroupIndex(null);
+                                setGroupNameAnchor(null);
+                              }, 150);
+                            }}
+                            placeholder="Group name, e.g. Size"
+                            className="w-full bg-transparent text-xs font-medium text-gray-900 dark:text-white outline-none placeholder:text-gray-400 dark:placeholder:text-neutral-500"
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={() => updateGroup(gi, 'required', !group.required)}
@@ -2125,17 +2333,34 @@ export default function MenuItemsPage() {
                       )}
 
                       {/* Choices */}
-                      <div className="px-3 pt-2 pb-2 space-y-1.5 bg-white dark:bg-neutral-900">
+                      <div className="overflow-visible rounded-b-xl px-3 pt-2 pb-2 space-y-1.5 bg-white dark:bg-neutral-900">
                         {(group.options || []).map((opt, oi) => (
-                          <div key={opt.id || oi} className="flex items-center gap-2">
+                          <div
+                            key={opt.id || oi}
+                            className="flex items-center gap-2"
+                          >
                             <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-neutral-600 flex-shrink-0 mt-px" />
-                            <input
-                              type="text"
-                              value={opt.name}
-                              onChange={e => updateOption(gi, oi, 'name', e.target.value)}
-                              placeholder="Name, e.g. Large"
-                              className="flex-1 min-w-0 px-2 py-1 rounded-md bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                            />
+                            <div className="relative min-w-0 flex-1">
+                              <input
+                                type="text"
+                                value={opt.name}
+                                onChange={e =>
+                                  updateOption(gi, oi, "name", e.target.value)
+                                }
+                                onFocus={(e) => {
+                                  setFocusedOptionKey(`${gi}-${oi}`);
+                                  setOptionNameAnchor(e.currentTarget);
+                                }}
+                                onBlur={() => {
+                                  setTimeout(() => {
+                                    setFocusedOptionKey(null);
+                                    setOptionNameAnchor(null);
+                                  }, 150);
+                                }}
+                                placeholder="Name, e.g. Large"
+                                className="w-full min-w-0 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-900 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+                              />
+                            </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <span className="text-[10px] text-gray-400 dark:text-neutral-500">Rs</span>
                               <input
@@ -2185,9 +2410,7 @@ export default function MenuItemsPage() {
                   className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
                 >
                   <option value="">Select category</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
+                  {renderCategorySelectOptions(categories)}
                 </select>
               </div>
               <div className="space-y-1">
@@ -2356,6 +2579,88 @@ export default function MenuItemsPage() {
             </form>
           </div>
         </div>
+        {focusedGroupIndex !== null && (
+          <SuggestionPopover
+            anchorEl={groupNameAnchor}
+            open={focusedGroupIndex !== null}
+          >
+            <p className="mb-1.5 px-1 text-xs text-gray-400">Quick select:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {GROUP_NAME_SUGGESTIONS.filter(
+                (suggestion) =>
+                  suggestion.toLowerCase() !==
+                  (
+                    form.modifierGroups[focusedGroupIndex]?.groupName || ""
+                  ).toLowerCase(),
+              ).map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    updateGroup(focusedGroupIndex, "groupName", suggestion);
+                    setFocusedGroupIndex(null);
+                    setGroupNameAnchor(null);
+                  }}
+                  className="cursor-pointer rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-600 transition-colors duration-150 hover:border-orange-300 hover:bg-orange-100 hover:text-orange-700 active:bg-orange-200"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </SuggestionPopover>
+        )}
+        {focusedOptionKey !== null &&
+          (() => {
+            const [focusedGi, focusedOi] = focusedOptionKey
+              .split("-")
+              .map(Number);
+            const focusedGroup = form.modifierGroups[focusedGi];
+            if (!focusedGroup) return null;
+            return (
+              <SuggestionPopover
+                anchorEl={optionNameAnchor}
+                open={focusedOptionKey !== null}
+              >
+                <p className="mb-1.5 px-1 text-xs text-gray-400">
+                  Quick select:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {getSuggestionsForGroup(focusedGroup.groupName)
+                    .filter(
+                      (suggestion) =>
+                        !(focusedGroup.options || []).some(
+                          (o, idx) =>
+                            idx !== focusedOi &&
+                            (o.name || "").toLowerCase() ===
+                              suggestion.toLowerCase(),
+                        ),
+                    )
+                    .map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          updateOption(
+                            focusedGi,
+                            focusedOi,
+                            "name",
+                            suggestion,
+                          );
+                          setFocusedOptionKey(null);
+                          setOptionNameAnchor(null);
+                        }}
+                        className="cursor-pointer rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-600 transition-colors duration-150 hover:border-orange-300 hover:bg-orange-100 hover:text-orange-700 active:bg-orange-200"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                </div>
+              </SuggestionPopover>
+            );
+          })()}
+      </>
       )}
 
       {/* Recipe / Inventory Dialog */}

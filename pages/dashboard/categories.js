@@ -155,6 +155,42 @@ function exportCategoriesToCSV(categories, items) {
   URL.revokeObjectURL(url);
 }
 
+function countItemsForCategory(categoryId, categories, items) {
+  const childIds = categories
+    .filter((c) => c.parentId === categoryId)
+    .map((c) => c.id);
+  const ids = new Set([categoryId, ...childIds]);
+  return items.filter((i) => ids.has(i.categoryId)).length;
+}
+
+function sortCategories(list, sortBy, categories, items) {
+  const sorted = [...list];
+  sorted.sort((a, b) => {
+    const countA = countItemsForCategory(a.id, categories, items);
+    const countB = countItemsForCategory(b.id, categories, items);
+    switch (sortBy) {
+      case "name_desc":
+        return b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
+      case "newest": {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      }
+      case "oldest": {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return ta - tb;
+      }
+      case "items_desc":
+        return countB - countA;
+      case "name_asc":
+      default:
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    }
+  });
+  return sorted;
+}
+
 export default function CategoriesPage() {
   const { branches, currentBranch } = useBranch() || {};
   const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
@@ -166,7 +202,13 @@ export default function CategoriesPage() {
     suspended,
     setData: setMenuData,
   } = usePageData(() => getMenu(currentBranch?.id), [currentBranch?.id]);
-  const [form, setForm] = useState({ id: null, name: "", description: "" });
+  const [form, setForm] = useState({
+    id: null,
+    name: "",
+    description: "",
+    parentId: "",
+  });
+  const [parentPreset, setParentPreset] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("name_asc");
@@ -278,19 +320,40 @@ export default function CategoriesPage() {
 
   const categories = menuData?.categories || [];
   const items = menuData?.items || [];
+  const hasSubcategories = categories.some((c) => c.parentId);
+  const topLevelCategories = categories.filter((c) => !c.parentId);
 
   function resetForm() {
-    setForm({ id: null, name: "", description: "" });
+    setForm({ id: null, name: "", description: "", parentId: "" });
+    setParentPreset(null);
   }
 
   function startEdit(cat) {
-    setForm({ id: cat.id, name: cat.name, description: cat.description || "" });
+    setForm({
+      id: cat.id,
+      name: cat.name,
+      description: cat.description || "",
+      parentId: cat.parentId || "",
+    });
+    setParentPreset(null);
     setModalError("");
     setIsModalOpen(true);
   }
 
   function startCreate() {
     resetForm();
+    setModalError("");
+    setIsModalOpen(true);
+  }
+
+  function startCreateSubcategory(parentCat) {
+    setForm({
+      id: null,
+      name: "",
+      description: "",
+      parentId: parentCat.id,
+    });
+    setParentPreset({ id: parentCat.id, name: parentCat.name });
     setModalError("");
     setIsModalOpen(true);
   }
@@ -312,11 +375,13 @@ export default function CategoriesPage() {
 
     const result = await handleAsyncAction(
       async () => {
+        const payload = {
+          name: form.name,
+          description: form.description,
+        };
         if (form.id) {
-          const updated = await updateCategory(form.id, {
-            name: form.name,
-            description: form.description,
-          });
+          payload.parentId = form.parentId || null;
+          const updated = await updateCategory(form.id, payload);
           setMenuData((prev) => ({
             ...prev,
             categories: prev.categories.map((c) =>
@@ -324,18 +389,19 @@ export default function CategoriesPage() {
             ),
           }));
           return updated;
-        } else {
-          const created = await createCategory({
-            name: form.name,
-            description: form.description,
-            ...(currentBranch?.id && { branchId: currentBranch.id }),
-          });
-          setMenuData((prev) => ({
-            ...prev,
-            categories: [...prev.categories, created],
-          }));
-          return created;
         }
+        const createPayload = {
+          ...payload,
+          ...(currentBranch?.id && { branchId: currentBranch.id }),
+        };
+        const parentId = parentPreset?.id || form.parentId || null;
+        if (parentId) createPayload.parentId = parentId;
+        const created = await createCategory(createPayload);
+        setMenuData((prev) => ({
+          ...prev,
+          categories: [...prev.categories, created],
+        }));
+        return created;
       },
       {
         loading: form.id ? "Updating category..." : "Creating category...",
@@ -357,22 +423,30 @@ export default function CategoriesPage() {
   }
 
   async function handleDelete(id) {
+    const cat = categories.find((c) => c.id === id);
+    const subcategories = categories.filter((c) => c.parentId === id);
+    const subCount = subcategories.length;
     const ok = await confirm({
       title: "Delete category",
       message:
-        "Delete this category and all its menu items? This cannot be undone.",
+        subCount > 0
+          ? `This category has ${subCount} subcategor${subCount === 1 ? "y" : "ies"}. Deleting it will also delete all subcategories and their items. This cannot be undone.`
+          : cat?.parentId
+            ? "Delete this subcategory and all its menu items? This cannot be undone."
+            : "Delete this category and all its menu items? This cannot be undone.",
     });
     if (!ok) return;
 
     setDeletingId(id);
+    const idsToRemove = new Set([id, ...subcategories.map((c) => c.id)]);
 
     await handleAsyncAction(
       async () => {
         await deleteCategory(id);
         setMenuData((prev) => ({
           ...prev,
-          categories: prev.categories.filter((c) => c.id !== id),
-          items: prev.items.filter((i) => i.categoryId !== id),
+          categories: prev.categories.filter((c) => !idsToRemove.has(c.id)),
+          items: prev.items.filter((i) => !idsToRemove.has(i.categoryId)),
         }));
       },
       {
@@ -385,13 +459,14 @@ export default function CategoriesPage() {
     setDeletingId(null);
   }
 
-  const displayCategories = useMemo(() => {
+  const filteredCategories = useMemo(() => {
     const term = search.trim().toLowerCase();
     let list = categories.filter((cat) => {
       if (!term) return true;
       return (
         cat.name.toLowerCase().includes(term) ||
-        (cat.description || "").toLowerCase().includes(term)
+        (cat.description || "").toLowerCase().includes(term) ||
+        (cat.parentName || "").toLowerCase().includes(term)
       );
     });
     list = list.filter((cat) => {
@@ -400,36 +475,37 @@ export default function CategoriesPage() {
       if (itemFilter === "empty") return n === 0;
       return true;
     });
-    const sorted = [...list];
-    sorted.sort((a, b) => {
-      const countA = items.filter((i) => i.categoryId === a.id).length;
-      const countB = items.filter((i) => i.categoryId === b.id).length;
-      switch (sortBy) {
-        case "name_desc":
-          return b.name.localeCompare(a.name, undefined, {
-            sensitivity: "base",
-          });
-        case "newest": {
-          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return tb - ta;
-        }
-        case "oldest": {
-          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return ta - tb;
-        }
-        case "items_desc":
-          return countB - countA;
-        case "name_asc":
-        default:
-          return a.name.localeCompare(b.name, undefined, {
-            sensitivity: "base",
-          });
-      }
-    });
-    return sorted;
+    return sortCategories(list, sortBy, categories, items);
   }, [categories, items, search, itemFilter, sortBy]);
+
+  const displayCategories = filteredCategories;
+
+  const visibleTopLevelCategories = useMemo(() => {
+    if (!hasSubcategories) return filteredCategories;
+    const filteredIds = new Set(filteredCategories.map((c) => c.id));
+    const parentIdsWithVisibleChildren = new Set(
+      filteredCategories.filter((c) => c.parentId).map((c) => c.parentId),
+    );
+    const topLevel = topLevelCategories.filter(
+      (parent) =>
+        filteredIds.has(parent.id) || parentIdsWithVisibleChildren.has(parent.id),
+    );
+    return sortCategories(topLevel, sortBy, categories, items);
+  }, [
+    hasSubcategories,
+    filteredCategories,
+    topLevelCategories,
+    sortBy,
+    categories,
+    items,
+  ]);
+
+  const editingHasSubcategories =
+    !!form.id && categories.some((c) => c.parentId === form.id);
+  const editingParentName =
+    categories.find((c) => c.id === form.parentId)?.name ||
+    categories.find((c) => c.id === form.id)?.parentName ||
+    null;
 
   const handleExportCSV = useCallback(() => {
     exportCategoriesToCSV(displayCategories, items);
@@ -764,7 +840,7 @@ export default function CategoriesPage() {
         </div>
       ) : (
         <>
-          {displayCategories.length === 0 ? (
+          {visibleTopLevelCategories.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 rounded-2xl border-2 border-dashed border-gray-200 dark:border-neutral-700 bg-white/50 dark:bg-neutral-950/50">
               <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
                 <FolderOpen className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
@@ -798,10 +874,15 @@ export default function CategoriesPage() {
             </div>
           ) : viewMode === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {displayCategories.map((cat) => {
-                const itemCount = items.filter(
-                  (i) => i.categoryId === cat.id,
-                ).length;
+              {visibleTopLevelCategories.map((cat) => {
+                const subcategories = hasSubcategories
+                  ? filteredCategories.filter((c) => c.parentId === cat.id)
+                  : [];
+                const itemCount = countItemsForCategory(
+                  cat.id,
+                  categories,
+                  items,
+                );
                 const isDeleting = deletingId === cat.id;
                 return (
                   <div
@@ -812,8 +893,6 @@ export default function CategoriesPage() {
                       <h3 className="font-bold text-gray-900 dark:text-white">
                         {cat.name}
                       </h3>
-
-                      {/* Actions Dropdown */}
                       <ActionDropdown
                         isOpen={isDropdownOpen(cat.id)}
                         onToggle={() => toggleDropdown(cat.id)}
@@ -842,7 +921,13 @@ export default function CategoriesPage() {
                     </div>
 
                     <div className="mb-2">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${itemCount === 0 ? "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500" : "bg-primary/10 text-primary"}`}>
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${
+                          itemCount === 0
+                            ? "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500"
+                            : "bg-primary/10 text-primary"
+                        }`}
+                      >
                         {itemCount} items
                       </span>
                     </div>
@@ -855,6 +940,68 @@ export default function CategoriesPage() {
                         ? new Date(cat.createdAt).toLocaleDateString()
                         : "—"}
                     </p>
+
+                    {subcategories.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-neutral-800">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-2">
+                          Subcategories
+                        </p>
+                        <div className="space-y-2">
+                          {subcategories.map((sub) => {
+                            const subItemCount = items.filter(
+                              (i) => i.categoryId === sub.id,
+                            ).length;
+                            const subDeleting = deletingId === sub.id;
+                            return (
+                              <div
+                                key={sub.id}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 px-3 py-2"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    {sub.name}
+                                  </p>
+                                  <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                                    {subItemCount} items
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEdit(sub)}
+                                    disabled={subDeleting}
+                                    className="p-1 rounded-md text-gray-400 hover:text-primary hover:bg-white dark:hover:bg-neutral-800 disabled:opacity-50"
+                                    title="Edit"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(sub.id)}
+                                    disabled={subDeleting}
+                                    className="p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-white dark:hover:bg-neutral-800 disabled:opacity-50"
+                                    title="Delete"
+                                  >
+                                    {subDeleting ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => startCreateSubcategory(cat)}
+                          className="mt-3 w-full py-1.5 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 text-[11px] font-medium text-gray-500 dark:text-neutral-400 hover:border-primary/40 hover:text-primary transition-colors"
+                        >
+                          + Add subcategory
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -866,9 +1013,13 @@ export default function CategoriesPage() {
                 {
                   key: "name",
                   header: "Category",
-                  render: (value) => (
-                    <p className="font-semibold text-gray-900 dark:text-white">
-                      {value}
+                  render: (value, row) => (
+                    <p
+                      className={`font-semibold text-gray-900 dark:text-white ${
+                        row.parentId ? "pl-4 text-sm" : ""
+                      }`}
+                    >
+                      {row.parentId ? `↳ ${value}` : value}
                     </p>
                   ),
                 },
@@ -933,9 +1084,35 @@ export default function CategoriesPage() {
                   },
                 },
               ]}
-              rows={displayCategories.map((cat) => ({
-                ...cat,
-                itemCount: items.filter((i) => i.categoryId === cat.id).length,
+              rows={(hasSubcategories
+                ? visibleTopLevelCategories.flatMap((cat) => {
+                    const subs = filteredCategories.filter(
+                      (c) => c.parentId === cat.id,
+                    );
+                    return [
+                      {
+                        ...cat,
+                        itemCount: countItemsForCategory(
+                          cat.id,
+                          categories,
+                          items,
+                        ),
+                      },
+                      ...subs.map((sub) => ({
+                        ...sub,
+                        itemCount: items.filter((i) => i.categoryId === sub.id)
+                          .length,
+                      })),
+                    ];
+                  })
+                : displayCategories.map((cat) => ({
+                    ...cat,
+                    itemCount: items.filter((i) => i.categoryId === cat.id)
+                      .length,
+                  }))
+              ).map((row) => ({
+                ...row,
+                actions: row.id,
               }))}
               emptyMessage="No rows"
             />
@@ -948,10 +1125,16 @@ export default function CategoriesPage() {
         <div className="categories-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 p-5 shadow-xl text-xs">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-              {form.id ? "Edit category" : "New category"}
+              {form.id
+                ? "Edit category"
+                : parentPreset
+                  ? "New subcategory"
+                  : "New category"}
             </h2>
             <p className="text-xs text-gray-500 dark:text-neutral-400 mb-4">
-              Group related menu items together to keep your POS simple.
+              {parentPreset
+                ? `Adding subcategory under: ${parentPreset.name}`
+                : "Group related menu items together to keep your POS simple."}
             </p>
             {modalError && (
               <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
@@ -981,6 +1164,58 @@ export default function CategoriesPage() {
                   Name will appear exactly as entered on POS and customer receipts.
                 </p>
               </div>
+              {!parentPreset && !editingHasSubcategories && (
+                <div className="space-y-1">
+                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
+                    Parent category (optional)
+                  </label>
+                  <select
+                    value={form.parentId || ""}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        parentId: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
+                  >
+                    <option value="">None — top level</option>
+                    {topLevelCategories
+                      .filter((c) => c.id !== form.id)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                  </select>
+                  {form.parentId ? (
+                    <p className="text-[10px] text-orange-600 dark:text-orange-400">
+                      This will be a subcategory under{" "}
+                      {topLevelCategories.find((c) => c.id === form.parentId)
+                        ?.name || "the selected category"}
+                      . It will appear nested in the menu.
+                    </p>
+                  ) : form.id && editingParentName ? (
+                    <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                      Currently a top-level category. Select a parent to make
+                      it a subcategory.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+              {form.id && form.parentId && editingParentName && (
+                <p className="text-[10px] text-gray-500 dark:text-neutral-400 -mt-1">
+                  Subcategory of:{" "}
+                  <span className="font-medium text-gray-700 dark:text-neutral-300">
+                    {editingParentName}
+                  </span>
+                </p>
+              )}
+              {editingHasSubcategories && (
+                <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                  This category has subcategories and must stay top-level.
+                </p>
+              )}
               <div className="space-y-1">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">
                   Description (optional)
@@ -1016,7 +1251,13 @@ export default function CategoriesPage() {
                       {form.id ? "Saving..." : "Creating..."}
                     </>
                   ) : (
-                    <>{form.id ? "Save changes" : "Create category"}</>
+                    <>
+                      {form.id
+                        ? "Save changes"
+                        : parentPreset
+                          ? "Create subcategory"
+                          : "Create category"}
+                    </>
                   )}
                 </Button>
               </div>
