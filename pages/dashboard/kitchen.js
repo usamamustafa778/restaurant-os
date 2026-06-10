@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { getOrders, getNextStatuses, updateOrderStatus, getDaySessions } from "../../lib/apiClient";
+import { getOrders, getNextStatuses, updateOrderStatus, recallKitchenOrder, getDaySessions } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import {
   Clock, User, ChefHat, Loader2, CheckCircle2, RefreshCw,
@@ -86,6 +86,13 @@ function getOrderTypeLabel(order) {
   return "Walk-in";
 }
 
+function getItemStatus(item, orderStatus) {
+  if (item.itemStatus) return item.itemStatus;
+  if (["READY", "DELIVERED", "OUT_FOR_DELIVERY"].includes(orderStatus)) return "COOKED";
+  if (orderStatus === "PROCESSING") return "COOKING";
+  return "NEW";
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Ready orders older than this threshold get a Dismiss button. */
@@ -138,7 +145,7 @@ const COLUMNS = [
   },
   {
     key: "kitchen",
-    title: "In Kitchen",
+    title: "Preparing",
     subtitle: "Being prepared",
     statuses: ["PROCESSING", "PENDING"],
     header: "bg-blue-500",
@@ -170,7 +177,7 @@ const COLUMNS = [
 
 // ─── Order Card ───────────────────────────────────────────────────────────────
 
-function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
+function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, tick }) {
   const typeLabel = getOrderTypeLabel(order);
   const typeConf = TYPE_CONFIG[typeLabel] || TYPE_CONFIG["Walk-in"];
   const minutes = getElapsedMinutes(order.createdAt);
@@ -180,8 +187,37 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
   const hasAdditions = (order.items || []).some((i) => i.isAddition);
   const itemsToShow = order.items || [];
   const showAdditionBadge = hasAdditions;
+  const statuses = itemsToShow.map((i) => getItemStatus(i, order.status));
+  const hasMixed = statuses.includes("COOKED") && statuses.some((s) => s !== "COOKED");
   const totalQty = itemsToShow.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
   const stale = isStaleReady(order);
+
+  function renderItemExtras(item) {
+    return (
+      <>
+        {(item.variantLabel || item.size) && (
+          <div className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-7 mt-0.5">
+            ({item.variantLabel || item.size})
+          </div>
+        )}
+        {(item.modifierSelections || [])
+          .filter((sel) => {
+            const optTotal = (sel.options || []).reduce((s, o) => s + (o.price || 0), 0);
+            return optTotal > 0 && optTotal !== (item.unitPrice || item.price);
+          })
+          .map((sel, si) => (
+            <div key={si} className="text-xs text-orange-500 dark:text-orange-400 leading-tight ml-7 mt-0.5">
+              + {(sel.options || []).map((o) => o.name).join(", ")}
+            </div>
+          ))}
+        {item.note && (
+          <div className="text-xs italic text-blue-500 dark:text-blue-400 ml-7 mt-0.5">
+            📝 {item.note}
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <div
@@ -256,40 +292,55 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, tick }) {
         )}
       </div>
       <div className="px-3 py-2 space-y-1.5 flex-1">
-        {itemsToShow.map((item, idx) => (
-          <div key={idx}>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-black text-primary w-5 flex-shrink-0 tabular-nums">{item.qty ?? item.quantity}×</span>
-              <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 leading-snug">
-                {item.name}
-              </span>
-            </div>
-            {(item.variantLabel || item.size) && (
-              <div className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-7 mt-0.5">
-                ({item.variantLabel || item.size})
-              </div>
-            )}
-            {(item.modifierSelections || [])
-              .filter((sel) => {
-                const optTotal = (sel.options || []).reduce((s, o) => s + (o.price || 0), 0);
-                return optTotal > 0 && optTotal !== (item.unitPrice || item.price);
-              })
-              .map((sel, si) => (
-                <div key={si} className="text-xs text-orange-500 dark:text-orange-400 leading-tight ml-7 mt-0.5">
-                  + {(sel.options || []).map((o) => o.name).join(', ')}
+        {itemsToShow.map((item, idx) => {
+          const st = getItemStatus(item, order.status);
+          return (
+            <div key={idx}>
+              {hasMixed && st === "COOKED" ? (
+                <div className="flex items-baseline gap-2 opacity-50">
+                  <span className="text-green-500 text-xs">✓</span>
+                  <span className="text-xs tabular-nums">{item.qty ?? item.quantity}×</span>
+                  <span className="text-xs text-gray-500">{item.name}</span>
                 </div>
-              ))
-            }
-            {item.note && (
-              <div className="text-xs italic text-blue-500 dark:text-blue-400 ml-7 mt-0.5">
-                📝 {item.note}
-              </div>
-            )}
-          </div>
-        ))}
+              ) : hasMixed && st === "NEW" ? (
+                <div className="flex items-baseline gap-2 bg-orange-500/10 rounded px-1 -mx-1">
+                  <span className="text-[10px] font-black text-orange-500">NEW</span>
+                  <span className="text-xs font-black text-orange-500 tabular-nums">
+                    {item.qty ?? item.quantity}×
+                  </span>
+                  <span className="text-xs font-bold text-orange-400">{item.name}</span>
+                </div>
+              ) : (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-black text-primary w-5 flex-shrink-0 tabular-nums">
+                    {item.qty ?? item.quantity}×
+                  </span>
+                  <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 leading-snug">
+                    {item.name}
+                  </span>
+                </div>
+              )}
+              {renderItemExtras(item)}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Advance button — only for New and In Kitchen columns */}
+      {/* Recall button — Ready column only */}
+      {column.key === "ready" && onRecall && (
+        <div className="px-3 pb-1">
+          <button
+            type="button"
+            disabled={isUpdating}
+            onClick={() => onRecall(order)}
+            className="w-full mt-2 py-1.5 rounded-lg text-xs font-semibold text-gray-400 border border-gray-700 hover:text-orange-400 hover:border-orange-500/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ↩ Back to Preparing
+          </button>
+        </div>
+      )}
+
+      {/* Advance button — only for New and Preparing columns */}
       {column.advanceLabel && AdvIcon && (
         <div className="px-3 pb-3 pt-1.5">
           <button
@@ -462,6 +513,20 @@ export default function KitchenPage() {
       toast.success(`#${getTokenNumber(order)} — ${label}`);
     } catch (err) {
       toast.error(err.message || "Failed to update");
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  }
+
+  async function recallOrder(order) {
+    const orderId = order._id || order.id;
+    setUpdatingOrderId(orderId);
+    try {
+      await recallKitchenOrder(orderId);
+      await fetchOrders();
+      toast.success(`#${getTokenNumber(order)} — moved back to Preparing`);
+    } catch (e) {
+      toast.error(e?.message || "Could not move order back");
     } finally {
       setUpdatingOrderId(null);
     }
@@ -651,6 +716,7 @@ export default function KitchenPage() {
                           isUpdating={updatingOrderId === orderId}
                           onAdvance={handleStatusAdvance}
                           onDismiss={handleDismiss}
+                          onRecall={col.key === "ready" ? recallOrder : null}
                           tick={tick}
                         />
                       );

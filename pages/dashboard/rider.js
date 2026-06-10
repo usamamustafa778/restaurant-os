@@ -828,6 +828,7 @@ export default function RiderPortalPage() {
           name: c.name,
           quantity: Math.max(1, Number(c.quantity) || 1),
           unitPrice: Number(c.price) || 0,
+          isAddition: true,
         }));
 
         const mergedMap = new Map();
@@ -2522,11 +2523,11 @@ export default function RiderPortalPage() {
                   {placing ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {appendTargetOrder ? "Appending..." : "Sending..."}
+                      {appendTargetOrder ? "Updating..." : "Sending..."}
                     </>
                   ) : appendTargetOrder ? (
                     <>
-                      {cart.length > 0 ? "Append Items" : "Save Customer"}
+                      {cart.length > 0 ? "Update order" : "Save Customer"}
                       {cart.length > 0 ? <Plus className="w-4 h-4" /> : <Check className="w-4 h-4" />}
                     </>
                   ) : (
