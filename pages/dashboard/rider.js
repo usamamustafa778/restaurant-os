@@ -372,7 +372,15 @@ export default function RiderPortalPage() {
           .filter((z) => z.name && z.id)
           .sort((a, b) => a.sortOrder - b.sortOrder);
         setDeliveryZones(mapped);
-        setDeliveryLocationId((prev) => (prev && mapped.some((m) => m.id === prev) ? prev : ""));
+        setDeliveryLocationId((prev) => {
+          const willKeep = prev && mapped.some((m) => m.id === prev);
+          console.log("[ZONES DEBUG]", {
+            mappedIds: mapped.map((m) => m.id),
+            currentDeliveryLocationId: prev,
+            willKeep,
+          });
+          return willKeep ? prev : "";
+        });
       })
       .catch(() => {
         if (!cancelled) {
@@ -787,6 +795,7 @@ export default function RiderPortalPage() {
         deliveryCharges: deliveryZonesActive
           ? deliveryFee
           : Math.max(0, Number(appendTargetOrder?.deliveryCharges) || 0),
+        deliveryLocationId: deliveryLocationId || null,
       };
 
       if (cart.length > 0) {
@@ -922,6 +931,12 @@ export default function RiderPortalPage() {
   }
 
   function startAppendItems(order) {
+    console.log("[APPEND DEBUG] order:", {
+      orderNumber: order.orderNumber,
+      deliveryLocationId: order.deliveryLocationId,
+      deliveryLocationName: order.deliveryLocationName,
+      deliveryAddress: order.deliveryAddress,
+    });
     if (!order) return;
     const status = String(order.status || "").toUpperCase();
     if (["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(status)) {
@@ -935,6 +950,9 @@ export default function RiderPortalPage() {
     setCustomerName(String(order.customerName || "").trim());
     setCustomerPhone(String(order.customerPhone || order.phone || "").trim());
     setDeliveryAddress(String(order.deliveryAddress || "").trim());
+    if (order.deliveryLocationId) {
+      setDeliveryLocationId(String(order.deliveryLocationId));
+    }
     setCustomerSearch("");
     setShowCustomerEdit(false);
     setCustomersError("");
@@ -956,6 +974,9 @@ export default function RiderPortalPage() {
     setCustomerName(String(order.customerName || "").trim());
     setCustomerPhone(String(order.customerPhone || order.phone || "").trim());
     setDeliveryAddress(String(order.deliveryAddress || "").trim());
+    if (order.deliveryLocationId) {
+      setDeliveryLocationId(String(order.deliveryLocationId));
+    }
     setCustomerSearch("");
     setShowCustomerEdit(true);
     setCustomersError("");
