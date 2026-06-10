@@ -813,7 +813,7 @@ export default function OrderTakerPage() {
       };
       if (cart.length > 0) {
         const existingItems = (appendTargetOrder.items || []).map((item) => ({
-          menuItemId: null,
+          menuItemId: item.menuItemId || item.menuItem || null,
           name: item.name || "Item",
           quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
           unitPrice: Number(item.unitPrice) || 0,

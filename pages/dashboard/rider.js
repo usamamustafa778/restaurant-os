@@ -53,6 +53,7 @@ import {
   Moon,
   Tag,
   AlertTriangle,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -679,6 +680,19 @@ export default function RiderPortalPage() {
   const selectedDeliveryZone = deliveryZones.find((z) => z.id === deliveryLocationId);
   const deliveryFee = selectedDeliveryZone ? Math.round(selectedDeliveryZone.fee * 100) / 100 : 0;
   const cartTotalDue = Math.round((subtotal + deliveryFee) * 100) / 100;
+  const existingOrderTotal = appendTargetOrder
+    ? Math.round(Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0)
+    : 0;
+  const newItemsSubtotal = subtotal;
+  const appendCombinedTotal = appendTargetOrder
+    ? existingOrderTotal + newItemsSubtotal
+    : cartTotalDue;
+  const existingItemCount = appendTargetOrder
+    ? (appendTargetOrder.items || []).reduce(
+        (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+        0,
+      )
+    : 0;
 
   // ── Cart helpers ──────────────────────────────────────────────────────
   function addToCart(item, qty = 1) {
@@ -804,7 +818,7 @@ export default function RiderPortalPage() {
 
       if (cart.length > 0) {
         const existingItems = (appendTargetOrder.items || []).map((item) => ({
-          menuItemId: null,
+          menuItemId: item.menuItemId || item.menuItem || null,
           name: item.name || "Item",
           quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
           unitPrice: Number(item.unitPrice) || 0,
@@ -2108,9 +2122,60 @@ export default function RiderPortalPage() {
                     </div>
                   ) : (
                     <>
-                      {/* Compact cart items */}
+                      {appendTargetOrder && (
+                        <div className="mb-3">
+                          <div className="mb-2 flex items-center justify-between px-1">
+                            <p className="text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                              Already in order
+                            </p>
+                            <span className="text-xs text-gray-500 dark:text-neutral-400">
+                              #
+                              {String(
+                                appendTargetOrder.orderNumber ||
+                                  getOrderId(appendTargetOrder) ||
+                                  "",
+                              ).slice(-4)}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5 opacity-60">
+                            {(appendTargetOrder.items || []).map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900"
+                              >
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <Lock className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                                  <span className="truncate text-sm text-gray-600 dark:text-neutral-400">
+                                    {item.name}
+                                    {item.variantLabel && (
+                                      <span className="ml-1 text-xs text-gray-400">
+                                        ({item.variantLabel})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <span className="flex-shrink-0 text-sm font-medium tabular-nums text-gray-500 dark:text-neutral-500">
+                                  ×{item.qty ?? item.quantity ?? 1}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {cart.length > 0 && (
+                            <>
+                              <div className="my-3 border-t border-dashed border-gray-300 dark:border-neutral-700" />
+                              <p className="mb-2 px-1 text-xs font-bold uppercase tracking-wide text-orange-500">
+                                Adding now
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Compact cart items (new additions) */}
                       {cart.length > 0 ? (
-                        <div className="space-y-1.5 mb-3">
+                        <div className="mb-3 space-y-1.5">
                           {cart.map((item) => (
                             <div key={item.id} className="flex items-center gap-2.5 bg-white dark:bg-neutral-950 rounded-xl p-1.5">
                               {item.imageUrl ? (
@@ -2385,31 +2450,58 @@ export default function RiderPortalPage() {
         {tab === TABS.NEW_ORDER && !noActiveSession && step === STEPS.CART && (cart.length > 0 || !!appendTargetOrder) && (
           <div className="fixed bottom-16 inset-x-0 z-20">
             <div className="bg-white dark:bg-neutral-950 border-t border-gray-100 dark:border-neutral-900 px-3 pt-2.5 pb-2.5">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Total</p>
-                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">
-                      {sym} {(appendTargetOrder && cart.length === 0
-                        ? Math.round(Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0)
-                        : cartTotalDue).toLocaleString()}
-                    </p>
-                  </div>
-                  {deliveryFee > 0 && (
-                    <div className="text-[10px] text-gray-400 dark:text-neutral-500 leading-tight">
-                      <p>Subtotal {sym} {subtotal.toLocaleString()}</p>
-                      <p>Delivery {sym} {deliveryFee.toLocaleString()}</p>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  {appendTargetOrder ? (
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        {cart.length > 0 ? "Total (after adding)" : "Total"}
+                      </p>
+                      <p className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                        {sym}{" "}
+                        {(cart.length > 0
+                          ? appendCombinedTotal
+                          : existingOrderTotal
+                        ).toLocaleString()}
+                      </p>
+                      {cart.length > 0 && (
+                        <p className="text-[10px] leading-tight text-gray-500 dark:text-neutral-400">
+                          Existing {sym} {existingOrderTotal.toLocaleString()}
+                          {" + New "}
+                          {sym} {newItemsSubtotal.toLocaleString()}
+                          {deliveryFee > 0 &&
+                            ` · Delivery ${sym} ${deliveryFee.toLocaleString()}`}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        Total
+                      </p>
+                      <p className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                        {sym} {cartTotalDue.toLocaleString()}
+                      </p>
+                      {deliveryFee > 0 && (
+                        <div className="text-[10px] leading-tight text-gray-400 dark:text-neutral-500">
+                          <p>
+                            Subtotal {sym} {subtotal.toLocaleString()}
+                          </p>
+                          <p>
+                            Delivery {sym} {deliveryFee.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Items</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight">
-                    {appendTargetOrder && cart.length === 0
-                      ? (appendTargetOrder.items || []).reduce(
-                          (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
-                          0,
-                        )
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                    Items
+                  </p>
+                  <p className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {appendTargetOrder
+                      ? existingItemCount + cartBadge
                       : cartBadge}
                   </p>
                 </div>
