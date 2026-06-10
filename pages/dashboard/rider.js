@@ -228,6 +228,7 @@ export default function RiderPortalPage() {
   const [placing, setPlacing] = useState(false);
   const [appendTargetOrder, setAppendTargetOrder] = useState(null);
   const [appendingOrderId, setAppendingOrderId] = useState(null);
+  const [existingItemsOpen, setExistingItemsOpen] = useState(false);
 
   // Customer
   const [customerName, setCustomerName] = useState("");
@@ -768,6 +769,7 @@ export default function RiderPortalPage() {
       setQuickCustomerName("");
       setQuickCustomerAddress("");
       setAppendTargetOrder(null);
+      setExistingItemsOpen(false);
       setStep(STEPS.MENU);
       setTab(TABS.ACTIVE);
       loadOrders(getCurrentOrdersParams());
@@ -822,6 +824,9 @@ export default function RiderPortalPage() {
           name: item.name || "Item",
           quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
           unitPrice: Number(item.unitPrice) || 0,
+          isAddition: item.isAddition || false,
+          addedAt: item.addedAt || null,
+          itemStatus: item.itemStatus ?? null,
         }));
         const addedItems = cart.map((c) => ({
           menuItemId: c.id,
@@ -831,11 +836,16 @@ export default function RiderPortalPage() {
           isAddition: true,
         }));
 
+        const lineIsNew = (item) =>
+          item.isAddition === true &&
+          (item.itemStatus === undefined || item.itemStatus === null) &&
+          (item.addedAt === undefined || item.addedAt === null);
         const mergedMap = new Map();
         const pushItem = (item) => {
+          const newSuffix = lineIsNew(item) ? "|NEW" : "|EXISTING";
           const key = item.menuItemId
-            ? `menu:${item.menuItemId}`
-            : `name:${String(item.name || "").trim().toLowerCase()}|price:${Number(item.unitPrice) || 0}`;
+            ? `menu:${item.menuItemId}${newSuffix}`
+            : `name:${String(item.name || "").trim().toLowerCase()}|price:${Number(item.unitPrice) || 0}${newSuffix}`;
           const prev = mergedMap.get(key);
           if (prev) {
             prev.quantity += Math.max(1, Number(item.quantity) || 1);
@@ -862,6 +872,7 @@ export default function RiderPortalPage() {
       );
       setCart([]);
       setAppendTargetOrder(null);
+      setExistingItemsOpen(false);
       setStep(STEPS.MENU);
       setTab(TABS.ACTIVE);
       loadOrders(getCurrentOrdersParams());
@@ -1937,7 +1948,10 @@ export default function RiderPortalPage() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setAppendTargetOrder(null)}
+                          onClick={() => {
+                            setAppendTargetOrder(null);
+                            setExistingItemsOpen(false);
+                          }}
                           className="text-[10px] font-bold text-primary/80 hover:text-primary"
                         >
                           Cancel
@@ -2125,43 +2139,67 @@ export default function RiderPortalPage() {
                     <>
                       {appendTargetOrder && (
                         <div className="mb-3">
-                          <div className="mb-2 flex items-center justify-between px-1">
-                            <p className="text-xs font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
-                              Already in order
-                            </p>
-                            <span className="text-xs text-gray-500 dark:text-neutral-400">
-                              #
-                              {String(
-                                appendTargetOrder.orderNumber ||
-                                  getOrderId(appendTargetOrder) ||
-                                  "",
-                              ).slice(-4)}
-                            </span>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExistingItemsOpen((open) => !open)}
+                            className="w-full flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-100 px-3 py-2.5 text-left dark:border-neutral-800 dark:bg-neutral-900 active:scale-[0.99] transition-transform"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Lock className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                                  Already in order
+                                </p>
+                                {!existingItemsOpen && (
+                                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 truncate">
+                                    {existingItemCount} item{existingItemCount !== 1 ? "s" : ""} · {sym}{" "}
+                                    {existingOrderTotal.toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-shrink-0 items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-neutral-400">
+                                #
+                                {String(
+                                  appendTargetOrder.orderNumber ||
+                                    getOrderId(appendTargetOrder) ||
+                                    "",
+                                ).slice(-4)}
+                              </span>
+                              <ChevronDown
+                                className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                                  existingItemsOpen ? "rotate-180" : ""
+                                }`}
+                              />
+                            </div>
+                          </button>
 
-                          <div className="space-y-1.5 opacity-60">
-                            {(appendTargetOrder.items || []).map((item, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900"
-                              >
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <Lock className="h-3 w-3 flex-shrink-0 text-gray-400" />
-                                  <span className="truncate text-sm text-gray-600 dark:text-neutral-400">
-                                    {item.name}
-                                    {item.variantLabel && (
-                                      <span className="ml-1 text-xs text-gray-400">
-                                        ({item.variantLabel})
-                                      </span>
-                                    )}
+                          {existingItemsOpen && (
+                            <div className="mt-1.5 space-y-1.5 opacity-60">
+                              {(appendTargetOrder.items || []).map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900"
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <Lock className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                                    <span className="truncate text-sm text-gray-600 dark:text-neutral-400">
+                                      {item.name}
+                                      {item.variantLabel && (
+                                        <span className="ml-1 text-xs text-gray-400">
+                                          ({item.variantLabel})
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  <span className="flex-shrink-0 text-sm font-medium tabular-nums text-gray-500 dark:text-neutral-500">
+                                    ×{item.qty ?? item.quantity ?? 1}
                                   </span>
                                 </div>
-                                <span className="flex-shrink-0 text-sm font-medium tabular-nums text-gray-500 dark:text-neutral-500">
-                                  ×{item.qty ?? item.quantity ?? 1}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
+                              ))}
+                            </div>
+                          )}
 
                           {cart.length > 0 && (
                             <>
@@ -2556,6 +2594,7 @@ export default function RiderPortalPage() {
           <button
             onClick={() => {
               setAppendTargetOrder(null);
+              setExistingItemsOpen(false);
               setTab(TABS.NEW_ORDER);
             }}
             className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.NEW_ORDER ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}

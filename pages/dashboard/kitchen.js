@@ -93,6 +93,17 @@ function getItemStatus(item, orderStatus) {
   return "NEW";
 }
 
+function timeAgoShort(dateVal) {
+  if (!dateVal) return "";
+  const ms = Date.now() - new Date(dateVal).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ago`;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Ready orders older than this threshold get a Dismiss button. */
@@ -188,7 +199,9 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
   const itemsToShow = order.items || [];
   const showAdditionBadge = hasAdditions;
   const statuses = itemsToShow.map((i) => getItemStatus(i, order.status));
-  const hasMixed = statuses.includes("COOKED") && statuses.some((s) => s !== "COOKED");
+  const hasNew = statuses.includes("NEW");
+  const hasNonNew = statuses.some((s) => s !== "NEW");
+  const hasMixed = hasNew && hasNonNew;
   const totalQty = itemsToShow.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
   const stale = isStaleReady(order);
 
@@ -304,11 +317,15 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
                 </div>
               ) : hasMixed && st === "NEW" ? (
                 <div className="flex items-baseline gap-2 bg-orange-500/10 rounded px-1 -mx-1">
-                  <span className="text-[10px] font-black text-orange-500">NEW</span>
-                  <span className="text-xs font-black text-orange-500 tabular-nums">
+                  <span className="text-xs font-black text-orange-500 tabular-nums flex-shrink-0">
                     {item.qty ?? item.quantity}×
                   </span>
-                  <span className="text-xs font-bold text-orange-400">{item.name}</span>
+                  <span className="text-xs font-bold text-orange-400 min-w-0 flex-1 truncate">
+                    {item.name}
+                  </span>
+                  <span className="text-[10px] font-black text-orange-500 flex-shrink-0 ml-auto">
+                    NEW{item.addedAt ? ` · ${timeAgoShort(item.addedAt)}` : ""}
+                  </span>
                 </div>
               ) : (
                 <div className="flex items-baseline gap-2">

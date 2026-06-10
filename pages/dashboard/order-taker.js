@@ -48,6 +48,7 @@ import {
   Moon,
   Tag,
   CheckCircle,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -129,7 +130,9 @@ export default function OrderTakerPage() {
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
   const [appendTargetOrder, setAppendTargetOrder] = useState(null);
+  const [appendEditDetailsOnly, setAppendEditDetailsOnly] = useState(false);
   const [appendingOrderId, setAppendingOrderId] = useState(null);
+  const [existingItemsOpen, setExistingItemsOpen] = useState(false);
   const [markingServedId, setMarkingServedId] = useState(null);
   const [otCustomerName, setOtCustomerName] = useState("");
   const [otCustomerPhone, setOtCustomerPhone] = useState("");
@@ -414,6 +417,19 @@ export default function OrderTakerPage() {
   }
 
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
+  const existingOrderTotal = appendTargetOrder
+    ? Math.round(Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0)
+    : 0;
+  const newItemsSubtotal = subtotal;
+  const appendCombinedTotal = appendTargetOrder
+    ? existingOrderTotal + newItemsSubtotal
+    : subtotal;
+  const existingItemCount = appendTargetOrder
+    ? (appendTargetOrder.items || []).reduce(
+        (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+        0,
+      )
+    : 0;
 
   async function handlePlaceOrder() {
     if (cart.length === 0) return;
@@ -768,6 +784,7 @@ export default function OrderTakerPage() {
 
   function startAppendItems(order) {
     if (!order || !orderCanAppend(order)) return;
+    setAppendEditDetailsOnly(false);
     setAppendTargetOrder(order);
     setCart([]);
     setOtCustomerName(String(order.customerName || "").trim());
@@ -781,6 +798,7 @@ export default function OrderTakerPage() {
 
   function startEditCustomerDetails(order) {
     if (!order || !orderCanAppend(order)) return;
+    setAppendEditDetailsOnly(true);
     setAppendTargetOrder(order);
     setCart([]);
     setOtCustomerName(String(order.customerName || "").trim());
@@ -792,7 +810,9 @@ export default function OrderTakerPage() {
 
   function cancelAppendFlow() {
     setAppendTargetOrder(null);
+    setAppendEditDetailsOnly(false);
     setAppendingOrderId(null);
+    setExistingItemsOpen(false);
     setCart([]);
     setOtCustomerName("");
     setOtCustomerPhone("");
@@ -806,11 +826,12 @@ export default function OrderTakerPage() {
     setPlacing(true);
     setAppendingOrderId(targetOrderId);
     try {
-      const payload = {
-        customerName: otCustomerName.trim(),
-        customerPhone: otCustomerPhone.trim(),
-        tableName: otTableName.trim(),
-      };
+      const payload = {};
+      if (appendEditDetailsOnly) {
+        payload.customerName = otCustomerName.trim();
+        payload.customerPhone = otCustomerPhone.trim();
+        payload.tableName = otTableName.trim();
+      }
       if (cart.length > 0) {
         const existingItems = (appendTargetOrder.items || []).map((item) => ({
           menuItemId: item.menuItemId || item.menuItem || null,
@@ -822,6 +843,7 @@ export default function OrderTakerPage() {
           modifierSelections: item.modifierSelections || [],
           isAddition: item.isAddition || false,
           addedAt: item.addedAt || null,
+          itemStatus: item.itemStatus ?? null,
         }));
         const addedItems = cart.map((c) => ({
           menuItemId: c.id,
@@ -834,11 +856,16 @@ export default function OrderTakerPage() {
             : [],
           isAddition: true,
         }));
+        const lineIsNew = (item) =>
+          item.isAddition === true &&
+          (item.itemStatus === undefined || item.itemStatus === null) &&
+          (item.addedAt === undefined || item.addedAt === null);
         const mergedMap = new Map();
         const pushItem = (item) => {
+          const newSuffix = lineIsNew(item) ? "|NEW" : "|EXISTING";
           const key = item.menuItemId
-            ? `menu:${item.menuItemId}`
-            : `name:${String(item.name || "").trim().toLowerCase()}|price:${Number(item.unitPrice) || 0}`;
+            ? `menu:${item.menuItemId}${newSuffix}`
+            : `name:${String(item.name || "").trim().toLowerCase()}|price:${Number(item.unitPrice) || 0}${newSuffix}`;
           const prev = mergedMap.get(key);
           if (prev) {
             prev.quantity += Math.max(1, Number(item.quantity) || 1);
@@ -1930,7 +1957,9 @@ export default function OrderTakerPage() {
                           getDisplayOrderId(appendTargetOrder).toString().slice(-4)}
                       </p>
                       <p className="text-[10px] text-primary/80 mt-0.5">
-                        Change guest or table below, add items from the menu, then save or append.
+                        {appendEditDetailsOnly
+                          ? "Update guest or table below, then save."
+                          : "Add items from the menu, then update order."}
                       </p>
                       <button
                         type="button"
@@ -1971,7 +2000,82 @@ export default function OrderTakerPage() {
                     </div>
                   ) : (
                     <>
-                      {cart.length > 0 && (
+                      {appendTargetOrder && (
+                        <div className="mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setExistingItemsOpen((open) => !open)}
+                            className="w-full flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-100 px-3 py-2.5 text-left dark:border-neutral-800 dark:bg-neutral-900 active:scale-[0.99] transition-transform"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Lock className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                                  Already in order
+                                </p>
+                                {!existingItemsOpen && (
+                                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 truncate">
+                                    {existingItemCount} item{existingItemCount !== 1 ? "s" : ""} · Rs.{" "}
+                                    {existingOrderTotal.toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-shrink-0 items-center gap-2">
+                              <span className="text-xs text-gray-500 dark:text-neutral-400">
+                                #
+                                {String(
+                                  appendTargetOrder.orderNumber ||
+                                    getDisplayOrderId(appendTargetOrder) ||
+                                    "",
+                                ).slice(-4)}
+                              </span>
+                              <ChevronDown
+                                className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                                  existingItemsOpen ? "rotate-180" : ""
+                                }`}
+                              />
+                            </div>
+                          </button>
+
+                          {existingItemsOpen && (
+                            <div className="mt-1.5 space-y-1.5 opacity-60">
+                              {(appendTargetOrder.items || []).map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900"
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <Lock className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                                    <span className="truncate text-sm text-gray-600 dark:text-neutral-400">
+                                      {item.name}
+                                      {(item.variantLabel || item.size) && (
+                                        <span className="ml-1 text-xs text-gray-400">
+                                          ({item.variantLabel || item.size})
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  <span className="flex-shrink-0 text-sm font-medium tabular-nums text-gray-500 dark:text-neutral-500">
+                                    ×{item.qty ?? item.quantity ?? 1}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {cart.length > 0 && (
+                            <>
+                              <div className="my-3 border-t border-dashed border-gray-300 dark:border-neutral-700" />
+                              <p className="mb-2 px-1 text-xs font-bold uppercase tracking-wide text-orange-500">
+                                Adding now
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {cart.length > 0 ? (
                         <div className="space-y-2.5 mb-4">
                           {cart.map((item) => (
                             <div
@@ -2037,14 +2141,14 @@ export default function OrderTakerPage() {
                             </div>
                           ))}
                         </div>
+                      ) : (
+                        appendTargetOrder && appendEditDetailsOnly && (
+                          <div className="mb-4 px-3 py-2 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[11px] text-gray-500 dark:text-neutral-400">
+                            Update guest or table below, then save.
+                          </div>
+                        )
                       )}
-                      {cart.length === 0 && appendTargetOrder && (
-                        <div className="mb-4 px-3 py-2 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[11px] text-gray-500 dark:text-neutral-400">
-                          Editing guest or table for this order. Open the menu to add items, or save when
-                          you&apos;re done.
-                        </div>
-                      )}
-                      {appendTargetOrder && (
+                      {appendTargetOrder && appendEditDetailsOnly && (
                         <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 space-y-3">
                           <p className="text-xs font-bold text-gray-900 dark:text-white">Guest & table</p>
                           <input
@@ -2107,27 +2211,32 @@ export default function OrderTakerPage() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
-                    Total
+                    {appendTargetOrder && cart.length > 0 ? "Total (after adding)" : "Total"}
                   </p>
                   <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
                     Rs.{" "}
-                    {appendTargetOrder && cart.length === 0
-                      ? (
-                          Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0
+                    {appendTargetOrder
+                      ? (cart.length > 0
+                          ? appendCombinedTotal
+                          : existingOrderTotal
                         ).toLocaleString()
                       : subtotal.toLocaleString()}
                   </p>
+                  {appendTargetOrder && cart.length > 0 && (
+                    <p className="text-[10px] leading-tight text-gray-500 dark:text-neutral-400">
+                      Existing Rs. {existingOrderTotal.toLocaleString()}
+                      {" + New Rs. "}
+                      {newItemsSubtotal.toLocaleString()}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
                     Items
                   </p>
                   <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
-                    {appendTargetOrder && cart.length === 0
-                      ? (appendTargetOrder.items || []).reduce(
-                          (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
-                          0,
-                        )
+                    {appendTargetOrder
+                      ? existingItemCount + cartBadge
                       : cartBadge}
                   </p>
                 </div>
@@ -2142,18 +2251,22 @@ export default function OrderTakerPage() {
                 </button>
                 <button
                   onClick={appendTargetOrder ? handleAppendOrUpdateOrder : handlePlaceOrder}
-                  disabled={placing || !!appendingOrderId}
+                  disabled={
+                    placing ||
+                    !!appendingOrderId ||
+                    (appendTargetOrder && !appendEditDetailsOnly && cart.length === 0)
+                  }
                   className="flex-[2.5] py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-600/25"
                 >
-                  {placing ? (
+                  {placing || appendingOrderId ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {appendTargetOrder ? "Saving…" : "Sending..."}
+                      {appendTargetOrder ? "Updating..." : "Sending..."}
                     </>
                   ) : appendTargetOrder ? (
                     <>
-                      {cart.length > 0 ? "Append items" : "Save details"}
-                      {cart.length > 0 ? <Plus className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                      {appendEditDetailsOnly && cart.length === 0 ? "Save details" : "Update order"}
+                      <Check className="w-4 h-4" />
                     </>
                   ) : (
                     <>
