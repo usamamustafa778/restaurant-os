@@ -788,12 +788,16 @@ export default function RiderPortalPage() {
     setPlacing(true);
     setAppendingOrderId(targetOrderId);
     try {
+      const safeDeliveryFee = Number.isFinite(Number(deliveryFee))
+        ? Number(deliveryFee)
+        : Math.max(0, Number(appendTargetOrder?.deliveryCharges) || 0);
+
       const payload = {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: deliveryAddress.trim(),
         deliveryCharges: deliveryZonesActive
-          ? deliveryFee
+          ? safeDeliveryFee
           : Math.max(0, Number(appendTargetOrder?.deliveryCharges) || 0),
         deliveryLocationId: deliveryLocationId || null,
       };
