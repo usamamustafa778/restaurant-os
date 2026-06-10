@@ -1,4 +1,5 @@
 import net from "net";
+import { mergeReceiptItems } from "../../lib/orderDisplay.js";
 
 const ESC = "\x1B";
 const GS = "\x1D";
@@ -69,7 +70,7 @@ function buildEscPos(o) {
 
   let totalItems = 0;
   let totalQty = 0;
-  for (const it of o.items || []) {
+  for (const it of mergeReceiptItems(o.items || [])) {
     const qty = it.qty ?? it.quantity ?? 1;
     const unit = it.unitPrice ?? it.price ?? 0;
     const lineTotal = it.lineTotal ?? unit * qty;

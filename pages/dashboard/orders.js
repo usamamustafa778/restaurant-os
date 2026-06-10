@@ -30,6 +30,7 @@ import {
   auditSessionReportPayments,
 } from "../../lib/sessionReportBreakdown";
 import { printBillReceipt } from "../../lib/printBillReceipt";
+import { mergeReceiptItems } from "../../lib/orderDisplay.js";
 import {
   getBusinessDate,
   getBusinessDayRange,
@@ -3212,9 +3213,9 @@ function OrderCard({
     !isDeliveryOrder(order) &&
     order.source !== "FOODPANDA";
 
-  const items = order.items || [];
-  const visibleItems = items.slice(0, 3);
-  const hiddenCount = items.length - 3;
+  const displayItems = mergeReceiptItems(order.items || []);
+  const visibleItems = displayItems.slice(0, 3);
+  const hiddenCount = displayItems.length - 3;
 
   const hasCTA =
     !isOrderTaker &&
@@ -3361,19 +3362,19 @@ function OrderCard({
       )}
 
       {/* Items list */}
-      {items.length > 0 && !isActive && (
+      {displayItems.length > 0 && !isActive && (
         <div className="mx-3 mb-2">
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
             className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 dark:bg-neutral-900/80 text-[11px] font-bold text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
           >
-            <span>{items.reduce((s, i) => s + (i.qty || 1), 0)} items</span>
+            <span>{displayItems.length} items</span>
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
           </button>
           {expanded && (
             <div className="px-2.5 py-2 mt-1 rounded-lg bg-gray-50 dark:bg-neutral-900/80 space-y-1">
-              {items.map((it, idx) => (
+              {displayItems.map((it, idx) => (
                 <div key={idx} className="text-[11px]">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
@@ -3382,7 +3383,7 @@ function OrderCard({
                         <span className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-1">({it.variantLabel})</span>
                       )}
                     </span>
-                    <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">×{it.qty}</span>
+                    <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">×{it.qty ?? it.quantity ?? 1}</span>
                   </div>
                   {(it.modifierSelections || []).map((sel, si) => (
                     <div key={si} className="text-[10px] text-gray-400 dark:text-neutral-500 ml-2 leading-tight">
@@ -3395,7 +3396,7 @@ function OrderCard({
           )}
         </div>
       )}
-      {items.length > 0 && isActive && (
+      {displayItems.length > 0 && isActive && (
         <div className="mx-3 mb-2 px-2.5 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900/80">
           <div className="space-y-1">
             {visibleItems.map((it, idx) => (
@@ -3408,7 +3409,7 @@ function OrderCard({
                     )}
                   </span>
                   <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
-                    ×{it.qty}
+                    ×{it.qty ?? it.quantity ?? 1}
                   </span>
                 </div>
               </div>
@@ -3425,7 +3426,7 @@ function OrderCard({
           )}
           {expanded && hiddenCount > 0 && (
             <div className="space-y-1 mt-1 pt-1 border-t border-gray-200/60 dark:border-neutral-800">
-              {items.slice(3).map((it, idx) => (
+              {displayItems.slice(3).map((it, idx) => (
                 <div key={idx} className="text-[11px]">
                   <div className="flex items-center justify-between">
                     <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
@@ -3435,7 +3436,7 @@ function OrderCard({
                       )}
                     </span>
                     <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
-                      ×{it.qty}
+                      ×{it.qty ?? it.quantity ?? 1}
                     </span>
                   </div>
                   {(it.modifierSelections || []).map((sel, si) => (
