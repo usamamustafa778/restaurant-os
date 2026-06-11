@@ -564,14 +564,16 @@ export default function RiderPortalPage() {
       ? historyOrders
       : historyFilter === "pending_payment"
         ? historyOrders.filter(isDeliveryPaymentNotSubmitted)
-        : historyOrders.filter((o) => {
-            if (o.status === "CANCELLED") return true;
-            if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
-            return !isDeliveryPaymentNotSubmitted(o);
-          });
+        : historyFilter === "cancelled"
+          ? historyOrders.filter((o) => o.status === "CANCELLED")
+          : historyOrders.filter((o) => {
+              if (o.status === "CANCELLED") return false;
+              if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
+              return !isDeliveryPaymentNotSubmitted(o);
+            });
 
   const clearedHistoryCount = historyOrders.filter((o) => {
-    if (o.status === "CANCELLED") return true;
+    if (o.status === "CANCELLED") return false;
     if (o.status !== "DELIVERED" && o.status !== "COMPLETED") return false;
     return !isDeliveryPaymentNotSubmitted(o);
   }).length;
@@ -1088,7 +1090,9 @@ export default function RiderPortalPage() {
                                 ? "Pending payment"
                                 : historyFilter === "cleared"
                                   ? "Cleared"
-                                  : "All orders";
+                                  : historyFilter === "cancelled"
+                                    ? "Cancelled"
+                                    : "All orders";
                             return `${label} · ${filteredHistoryOrders.length} of ${historyOrders.length}`;
                           })()
                         : step === STEPS.MENU
@@ -1786,6 +1790,13 @@ export default function RiderPortalPage() {
                           activeClass: "bg-primary text-white shadow-sm shadow-primary/20",
                           inactiveClass: "text-gray-600 dark:text-neutral-400",
                         },
+                        {
+                          key: "cancelled",
+                          label: "Cancelled",
+                          count: cancelledCount,
+                          activeClass: "bg-red-500 text-white shadow-sm shadow-red-500/20",
+                          inactiveClass: "text-gray-600 dark:text-neutral-400",
+                        },
                       ].map((f) => {
                         const active = historyFilter === f.key;
                         return (
@@ -1815,8 +1826,10 @@ export default function RiderPortalPage() {
                     {historyFilter === "pending_payment"
                       ? "Delivered orders still marked “To be paid” — hand in cash at the shop."
                       : historyFilter === "cleared"
-                        ? "Paid at order, cancelled, or cash already submitted at the shop."
-                        : `Every delivery in your history for ${historyRangeLabel}.`}
+                        ? "Paid at order or cash already submitted at the shop."
+                        : historyFilter === "cancelled"
+                          ? "Orders that were cancelled after assignment."
+                          : `Every delivery in your history for ${historyRangeLabel}.`}
                   </p>
 
                   {filteredHistoryOrders.length === 0 ? (
