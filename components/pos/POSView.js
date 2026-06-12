@@ -3328,7 +3328,7 @@ export default function POSView({
                 const originalQty = editingOrderId ? (originalEntry?.quantity || 0) : 0;
                 const isPrivilegedEditor =
                   !editingOrderId ||
-                  ["admin", "manager"].includes(currentUser?.role);
+                  ["admin", "manager", "restaurant_admin"].includes(currentUser?.role);
                 const canDecrease =
                   isPrivilegedEditor || item.quantity > originalQty;
                 return (
