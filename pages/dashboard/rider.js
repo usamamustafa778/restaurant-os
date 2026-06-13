@@ -58,7 +58,7 @@ import {
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
 
-const TABS = { NEW_ORDER: "new_order", HOME: "home", ACTIVE: "active", HISTORY: "history" };
+const TABS = { NEW_ORDER: "new_order", HOME: "home", HISTORY: "history" };
 const STEPS = { MENU: "menu", CART: "cart" };
 
 function isBranchRequiredError(msg) {
@@ -773,7 +773,7 @@ export default function RiderPortalPage() {
       setAppendTargetOrder(null);
       setExistingItemsOpen(false);
       setStep(STEPS.MENU);
-      setTab(TABS.ACTIVE);
+      setTab(TABS.HOME);
       loadOrders(getCurrentOrdersParams());
       toast.success("Order sent to kitchen!");
     } catch (err) {
@@ -876,7 +876,7 @@ export default function RiderPortalPage() {
       setAppendTargetOrder(null);
       setExistingItemsOpen(false);
       setStep(STEPS.MENU);
-      setTab(TABS.ACTIVE);
+      setTab(TABS.HOME);
       loadOrders(getCurrentOrdersParams());
       toast.success(
         cart.length > 0
@@ -1065,41 +1065,27 @@ export default function RiderPortalPage() {
               <div className="min-w-0">
                 <h1 className="text-[15px] font-extrabold truncate leading-tight tracking-tight">
                   {tab === TABS.HOME
-                    ? "Overview"
-                    : tab === TABS.ACTIVE
-                      ? "Active Deliveries"
-                      : tab === TABS.HISTORY
-                        ? "Delivery History"
-                        : appendTargetOrder
-                          ? "Add Items"
-                          : step === STEPS.MENU
-                            ? "New Order"
-                            : "Review Order"}
+                    ? (userName ? `Hi, ${userName.split(" ")[0]}` : "Home")
+                    : tab === TABS.HISTORY
+                      ? "My Deliveries"
+                      : appendTargetOrder
+                        ? "Add Items"
+                        : step === STEPS.MENU
+                          ? "New Order"
+                          : "Review Order"}
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
                   {tab === TABS.HOME
-                    ? overviewHeaderSubtitle
-                    : tab === TABS.ACTIVE
-                      ? activeFilter === "all"
-                        ? `${readyOrders.length} ready · ${activeOrders.length} active`
-                        : `${filteredActiveOrders.length} ${activeFilterLabel} · ${activeOrders.length} active`
-                      : tab === TABS.HISTORY
-                        ? (() => {
-                            const label =
-                              historyFilter === "pending_payment"
-                                ? "Pending payment"
-                                : historyFilter === "cleared"
-                                  ? "Cleared"
-                                  : historyFilter === "cancelled"
-                                    ? "Cancelled"
-                                    : "All orders";
-                            return `${label} · ${filteredHistoryOrders.length} of ${historyOrders.length}`;
-                          })()
-                        : step === STEPS.MENU
-                          ? appendTargetOrder
-                            ? `Appending to #${appendTargetOrder.tokenNumber || getOrderId(appendTargetOrder).toString().slice(-4)}`
-                            : userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
-                          : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
+                    ? activeOrders.length > 0
+                      ? `${activeOrders.length} active · ${readyOrders.length} ready to collect`
+                      : "All clear today 🎉"
+                    : tab === TABS.HISTORY
+                      ? "Today's summary"
+                      : step === STEPS.MENU
+                        ? appendTargetOrder
+                          ? `Appending to #${appendTargetOrder.tokenNumber || getOrderId(appendTargetOrder).toString().slice(-4)}`
+                          : userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
+                        : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </div>
@@ -1128,7 +1114,7 @@ export default function RiderPortalPage() {
                   Clear
                 </button>
               )}
-              {(tab === TABS.HOME || tab === TABS.ACTIVE || tab === TABS.HISTORY) && (
+              {(tab === TABS.HOME || tab === TABS.HISTORY) && (
                 <button
                   onClick={() => { setOrdersLoading(true); loadOrders(getCurrentOrdersParams()); }}
                   className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
@@ -1178,109 +1164,32 @@ export default function RiderPortalPage() {
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {/* ══════ HOME TAB ══════ */}
           {tab === TABS.HOME && (
-            <div className="p-3 sm:p-4 pb-24 space-y-3">
-              <div className="flex items-center gap-2.5 rounded-xl border border-gray-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 py-2.5">
-                <div className="w-9 h-9 rounded-lg bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
-                  <Bike className="w-[17px] h-[17px] text-primary" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[15px] font-extrabold text-gray-900 dark:text-white leading-tight truncate">
-                    {userName ? `Hi, ${userName.split(" ")[0]}` : "Rider"}
-                  </p>
-                  <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-0.5 leading-snug">
-                    {userName ? "Good luck on your route today." : "Sign in to continue."}
-                  </p>
-                </div>
-              </div>
-
-              {/* Hand in at shop — primary */}
-              <div
-                className={`rounded-xl border p-3 ${
-                  riderPendingPaymentTotal > 0
-                    ? "border-amber-400/40 dark:border-amber-500/35 bg-amber-500/12 dark:bg-amber-950/50"
-                    : "border-emerald-400/35 dark:border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-950/40"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <p
-                        className={`text-[10px] font-extrabold uppercase tracking-wider ${
-                          riderPendingPaymentTotal > 0
-                            ? "text-amber-950 dark:text-amber-100"
-                            : "text-emerald-950 dark:text-emerald-100"
-                        }`}
-                      >
-                        Hand in at shop
+            <div className="pb-24">
+              {/* A) Pending cash banner — only when unsubmitted cash exists */}
+              {riderPendingPaymentTotal > 0 && (
+                <div className="mx-4 mt-3 mb-2 flex items-center justify-between px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-500">
+                        {sym === "Rs" ? "Rs." : sym} {Math.round(riderPendingPaymentTotal).toLocaleString()} to hand in
                       </p>
-                      {riderPendingPaymentTotal > 0 ? (
-                        <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-600/20 dark:bg-amber-500/25 px-1.5 py-0.5 text-[9px] font-black text-amber-900 dark:text-amber-200 uppercase tracking-wide">
-                          <AlertTriangle className="w-2.5 h-2.5 shrink-0" aria-hidden />
-                          Pending
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-600/20 dark:bg-emerald-500/25 px-1.5 py-0.5 text-[9px] font-black text-emerald-900 dark:text-emerald-200 uppercase tracking-wide">
-                          <Check className="w-2.5 h-2.5 shrink-0" aria-hidden />
-                          Done
-                        </span>
-                      )}
+                      <p className="text-xs text-amber-400/70">
+                        {riderPendingPaymentOrders.length} order{riderPendingPaymentOrders.length > 1 ? "s" : ""} — cash not submitted yet
+                      </p>
                     </div>
-                    {riderPendingPaymentTotal > 0 ? (
-                      <>
-                        <p className="text-xl font-black text-amber-950 dark:text-amber-50 tabular-nums mt-1.5 tracking-tight">
-                          {sym === "Rs" ? "Rs. " : `${sym} `}
-                          {Math.round(riderPendingPaymentTotal).toLocaleString()}
-                        </p>
-                        <p className="text-[12px] font-semibold text-amber-900/95 dark:text-amber-100/90 mt-1 leading-snug">
-                          {riderPendingPaymentOrders.length} order{riderPendingPaymentOrders.length !== 1 ? "s" : ""}{" "}
-                          — cash not submitted yet
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTab(TABS.HISTORY);
-                            setHistoryFilter("pending_payment");
-                          }}
-                          className="mt-2.5 w-full py-2 rounded-lg bg-amber-600 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform shadow-sm shadow-amber-600/20"
-                        >
-                          View pending orders
-                          <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-[15px] font-extrabold text-emerald-950 dark:text-emerald-50 mt-1.5 leading-snug">
-                          All cash submitted
-                        </p>
-                        <p className="text-[12px] font-medium text-emerald-900/90 dark:text-emerald-100/85 mt-0.5">
-                          Nothing pending
-                        </p>
-                      </>
-                    )}
                   </div>
-                  <div
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                      riderPendingPaymentTotal > 0
-                        ? "bg-amber-500/25 dark:bg-amber-500/20"
-                        : "bg-emerald-500/25 dark:bg-emerald-500/20"
-                    }`}
+                  <button
+                    onClick={() => { setTab(TABS.HISTORY); setHistoryFilter("pending_payment"); }}
+                    className="text-xs font-bold text-amber-500 underline shrink-0"
                   >
-                    <Wallet
-                      className={`w-[18px] h-[18px] ${
-                        riderPendingPaymentTotal > 0
-                          ? "text-amber-800 dark:text-amber-300"
-                          : "text-emerald-800 dark:text-emerald-300"
-                      }`}
-                    />
-                  </div>
+                    View →
+                  </button>
                 </div>
-              </div>
+              )}
 
-              {/* Today’s runs */}
-              <div>
-                <p className="text-[9px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-neutral-500 mb-1.5 px-0.5">
-                  Today&apos;s runs
-                </p>
+              {/* B) Today's run stats row — compact */}
+              <div className="px-4 pt-3 pb-2">
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { label: "Delivered", value: deliveredCount },
@@ -1294,14 +1203,11 @@ export default function RiderPortalPage() {
                       <p className="text-[8px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500 leading-none">
                         {cell.label}
                       </p>
-                      <div className="flex items-center justify-center gap-1 mt-1">
+                      <div className="flex items-center justify-center gap-1 mt-0.5">
                         {cell.label === "Active" && cell.value > 0 && (
-                          <span
-                            className="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0 animate-pulse"
-                            aria-hidden
-                          />
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0 animate-pulse" aria-hidden />
                         )}
-                        <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-none">
+                        <p className="text-base font-black text-gray-900 dark:text-white tabular-nums leading-none">
                           {cell.value}
                         </p>
                       </div>
@@ -1310,8 +1216,221 @@ export default function RiderPortalPage() {
                 </div>
               </div>
 
-              {/* My pay today */}
-              <div className="rounded-xl border border-dashed border-gray-400/60 dark:border-neutral-600 bg-neutral-100/40 dark:bg-neutral-900/50 p-3">
+              {/* C) Active deliveries — main content */}
+              <div className="px-4 pt-1">
+                {/* Filter pills — always show All, hide zero-count status tabs */}
+                <div className="flex gap-2 mb-3 overflow-x-auto rider-no-scrollbar">
+                  {[
+                    { key: "all", label: "All", count: activeOrders.length },
+                    { key: "new", label: "New", count: newOrders.length },
+                    { key: "preparing", label: "Preparing", count: preparingOrders.length },
+                    { key: "ready", label: "Ready", count: readyOrders.length },
+                    { key: "out", label: "Out", count: outForDeliveryOrders.length },
+                  ]
+                    .filter((f) => f.key === "all" || f.count > 0)
+                    .map((f) => (
+                      <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => setActiveFilter(f.key)}
+                        className={`flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                          activeFilter === f.key
+                            ? "bg-primary text-white shadow-sm shadow-primary/20"
+                            : "bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 shadow-sm"
+                        }`}
+                      >
+                        {f.label}
+                        <span
+                          className={`min-w-[18px] h-[18px] rounded-full text-[10px] font-black flex items-center justify-center px-1 ${
+                            activeFilter === f.key ? "bg-white/20" : "bg-gray-100 dark:bg-neutral-800"
+                          }`}
+                        >
+                          {f.count}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+
+                {activeOrders.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center pt-12 pb-6 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-3">
+                      <span className="text-3xl">🎉</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">All clear! No active deliveries.</p>
+                    <p className="text-xs text-gray-400 dark:text-neutral-600">Create a new order or wait for assignments</p>
+                  </div>
+                ) : filteredActiveOrders.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center pt-12 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+                      <ClipboardList className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
+                    </div>
+                    <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No orders in this filter</p>
+                    <p className="text-xs text-gray-400 dark:text-neutral-600">Try another status</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredActiveOrders.map((order) => {
+                      const effectiveStatus =
+                        activeFilter === "preparing" && order.status === "NEW_ORDER" ? "PROCESSING" : order.status;
+                      const sc = getStatusConfig(effectiveStatus);
+                      const StatusIcon = sc.icon;
+                      const orderId = order.id || order._id;
+                      const orderKey = String(orderId);
+                      const kitchenUrgency = getKitchenUrgency(order);
+                      const isExpanded = expandedOrderIds.includes(orderKey);
+                      const itemCount = (order.items || []).reduce(
+                        (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
+                        0,
+                      );
+                      const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
+                        String(order.status || "").toUpperCase(),
+                      );
+                      const tokenLabel = `#${order.tokenNumber || getOrderId(order).toString().slice(-4)}`;
+                      const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
+                      return (
+                        <div key={orderKey} className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-neutral-800">
+                          <div className={`px-3.5 py-2 flex items-center justify-between ${sc.bgLight}`}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${sc.text}`} />
+                              <span className={`text-[11px] font-bold truncate ${sc.text}`}>{sc.label}</span>
+                            </div>
+                            <div className={`flex items-center gap-1 text-[10px] shrink-0 ${sc.text} opacity-85`}>
+                              <Clock className="w-3 h-3" />
+                              {getTimeAgo(order.createdAt)}
+                            </div>
+                          </div>
+
+                          <div className="px-3.5 py-3">
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                <span className="text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                  {tokenLabel}
+                                </span>
+                                {kitchenUrgency === "delayed" && (
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200/80 dark:border-red-500/20">
+                                    Delayed
+                                  </span>
+                                )}
+                                <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                  Delivery
+                                </span>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <span className="block text-sm font-black text-gray-900 dark:text-white tabular-nums">
+                                  Rs. {totalAmt}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 mb-2.5">
+                              <p className="text-[10px] text-gray-500 dark:text-neutral-500 truncate min-w-0">
+                                <span className="font-semibold">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
+                                {(order.customerName || order.customerPhone || order.phone) && (
+                                  <>
+                                    {" · "}
+                                    {order.customerName || order.customerPhone || order.phone}
+                                  </>
+                                )}
+                              </p>
+                              {canAppend && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditCustomerDetails(order)}
+                                  className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 underline underline-offset-2 decoration-gray-300 dark:decoration-neutral-600 hover:text-primary dark:hover:text-primary transition-colors inline-flex items-center gap-1 shrink-0"
+                                >
+                                  <User className="w-3 h-3" />
+                                  Edit customer
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex gap-2 mb-1">
+                              {canAppend && (
+                                <button
+                                  type="button"
+                                  onClick={() => startAppendItems(order)}
+                                  className="flex-1 py-2 rounded-xl border border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  Add items
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => toggleOrderDetails(orderKey)}
+                                className={`${canAppend ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+                                  isExpanded
+                                    ? "bg-primary/10 border-primary/30 text-primary"
+                                    : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
+                                }`}
+                              >
+                                {isExpanded ? "Hide" : "Details"}
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <>
+                                {order.customerName && (
+                                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
+                                    <User className="w-3 h-3 shrink-0" />
+                                    {order.customerName}
+                                  </div>
+                                )}
+                                {(order.customerPhone || order.phone) && (
+                                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
+                                    <Phone className="w-3 h-3 shrink-0" />
+                                    {order.customerPhone || order.phone}
+                                  </div>
+                                )}
+                                {order.deliveryAddress && (
+                                  <div className="flex items-start gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
+                                    <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
+                                    <span className="line-clamp-2">{order.deliveryAddress}</span>
+                                  </div>
+                                )}
+                                <div className="space-y-0.5 mb-2">
+                                  {order.items?.map((item, idx) => (
+                                    <div key={idx} className="flex items-center justify-between text-[11px]">
+                                      <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
+                                        <span className="font-bold text-gray-900 dark:text-white">{item.quantity || item.qty}x</span>{" "}
+                                        {item.name}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+
+                            {order.status === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
+                              <button
+                                onClick={() => handleCollectOrder(orderId)}
+                                disabled={collectingId === orderId}
+                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
+                              >
+                                {collectingId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+                                Collect from Kitchen
+                              </button>
+                            )}
+                            {order.status === "OUT_FOR_DELIVERY" && order.assignedRiderId && riderId && order.assignedRiderId === riderId && (
+                              <button
+                                onClick={() => handleMarkDelivered(orderId)}
+                                disabled={deliveringId === orderId}
+                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
+                              >
+                                {deliveringId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                Mark as Delivered
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* D) My Pay Today — bottom of Home */}
+              <div className="mx-4 mt-4 rounded-xl border border-dashed border-gray-400/60 dark:border-neutral-600 bg-neutral-100/40 dark:bg-neutral-900/50 p-3">
                 <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-600 dark:text-neutral-400">
                   My pay today
                 </p>
@@ -1319,256 +1438,6 @@ export default function RiderPortalPage() {
                   Pay details not set up yet — ask your manager
                 </p>
               </div>
-
-              {/* Waiting at kitchen — only when queue exists */}
-              {preparingOrders.length + readyOrders.length + outForDeliveryOrders.length > 0 && (
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3">
-                  <p className="text-[9px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-neutral-500 mb-2">
-                    Waiting at kitchen
-                  </p>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    {[
-                      { label: "Kitchen", n: preparingOrders.length },
-                      { label: "Ready", n: readyOrders.length },
-                      { label: "Out", n: outForDeliveryOrders.length },
-                    ].map((row) => (
-                      <div
-                        key={row.label}
-                        className="rounded-lg bg-gray-50 dark:bg-neutral-900/80 py-2 px-1"
-                      >
-                        <p className="text-base font-black text-primary tabular-nums leading-none">{row.n}</p>
-                        <div className="mt-0.5 flex items-center justify-center gap-1">
-                          {row.label === "Kitchen" && row.n > 0 && (
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                          )}
-                          <p className="text-[9px] font-bold text-gray-500 dark:text-neutral-500 uppercase tracking-wide">
-                            {row.label}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ══════ ACTIVE TAB ══════ */}
-          {tab === TABS.ACTIVE && (
-            <div className="p-4 pb-24">
-              {/* Filter pills */}
-              <div className="flex gap-2 mb-4 overflow-x-auto rider-no-scrollbar">
-                {[
-                  { key: "all", label: "All", count: activeOrders.length },
-                  { key: "new", label: "New", count: newOrders.length },
-                  { key: "preparing", label: "Preparing", count: preparingOrders.length },
-                  { key: "ready", label: "Ready", count: readyOrders.length },
-                  { key: "out", label: "Out", count: outForDeliveryOrders.length },
-                ].map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    onClick={() => setActiveFilter(f.key)}
-                    className={`flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                      activeFilter === f.key
-                        ? "bg-primary text-white shadow-sm shadow-primary/20"
-                        : "bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 shadow-sm"
-                    }`}
-                  >
-                    {f.label}
-                    <span
-                      className={`min-w-[18px] h-[18px] rounded-full text-[10px] font-black flex items-center justify-center px-1 ${
-                        activeFilter === f.key
-                          ? "bg-white/20"
-                          : "bg-gray-100 dark:bg-neutral-800"
-                      }`}
-                    >
-                      {f.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {activeOrders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center pt-16 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
-                    <Package className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
-                  </div>
-                  <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No active deliveries</p>
-                  <p className="text-xs text-gray-400 dark:text-neutral-600">Create a new order or wait for assignments</p>
-                </div>
-              ) : filteredActiveOrders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center pt-16 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
-                    <ClipboardList className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
-                  </div>
-                  <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No orders in this filter</p>
-                  <p className="text-xs text-gray-400 dark:text-neutral-600">Try another status</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredActiveOrders.map((order) => {
-                    // Backend may still keep some "preparing" deliveries as NEW_ORDER.
-                    // In the UI we want them to look like order-taker "Processing" cards
-                    // when the user selects the Preparing filter.
-                    const effectiveStatus =
-                      activeFilter === "preparing" && order.status === "NEW_ORDER" ? "PROCESSING" : order.status;
-                    const sc = getStatusConfig(effectiveStatus);
-                    const StatusIcon = sc.icon;
-                    const orderId = order.id || order._id;
-                    const orderKey = String(orderId);
-                    const kitchenUrgency = getKitchenUrgency(order);
-                    const isExpanded = expandedOrderIds.includes(orderKey);
-                    const itemCount = (order.items || []).reduce(
-                      (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
-                      0,
-                    );
-                    const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
-                      String(order.status || "").toUpperCase(),
-                    );
-                    const tokenLabel = `#${order.tokenNumber || getOrderId(order).toString().slice(-4)}`;
-                    const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
-                    return (
-                      <div key={orderKey} className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-neutral-800">
-                        <div className={`px-3.5 py-2 flex items-center justify-between ${sc.bgLight}`}>
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${sc.text}`} />
-                            <span className={`text-[11px] font-bold truncate ${sc.text}`}>{sc.label}</span>
-                          </div>
-                          <div className={`flex items-center gap-1 text-[10px] shrink-0 ${sc.text} opacity-85`}>
-                            <Clock className="w-3 h-3" />
-                            {getTimeAgo(order.createdAt)}
-                          </div>
-                        </div>
-
-                        <div className="px-3.5 py-3">
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                              <span className="text-sm font-black text-gray-900 dark:text-white tabular-nums">
-                                {tokenLabel}
-                              </span>
-                              {kitchenUrgency === "delayed" && (
-                                <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200/80 dark:border-red-500/20">
-                                  Delayed
-                                </span>
-                              )}
-                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                                Delivery
-                              </span>
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <span className="block text-sm font-black text-gray-900 dark:text-white tabular-nums">
-                                Rs. {totalAmt}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-2 mb-2.5">
-                            <p className="text-[10px] text-gray-500 dark:text-neutral-500 truncate min-w-0">
-                              <span className="font-semibold">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
-                              {(order.customerName || order.customerPhone || order.phone) && (
-                                <>
-                                  {" · "}
-                                  {order.customerName || order.customerPhone || order.phone}
-                                </>
-                              )}
-                            </p>
-                            {canAppend && (
-                              <button
-                                type="button"
-                                onClick={() => startEditCustomerDetails(order)}
-                                className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 underline underline-offset-2 decoration-gray-300 dark:decoration-neutral-600 hover:text-primary dark:hover:text-primary transition-colors inline-flex items-center gap-1 shrink-0"
-                              >
-                                <User className="w-3 h-3" />
-                                Edit customer
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="flex gap-2 mb-1">
-                            {canAppend && (
-                              <button
-                                type="button"
-                                onClick={() => startAppendItems(order)}
-                                className="flex-1 py-2 rounded-xl border border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                Add items
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => toggleOrderDetails(orderKey)}
-                              className={`${canAppend ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
-                                isExpanded
-                                  ? "bg-primary/10 border-primary/30 text-primary"
-                                  : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
-                              }`}
-                            >
-                              {isExpanded ? "Hide" : "Details"}
-                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                            </button>
-                          </div>
-
-                          {isExpanded && (
-                            <>
-                              {order.customerName && (
-                                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
-                                  <User className="w-3 h-3 shrink-0" />
-                                  {order.customerName}
-                                </div>
-                              )}
-                              {(order.customerPhone || order.phone) && (
-                                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
-                                  <Phone className="w-3 h-3 shrink-0" />
-                                  {order.customerPhone || order.phone}
-                                </div>
-                              )}
-                              {order.deliveryAddress && (
-                                <div className="flex items-start gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
-                                  <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
-                                  <span className="line-clamp-2">{order.deliveryAddress}</span>
-                                </div>
-                              )}
-
-                              <div className="space-y-0.5 mb-2">
-                                {order.items?.map((item, idx) => (
-                                  <div key={idx} className="flex items-center justify-between text-[11px]">
-                                    <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
-                                      <span className="font-bold text-gray-900 dark:text-white">{item.quantity || item.qty}x</span>{" "}
-                                      {item.name}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </>
-                          )}
-
-                          {order.status === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
-                            <button
-                              onClick={() => handleCollectOrder(orderId)}
-                              disabled={collectingId === orderId}
-                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
-                            >
-                              {collectingId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
-                              Collect from Kitchen
-                            </button>
-                          )}
-                          {order.status === "OUT_FOR_DELIVERY" && order.assignedRiderId && riderId && order.assignedRiderId === riderId && (
-                            <button
-                              onClick={() => handleMarkDelivered(orderId)}
-                              disabled={deliveringId === orderId}
-                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
-                            >
-                              {deliveringId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                              Mark as Delivered
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
 
@@ -1616,16 +1485,7 @@ export default function RiderPortalPage() {
                 )}
               </div>
 
-              {historyOrders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center pt-16 text-center px-2">
-                  <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
-                    <History className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
-                  </div>
-                  <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No delivery history</p>
-                  <p className="text-xs text-gray-400 dark:text-neutral-600">No deliveries found for {historyRangeLabel}</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
+              <div className="space-y-3 mt-3">
                   {/* Summary strip — single card, two columns */}
                   <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden shadow-sm">
                     <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-neutral-800">
@@ -1832,7 +1692,15 @@ export default function RiderPortalPage() {
                           : `Every delivery in your history for ${historyRangeLabel}.`}
                   </p>
 
-                  {filteredHistoryOrders.length === 0 ? (
+                  {historyOrders.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center pt-10 pb-6 text-center px-2">
+                      <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
+                        <History className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
+                      </div>
+                      <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">No delivery history</p>
+                      <p className="text-xs text-gray-400 dark:text-neutral-600">No deliveries found for {historyRangeLabel}</p>
+                    </div>
+                  ) : filteredHistoryOrders.length === 0 ? (
                     historyFilter === "pending_payment" && riderPendingPaymentOrders.length === 0 ? (
                       <div className="flex flex-col items-center justify-center pt-10 pb-6 text-center px-3 rounded-2xl border border-emerald-200/60 dark:border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-500/5">
                         <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center mb-3">
@@ -1922,7 +1790,6 @@ export default function RiderPortalPage() {
                     })
                   )}
                 </div>
-              )}
             </div>
           )}
 
@@ -2601,8 +2468,15 @@ export default function RiderPortalPage() {
               tab === TABS.HOME ? "text-primary" : "text-gray-400 dark:text-neutral-500"
             }`}
           >
-            <BarChart3 className="w-5 h-5" />
-            <span className="text-[10px] font-bold">Overview</span>
+            <div className="relative">
+              <Bike className="w-5 h-5" />
+              {readyOrders.length > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-white text-[9px] font-black flex items-center justify-center ring-2 ring-white dark:ring-neutral-950">
+                  {readyOrders.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-bold">Home</span>
           </button>
           <button
             onClick={() => {
@@ -2614,20 +2488,6 @@ export default function RiderPortalPage() {
           >
             <Utensils className="w-5 h-5" />
             <span className="text-[10px] font-bold">New Order</span>
-          </button>
-          <button
-            onClick={() => setTab(TABS.ACTIVE)}
-            className={`relative flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.ACTIVE ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
-          >
-            <div className="relative">
-              <Package className="w-5 h-5" />
-              {readyOrders.length > 0 && (
-                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-white text-[9px] font-black flex items-center justify-center ring-2 ring-white dark:ring-neutral-950">
-                  {readyOrders.length}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] font-bold">Active</span>
           </button>
           <button
             onClick={() => setTab(TABS.HISTORY)}

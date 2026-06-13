@@ -726,6 +726,14 @@ export default function OverviewPage() {
   const [savingCutoff, setSavingCutoff] = useState(false);
   // Manual end-day: auto-close uses cutoff on the backend; this modal allows selecting an order boundary.
   const [endMode, setEndMode] = useState("selectedOrder"); // 'cutoff' | 'selectedOrder'
+
+  // Compute the cutoff endAt the same way the backend would (today at cutoffHour, or yesterday if before cutoffHour)
+  const cutoffEndAt = (() => {
+    const d = new Date();
+    d.setHours(cutoffHour, 0, 0, 0);
+    if (new Date() < d) d.setDate(d.getDate() - 1);
+    return d;
+  })();
   const [loadingEndOrders, setLoadingEndOrders] = useState(false);
   const [endOrderOptions, setEndOrderOptions] = useState([]); // {id, orderNumber, createdAt, status}
   const [selectedOrderId, setSelectedOrderId] = useState(null);
@@ -738,7 +746,7 @@ export default function OverviewPage() {
       return;
     }
     setCurrentSession(null);
-    setEndMode("selectedOrder");
+    setEndMode("cutoff");
     setEndOrderOptions([]);
     setSelectedOrderId(null);
     setEndOrderSearch("");
@@ -804,6 +812,9 @@ export default function OverviewPage() {
       await endDaySession(currentBranch?.id, {
         endMode,
         selectedOrderId,
+        // For cutoff mode send the pre-computed timestamp so the backend uses the
+        // correct boundary regardless of any server/client clock skew.
+        endAt: endMode === "cutoff" ? cutoffEndAt : null,
       });
       toast.success("Business day ended");
       setShowEndDayModal(false);
@@ -2861,9 +2872,23 @@ export default function OverviewPage() {
                 disabled={endingDay}
                 className="w-full h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-3 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               >
-                <option value="cutoff">Business cutoff time</option>
+                <option value="cutoff">
+                  Cutoff time ({cutoffHour}:00 AM today)
+                </option>
                 <option value="selectedOrder">Selected order</option>
               </select>
+
+              {endMode === "cutoff" && (
+                <p className="mt-2 text-[11px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg px-3 py-2">
+                  Session will end at {cutoffHour}:00 AM today (
+                  {cutoffEndAt.toLocaleDateString("en-PK", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                  )
+                </p>
+              )}
 
               {endMode === "selectedOrder" && (
                 <div className="mt-3">
