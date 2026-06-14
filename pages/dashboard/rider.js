@@ -958,8 +958,12 @@ export default function RiderPortalPage() {
 
   function getOrderId(order) {
     const id = order.id || order.orderNumber || order._id || "";
-    if (typeof id === "string" && id.startsWith("ORD-")) return id.replace(/^ORD-/, "");
-    return id;
+    if (typeof id !== "string") return id;
+    // Strip POS prefix; keep website/WhatsApp distinct so IDs never collide.
+    return id
+      .replace(/^ORD-/, "")
+      .replace(/^WEB-/, "W-")
+      .replace(/^WAP-/, "WA-");
   }
 
   function startAppendItems(order) {

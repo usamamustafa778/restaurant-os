@@ -32,7 +32,7 @@ import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
  * For session-scoped periods, prefer the actual session boundaries so the
  * ledger numbers cover the same window as the sales report.
  */
-function derivePlDateRange({ reportPeriod, selectedYear, selectedMonth, reportFrom, reportTo }) {
+function derivePlDateRange({ reportPeriod, selectedYear, selectedMonth, reportFrom, reportTo, customFrom, customTo }) {
   const validDate = (d) => d && !Number.isNaN(d.getTime());
 
   if (reportPeriod === "today" || reportPeriod === "yesterday") {
@@ -51,7 +51,8 @@ function derivePlDateRange({ reportPeriod, selectedYear, selectedMonth, reportFr
     return { from: yStr, to: yStr };
   }
 
-  // Monthly
+  // Custom range (monthly tab)
+  if (customFrom && customTo) return { from: customFrom, to: customTo };
   const now = new Date();
   const isCurrent = selectedYear === now.getFullYear() && selectedMonth === now.getMonth();
   return {
@@ -687,6 +688,13 @@ export default function OverviewPage() {
   const [selectedYear, setSelectedYear] = useState(() =>
     new Date().getFullYear(),
   );
+  const [reportCustomFrom, setReportCustomFrom] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [reportCustomTo, setReportCustomTo] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
 
   // ─── Accounting P&L widget (this-month, refreshes when month changes) ────
   const [plData, setPlData]       = useState(null);
@@ -1273,12 +1281,20 @@ export default function OverviewPage() {
           t.setDate(t.getDate() + 1);
           toStr = t.toISOString().slice(0, 10);
         } else {
-          fromStr = new Date(selectedYear, selectedMonth, 1)
-            .toISOString()
-            .slice(0, 10);
-          toStr = new Date(selectedYear, selectedMonth + 1, 1)
-            .toISOString()
-            .slice(0, 10);
+          // Range (monthly tab) — use custom from/to
+          if (reportCustomFrom) {
+            fromStr = reportCustomFrom;
+            if (reportCustomTo) {
+              const toDate = new Date(reportCustomTo);
+              toDate.setDate(toDate.getDate() + 1);
+              toStr = toDate.toISOString().slice(0, 10);
+            } else {
+              toStr = new Date().toISOString().slice(0, 10);
+            }
+          } else {
+            fromStr = new Date(selectedYear, selectedMonth, 1).toISOString().slice(0, 10);
+            toStr = new Date(selectedYear, selectedMonth + 1, 1).toISOString().slice(0, 10);
+          }
         }
       }
 
@@ -1331,6 +1347,8 @@ export default function OverviewPage() {
           selectedMonth,
           reportFrom: report.from,
           reportTo: report.to,
+          customFrom: reportCustomFrom,
+          customTo: reportCustomTo,
         });
 
         let accountingPlJson = null;
@@ -1374,7 +1392,7 @@ export default function OverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [reportPeriod, selectedMonth, selectedYear, currentBranch?.id]);
+  }, [reportPeriod, selectedMonth, selectedYear, reportCustomFrom, reportCustomTo, currentBranch?.id]);
 
   // Computed values
   const hasOrders = (periodReport.totalOrders ?? 0) > 0;
@@ -1508,18 +1526,25 @@ export default function OverviewPage() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
   const currentHour = now.getHours();
-  const viewingYear = reportPeriod === "monthly" ? selectedYear : currentYear;
-  const viewingMonthIndex =
-    reportPeriod === "monthly" ? selectedMonth : currentMonth;
-  const lastDayOfMonth = new Date(
-    viewingYear,
-    viewingMonthIndex + 1,
-    0,
-  ).getDate();
+  const viewingYear = reportPeriod === "monthly"
+    ? (reportCustomFrom ? new Date(reportCustomFrom + "T00:00:00").getFullYear() : selectedYear)
+    : currentYear;
+  const viewingMonthIndex = reportPeriod === "monthly"
+    ? (reportCustomFrom ? new Date(reportCustomFrom + "T00:00:00").getMonth() : selectedMonth)
+    : currentMonth;
+  // For custom range: compute number of days between from and to
+  const rangeFromDate = reportPeriod === "monthly" && reportCustomFrom
+    ? new Date(reportCustomFrom + "T00:00:00")
+    : new Date(viewingYear, viewingMonthIndex, 1);
+  const rangeToDate = reportPeriod === "monthly" && reportCustomTo
+    ? new Date(reportCustomTo + "T00:00:00")
+    : new Date(viewingYear, viewingMonthIndex + 1, 0);
+  const lastDayOfMonth = reportPeriod === "monthly"
+    ? Math.max(1, Math.round((rangeToDate - rangeFromDate) / 86400000) + 1)
+    : new Date(viewingYear, viewingMonthIndex + 1, 0).getDate();
   const todayDayOfMonthReal = now.getDate();
   const effectiveTodayInView =
-    reportPeriod === "monthly" &&
-    (selectedYear !== currentYear || selectedMonth !== currentMonth)
+    reportPeriod === "monthly" && rangeToDate < now
       ? lastDayOfMonth
       : todayDayOfMonthReal;
 
@@ -1529,12 +1554,16 @@ export default function OverviewPage() {
   });
   const fullMonthDailySales = Array.from(
     { length: lastDayOfMonth },
-    (_, i) => ({
-      day: i + 1,
-      sales: salesByDay[i + 1] ?? 0,
-      isRemaining:
-        reportPeriod === "monthly" ? i + 1 > effectiveTodayInView : false,
-    }),
+    (_, i) => {
+      // For custom range, look up by actual calendar day-of-month of each day
+      const dayDate = new Date(rangeFromDate);
+      dayDate.setDate(dayDate.getDate() + i);
+      return {
+        day: i + 1,
+        sales: salesByDay[dayDate.getDate()] ?? 0,
+        isRemaining: reportPeriod === "monthly" ? dayDate > now : false,
+      };
+    },
   );
 
   // Keep today's chart consistent with yesterday/monthly data source.
@@ -1564,10 +1593,6 @@ export default function OverviewPage() {
     ? Math.round(viewTotalRevenue / viewTotalOrders)
     : 0;
 
-  const yearOptions = [];
-  for (let y = currentYear - 2; y <= currentYear + 1; y += 1)
-    yearOptions.push(y);
-
   // Inventory health stats
   const invFiltered = invItems.filter((i) => i.hasBranchRecord !== false);
   const invTotal = invFiltered.length;
@@ -1582,11 +1607,15 @@ export default function OverviewPage() {
     (i) => (i.currentStock ?? 0) <= (i.lowStockThreshold ?? 0),
   );
 
+  const fmtRangeDate = (s) =>
+    s ? new Date(s + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "";
   const periodLabel =
     reportPeriod === "yesterday"
       ? "Yesterday"
       : reportPeriod === "monthly"
-        ? `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear}`
+        ? (reportCustomFrom && reportCustomTo
+            ? `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)}`
+            : `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear}`)
         : "Today";
 
   const profitSubLabel =
@@ -1601,21 +1630,42 @@ export default function OverviewPage() {
       ) : (
         <>
           {/* ─── Control bar ─────────────────────────────────────────────── */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+
+            {/* ── Row 1 on mobile: Date (left) + End Day (right) ── */}
+            <div className="flex items-center justify-between sm:justify-start sm:gap-2">
               {/* Business day indicator */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                   {formatBusinessDate(businessDate)}
                 </span>
               </div>
 
-              {/* Default exit time (editable) */}
-              <div className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
+              {/* End Day — visible on both mobile and desktop */}
+              <button
+                type="button"
+                onClick={openEndDayModal}
+                disabled={!currentBranch?.id}
+                title={
+                  currentBranch?.id
+                    ? "End current branch business day"
+                    : "Select a branch to end day"
+                }
+                className="sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Power className="w-3.5 h-3.5" />
+                End Day
+              </button>
+            </div>
+
+            {/* ── Row 2 on mobile: Resets (left) + Tabs (right) ── */}
+            <div className="flex items-center justify-between sm:justify-end sm:gap-2">
+              {/* Default exit time (editable) — left on mobile, inline on desktop */}
+              <div className="relative flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
                 <Clock className="w-3 h-3 text-gray-400 dark:text-neutral-500 flex-shrink-0" />
                 <span className="text-[11px] text-gray-500 dark:text-neutral-400 whitespace-nowrap">
-                  Resets at
+                  Resets
                 </span>
                 <div className="relative flex items-center">
                   <select
@@ -1644,7 +1694,51 @@ export default function OverviewPage() {
                 </div>
               </div>
 
-              {/* End Day */}
+              {/* Period tabs */}
+              <div className="flex items-center gap-1.5">
+                <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-0.5 gap-0.5">
+                  {[
+                    { value: "yesterday", label: "Yesterday" },
+                    { value: "today", label: "Today" },
+                    { value: "monthly", label: "Range" },
+                  ].map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setReportPeriod(p.value)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                        reportPeriod === p.value
+                          ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
+                          : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {reportPeriod === "monthly" && (
+                <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap">
+                  <span className="text-[11px] text-gray-400 dark:text-neutral-500 hidden sm:inline">From</span>
+                  <input
+                    type="date"
+                    value={reportCustomFrom}
+                    onChange={(e) => setReportCustomFrom(e.target.value)}
+                    className="h-8 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <span className="text-[11px] text-gray-400 dark:text-neutral-500">→</span>
+                  <input
+                    type="date"
+                    value={reportCustomTo}
+                    min={reportCustomFrom}
+                    onChange={(e) => setReportCustomTo(e.target.value)}
+                    className="h-8 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {/* End Day — desktop only, always last */}
               <button
                 type="button"
                 onClick={openEndDayModal}
@@ -1654,61 +1748,11 @@ export default function OverviewPage() {
                     ? "End current branch business day"
                     : "Select a branch to end day"
                 }
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Power className="w-3.5 h-3.5" />
                 End Day
               </button>
-
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5">
-                {[
-                  { value: "yesterday", label: "Yesterday" },
-                  { value: "today", label: "Today" },
-                  { value: "monthly", label: "Monthly" },
-                ].map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => setReportPeriod(p.value)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      reportPeriod === p.value
-                        ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
-                        : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              {reportPeriod === "monthly" && (
-                <div className="flex items-center gap-1.5">
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                    className="h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {MONTH_NAMES.map((name, idx) => (
-                      <option key={name} value={idx}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="h-9 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs rounded-lg px-2 text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {yearOptions.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
           </div>
 
@@ -1717,28 +1761,30 @@ export default function OverviewPage() {
           ) : (
             <>
           {/* ─── KPI strip ───────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-3 sm:mb-4">
             {[
               {
                 label: "Revenue",
                 sub:
                   periodReport.deliveryFees > 0
-                    ? `Paid & delivered orders\n${currencySymbol} ${Math.round(periodReport.salesAmount).toLocaleString()} food · ${currencySymbol} ${Math.round(periodReport.deliveryFees).toLocaleString()} delivery`
-                    : `Paid & delivered orders\n${periodLabel}`,
+                    ? `${currencySymbol} ${Math.round(periodReport.salesAmount).toLocaleString()} food · ${currencySymbol} ${Math.round(periodReport.deliveryFees).toLocaleString()} delivery`
+                    : `Paid & delivered · ${periodLabel}`,
                 value: `${currencySymbol} ${Math.round(viewTotalRevenue).toLocaleString()}`,
                 icon: DollarSign,
                 color: "text-primary",
-                bg: "bg-primary/10 dark:bg-primary/20",
-                border: "border-primary/20",
+                gradient: "from-orange-500 to-primary",
+                shadow: "shadow-orange-500/30",
+                prominent: true,
               },
               {
                 label: "Orders",
-                sub: `Paid & delivered orders\n${periodLabel}`,
+                sub: `Paid & delivered · ${periodLabel}`,
                 value: viewTotalOrders.toLocaleString(),
                 icon: ShoppingBag,
                 color: "text-violet-600 dark:text-violet-400",
-                bg: "bg-violet-50 dark:bg-violet-500/10",
-                border: "border-violet-100 dark:border-violet-500/20",
+                gradient: "from-violet-500 to-violet-600",
+                shadow: "shadow-violet-500/30",
+                prominent: true,
               },
               {
                 label: "Net Profit",
@@ -1746,8 +1792,8 @@ export default function OverviewPage() {
                 value: `${currencySymbol} ${Math.round(viewTotalProfit).toLocaleString()}`,
                 icon: TrendingUp,
                 color: "text-emerald-600 dark:text-emerald-400",
-                bg: "bg-emerald-50 dark:bg-emerald-500/10",
-                border: "border-emerald-100 dark:border-emerald-500/20",
+                gradient: "from-emerald-500 to-teal-600",
+                shadow: "shadow-emerald-500/30",
               },
               {
                 label: "Avg Order",
@@ -1755,8 +1801,8 @@ export default function OverviewPage() {
                 value: `${currencySymbol} ${viewAvgOrder.toLocaleString()}`,
                 icon: Activity,
                 color: "text-sky-600 dark:text-sky-400",
-                bg: "bg-sky-50 dark:bg-sky-500/10",
-                border: "border-sky-100 dark:border-sky-500/20",
+                gradient: "from-sky-500 to-blue-600",
+                shadow: "shadow-sky-500/30",
               },
               {
                 label: "Active Now",
@@ -1764,116 +1810,105 @@ export default function OverviewPage() {
                 value: viewPendingOrders.toLocaleString(),
                 icon: Zap,
                 color: "text-amber-600 dark:text-amber-400",
-                bg: "bg-amber-50 dark:bg-amber-500/10",
-                border: "border-amber-100 dark:border-amber-500/20",
+                gradient: "from-amber-500 to-orange-500",
+                shadow: "shadow-amber-500/30",
                 pulse: viewPendingOrders > 0,
+                fullRowMobile: true,
               },
             ].map(
-              ({ label, sub, value, icon: Icon, color, bg, border, pulse }) => (
+              ({ label, sub, value, icon: Icon, color, gradient, shadow, pulse, prominent, fullRowMobile }) => (
                 <div
                   key={label}
-                  className={`bg-white dark:bg-neutral-950 border ${border} rounded-2xl p-4`}
+                  className={`group relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-3.5 sm:p-4 overflow-hidden hover:shadow-md transition-all ${
+                    fullRowMobile ? "col-span-2 sm:col-span-1" : ""
+                  }`}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div
-                      className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}
-                    >
-                      <Icon className={`w-4 h-4 ${color}`} />
+                  {/* Colored top accent */}
+                  <div className={`absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r ${gradient} opacity-80`} />
+                  <div className="flex items-start gap-3">
+                    <div className={`bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md ${shadow} flex-shrink-0 h-9 w-9 sm:h-10 sm:w-10 rounded-xl`}>
+                      <Icon className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-white" />
                     </div>
-                    {pulse && (
-                      <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        live
-                      </span>
-                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none">{label}</p>
+                        {pulse && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />}
+                      </div>
+                      <p className={`${prominent ? "text-[15px] sm:text-lg" : "text-sm sm:text-base"} font-extrabold leading-tight ${color}`}>{value}</p>
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-600 mt-0.5 leading-tight">{sub}</p>
+                    </div>
                   </div>
-                  <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500 mb-0.5">
-                    {label}
-                  </p>
-                  <p className={`text-lg font-bold leading-tight ${color}`}>
-                    {value}
-                  </p>
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-600 mt-0.5 whitespace-pre-line">
-                    {sub}
-                  </p>
                 </div>
               ),
             )}
           </div>
 
-          {/* ─── Today's Floor ───────────────────────────────────────────── */}
-          <div className="grid sm:grid-cols-2 gap-4 mb-5">
-            {/* Tables card */}
-            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center flex-shrink-0">
-                <Utensils className="w-5 h-5 text-primary" />
+          {/* ─── Today's Floor (Tables + Reservations merged) ───────────── */}
+          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl mb-3 sm:mb-4 overflow-hidden">
+            <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-neutral-800">
+              {/* Tables */}
+              <div className="flex items-center gap-2.5 p-3">
+                <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center flex-shrink-0">
+                  <Utensils className="w-3.5 h-3.5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none mb-0.5">
+                    Tables
+                  </p>
+                  <p className="text-xs font-bold text-gray-900 dark:text-white leading-snug">
+                    <span className="text-red-500 dark:text-red-400">{floorSummary.occupied} occ</span>
+                    <span className="text-gray-300 dark:text-neutral-700 mx-1">·</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">{floorSummary.available} free</span>
+                  </p>
+                  <a href="/dashboard/tables" className="text-[10px] font-semibold text-primary hover:underline">
+                    View Tables →
+                  </a>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500 mb-0.5">
-                  Tables
-                </p>
-                <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
-                  <span className="text-red-500 dark:text-red-400">{floorSummary.occupied} occupied</span>
-                  <span className="text-gray-400 dark:text-neutral-600 mx-1">·</span>
-                  <span className="text-emerald-600 dark:text-emerald-400">{floorSummary.available} available</span>
-                </p>
-              </div>
-              <a
-                href="/dashboard/tables"
-                className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline whitespace-nowrap flex-shrink-0"
-              >
-                View Tables <ArrowRight className="w-3 h-3" />
-              </a>
-            </div>
-
-            {/* Reservations card */}
-            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                <CalendarClock className="w-5 h-5 text-violet-600 dark:text-violet-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500 mb-0.5">
-                  Reservations
-                </p>
-                <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug">
-                  {floorSummary.todayReservations === 0 ? (
-                    <span className="text-gray-400 dark:text-neutral-600 font-normal">None today</span>
-                  ) : (
-                    <>
-                      <span>{floorSummary.todayReservations} today</span>
-                      {floorSummary.nextReservationTime && (
-                        <>
-                          <span className="text-gray-400 dark:text-neutral-600 mx-1">·</span>
-                          <span className="text-violet-600 dark:text-violet-400 font-semibold">
-                            next at {floorSummary.nextReservationTime}
+              {/* Reservations */}
+              <div className="flex items-center gap-2.5 p-3">
+                <div className="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+                  <CalendarClock className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none mb-0.5">
+                    Reservations
+                  </p>
+                  <p className="text-xs font-bold text-gray-900 dark:text-white leading-snug">
+                    {floorSummary.todayReservations === 0 ? (
+                      <span className="text-gray-400 dark:text-neutral-600 font-normal">None today</span>
+                    ) : (
+                      <>
+                        <span>{floorSummary.todayReservations} today</span>
+                        {floorSummary.nextReservationTime && (
+                          <span className="text-violet-600 dark:text-violet-400 font-semibold block text-[10px]">
+                            next {floorSummary.nextReservationTime}
                           </span>
-                        </>
-                      )}
-                    </>
-                  )}
-                </p>
+                        )}
+                      </>
+                    )}
+                  </p>
+                  <a href="/dashboard/reservations" className="text-[10px] font-semibold text-violet-600 dark:text-violet-400 hover:underline">
+                    View →
+                  </a>
+                </div>
               </div>
-              <a
-                href="/dashboard/reservations"
-                className="flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400 hover:underline whitespace-nowrap flex-shrink-0"
-              >
-                View <ArrowRight className="w-3 h-3" />
-              </a>
             </div>
           </div>
 
           {/* ─── Main: chart (2/3) + breakdown (1/3) ────────────────────── */}
-          <div className="grid lg:grid-cols-3 gap-5 mb-5">
+          <div className="grid lg:grid-cols-3 gap-3 sm:gap-5 mb-3 sm:mb-5">
             {/* Sales area chart */}
-            <div className="lg:col-span-2 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
+            <div className="lg:col-span-2 relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
+              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-orange-500 to-primary opacity-80" />
+              <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                     Sales Overview
                   </h3>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 hidden sm:block">
                     {reportPeriod === "monthly"
-                      ? `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear} · by day`
+                      ? `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)} · by day`
                       : reportPeriod === "yesterday"
                         ? "Yesterday · by hour"
                         : "Today · by hour"}
@@ -1883,10 +1918,10 @@ export default function OverviewPage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  <p className="text-base sm:text-xl font-bold text-gray-900 dark:text-white">
                     {currencySymbol} {Math.round(viewTotalRevenue).toLocaleString()}
                   </p>
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 hidden sm:block">
                     total revenue
                   </p>
                 </div>
@@ -1927,15 +1962,15 @@ export default function OverviewPage() {
               )}
             </div>
 
-            {/* Right panel: Order Types + Profit */}
-            <div className="flex flex-col gap-4">
+            {/* Right panel: Profit + Order Types */}
+            <div className="flex flex-row sm:flex-col gap-3">
               {/* Profit card */}
-              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <TrendingUp className="w-5 h-5 text-white" />
+              <div className="flex-1 sm:flex-none bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-3 sm:p-5 text-white flex items-center gap-2 sm:gap-4">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                 </div>
                 <div>
-                  <p className="text-emerald-100 text-xs font-medium">
+                  <p className="text-emerald-100 text-[10px] sm:text-xs font-medium">
                     {reportPeriod === "yesterday"
                       ? "Yesterday's"
                       : reportPeriod === "monthly"
@@ -1944,21 +1979,22 @@ export default function OverviewPage() {
                     Profit
                     {periodAccountingPl != null ? " (ledger)" : ""}
                   </p>
-                  <p className="text-white text-2xl font-bold leading-tight">
+                  <p className="text-white text-base sm:text-2xl font-bold leading-tight">
                     {currencySymbol} {Math.round(viewTotalProfit).toLocaleString()}
                   </p>
                 </div>
               </div>
 
               {/* Order types donut */}
-              <div className="flex-1 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
-                <h4 className="text-xs font-bold text-gray-700 dark:text-neutral-300 uppercase tracking-wider mb-4">
+              <div className="flex-1 sm:flex-none relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-3 sm:p-5 overflow-hidden">
+                <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-violet-500 to-violet-600 opacity-80" />
+                <h4 className="text-[10px] sm:text-xs font-bold text-gray-700 dark:text-neutral-300 uppercase tracking-wider mb-2 sm:mb-4">
                   Order Types
                 </h4>
                 {salesTypeSegments.length > 0 ? (
-                  <div className="flex items-center gap-4">
-                    <DonutChart segments={salesTypeSegments} size={84} />
-                    <div className="flex-1 space-y-2 min-w-0">
+                  <div className="flex items-center gap-2 sm:gap-4">
+                    <DonutChart segments={salesTypeSegments} size={64} />
+                    <div className="flex-1 space-y-1.5 sm:space-y-2 min-w-0">
                       {salesTypeSegments.map((s) => {
                         const total = salesTypeSegments.reduce(
                           (a, b) => a + b.value,
@@ -1969,16 +2005,16 @@ export default function OverviewPage() {
                         return (
                           <div
                             key={s.label}
-                            className="flex items-center gap-2"
+                            className="flex items-center gap-1.5 sm:gap-2"
                           >
                             <span
                               className="w-2 h-2 rounded-full flex-shrink-0"
                               style={{ backgroundColor: s.color }}
                             />
-                            <span className="flex-1 text-xs text-gray-600 dark:text-neutral-400 truncate">
+                            <span className="flex-1 text-[10px] sm:text-xs text-gray-600 dark:text-neutral-400 truncate">
                               {s.label}
                             </span>
-                            <span className="text-xs font-bold text-gray-900 dark:text-white">
+                            <span className="text-[10px] sm:text-xs font-bold text-gray-900 dark:text-white">
                               {pct}%
                             </span>
                           </div>
@@ -1999,23 +2035,24 @@ export default function OverviewPage() {
           </div>
 
           {/* ─── Sales by channel + Received + Upcoming + Top Items ───────── */}
-          <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-5 mb-5">
+          <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-5 mb-3 sm:mb-5">
             {/* Orders by source (website vs POS vs Foodpanda) */}
-            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-fuchsia-50 dark:bg-fuchsia-500/10 flex items-center justify-center">
-                  <Globe className="w-4 h-4 text-fuchsia-600 dark:text-fuchsia-400" />
+            <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
+              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-fuchsia-500 to-pink-600 opacity-80" />
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-fuchsia-500 to-pink-600 shadow-md shadow-fuchsia-500/30 flex items-center justify-center flex-shrink-0">
+                  <Globe className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex items-center justify-between w-full flex-1 min-w-0">
                   <div>
-                    <h3 className="font-bold text-gray-900 dark:text-white">
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                       Orders by source
                     </h3>
-                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400 hidden sm:block">
                       Completed &amp; paid · same period as revenue above
                     </p>
                   </div>
-                  <h2 className="font-bold text-base text-gray-900 dark:text-white shrink-0 ml-2">
+                  <h2 className="font-bold text-sm text-gray-900 dark:text-white shrink-0 ml-2">
                     {currencySymbol}{" "}
                     {Math.round(totalSourceChannelRevenue).toLocaleString()}
                   </h2>
@@ -2096,21 +2133,22 @@ export default function OverviewPage() {
             </div>
 
             {/* Received Payments */}
-            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-500/10 flex items-center justify-center">
-                  <CreditCard className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+            <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
+              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-sky-500 to-blue-600 opacity-80" />
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-500/30 flex items-center justify-center flex-shrink-0">
+                  <CreditCard className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex items-center justify-between w-full flex-1">
                   <div>
-                    <h3 className="font-bold text-gray-900 dark:text-white">
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                       Received Payments
                     </h3>
-                    <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400 hidden sm:block">
                       How money was received in {periodLabel.toLowerCase()}
                     </p>
                   </div>
-                  <h2 className="font-bold text-base text-gray-900 dark:text-white">
+                  <h2 className="font-bold text-sm text-gray-900 dark:text-white">
                     {currencySymbol} {Math.round(totalReceivedAmount).toLocaleString()}
                   </h2>
                 </div>
@@ -2205,12 +2243,13 @@ export default function OverviewPage() {
             </div>
 
             {/* Upcoming Payments */}
-            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-3">
+            <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-3 overflow-hidden">
+              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-amber-500 to-orange-500 opacity-80" />
               {hasOrders ? (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 mb-2 pb-1.5 border-b border-gray-100 dark:border-neutral-800">
-                    <div className="w-7 h-7 rounded-md bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center shrink-0">
-                      <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <div className="w-7 h-7 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 shadow-md shadow-amber-500/30 flex items-center justify-center shrink-0">
+                      <Clock className="w-3.5 h-3.5 text-white" />
                     </div>
                     <div className="flex items-center justify-between w-full min-w-0 gap-2">
                       <div className="min-w-0">
@@ -2283,11 +2322,12 @@ export default function OverviewPage() {
             </div>
 
             {/* Top Selling Items */}
-            <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
+            <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
+              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-orange-500 to-primary opacity-80" />
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center">
-                    <ShoppingBag className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-primary shadow-md shadow-orange-500/30 flex items-center justify-center">
+                    <ShoppingBag className="w-4 h-4 text-white" />
                   </div>
                   <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                     Top Selling
@@ -2346,18 +2386,22 @@ export default function OverviewPage() {
             </>
           )}
 
+          {/* ─── Inventory Health + P&L side by side ─────────────────────── */}
+          <div className="grid sm:grid-cols-2 gap-3 sm:gap-5 mb-3 sm:mb-5">
+
           {/* ─── Inventory Health ────────────────────────────────────────── */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5 mb-5">
-            <div className="flex items-center justify-between mb-4">
+          <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-violet-500 to-violet-600 opacity-80" />
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center">
-                  <Package className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-violet-600 shadow-md shadow-violet-500/30 flex items-center justify-center flex-shrink-0">
+                  <Package className="w-4 h-4 text-white" />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                     Inventory Health
                   </h3>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500">
+                  <p className="text-xs text-gray-400 dark:text-neutral-500 hidden sm:block">
                     Stock status overview
                   </p>
                 </div>
@@ -2472,11 +2516,12 @@ export default function OverviewPage() {
           </div>
 
           {/* ─── Accounting P&L widget ────────────────────────────────────── */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden mb-5">
+          <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-emerald-500 to-teal-600 opacity-80" />
             <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center">
-                  <TrendingUp className="w-3.5 h-3.5 text-orange-500 dark:text-orange-400" />
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/30 flex items-center justify-center">
+                  <TrendingUp className="w-3.5 h-3.5 text-white" />
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-gray-900 dark:text-white">This Month — P&amp;L</h3>
@@ -2485,7 +2530,7 @@ export default function OverviewPage() {
               </div>
               {plSetup && (
                 <a href="/accounting/reports/profit-loss"
-                  className="text-[11px] font-semibold text-orange-500 dark:text-orange-400 hover:underline flex items-center gap-0.5">
+                  className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5">
                   View Full Report →
                 </a>
               )}
@@ -2531,12 +2576,15 @@ export default function OverviewPage() {
             </div>
           </div>
 
+          </div>{/* end grid: Inventory + P&L */}
+
           {/* ─── Currency Counter ─────────────────────────────────────────── */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+          <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-emerald-500 to-teal-600 opacity-80" />
             <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
-                  <Wallet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/30 flex items-center justify-center">
+                  <Wallet className="w-3.5 h-3.5 text-white" />
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-gray-900 dark:text-white">
@@ -2604,7 +2652,7 @@ export default function OverviewPage() {
                           No {section.label.toLowerCase()} configured
                         </p>
                       ) : (
-                        sectionRows.map((row) => {
+                        sectionRows.map((row, rowIdx) => {
                           const qty = Number(row.qty) || 0;
                           const denom = Number(row.value) || 0;
                           const amount = qty * denom;
@@ -2626,14 +2674,22 @@ export default function OverviewPage() {
                                     }
                                     onBlur={() => setEditingDenomId(null)}
                                     onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === "Escape")
+                                      if (e.key === "Enter" || e.key === "Escape") {
                                         setEditingDenomId(null);
+                                      } else if (e.key === "Tab") {
+                                        e.preventDefault();
+                                        setEditingDenomId(null);
+                                        setTimeout(() => {
+                                          document.getElementById(`qty-${row.id}`)?.focus();
+                                        }, 0);
+                                      }
                                     }}
                                     className="w-full h-7 rounded-md border border-primary/60 bg-white dark:bg-neutral-950 px-2 text-[11px] font-semibold text-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
                                   />
                                 ) : (
                                   <button
                                     type="button"
+                                    tabIndex={-1}
                                     onClick={() => setEditingDenomId(row.id)}
                                     className="group flex items-center gap-1.5 w-full text-left"
                                   >
@@ -2646,11 +2702,21 @@ export default function OverviewPage() {
                               </div>
                               <div className="col-span-4">
                                 <input
+                                  id={`qty-${row.id}`}
                                   type="number"
                                   min="0"
                                   step="1"
                                   value={row.qty}
                                   onChange={(e) => setCurrencyQty(row.id, e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Tab" && !e.shiftKey) {
+                                      const nextRow = sectionRows[rowIdx + 1];
+                                      if (nextRow) {
+                                        e.preventDefault();
+                                        document.getElementById(`qty-${nextRow.id}`)?.focus();
+                                      }
+                                    }
+                                  }}
                                   placeholder="0"
                                   className="w-full h-8 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-2 text-[11px] font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
                                 />

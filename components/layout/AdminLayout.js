@@ -1120,14 +1120,15 @@ export default function AdminLayout({
         )}
 
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-30 flex-shrink-0 md:hidden flex items-center justify-between px-4 py-4 border-b-2 border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm">
-            <div className="flex items-center gap-3">
+          <header className="sticky top-0 z-30 flex-shrink-0 md:hidden flex items-center px-3 py-2 border-b border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+            {/* Left — logo + restaurant name (or back button) */}
+            <div className="flex items-center gap-1.5 z-10">
               {backHref && (
                 <Link
                   href={backHref}
-                  className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90"
+                  className="flex items-center gap-1 text-primary dark:text-primary font-semibold text-xs hover:opacity-90"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="w-4 h-4" />
                   {backLabel}
                 </Link>
               )}
@@ -1139,16 +1140,16 @@ export default function AdminLayout({
                     setActingAsSlug(null);
                     window.location.href = "/super/overview";
                   }}
-                  className="flex items-center gap-1.5 text-primary dark:text-primary font-semibold text-sm hover:opacity-90"
+                  className="flex items-center gap-1 text-primary dark:text-primary font-semibold text-xs hover:opacity-90"
                 >
-                  <ChevronLeft className="w-5 h-5" />
-                  Super Admin
+                  <ChevronLeft className="w-4 h-4" />
+                  Super
                 </button>
               )}
               {!backHref && !(role === "super_admin" && actingAsSlug) && (
                 <>
                   {restaurantLogoUrl && role !== "super_admin" ? (
-                    <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 shadow-md bg-white dark:bg-neutral-900 flex-shrink-0">
+                    <div className="h-7 w-7 rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={restaurantLogoUrl}
@@ -1157,43 +1158,38 @@ export default function AdminLayout({
                       />
                     </div>
                   ) : restaurantName && role !== "super_admin" ? (
-                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20 flex-shrink-0">
+                    <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-[10px] font-bold shadow-sm shadow-primary/20 flex-shrink-0">
                       {restaurantName.slice(0, 2).toUpperCase()}
                     </div>
                   ) : (
-                    <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 shadow-md bg-white dark:bg-neutral-900 flex-shrink-0">
+                    <div className="h-7 w-7 rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-700 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src="/favicon.png"
-                        alt="Eats Desk"
-                        className="h-full w-full object-cover"
-                      />
+                      <img src="/favicon.png" alt="Eats Desk" className="h-full w-full object-cover" />
                     </div>
                   )}
-                  <div>
-                    <div className="text-sm font-bold text-gray-900 dark:text-white">
-                      {restaurantName && role !== "super_admin"
-                        ? restaurantName
-                        : "Eats Desk"}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
-                      {role === "super_admin" && !actingAsSlug
-                        ? "Platform"
-                        : "Restaurant OS"}
-                    </div>
-                  </div>
+                  <span className="text-xs font-bold text-gray-900 dark:text-white leading-tight truncate max-w-[80px]">
+                    {restaurantName && role !== "super_admin" ? restaurantName : "Eats Desk"}
+                  </span>
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setMobileSidebarOpen(true)}
-                className="inline-flex items-center justify-center p-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-200 transition-all"
-                aria-label="Open menu"
+
+            {/* Center — page title */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <h1 className="text-[13px] font-bold text-gray-900 dark:text-white truncate max-w-[140px]">
+                {title}
+              </h1>
+            </div>
+
+            {/* Right — user avatar (links to profile) */}
+            <div className="ml-auto z-10">
+              <Link
+                href="/profile"
+                className="flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-primary to-secondary text-white text-[10px] font-bold flex-shrink-0 shadow-sm"
+                title={userName}
               >
-                <Menu className="w-6 h-6" />
-              </button>
+                {userInitials || userName?.charAt(0)?.toUpperCase() || "U"}
+              </Link>
             </div>
           </header>
 
@@ -1441,7 +1437,7 @@ export default function AdminLayout({
             </div>
           </header>
 
-          <main className="relative flex-1 px-4 md:px-6 pt-4 pb-6 overflow-y-auto bg-gray-100 dark:bg-black">
+          <main className="relative flex-1 px-4 md:px-6 pt-4 pb-24 md:pb-6 overflow-y-auto bg-gray-100 dark:bg-black">
             {!suspended && children}
 
             {showBranchRequiredModal && (
@@ -1515,6 +1511,63 @@ export default function AdminLayout({
               </>
             )}
           </main>
+
+          {/* ─── Bottom nav bar — mobile only ───────────────────────────── */}
+          {["restaurant_admin","admin","manager","product_manager","cashier"].includes(role) && (
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex items-stretch shadow-[0_-1px_8px_rgba(0,0,0,0.06)]"
+              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+              {[
+                ["restaurant_admin","admin","manager","product_manager"].includes(role) && {
+                  path: "/overview", label: "Home", icon: LayoutDashboard,
+                },
+                ["restaurant_admin","admin","manager","cashier"].includes(role) && {
+                  path: "/orders", label: "Orders", icon: ClipboardList,
+                },
+                ["restaurant_admin","admin","manager"].includes(role) && {
+                  path: "/sales-report", label: "Sales", icon: BarChart3,
+                },
+              ]
+                .filter(Boolean)
+                .map((tab) => {
+                  const Icon = tab.icon;
+                  const active =
+                    router.asPath === tab.path ||
+                    router.asPath.startsWith(tab.path + "/") ||
+                    router.asPath.startsWith(tab.path + "?");
+                  return (
+                    <Link
+                      key={tab.path}
+                      href={tab.path}
+                      className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+                        active
+                          ? "text-primary"
+                          : "text-gray-400 dark:text-neutral-500 hover:text-gray-700 dark:hover:text-neutral-300"
+                      }`}
+                    >
+                      <div className="relative">
+                        <Icon className={`w-5 h-5 transition-transform ${active ? "scale-110" : ""}`} />
+                        {active && (
+                          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-semibold leading-none mt-1 ${active ? "text-primary" : ""}`}>
+                        {tab.label}
+                      </span>
+                    </Link>
+                  );
+                })}
+
+              {/* More — always last, opens full sidebar */}
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen(true)}
+                className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-gray-400 dark:text-neutral-500 hover:text-gray-700 dark:hover:text-neutral-300 transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+                <span className="text-[10px] font-semibold leading-none mt-1">More</span>
+              </button>
+            </nav>
+          )}
         </div>
       </div>
     </>
