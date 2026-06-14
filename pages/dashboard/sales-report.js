@@ -53,6 +53,7 @@ import {
   Eye,
   Layers,
   Percent,
+  Globe,
 } from "lucide-react";
 
 import toast from "react-hot-toast";
@@ -2297,6 +2298,53 @@ export default function HistoryPage() {
     return Object.values(map).sort((a, b) => b.orders - a.orders);
   }, [dateFilteredOrders]);
 
+  // Website orders breakdown by customer name
+  const websiteStats = useMemo(() => {
+    let orders = 0;
+    let revenue = 0;
+    let deliveryFees = 0;
+    let cancelled = 0;
+    let paid = 0;
+    let unpaid = 0;
+    let uniqueCustomers = new Set();
+
+    for (const o of dateFilteredOrders) {
+      if ((o.source || "").toUpperCase() !== "WEBSITE") continue;
+
+      if (o.status === "CANCELLED") {
+        cancelled += 1;
+        continue;
+      }
+
+      if (o.status !== "DELIVERED" && o.status !== "COMPLETED") continue;
+
+      const amount = Math.round(Number(o.grandTotal ?? o.total) || 0);
+      const dc = Math.round(Number(o.deliveryCharges) || 0);
+
+      orders += 1;
+      revenue += amount;
+      deliveryFees += dc;
+
+      if (o.isPaid) paid += 1;
+      else unpaid += 1;
+
+      if (o.customerName) uniqueCustomers.add(o.customerName);
+    }
+
+    if (orders === 0 && cancelled === 0) return null;
+
+    return {
+      orders,
+      revenue,
+      salesRevenue: revenue - deliveryFees,
+      deliveryFees,
+      cancelled,
+      paid,
+      unpaid,
+      uniqueCustomers: uniqueCustomers.size,
+    };
+  }, [dateFilteredOrders]);
+
   // Export CSV for current tab
 
   function handleExportCSV() {
@@ -3154,6 +3202,71 @@ export default function HistoryPage() {
                     </button>
                   );
                 })}
+              </div>
+            </Section>
+          )
+        )}
+
+        {/* Website Orders */}
+        {ordersLoading ? (
+          <SectionSkeleton bodyHeightClass="h-32" />
+        ) : (
+          websiteStats && (
+            <Section
+              title="Website Orders"
+              subtitle="Orders placed through the online storefront"
+              icon={Globe}
+              iconGradient="bg-gradient-to-br from-sky-500 to-cyan-600 shadow-cyan-500/25"
+              badge={`${websiteStats.orders} order${websiteStats.orders !== 1 ? "s" : ""}${websiteStats.uniqueCustomers > 0 ? ` · ${websiteStats.uniqueCustomers} customers` : ""}`}
+              badgeValue={fmtRs(websiteStats.revenue)}
+            >
+              <div className="divide-y divide-gray-100 dark:divide-neutral-800 px-4 py-1">
+                {/* Revenue breakdown row */}
+                <div className="flex items-center justify-between py-2.5">
+                  <span className="text-[12px] text-gray-600 dark:text-neutral-400">Sales revenue</span>
+                  <span className="text-[12px] font-semibold text-gray-900 dark:text-white tabular-nums">
+                    {fmtRs(websiteStats.salesRevenue)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2.5">
+                  <span className="text-[12px] text-gray-600 dark:text-neutral-400">Delivery charges</span>
+                  <span className="text-[12px] font-semibold text-gray-900 dark:text-white tabular-nums">
+                    {fmtRs(websiteStats.deliveryFees)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-gray-600 dark:text-neutral-400">Paid</span>
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded-md">
+                      {websiteStats.paid} orders
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {websiteStats.unpaid > 0 && (
+                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded-md">
+                        {websiteStats.unpaid} unpaid
+                      </span>
+                    )}
+                    {websiteStats.cancelled > 0 && (
+                      <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded-md">
+                        {websiteStats.cancelled} ✕
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* Revenue bar */}
+                <div className="py-2.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide">Total collected</span>
+                    <span className="text-[12px] font-bold text-primary tabular-nums">{fmtRs(websiteStats.revenue)}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 transition-all duration-700"
+                      style={{ width: websiteStats.orders > 0 ? "100%" : "0%" }}
+                    />
+                  </div>
+                </div>
               </div>
             </Section>
           )
