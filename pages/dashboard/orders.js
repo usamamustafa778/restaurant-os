@@ -166,29 +166,17 @@ function getOrderId(order) {
 function getDisplayOrderId(order) {
   const id = order.id || order.orderNumber || order._id || "";
   if (typeof id !== "string") return id;
-  // Strip all known prefixes so short display numbers are consistent across sources.
-  // WEB- → W- and WAP- → WA- so website/WhatsApp orders stay visually distinct.
-  return id
-    .replace(/^ORD-/, "")
-    .replace(/^WEB-/, "W-")
-    .replace(/^WAP-/, "WA-");
+  // Strip the source prefix; the numeric sequence is shared across all sources
+  // (POS/website/WhatsApp), so the plain number is already globally unique.
+  return id.replace(/^(ORD|WEB|WAP)-/, "");
 }
 
 function getShortOrderId(order) {
   const full = String(getDisplayOrderId(order));
-  // Preserve a leading source marker (W- website, WA- WhatsApp) so short IDs
-  // from different sources never collide (e.g. POS #0001 vs website #W-0001).
-  const prefixMatch = full.match(/^(WA-|W-)/);
-  const prefix = prefixMatch ? prefixMatch[1] : "";
-  const body = prefix ? full.slice(prefix.length) : full;
-  const lastDash = body.lastIndexOf("-");
-  const shortBody =
-    lastDash !== -1 && body.length - lastDash <= 6
-      ? body.slice(lastDash + 1)
-      : body.length > 8
-        ? body.slice(-6)
-        : body;
-  return prefix + shortBody;
+  const lastDash = full.lastIndexOf("-");
+  if (lastDash !== -1 && full.length - lastDash <= 6)
+    return full.slice(lastDash + 1);
+  return full.length > 8 ? full.slice(-6) : full;
 }
 
 function isOrderPaidOrNonEditable(order) {
