@@ -2257,12 +2257,12 @@ export default function OverviewPage() {
                           Upcoming Payments
                         </h3>
                         <p className="text-[10px] text-gray-500 dark:text-neutral-400 leading-tight mt-0.5">
-                          Unpaid in progress (new → out for delivery)
+                          All unpaid orders (in progress + delivered)
                         </p>
                       </div>
                       <h2 className="font-bold text-sm text-gray-900 dark:text-white shrink-0">
                         {currencySymbol}{" "}
-                        {Math.round(upcomingPayments.totalAmount).toLocaleString()}
+                        {Math.round(totalUnpaidExposure).toLocaleString()}
                       </h2>
                     </div>
                   </div>
