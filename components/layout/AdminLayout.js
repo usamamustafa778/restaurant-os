@@ -57,7 +57,10 @@ import {
   Package,
   LayoutList,
   ArrowDownToLine,
+  Sparkles,
+  Bot,
 } from "lucide-react";
+import AISidebar from "../ai/AISidebar";
 import {
   getToken,
   getStoredAuth,
@@ -523,6 +526,7 @@ export default function AdminLayout({
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
   // Always initialize with defaults to avoid hydration mismatch
   const [collapsed, setCollapsed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState([]);
@@ -1234,6 +1238,31 @@ export default function AdminLayout({
                   </span>
                 </button>
               )}
+              {/* AI Feature Buttons — visible to tenant roles only */}
+              {role !== "super_admin" && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setAiSidebarOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 shadow-sm hover:shadow-md"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Ask AI
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAiSidebarOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-violet-300 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20"
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    Agents
+                    <span className="text-[10px] font-bold bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400 px-1.5 py-0.5 rounded-full ml-0.5">
+                      Soon
+                    </span>
+                  </button>
+                </div>
+              )}
+
               {(role !== "super_admin" || actingAsSlug) && !branchLoading && (
                 <div className="relative flex-shrink-0">
                   <button
@@ -1570,6 +1599,12 @@ export default function AdminLayout({
           )}
         </div>
       </div>
+
+      <AISidebar
+        isOpen={aiSidebarOpen}
+        onClose={() => setAiSidebarOpen(false)}
+        restaurantName={restaurantName}
+      />
     </>
   );
 }
