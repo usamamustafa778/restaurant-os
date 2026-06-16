@@ -161,6 +161,7 @@ const tenantNav = [
     label: "Stock Items",
     icon: Boxes,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permissionFlag: "canManageInventory",
     exact: true,
   },
   {
@@ -168,18 +169,21 @@ const tenantNav = [
     label: "Purchase Orders",
     icon: ShoppingCart,
     roles: ["restaurant_admin", "admin", "manager"],
+    permissionFlag: "canManageInventory",
   },
   {
     path: "/inventory/receive-stock",
     label: "Receive Stock",
     icon: PackageCheck,
     roles: ["restaurant_admin", "admin", "manager"],
+    permissionFlag: "canManageInventory",
   },
   {
     path: "/inventory/purchase-history",
     label: "Purchase History",
     icon: ClipboardList,
     roles: ["restaurant_admin", "admin", "manager"],
+    permissionFlag: "canManageInventory",
   },
 
   { type: "section", label: "ACCOUNTS" },
@@ -188,6 +192,7 @@ const tenantNav = [
     label: "Accounts Board",
     icon: LayoutGrid,
     roles: ["restaurant_admin", "admin", "manager"],
+    permissionFlag: "canViewAccounts",
     exact: true,
   },
   {
@@ -195,6 +200,7 @@ const tenantNav = [
     label: "Sales",
     icon: BarChart3,
     roles: ["restaurant_admin", "admin", "manager"],
+    permissionFlag: "canViewSalesDetails",
   },
   {
     label: "Vouchers",
@@ -518,6 +524,7 @@ export default function AdminLayout({
     loading: branchLoading,
   } = useBranch() || {};
   const [role, setRole] = useState(null);
+  const [userPermissions, setUserPermissions] = useState({});
   const [actingAsSlug, setActingAsSlug] = useState(null);
   const [userName, setUserName] = useState("");
   const [userInitials, setUserInitials] = useState("");
@@ -606,6 +613,7 @@ export default function AdminLayout({
     setRole(r);
 
     const auth = getStoredAuth();
+    setUserPermissions(auth?.user?.permissions || {});
     const name = auth?.user?.name || auth?.user?.email || "";
     setUserName(name);
     if (name) {
@@ -669,11 +677,21 @@ export default function AdminLayout({
   // When super_admin is acting as a tenant, show full tenant nav (treat as restaurant_admin)
   const navRole =
     role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
-  // Filter nav items by role (sections have roles; hide section if no links below visible)
-  const withRole = rawNavItems.filter(
-    (item) =>
-      item.type === "section" || !item.roles || item.roles.includes(navRole),
-  );
+  // Filter nav items by role — cashiers may also see items via explicit permission flags
+  const withRole = rawNavItems.filter((item) => {
+    if (item.type === "section") return true;
+    if (!item.roles) return true;
+    if (item.roles.includes(navRole)) return true;
+    // Cashier with a matching permission flag can see the item
+    if (
+      navRole === "cashier" &&
+      item.permissionFlag &&
+      userPermissions[item.permissionFlag]
+    ) {
+      return true;
+    }
+    return false;
+  });
   const navItems = withRole.filter((item, i) => {
     if (item.type !== "section") return true;
     const after = withRole.slice(i + 1);

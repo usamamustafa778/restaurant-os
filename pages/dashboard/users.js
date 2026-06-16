@@ -154,6 +154,14 @@ export default function UsersPage() {
     phone: "",
   });
 
+  const DEFAULT_PERMISSIONS = {
+    canDeleteOrderItems: false,
+    canViewAccounts: false,
+    canViewSalesDetails: false,
+    canManageInventory: false,
+  };
+  const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
+
   const roleOptions = useMemo(
     () =>
       isManager
@@ -186,6 +194,7 @@ export default function UsersPage() {
       branchIds: currentBranch?.id ? [currentBranch.id] : [],
       phone: "",
     });
+    setPermissions(DEFAULT_PERMISSIONS);
     setShowPassword(false);
   }
 
@@ -205,6 +214,7 @@ export default function UsersPage() {
       branchIds: (u.branches || []).map((b) => b.branchId).filter(Boolean),
       phone: u.phone || "",
     });
+    setPermissions(u.permissions || DEFAULT_PERMISSIONS);
     setModalError("");
     setIsModalOpen(true);
   }
@@ -242,6 +252,8 @@ export default function UsersPage() {
         ...(form.password ? { password: form.password } : {}),
         ...(form.phone ? { phone: form.phone.trim() } : {}),
         ...(form.branchIds.length ? { branchIds: form.branchIds } : {}),
+        // Only include permissions when role is cashier; backend ignores for other roles
+        ...(form.role === "cashier" ? { permissions } : {}),
       };
       if (form.id) {
         const updated = await updateUser(form.id, payload);
@@ -766,6 +778,35 @@ export default function UsersPage() {
                   {roleOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
                 <p className="text-xs text-gray-500">{getRoleDescription(form.role)}</p>
+
+                {/* Cashier-only extra permissions */}
+                {form.role === "cashier" && (
+                  <div className="mt-1 p-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50/50 dark:bg-neutral-900/50">
+                    <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-2.5">
+                      Extra Permissions
+                    </p>
+                    <div className="space-y-2">
+                      {[
+                        { key: "canDeleteOrderItems", label: "Can delete items from orders" },
+                        { key: "canViewAccounts",     label: "Can view accounts board" },
+                        { key: "canViewSalesDetails", label: "Can view sales details (cash/online/card)" },
+                        { key: "canManageInventory",  label: "Can manage inventory" },
+                      ].map((perm) => (
+                        <label key={perm.key} className="flex items-center gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!permissions[perm.key]}
+                            onChange={(e) =>
+                              setPermissions((prev) => ({ ...prev, [perm.key]: e.target.checked }))
+                            }
+                            className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500/30"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-neutral-300">{perm.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="relative">
                   <input type={showPassword ? "text" : "password"} value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder={form.id ? "Leave blank to keep current password" : "Password"} className="w-full h-10 px-3 pr-10 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm" />
                   <button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
