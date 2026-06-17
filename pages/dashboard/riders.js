@@ -12,6 +12,7 @@ import {
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
+import { getBusinessDate, getBusinessDayRange } from "../../lib/businessDay";
 import {
   Truck,
   Loader2,
@@ -40,6 +41,16 @@ const PRESETS = [
 
 const DEFAULT_RIDER_EXPENSE_ACCOUNT_CODE = "602";
 
+function shiftBusinessDateStr(dateStr, deltaDays) {
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + deltaDays);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function buildCashPaymentHref({ amount, riderName, periodLabel }) {
   const params = new URLSearchParams();
   params.set("expenseAccountCode", DEFAULT_RIDER_EXPENSE_ACCOUNT_CODE);
@@ -53,109 +64,6 @@ function buildCashPaymentHref({ amount, riderName, periodLabel }) {
       : "Rider allowances";
   params.set("notes", note);
   return `/accounting/vouchers/cash-payment?${params.toString()}`;
-}
-
-function getCalendarDates(preset) {
-  const today = new Date();
-  switch (preset) {
-    case "today": {
-      const s = new Date(today);
-      s.setHours(0, 0, 0, 0);
-      const e = new Date(today);
-      e.setDate(e.getDate() + 1);
-      e.setHours(0, 0, 0, 0);
-      return { from: s.toISOString(), to: e.toISOString() };
-    }
-    case "yesterday": {
-      const s = new Date(today);
-      s.setDate(s.getDate() - 1);
-      s.setHours(0, 0, 0, 0);
-      const e = new Date(s);
-      e.setHours(23, 59, 59, 999);
-      return { from: s.toISOString(), to: e.toISOString() };
-    }
-    case "this_week": {
-      const dow = today.getDay();
-      const diff = dow === 0 ? -6 : 1 - dow;
-      const monday = new Date(today);
-      monday.setDate(today.getDate() + diff);
-      monday.setHours(0, 0, 0, 0);
-      const e = new Date(today);
-      e.setDate(e.getDate() + 1);
-      e.setHours(0, 0, 0, 0);
-      return { from: monday.toISOString(), to: e.toISOString() };
-    }
-    case "this_month": {
-      const first = new Date(today.getFullYear(), today.getMonth(), 1);
-      first.setHours(0, 0, 0, 0);
-      const e = new Date(today);
-      e.setDate(e.getDate() + 1);
-      e.setHours(0, 0, 0, 0);
-      return { from: first.toISOString(), to: e.toISOString() };
-    }
-    default:
-      return null;
-  }
-}
-
-function getSmartDates(preset, sessions) {
-  const now = new Date();
-  if (preset === "today" && Array.isArray(sessions) && sessions.length > 0) {
-    const openSessions = sessions
-      .filter((s) => s?.status === "OPEN" && s?.startAt)
-      .sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
-    if (openSessions[0]?.startAt) {
-      const openDate = new Date(openSessions[0].startAt).toDateString();
-      const sameDaySessions = sessions.filter(
-        (s) => s?.startAt && new Date(s.startAt).toDateString() === openDate,
-      );
-      const earliestStartMs = sameDaySessions.reduce(
-        (min, s) => Math.min(min, new Date(s.startAt).getTime()),
-        new Date(openSessions[0].startAt).getTime(),
-      );
-      return {
-        from: new Date(earliestStartMs).toISOString(),
-        to: now.toISOString(),
-      };
-    }
-
-    const latestClosed = sessions
-      .filter((s) => s?.status === "CLOSED" && s?.startAt && s?.endAt)
-      .sort((a, b) => new Date(b.endAt) - new Date(a.endAt))[0];
-    if (latestClosed?.startAt && latestClosed?.endAt) {
-      return {
-        from: new Date(latestClosed.startAt).toISOString(),
-        to: new Date(latestClosed.endAt).toISOString(),
-      };
-    }
-  }
-  if (preset === "yesterday" && Array.isArray(sessions) && sessions.length > 0) {
-    const lastClosed = sessions.find((s) => s?.status === "CLOSED");
-    if (lastClosed?.startAt && lastClosed?.endAt) {
-      const sessionId = lastClosed.id || lastClosed._id;
-      return {
-        from: new Date(lastClosed.startAt).toISOString(),
-        to: new Date(lastClosed.endAt).toISOString(),
-        ...(sessionId ? { daySessionId: String(sessionId) } : {}),
-      };
-    }
-  }
-  return getCalendarDates(preset);
-}
-
-function getOrdersQuery(preset, sessions) {
-  return getSmartDates(preset, sessions) || getCalendarDates(preset);
-}
-
-function getActiveSessionForToday(sessions) {
-  if (!Array.isArray(sessions) || sessions.length === 0) return null;
-  const open = sessions
-    .filter((s) => s?.status === "OPEN" && s?.startAt)
-    .sort((a, b) => new Date(b.startAt) - new Date(a.startAt))[0];
-  if (open) return open;
-  return sessions
-    .filter((s) => s?.status === "CLOSED" && s?.startAt && s?.endAt)
-    .sort((a, b) => new Date(b.endAt) - new Date(a.endAt))[0] || null;
 }
 
 function toCSVRow(cells) {
@@ -283,13 +191,44 @@ export default function RidersPage() {
   const [modalPostCpv, setModalPostCpv] = useState(false);
   const [modalSaving, setModalSaving] = useState(false);
   const autoRef = useRef(null);
+  const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
+  const businessDateStr = getBusinessDate(new Date(), cutoffHour);
+
+  const resolveRidersDateRange = useCallback(
+    (presetId) => {
+      if (presetId === "today") {
+        return getBusinessDayRange(businessDateStr, cutoffHour);
+      }
+      if (presetId === "yesterday") {
+        return getBusinessDayRange(
+          shiftBusinessDateStr(businessDateStr, -1),
+          cutoffHour,
+        );
+      }
+      if (presetId === "this_week") {
+        const fromStr = shiftBusinessDateStr(businessDateStr, -6);
+        return {
+          from: getBusinessDayRange(fromStr, cutoffHour).from,
+          to: getBusinessDayRange(businessDateStr, cutoffHour).to,
+        };
+      }
+      if (presetId === "this_month") {
+        const fromStr = shiftBusinessDateStr(businessDateStr, -29);
+        return {
+          from: getBusinessDayRange(fromStr, cutoffHour).from,
+          to: getBusinessDayRange(businessDateStr, cutoffHour).to,
+        };
+      }
+      return getBusinessDayRange(businessDateStr, cutoffHour);
+    },
+    [businessDateStr, cutoffHour],
+  );
 
   const loadOrders = useCallback(async (dates) => {
     try {
       const params = { limit: 2000 };
       if (dates?.from) params.from = dates.from;
       if (dates?.to) params.to = dates.to;
-      if (dates?.daySessionId) params.daySessionId = dates.daySessionId;
       const data = await getOrders(params);
       if (data && typeof data === "object" && Array.isArray(data.orders)) {
         let all = data.orders;
@@ -353,21 +292,12 @@ export default function RidersPage() {
             from: new Date(customRange.from + "T00:00:00").toISOString(),
             to: new Date(customRange.to + "T23:59:59.999").toISOString(),
           };
-        } else if (presetId === "today") {
-          const activeSession = getActiveSessionForToday(loadedSessions);
-          if (activeSession?._id) {
-            q = {
-              daySessionId: String(activeSession._id),
-              from: new Date(activeSession.startAt).toISOString(),
-              to: activeSession.endAt
-                ? new Date(activeSession.endAt).toISOString()
-                : new Date().toISOString(),
-            };
-          } else {
-            q = getOrdersQuery(presetId, loadedSessions);
-          }
         } else {
-          q = getOrdersQuery(presetId, loadedSessions);
+          const range = resolveRidersDateRange(presetId);
+          q = {
+            from: new Date(range.from).toISOString(),
+            to: new Date(range.to).toISOString(),
+          };
         }
         await Promise.all([
           loadOrders(q),
@@ -381,7 +311,14 @@ export default function RidersPage() {
         setLoading(false);
       }
     },
-    [currentBranch?.id, loadOrders, loadPayouts, loadStaffRiders],
+    [
+      currentBranch?.id,
+      cutoffHour,
+      loadOrders,
+      loadPayouts,
+      loadStaffRiders,
+      resolveRidersDateRange,
+    ],
   );
 
   useEffect(() => {
@@ -430,32 +367,21 @@ export default function RidersPage() {
         to: customTo ? new Date(customTo + "T23:59:59.999") : null,
       };
     }
-    if (preset === "today") {
-      const activeSession = getActiveSessionForToday(sessions);
-      if (activeSession?.startAt) {
-        return {
-          from: new Date(activeSession.startAt),
-          to: activeSession.endAt ? new Date(activeSession.endAt) : new Date(),
-        };
-      }
-    }
-    const d = getSmartDates(preset, sessions);
+    if (!preset) return { from: null, to: null };
+    const d = resolveRidersDateRange(preset);
     return {
       from: d?.from ? new Date(d.from) : null,
       to: d?.to ? new Date(d.to) : null,
     };
-  }, [preset, customFrom, customTo, sessions]);
+  }, [
+    cutoffHour,
+    customFrom,
+    customTo,
+    preset,
+    resolveRidersDateRange,
+  ]);
 
   const dateFilteredOrders = useMemo(() => {
-    if (preset === "today" && getActiveSessionForToday(sessions)?._id) {
-      return allOrders;
-    }
-    if (preset === "yesterday") {
-      const lastClosed = sessions.find((s) => s?.status === "CLOSED");
-      if (lastClosed?.startAt && lastClosed?.endAt) {
-        return allOrders;
-      }
-    }
     const { from, to } = activeDateRange;
     return allOrders.filter((o) => {
       const t = new Date(o.createdAt);
@@ -463,7 +389,7 @@ export default function RidersPage() {
       if (to && t > to) return false;
       return true;
     });
-  }, [allOrders, activeDateRange, preset, sessions]);
+  }, [allOrders, activeDateRange]);
 
   const deliveryOrders = useMemo(
     () =>

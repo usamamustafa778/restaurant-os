@@ -18,6 +18,7 @@ import {
 } from "../../lib/apiClient";
 
 import { classifySessionReportPaymentLine } from "../../lib/sessionReportBreakdown";
+import { getBusinessDate } from "../../lib/businessDay";
 
 import { useBranch } from "../../contexts/BranchContext";
 
@@ -417,6 +418,66 @@ function normalizeReportPreset(preset) {
   return preset;
 }
 
+function shiftBusinessDateStr(dateStr, deltaDays) {
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + deltaDays);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function findSessionsForDate(sessions, cutoffHour = 4, targetDateStr = "") {
+  if (!Array.isArray(sessions) || sessions.length === 0 || !targetDateStr)
+    return [];
+  return sessions.filter((s) => {
+    if (s?.status !== "CLOSED" || !s?.startAt) return false;
+    const sessionDateStr = getBusinessDate(new Date(s.startAt), cutoffHour);
+    return sessionDateStr === targetDateStr;
+  });
+}
+
+function getYesterdaySessionScope(sessions, cutoffHour = 4) {
+  const yesterdayStr = shiftBusinessDateStr(
+    getBusinessDate(new Date(), cutoffHour),
+    -1,
+  );
+  const yesterdaySessions = findSessionsForDate(
+    sessions,
+    cutoffHour,
+    yesterdayStr,
+  ).filter((s) => s?.startAt && s?.endAt);
+
+  if (yesterdaySessions.length === 0) {
+    return getCalendarDates("yesterday");
+  }
+
+  if (yesterdaySessions.length === 1) {
+    const s = yesterdaySessions[0];
+    const sessionId = s.id || s._id;
+    return {
+      from: s.startAt,
+      to: s.endAt,
+      ...(sessionId ? { daySessionId: String(sessionId) } : {}),
+    };
+  }
+
+  const earliestStart = yesterdaySessions.reduce(
+    (min, s) => Math.min(min, new Date(s.startAt).getTime()),
+    new Date(yesterdaySessions[0].startAt).getTime(),
+  );
+  const latestEnd = yesterdaySessions.reduce(
+    (max, s) => Math.max(max, new Date(s.endAt).getTime()),
+    new Date(yesterdaySessions[0].endAt).getTime(),
+  );
+
+  return {
+    from: new Date(earliestStart).toISOString(),
+    to: new Date(latestEnd).toISOString(),
+  };
+}
+
 function getCalendarDates(preset) {
   const safePreset = normalizeReportPreset(preset);
 
@@ -536,7 +597,7 @@ function getCalendarDates(preset) {
 
  */
 
-function getSalesReportQuery(preset, sessions) {
+function getSalesReportQuery(preset, sessions, cutoffHour = 4) {
   const safePreset = normalizeReportPreset(preset);
 
   if (safePreset === "today" && sessions && sessions.length > 0) {
@@ -562,29 +623,17 @@ function getSalesReportQuery(preset, sessions) {
   }
 
   if (safePreset === "yesterday" && sessions && sessions.length > 0) {
-    const lastClosed = sessions.find((s) => s.status === "CLOSED");
-
-    if (lastClosed?.startAt && lastClosed?.endAt) {
-      const sessionId = lastClosed.id || lastClosed._id;
-
-      return {
-        from: lastClosed.startAt,
-
-        to: lastClosed.endAt,
-
-        ...(sessionId ? { daySessionId: String(sessionId) } : {}),
-      };
-    }
+    return getYesterdaySessionScope(sessions, cutoffHour);
   }
 
-  return getSmartDates(safePreset, sessions);
+  return getSmartDates(safePreset, sessions, cutoffHour);
 }
 
 // Session-aware date resolver: uses actual session start/end times for Today and Yesterday
 
 // so that reports match the business day rather than calendar midnight boundaries.
 
-function getSmartDates(preset, sessions) {
+function getSmartDates(preset, sessions, cutoffHour = 4) {
   const safePreset = normalizeReportPreset(preset);
 
   const now = new Date();
@@ -641,12 +690,9 @@ function getSmartDates(preset, sessions) {
     }
 
     if (safePreset === "yesterday") {
-      // The most recently CLOSED session = the previous business day
-
-      const lastClosed = sessions.find((s) => s.status === "CLOSED");
-
-      if (lastClosed?.startAt && lastClosed?.endAt)
-        return { from: lastClosed.startAt, to: lastClosed.endAt };
+      const yesterdayScope = getYesterdaySessionScope(sessions, cutoffHour);
+      if (yesterdayScope?.from && yesterdayScope?.to)
+        return { from: yesterdayScope.from, to: yesterdayScope.to };
     }
   }
 
@@ -1155,6 +1201,7 @@ export default function HistoryPage() {
   const router = useRouter();
 
   const { currentBranch } = useBranch() || {};
+  const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
 
   const [showHelpModal, setShowHelpModal] = useState(false);
 
@@ -1556,14 +1603,14 @@ export default function HistoryPage() {
   useEffect(() => {
     if (!preset) return;
 
-    const q = getSalesReportQuery(preset, sessions);
+    const q = getSalesReportQuery(preset, sessions, cutoffHour);
 
     loadReport(q);
 
     loadOrders(q);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentBranch?.id, preset, sessions]);
+  }, [currentBranch?.id, preset, sessions, cutoffHour]);
 
   function applyPreset(id) {
     const safeId = normalizeReportPreset(id);
@@ -1572,7 +1619,7 @@ export default function HistoryPage() {
 
     if (safeId === "custom") return;
 
-    const q = getSalesReportQuery(safeId, sessions);
+    const q = getSalesReportQuery(safeId, sessions, cutoffHour);
 
     setLoading(true);
 
@@ -1625,7 +1672,7 @@ export default function HistoryPage() {
               : "",
           };
         } else {
-          const q = getSalesReportQuery(preset, sessions);
+          const q = getSalesReportQuery(preset, sessions, cutoffHour);
 
           params =
             q.daySessionId != null
@@ -1652,7 +1699,15 @@ export default function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, preset, customFrom, customTo, sessions, currentBranch?.id]);
+  }, [
+    activeTab,
+    preset,
+    customFrom,
+    customTo,
+    sessions,
+    currentBranch?.id,
+    cutoffHour,
+  ]);
 
   async function loadSessions(pageNum = 0, fromDate, toDate) {
     setSessionsLoading(true);
@@ -1906,14 +1961,14 @@ export default function HistoryPage() {
       }
     }
 
-    const d = getSmartDates(preset, sessions);
+    const d = getSmartDates(preset, sessions, cutoffHour);
 
     return {
       from: d?.from ? new Date(d.from) : null,
 
       to: d?.to ? new Date(d.to) : null,
     };
-  }, [preset, customFrom, customTo, sessions]);
+  }, [preset, customFrom, customTo, sessions, cutoffHour]);
 
   const dateFilteredOrders = useMemo(() => {
     if (preset === "yesterday") {
