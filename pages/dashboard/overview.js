@@ -170,6 +170,8 @@ function SalesAreaChart({
   dailySales,
   hourlySales,
   remainingHoursStart,
+  hourBucketSize = 1,
+  hourStartHours = null,
 }) {
   const W = 1000,
     H = 260;
@@ -184,16 +186,32 @@ function SalesAreaChart({
   const data = isMonthly
     ? (dailySales || []).map((d) => ({
         y: d.sales ?? 0,
-        label: String(d.day),
+        label:
+          d.label ??
+          (d.day != null && d.day !== "" ? String(d.day) : ""),
         isRem: !!d.isRemaining,
-        show: true,
+        show: d.show !== false,
       }))
-    : Array.from({ length: (hourlySales || []).length }, (_, i) => ({
-        y: (hourlySales || [])[i] || 0,
-        label: i % 4 === 0 ? `${i}h` : "",
-        isRem: remainingHoursStart != null && i >= remainingHoursStart,
-        show: i % 4 === 0,
-      }));
+    : (() => {
+        const points = hourlySales || [];
+        const tickStep = points.length <= 12 ? 2 : 4;
+        const starts =
+          Array.isArray(hourStartHours) && hourStartHours.length === points.length
+            ? hourStartHours
+            : Array.from(
+                { length: points.length },
+                (_, i) => i * hourBucketSize,
+              );
+        return Array.from({ length: points.length }, (_, i) => {
+          const hourStart = Number(starts[i]) || 0;
+          return {
+            y: points[i] || 0,
+            label: i % tickStep === 0 ? formatHourLabel12(hourStart) : "",
+            isRem: remainingHoursStart != null && hourStart >= remainingHoursStart,
+            show: i % tickStep === 0,
+          };
+        });
+      })();
 
   const n = data.length;
   if (n === 0)
@@ -452,6 +470,33 @@ function normalizeHourlySales(input) {
     );
   }
   return new Array(24).fill(0);
+}
+
+function formatHourLabel12(hour) {
+  const h = Number(hour) || 0;
+  const hour12 = h % 12 || 12;
+  const suffix = h < 12 ? "AM" : "PM";
+  return `${hour12}${suffix}`;
+}
+
+function buildHourSequence(startHour, endHour) {
+  const normalizeHour = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return ((Math.trunc(n) % 24) + 24) % 24;
+  };
+  const start = normalizeHour(startHour);
+  const end = normalizeHour(endHour);
+  if (start === end) {
+    return Array.from({ length: 24 }, (_, i) => i);
+  }
+  const hours = [start];
+  let cursor = start;
+  while (cursor !== end && hours.length <= 24) {
+    cursor = (cursor + 1) % 24;
+    hours.push(cursor);
+  }
+  return hours;
 }
 
 function buildHourlySalesFromOrders(orders, { from, to } = {}) {
@@ -722,6 +767,9 @@ function OverviewScreenSkeleton() {
 
 export default function OverviewPage() {
   const { currentBranch, setCurrentBranch } = useBranch() || {};
+  const [monthlyChartMode, setMonthlyChartMode] = useState("peaks"); // peaks | trend
+  const [chartStartHour, setChartStartHour] = useState(0);
+  const [chartEndHour, setChartEndHour] = useState(23);
 
   const [stats, setStats] = useState({
     totalOrders: 0,
@@ -1444,18 +1492,20 @@ export default function OverviewPage() {
               )
             : parsedOrders;
 
-        const apiHourlySales = normalizeHourlySales(report.hourlySales);
-        const hasHourlyPoints = apiHourlySales.some((v) => Number(v) > 0);
-        const shouldFallbackHourly =
-          !hasHourlyPoints && Number(report.totalRevenue || 0) > 0;
         const hourlyFrom = report.from ?? fromStr;
         const hourlyTo = report.to ?? toStr;
-        const resolvedHourlySales = shouldFallbackHourly
-          ? buildHourlySalesFromOrders(ordersForMetrics, {
-              from: hourlyFrom,
-              to: hourlyTo,
-            })
-          : apiHourlySales;
+        const apiHourlySales = normalizeHourlySales(report.hourlySales);
+        const localHourlySales = buildHourlySalesFromOrders(ordersForMetrics, {
+          from: hourlyFrom,
+          to: hourlyTo,
+        });
+        const localHasHourlyPoints = localHourlySales.some((v) => Number(v) > 0);
+        const resolvedHourlySales =
+          reportPeriod === "today" || reportPeriod === "yesterday"
+            ? localHourlySales
+            : localHasHourlyPoints
+              ? localHourlySales
+              : apiHourlySales;
 
         const { from: plFrom, to: plTo } = derivePlDateRange({
           reportPeriod,
@@ -1674,36 +1724,23 @@ export default function OverviewPage() {
     reportPeriod === "monthly" && reportCustomTo
       ? new Date(reportCustomTo + "T00:00:00")
       : new Date(viewingYear, viewingMonthIndex + 1, 0);
-  const lastDayOfMonth =
+  const rangeDaysCount =
     reportPeriod === "monthly"
       ? Math.max(1, Math.round((rangeToDate - rangeFromDate) / 86400000) + 1)
       : new Date(viewingYear, viewingMonthIndex + 1, 0).getDate();
-  const todayDayOfMonthReal = now.getDate();
-  const effectiveTodayInView =
-    reportPeriod === "monthly" && rangeToDate < now
-      ? lastDayOfMonth
-      : todayDayOfMonthReal;
-
-  const salesByDay = {};
-  (periodReport.dailySales || []).forEach((d) => {
-    salesByDay[d.day] = d.sales;
-  });
-  const fullMonthDailySales = Array.from({ length: lastDayOfMonth }, (_, i) => {
-    // For custom range, look up by actual calendar day-of-month of each day
-    const dayDate = new Date(rangeFromDate);
-    dayDate.setDate(dayDate.getDate() + i);
-    return {
-      day: i + 1,
-      sales: salesByDay[dayDate.getDate()] ?? 0,
-      isRemaining: reportPeriod === "monthly" ? dayDate > now : false,
-    };
-  });
 
   // Keep today's chart consistent with yesterday/monthly data source.
   // Prefer period report hourly data; fall back to overview snapshot.
   const baseHourlySales = normalizeHourlySales(
     periodReport.hourlySales || stats.hourlySales,
   );
+  const hourWindowHours = useMemo(
+    () => buildHourSequence(chartStartHour, chartEndHour),
+    [chartStartHour, chartEndHour],
+  );
+  const chartTimeLabel = `${formatHourLabel12(chartStartHour)} – ${formatHourLabel12(
+    chartEndHour,
+  )}`;
   // For "today", do not zero-out higher hour buckets.
   // This avoids a blank chart when the business day spans midnight.
   const fullDayHourlySales =
@@ -1712,6 +1749,52 @@ export default function OverviewPage() {
       : Array.from({ length: 24 }, (_, i) =>
           i <= currentHour ? baseHourlySales[i] || 0 : 0,
         );
+  const dayHourlyWindowSales = hourWindowHours.map(
+    (h) => Number(fullDayHourlySales[h] || 0),
+  );
+  const yesterdayHourlyBase = normalizeHourlySales(periodReport.hourlySales);
+  const yesterdayHourlyWindowSales = hourWindowHours.map(
+    (h) => Number(yesterdayHourlyBase[h] || 0),
+  );
+  const monthlyHourlySales = normalizeHourlySales(periodReport.hourlySales);
+  const monthlyPeakBucketStartHours = [];
+  const monthlyHourlySales12 = [];
+  for (let i = 0; i < hourWindowHours.length; i += 2) {
+    const firstHour = hourWindowHours[i];
+    const secondHour =
+      i + 1 < hourWindowHours.length ? hourWindowHours[i + 1] : null;
+    monthlyPeakBucketStartHours.push(firstHour);
+    monthlyHourlySales12.push(
+      Number(monthlyHourlySales[firstHour] || 0) +
+        Number(secondHour != null ? monthlyHourlySales[secondHour] || 0 : 0),
+    );
+  }
+  const monthlyHasHourlyData = monthlyHourlySales12.some((v) => Number(v) > 0);
+  const salesByDateKey = new Map();
+  (periodReport.dailySales || []).forEach((d) => {
+    const key =
+      typeof d?.date === "string" && d.date
+        ? String(d.date).slice(0, 10)
+        : null;
+    if (!key) return;
+    salesByDateKey.set(key, Number(d?.sales || 0));
+  });
+  const trendLabelStep =
+    rangeDaysCount > 90 ? 10 : rangeDaysCount > 60 ? 7 : rangeDaysCount > 30 ? 5 : 3;
+  const monthlyDailyTrendSales = Array.from({ length: rangeDaysCount }, (_, i) => {
+    const dayDate = new Date(rangeFromDate);
+    dayDate.setDate(dayDate.getDate() + i);
+    const key = dayDate.toISOString().slice(0, 10);
+    return {
+      day: i + 1,
+      label: String(dayDate.getDate()),
+      sales: salesByDateKey.get(key) ?? 0,
+      show: i === 0 || i === rangeDaysCount - 1 || i % trendLabelStep === 0,
+    };
+  });
+  const monthlyHasTrendData = monthlyDailyTrendSales.some(
+    (d) => Number(d.sales) > 0,
+  );
   const remainingHoursStart = reportPeriod === "today" ? 24 : currentHour + 1;
 
   const viewTotalOrders = periodReport.totalOrders ?? 0;
@@ -2087,14 +2170,77 @@ export default function OverviewPage() {
                       </h3>
                       <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 hidden sm:block">
                         {reportPeriod === "monthly"
-                          ? `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)} · by day`
+                          ? monthlyChartMode === "trend"
+                            ? `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)} · by day (${rangeDaysCount} days)`
+                            : `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)} · 2-hour peaks (${rangeDaysCount} days) · ${chartTimeLabel}`
                           : reportPeriod === "yesterday"
-                            ? "Yesterday · by hour"
-                            : "Today · by hour"}
+                            ? `Yesterday · by hour · ${chartTimeLabel}`
+                            : `Today · by hour · ${chartTimeLabel}`}
                         {(splitIdx) =>
                           splitIdx > 0 ? " · dashed = remaining" : ""
                         }
                       </p>
+                      {reportPeriod === "monthly" && (
+                        <div className="mt-2 inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setMonthlyChartMode("peaks")}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                              monthlyChartMode === "peaks"
+                                ? "bg-white dark:bg-neutral-800 text-primary shadow-sm"
+                                : "text-gray-500 dark:text-neutral-400 hover:text-gray-800 dark:hover:text-neutral-200"
+                            }`}
+                          >
+                            Peak Hours
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMonthlyChartMode("trend")}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                              monthlyChartMode === "trend"
+                                ? "bg-white dark:bg-neutral-800 text-primary shadow-sm"
+                                : "text-gray-500 dark:text-neutral-400 hover:text-gray-800 dark:hover:text-neutral-200"
+                            }`}
+                          >
+                            Ups & Downs
+                          </button>
+                        </div>
+                      )}
+                      {(reportPeriod !== "monthly" ||
+                        monthlyChartMode === "peaks") && (
+                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-1">
+                          <span className="px-1 text-[11px] font-semibold text-gray-500 dark:text-neutral-400">
+                            Time
+                          </span>
+                          <select
+                            value={chartStartHour}
+                            onChange={(e) =>
+                              setChartStartHour(Number(e.target.value))
+                            }
+                            className="h-7 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 text-[11px] font-semibold text-gray-700 dark:text-neutral-200"
+                          >
+                            {Array.from({ length: 24 }, (_, h) => (
+                              <option key={`start-${h}`} value={h}>
+                                {formatHourLabel12(h)}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-[11px] text-gray-400 dark:text-neutral-500">
+                            →
+                          </span>
+                          <select
+                            value={chartEndHour}
+                            onChange={(e) => setChartEndHour(Number(e.target.value))}
+                            className="h-7 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 text-[11px] font-semibold text-gray-700 dark:text-neutral-200"
+                          >
+                            {Array.from({ length: 24 }, (_, h) => (
+                              <option key={`end-${h}`} value={h}>
+                                {formatHourLabel12(h)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-base sm:text-xl font-bold text-gray-900 dark:text-white">
@@ -2107,25 +2253,43 @@ export default function OverviewPage() {
                     </div>
                   </div>
                   {reportPeriod === "monthly" ? (
-                    fullMonthDailySales.length > 0 ? (
-                      <SalesAreaChart
-                        period="monthly"
-                        dailySales={fullMonthDailySales}
-                        hourlySales={null}
-                        remainingHoursStart={null}
-                      />
+                    monthlyChartMode === "trend" ? (
+                      monthlyHasTrendData ? (
+                        <SalesAreaChart
+                          period="monthly"
+                          dailySales={monthlyDailyTrendSales}
+                          hourlySales={null}
+                          remainingHoursStart={null}
+                        />
+                      ) : (
+                        <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">
+                          No daily sales data for selected range
+                        </div>
+                      )
                     ) : (
-                      <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">
-                        No data yet this month
-                      </div>
+                      monthlyHasHourlyData ? (
+                        <SalesAreaChart
+                          period="today"
+                          dailySales={null}
+                          hourlySales={monthlyHourlySales12}
+                          remainingHoursStart={24}
+                          hourBucketSize={2}
+                          hourStartHours={monthlyPeakBucketStartHours}
+                        />
+                      ) : (
+                        <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">
+                          No hourly sales data for selected range
+                        </div>
+                      )
                     )
                   ) : reportPeriod === "yesterday" ? (
-                    periodReport.hourlySales ? (
+                    yesterdayHourlyWindowSales.some((v) => Number(v) > 0) ? (
                       <SalesAreaChart
                         period="today"
                         dailySales={null}
-                        hourlySales={periodReport.hourlySales}
+                        hourlySales={yesterdayHourlyWindowSales}
                         remainingHoursStart={24}
+                        hourStartHours={hourWindowHours}
                       />
                     ) : (
                       <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">
@@ -2136,8 +2300,9 @@ export default function OverviewPage() {
                     <SalesAreaChart
                       period="today"
                       dailySales={null}
-                      hourlySales={fullDayHourlySales}
+                      hourlySales={dayHourlyWindowSales}
                       remainingHoursStart={remainingHoursStart}
+                      hourStartHours={hourWindowHours}
                     />
                   )}
                 </div>
