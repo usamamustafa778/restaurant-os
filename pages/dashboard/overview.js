@@ -71,6 +71,73 @@ function derivePlDateRange({
       : localISODate(new Date(selectedYear, selectedMonth + 1, 0)),
   };
 }
+
+function shiftBusinessDateStr(dateStr, deltaDays) {
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + deltaDays);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getCalendarYesterdayRange() {
+  const s = new Date();
+  s.setDate(s.getDate() - 1);
+  s.setHours(0, 0, 0, 0);
+  const e = new Date(s);
+  e.setHours(23, 59, 59, 999);
+  return { from: s.toISOString(), to: e.toISOString() };
+}
+
+function findSessionsForDate(sessions, cutoffHour, targetDateStr) {
+  if (!Array.isArray(sessions) || !targetDateStr) return [];
+  return sessions.filter((s) => {
+    if (s?.status !== "CLOSED" || !s?.startAt) return false;
+    const sessionDateStr = getBusinessDate(new Date(s.startAt), cutoffHour);
+    return sessionDateStr === targetDateStr;
+  });
+}
+
+function resolveYesterdaySessionScope(sessions, cutoffHour = 4) {
+  const yesterdayStr = shiftBusinessDateStr(
+    getBusinessDate(new Date(), cutoffHour),
+    -1,
+  );
+  const yesterdaySessions = findSessionsForDate(
+    sessions,
+    cutoffHour,
+    yesterdayStr,
+  ).filter((s) => s?.startAt && s?.endAt);
+
+  if (yesterdaySessions.length === 0) {
+    return getCalendarYesterdayRange();
+  }
+
+  if (yesterdaySessions.length === 1) {
+    const s = yesterdaySessions[0];
+    const sessionId = s.id || s._id;
+    return {
+      from: s.startAt,
+      to: s.endAt,
+      ...(sessionId ? { daySessionId: String(sessionId) } : {}),
+    };
+  }
+
+  const earliestStart = yesterdaySessions.reduce(
+    (min, s) => Math.min(min, new Date(s.startAt).getTime()),
+    new Date(yesterdaySessions[0].startAt).getTime(),
+  );
+  const latestEnd = yesterdaySessions.reduce(
+    (max, s) => Math.max(max, new Date(s.endAt).getTime()),
+    new Date(yesterdaySessions[0].endAt).getTime(),
+  );
+  return {
+    from: new Date(earliestStart).toISOString(),
+    to: new Date(latestEnd).toISOString(),
+  };
+}
 import { useBranch } from "../../contexts/BranchContext";
 import {
   ShoppingBag,
@@ -1079,12 +1146,12 @@ export default function OverviewPage() {
               if (openSess?.id) daySessionId = openSess.id;
             }
             if (currencyDate === "yesterday") {
-              const lastClosed = sessions.find((s) => s.status === "CLOSED");
-              if (lastClosed?.id) {
-                daySessionId = lastClosed.id;
-              } else if (lastClosed?.startAt && lastClosed?.endAt) {
-                from = lastClosed.startAt;
-                to = lastClosed.endAt;
+              const yScope = resolveYesterdaySessionScope(sessions, cutoffHour);
+              if (yScope?.daySessionId) {
+                daySessionId = yScope.daySessionId;
+              } else if (yScope?.from && yScope?.to) {
+                from = yScope.from;
+                to = yScope.to;
               }
             }
           } catch {
@@ -1116,7 +1183,7 @@ export default function OverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [currencyDateValue, currencyDate, currentBranch?.id]);
+  }, [currencyDateValue, currencyDate, currentBranch?.id, cutoffHour]);
 
   function handleSaveCurrency() {
     if (!isCurrencyEditable) return;
@@ -1298,12 +1365,12 @@ export default function OverviewPage() {
             if (openSess?.id) daySessionId = openSess.id;
           }
           if (reportPeriod === "yesterday") {
-            const lastClosed = sessions.find((s) => s.status === "CLOSED");
-            if (lastClosed?.id) {
-              daySessionId = lastClosed.id;
-            } else if (lastClosed?.startAt && lastClosed?.endAt) {
-              fromStr = lastClosed.startAt;
-              toStr = lastClosed.endAt;
+            const yScope = resolveYesterdaySessionScope(sessions, cutoffHour);
+            if (yScope?.daySessionId) {
+              daySessionId = yScope.daySessionId;
+            } else if (yScope?.from && yScope?.to) {
+              fromStr = yScope.from;
+              toStr = yScope.to;
             }
           }
         } catch {
@@ -1451,6 +1518,7 @@ export default function OverviewPage() {
     reportCustomFrom,
     reportCustomTo,
     currentBranch?.id,
+    cutoffHour,
   ]);
 
   // Computed values
