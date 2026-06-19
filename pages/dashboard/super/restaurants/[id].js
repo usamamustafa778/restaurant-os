@@ -27,6 +27,9 @@ import {
   Calendar,
   CreditCard,
   ExternalLink,
+  Eye,
+  EyeOff,
+  FileText,
   KeyRound,
   Loader2,
   MailCheck,
@@ -314,6 +317,7 @@ export default function SuperRestaurantDetailPage() {
   });
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
@@ -656,6 +660,7 @@ export default function SuperRestaurantDetailPage() {
   function openPasswordModal() {
     setPasswordForm({ password: "", confirmPassword: "" });
     setPasswordError("");
+    setShowPassword(false);
     setPasswordModalOpen(true);
   }
 
@@ -699,6 +704,7 @@ export default function SuperRestaurantDetailPage() {
       toast.success("Owner password updated.");
       setPasswordModalOpen(false);
       setPasswordForm({ password: "", confirmPassword: "" });
+      setShowPassword(false);
     } catch (err) {
       setPasswordError(err.message || "Failed to reset password");
     } finally {
@@ -874,7 +880,7 @@ export default function SuperRestaurantDetailPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 shrink-0">
+              <div className="flex flex-wrap gap-2 shrink-0 justify-end">
                 <Button
                   type="button"
                   onClick={handleLoginAsAdmin}
@@ -883,6 +889,57 @@ export default function SuperRestaurantDetailPage() {
                 >
                   Login as Admin
                 </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowInvoiceModal(true)}
+                  className="!h-9 text-xs inline-flex items-center gap-1.5"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Generate Invoice
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={welcomeSending}
+                  onClick={handleWelcomeEmail}
+                  className="!h-9 text-xs"
+                >
+                  {welcomeSending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    "Send Welcome Email"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!owner?.email}
+                  onClick={openPasswordModal}
+                  className="!h-9 text-xs inline-flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  Reset password
+                </Button>
+                {ownerEmailPending ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={verifyEmailSaving}
+                    onClick={handleVerifyOwnerEmail}
+                    className="!h-9 text-xs inline-flex items-center gap-1.5 border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-200"
+                  >
+                    {verifyEmailSaving ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <MailCheck className="w-3.5 h-3.5" />
+                    )}
+                    Verify email
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="ghost"
@@ -1040,115 +1097,6 @@ export default function SuperRestaurantDetailPage() {
                     </span>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            <div>
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
-                Quick Actions
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowInvoiceModal(true)}
-                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer"
-                >
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    📄 Generate Invoice
-                  </div>
-                  <div className="text-xs text-neutral-500 mt-1">
-                    Create and send invoice
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLoginAsAdmin}
-                  disabled={!subdomain}
-                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:bg-white"
-                >
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    🔑 Login as Admin
-                  </div>
-                  <div className="text-xs text-neutral-500 mt-1">
-                    Access restaurant dashboard
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  disabled={welcomeSending}
-                  onClick={handleWelcomeEmail}
-                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer disabled:opacity-50"
-                >
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    {welcomeSending ? "Sending…" : "📧 Send Welcome Email"}
-                  </div>
-                  <div className="text-xs text-neutral-500 mt-1">
-                    Send onboarding email to owner
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  disabled={!owner?.email}
-                  onClick={openPasswordModal}
-                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:bg-white"
-                >
-                  <div className="font-semibold text-gray-900 dark:text-white inline-flex items-center gap-1.5">
-                    <KeyRound className="w-4 h-4" />
-                    Reset owner password
-                  </div>
-                  <div className="text-xs text-neutral-500 mt-1">
-                    Set a new dashboard login password
-                  </div>
-                </button>
-                {ownerEmailPending ? (
-                  <button
-                    type="button"
-                    disabled={verifyEmailSaving}
-                    onClick={handleVerifyOwnerEmail}
-                    className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-amber-300 dark:border-amber-700 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition cursor-pointer disabled:opacity-50"
-                  >
-                    <div className="font-semibold text-amber-900 dark:text-amber-200 inline-flex items-center gap-1.5">
-                      {verifyEmailSaving ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <MailCheck className="w-4 h-4" />
-                      )}
-                      Verify owner email
-                    </div>
-                    <div className="text-xs text-neutral-500 mt-1">
-                      Skip OTP and unblock dashboard login
-                    </div>
-                  </button>
-                ) : null}
-                {status === "SUSPENDED" ? (
-                  <button
-                    type="button"
-                    disabled={statusUpdating}
-                    onClick={() => handleSubscriptionStatus("ACTIVE")}
-                    className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition cursor-pointer disabled:opacity-50"
-                  >
-                    <div className="font-semibold text-emerald-700 dark:text-emerald-400">
-                      ✓ Activate Restaurant
-                    </div>
-                    <div className="text-xs text-neutral-500 mt-1">
-                      Restore dashboard access
-                    </div>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={statusUpdating}
-                    onClick={() => handleSubscriptionStatus("SUSPENDED")}
-                    className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-950/20 transition cursor-pointer disabled:opacity-50 group"
-                  >
-                    <div className="font-semibold text-red-600 dark:text-red-400 group-hover:text-red-700">
-                      ⏸ Suspend Restaurant
-                    </div>
-                    <div className="text-xs text-neutral-500 mt-1">
-                      Disable access immediately
-                    </div>
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -1364,64 +1312,6 @@ export default function SuperRestaurantDetailPage() {
                     />
                   </div>
                 </div>
-
-                <SectionCard
-                  title="Danger Zone"
-                  description="Irreversible or access-blocking actions"
-                  variant="danger"
-                >
-                  <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40">
-                      <div>
-                        <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                          Suspend restaurant
-                        </p>
-                        <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
-                          Blocks dashboard and public website access
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={statusUpdating}
-                        onClick={() => handleSubscriptionStatus("SUSPENDED")}
-                        className="!h-9 shrink-0 text-xs border border-red-300 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-400"
-                      >
-                        Suspend Restaurant
-                      </Button>
-                    </div>
-                    <div className="pt-2 border-t border-red-200 dark:border-red-900/40 space-y-3">
-                      <div>
-                        <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                          Delete restaurant
-                        </p>
-                        <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
-                          Soft delete — recoverable within 48 hours. Type{" "}
-                          <strong>{website.name || "Restaurant"}</strong> to confirm.
-                        </p>
-                      </div>
-                      <input
-                        type="text"
-                        value={deleteConfirmName}
-                        onChange={(e) => setDeleteConfirmName(e.target.value)}
-                        className={`${FORM_INPUT} border-red-200 dark:border-red-900/50 focus:ring-red-500 focus:border-red-500`}
-                        placeholder={website.name || "Restaurant"}
-                      />
-                      <Button
-                        type="button"
-                        disabled={
-                          deleteSaving ||
-                          deleteConfirmName.trim() !==
-                            (website.name || "Restaurant").trim()
-                        }
-                        onClick={handlePermanentDelete}
-                        className="!h-9 text-xs bg-red-600 hover:bg-red-700 text-white"
-                      >
-                        {deleteSaving ? "Deleting…" : "Delete Restaurant"}
-                      </Button>
-                    </div>
-                  </div>
-                </SectionCard>
 
                 {status === "TRIAL" && (
                   <SectionCard
@@ -1730,6 +1620,78 @@ export default function SuperRestaurantDetailPage() {
                 </div>
               </div>
             </div>
+
+            <SectionCard
+              title="Danger Zone"
+              description="Irreversible or access-blocking actions"
+              variant="danger"
+            >
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40">
+                  <div>
+                    <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                      Suspend restaurant
+                    </p>
+                    <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
+                      Blocks dashboard and public website access
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={statusUpdating}
+                    onClick={() =>
+                      handleSubscriptionStatus(
+                        status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
+                      )
+                    }
+                    className={`!h-9 shrink-0 text-xs border ${
+                      status === "SUSPENDED"
+                        ? "border-emerald-300 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-400"
+                        : "border-red-300 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-400"
+                    }`}
+                  >
+                    {statusUpdating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : status === "SUSPENDED" ? (
+                      "Activate Restaurant"
+                    ) : (
+                      "Suspend Restaurant"
+                    )}
+                  </Button>
+                </div>
+                <div className="pt-2 border-t border-red-200 dark:border-red-900/40 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                      Delete restaurant
+                    </p>
+                    <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
+                      Soft delete — recoverable within 48 hours. Type{" "}
+                      <strong>{website.name || "Restaurant"}</strong> to confirm.
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    value={deleteConfirmName}
+                    onChange={(e) => setDeleteConfirmName(e.target.value)}
+                    className={`${FORM_INPUT} border-red-200 dark:border-red-900/50 focus:ring-red-500 focus:border-red-500`}
+                    placeholder={website.name || "Restaurant"}
+                  />
+                  <Button
+                    type="button"
+                    disabled={
+                      deleteSaving ||
+                      deleteConfirmName.trim() !==
+                        (website.name || "Restaurant").trim()
+                    }
+                    onClick={handlePermanentDelete}
+                    className="!h-9 text-xs bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    {deleteSaving ? "Deleting…" : "Delete Restaurant"}
+                  </Button>
+                </div>
+              </div>
+            </SectionCard>
           </div>
         )}
       </div>
@@ -1925,36 +1887,64 @@ export default function SuperRestaurantDetailPage() {
                 <label className="text-xs font-medium block mb-1">
                   New password *
                 </label>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={passwordForm.password}
-                  onChange={(e) =>
-                    setPasswordForm((f) => ({ ...f, password: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm"
-                  required
-                  minLength={6}
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={passwordForm.password}
+                    onChange={(e) =>
+                      setPasswordForm((f) => ({ ...f, password: e.target.value }))
+                    }
+                    className="w-full px-3 py-2 pr-10 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium block mb-1">
                   Confirm password *
                 </label>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) =>
-                    setPasswordForm((f) => ({
-                      ...f,
-                      confirmPassword: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm"
-                  required
-                  minLength={6}
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) =>
+                      setPasswordForm((f) => ({
+                        ...f,
+                        confirmPassword: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 pr-10 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <button

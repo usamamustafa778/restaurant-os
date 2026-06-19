@@ -23,7 +23,16 @@ export default function MarkPaidModal({ invoice, onClose, onSuccess }) {
         paidAmount: Number(paidAmount),
         paymentNote: paymentNote.trim() || undefined,
       });
-      toast.success(`${invoice.invoiceNumber} marked as paid`);
+      if (updated.emailSent) {
+        toast.success(
+          `${invoice.invoiceNumber} marked as paid — confirmation email sent`,
+        );
+      } else if (updated.emailError) {
+        toast.success(`${invoice.invoiceNumber} marked as paid`);
+        toast.error(updated.emailError || "Payment confirmation email failed");
+      } else {
+        toast.success(`${invoice.invoiceNumber} marked as paid`);
+      }
       onSuccess?.(updated);
       onClose?.();
     } catch (err) {

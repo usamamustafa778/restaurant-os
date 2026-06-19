@@ -1777,6 +1777,26 @@ export default function WebsiteContentPage() {
                   })}
                 </div>
 
+                <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                    Lounge hero eyebrow
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-neutral-500">
+                    Small uppercase line above your headline on the Lounge template
+                    (e.g. &quot;Cinematic Lounge Experience&quot;). Leave blank to use the default.
+                  </p>
+                  <div>
+                    <label className={labelCls}>Eyebrow label</label>
+                    <input
+                      type="text"
+                      value={ws.heroEyebrow || ""}
+                      onChange={(e) => update("heroEyebrow", e.target.value)}
+                      placeholder="Cinematic Lounge Experience"
+                      className={inp}
+                    />
+                  </div>
+                </div>
+
                 {ws.heroType === "banner" ? (
                   <div className="space-y-4">
                     {/* Banner image */}
