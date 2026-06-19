@@ -7,6 +7,7 @@ import {
   getMenu,
   getDeals,
   uploadImage,
+  uploadVideo,
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
 import { STOREFRONT_TEMPLATES } from "../../lib/storefrontTemplates";
@@ -45,6 +46,7 @@ import {
   Check,
   Search,
   Circle,
+  Film,
 } from "lucide-react";
 
 const SECTIONS = [
@@ -54,6 +56,7 @@ const SECTIONS = [
   { id: "domain", label: "Domain", icon: LinkIcon },
   { id: "contact", label: "Contact", icon: Phone },
   { id: "hero", label: "Hero", icon: ImageIcon },
+  { id: "atmosphere", label: "Atmosphere", icon: Film },
   { id: "social", label: "Social Media", icon: Globe },
   { id: "hours", label: "Opening Hours", icon: Clock },
   { id: "sections", label: "Website Sections", icon: Layout },
@@ -201,9 +204,12 @@ function MediaField({
   hint,
   previewClassName,
   className = "",
-  /** When true, hint sticks to bottom of the card (for equal-height paired fields). */
   pinHintToBottom = false,
   linkPlaceholder = "https://...",
+  uploadFn = uploadImage,
+  previewAs = "image",
+  uploadLabel = "Choose file",
+  successToast = "Image uploaded",
 }) {
   const [mode, setMode] = useState("link");
   const [uploading, setUploading] = useState(false);
@@ -213,11 +219,11 @@ function MediaField({
     if (!file) return;
     setUploading(true);
     try {
-      const result = await uploadImage(file);
+      const result = await uploadFn(file);
       onChange(result.url || result.secure_url || "");
-      toast.success("Image uploaded");
-    } catch {
-      toast.error("Upload failed");
+      toast.success(successToast);
+    } catch (err) {
+      toast.error(err.message || "Upload failed");
     } finally {
       setUploading(false);
     }
@@ -274,7 +280,7 @@ function MediaField({
             ) : (
               <Upload className="w-4 h-4" />
             )}
-            {uploading ? "Uploading..." : "Choose file"}
+            {uploading ? "Uploading..." : uploadLabel}
             <input
               type="file"
               accept={accept}
@@ -287,13 +293,23 @@ function MediaField({
           <div
             className={`relative mt-3 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-neutral-700 ${previewClassName || "h-20 w-20"}`}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={value} alt="" className="h-full w-full object-cover" />
+            {previewAs === "video" ? (
+              <video
+                src={value}
+                className="h-full w-full object-cover"
+                controls
+                muted
+                playsInline
+              />
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={value} alt="" className="h-full w-full object-cover" />
+            )}
             <button
               type="button"
               onClick={() => onChange("")}
               className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
-              aria-label="Remove image"
+              aria-label={`Remove ${previewAs}`}
             >
               <X className="w-3 h-3" />
             </button>
@@ -467,6 +483,10 @@ export default function WebsiteContentPage() {
       (ws.heroType === "banner" &&
         (hasContent(ws.bannerUrl) || hasContent(ws.heroHeadline))) ||
       (Array.isArray(ws.heroSlides) && ws.heroSlides.some((s) => hasContent(s?.imageUrl))),
+    atmosphere:
+      hasContent(ws.aboutVideoUrl) ||
+      (Array.isArray(ws.galleryMedia) &&
+        ws.galleryMedia.some((item) => hasContent(item?.url))),
     social: hasContent(ws.socialMedia),
     hours:
       hasContent(ws.openingHoursText) ||
@@ -770,6 +790,50 @@ export default function WebsiteContentPage() {
       : stagingUrl || liveUrl;
   const displayWebsiteUrl =
     envView === "staging" ? stagingUrl || liveUrl : effectiveLiveWebsiteUrl;
+  const galleryMedia = Array.isArray(ws.galleryMedia) ? ws.galleryMedia : [];
+  const isLoungeTemplate =
+    (ws.template || "classic") === "lounge" ||
+    (!ws.template && false);
+
+  function updateGalleryMedia(next) {
+    update("galleryMedia", next);
+  }
+
+  function removeGalleryItem(idx) {
+    updateGalleryMedia(galleryMedia.filter((_, i) => i !== idx));
+  }
+
+  function moveGalleryItem(idx, direction) {
+    const next = [...galleryMedia];
+    const target = idx + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    updateGalleryMedia(next);
+  }
+
+  async function handleGalleryFileUpload(event, mediaType) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const toastId = toast.loading(
+      mediaType === "video" ? "Uploading video..." : "Uploading photo...",
+    );
+    try {
+      const result =
+        mediaType === "video" ? await uploadVideo(file) : await uploadImage(file);
+      const url = result.url || result.secure_url || "";
+      if (!url) throw new Error("Upload did not return a URL");
+      updateGalleryMedia([...galleryMedia, { url, mediaType }]);
+      toast.success(
+        mediaType === "video" ? "Video added to gallery" : "Photo added to gallery",
+        { id: toastId },
+      );
+    } catch (err) {
+      toast.error(err.message || "Upload failed", { id: toastId });
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   const dealItems = deals.map((deal) => ({
     ...deal,
     price: deal.comboPrice ?? deal.price ?? 0,
@@ -947,24 +1011,25 @@ export default function WebsiteContentPage() {
                             : "cursor-pointer"
                         }`}
                       >
-                        <div className="mb-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2">
-                          <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 mb-2" />
-                          <div
-                            className="h-8 rounded mb-2"
-                            style={{
-                              background:
-                                t.id === "minimal"
-                                  ? "linear-gradient(90deg,#f3f4f6,#e5e7eb)"
-                                  : t.id === "modern"
-                                    ? "linear-gradient(90deg,#0f172a,#334155)"
-                                    : "linear-gradient(90deg,#fef3c7,#fde68a)",
-                            }}
-                          />
-                          <div className="grid grid-cols-3 gap-1">
-                            <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                            <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                            <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                          </div>
+                        <div className="mb-3 overflow-hidden rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-100 dark:bg-neutral-900">
+                          {t.thumbnail ? (
+                            <img
+                              src={t.thumbnail}
+                              alt={`${t.name} template preview`}
+                              className="aspect-[16/10] w-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="p-2">
+                              <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 mb-2" />
+                              <div className="h-8 rounded mb-2 bg-gray-200 dark:bg-neutral-700" />
+                              <div className="grid grid-cols-3 gap-1">
+                                <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                                <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                                <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <h4 className="text-sm font-bold text-gray-900 dark:text-white">
                           {t.name}
@@ -1909,6 +1974,142 @@ export default function WebsiteContentPage() {
               </div>
               ) : null}
               {renderSectionSave("hero")}
+            </SectionCard>
+
+            {/* Atmosphere — Lounge About video + gallery */}
+            <SectionCard
+              id="atmosphere"
+              icon={Film}
+              title="Atmosphere"
+              subtitle="About video and gallery grid for the Lounge template"
+              iconColor={iconAccentPrimary}
+              isActive={activeSection === "atmosphere"}
+            >
+              {!isLoungeTemplate ? (
+                <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+                  Select the <strong>Lounge</strong> template to show this media on
+                  your public site. You can upload now and switch templates anytime.
+                </p>
+              ) : null}
+
+              <div className="space-y-8">
+                <MediaField
+                  label="About section video"
+                  value={ws.aboutVideoUrl || ""}
+                  onChange={(v) => update("aboutVideoUrl", v)}
+                  accept="video/mp4,video/webm,video/quicktime,video/*"
+                  uploadFn={uploadVideo}
+                  previewAs="video"
+                  uploadLabel="Choose video"
+                  successToast="Video uploaded"
+                  previewClassName="aspect-video w-full max-h-52"
+                  hint="Optional cinematic clip for the About section (MP4/WebM, max 50 MB). Replaces the still photo when set."
+                />
+
+                <div>
+                  <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Atmosphere gallery
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+                        Add at least 3 photos or videos. When set, these replace
+                        the auto-generated gallery from hero slides and menu photos.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <label className={`${btnSecondary} cursor-pointer`}>
+                        <Upload className="w-4 h-4" />
+                        Add photo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleGalleryFileUpload(e, "image")}
+                        />
+                      </label>
+                      <label className={`${btnSecondary} cursor-pointer`}>
+                        <Upload className="w-4 h-4" />
+                        Add video
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,video/quicktime,video/*"
+                          className="hidden"
+                          onChange={(e) => handleGalleryFileUpload(e, "video")}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {galleryMedia.length === 0 ? (
+                    <div className="rounded-xl border-2 border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-neutral-700 dark:text-neutral-400">
+                      No gallery media yet. Upload photos or short ambience clips.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {galleryMedia.map((item, idx) => (
+                        <div
+                          key={`${item.url}-${idx}`}
+                          className="overflow-hidden rounded-xl border border-gray-200 dark:border-neutral-700"
+                        >
+                          <div className="relative aspect-[4/3] bg-black/20">
+                            {item.mediaType === "video" ? (
+                              <video
+                                src={item.url}
+                                className="h-full w-full object-cover"
+                                controls
+                                muted
+                                playsInline
+                              />
+                            ) : (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                src={item.url}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
+                            )}
+                            <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                              {item.mediaType === "video" ? "Video" : "Photo"}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 border-t border-gray-100 px-2 py-2 dark:border-neutral-800">
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => moveGalleryItem(idx, -1)}
+                                disabled={idx === 0}
+                                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-neutral-800"
+                                aria-label="Move earlier"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveGalleryItem(idx, 1)}
+                                disabled={idx === galleryMedia.length - 1}
+                                className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-neutral-800"
+                                aria-label="Move later"
+                              >
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeGalleryItem(idx)}
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {renderSectionSave("atmosphere")}
             </SectionCard>
 
             {/* Social Media */}

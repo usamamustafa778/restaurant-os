@@ -12,6 +12,7 @@ import {
   deleteRestaurantForSuperAdmin,
   restoreRestaurantForSuperAdmin,
   permanentlyDeleteRestaurantForSuperAdmin,
+  verifyRestaurantOwnerEmailsForSuperAdmin,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 import {
@@ -22,6 +23,7 @@ import {
   Plus,
   RefreshCw,
   Eye,
+  MailCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -126,6 +128,7 @@ export default function SuperRestaurantsPage() {
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
   const [listRefreshing, setListRefreshing] = useState(false);
+  const [verifyingEmailId, setVerifyingEmailId] = useState(null);
   const { confirm } = useConfirmDialog();
 
   function handleOpenCreate() {
@@ -208,6 +211,35 @@ export default function SuperRestaurantsPage() {
       ]);
     } finally {
       setListRefreshing(false);
+    }
+  }
+
+  async function handleVerifyOwnerEmail(restaurant) {
+    const name = restaurant.website?.name || "Restaurant";
+    const pending = restaurant.ownerAccount?.pendingCount ?? 0;
+    const ok = await confirm({
+      title: "Verify owner email",
+      message:
+        `Mark ${pending || "owner/admin"} email verification as complete for "${name}" without OTP? ` +
+        "They can log in to the dashboard immediately.",
+      confirmLabel: "Verify email",
+    });
+    if (!ok) return;
+
+    try {
+      setVerifyingEmailId(restaurant.id);
+      const res = await verifyRestaurantOwnerEmailsForSuperAdmin(restaurant.id);
+      const count = res?.modifiedCount ?? res?.matchedCount ?? 0;
+      toast.success(
+        count > 0
+          ? `Verified ${count} owner/admin account${count === 1 ? "" : "s"}.`
+          : "Owner email already verified.",
+      );
+      loadRestaurants();
+    } catch (err) {
+      toast.error(err.message || "Failed to verify owner email");
+    } finally {
+      setVerifyingEmailId(null);
     }
   }
 
@@ -519,6 +551,12 @@ export default function SuperRestaurantsPage() {
                         {email}
                       </div>
                     ) : null}
+                    {oa && oa.allVerified === false ? (
+                      <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        Email pending
+                        {oa.pendingCount > 0 ? ` (${oa.pendingCount})` : ""}
+                      </div>
+                    ) : null}
                   </div>
                 );
               },
@@ -632,6 +670,24 @@ export default function SuperRestaurantsPage() {
                     >
                       Login
                     </button>
+                    {r.ownerAccount && r.ownerAccount.allVerified === false ? (
+                      <button
+                        type="button"
+                        disabled={verifyingEmailId === r.id}
+                        onClick={() => handleVerifyOwnerEmail(r)}
+                        className="px-2 py-0.5 rounded-md border border-amber-300 bg-amber-50 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
+                        title="Verify owner email without OTP"
+                      >
+                        {verifyingEmailId === r.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <>
+                            <MailCheck className="w-3.5 h-3.5 inline-block mr-0.5" />
+                            Verify
+                          </>
+                        )}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(r)}

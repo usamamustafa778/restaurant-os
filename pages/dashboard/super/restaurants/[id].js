@@ -18,6 +18,7 @@ import {
   setActingAsRestaurant,
   updateRestaurantForSuperAdmin,
   updateRestaurantSubscription,
+  verifyRestaurantOwnerEmailsForSuperAdmin,
 } from "../../../../lib/apiClient";
 import { useConfirmDialog } from "../../../../contexts/ConfirmDialogContext";
 import {
@@ -26,6 +27,7 @@ import {
   CreditCard,
   ExternalLink,
   Loader2,
+  MailCheck,
   Pencil,
   Trash2,
   User,
@@ -301,6 +303,7 @@ export default function SuperRestaurantDetailPage() {
   const [settingsSaving, setSettingsSaving] = useState(false);
 
   const [welcomeSending, setWelcomeSending] = useState(false);
+  const [verifyEmailSaving, setVerifyEmailSaving] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
 
   const loadDetail = useCallback(async () => {
@@ -612,6 +615,35 @@ export default function SuperRestaurantDetailPage() {
     }
   }
 
+  async function handleVerifyOwnerEmail() {
+    if (!restaurant?.id) return;
+    const pending = detail?.owner?.pendingCount ?? 0;
+    const ok = await confirm({
+      title: "Verify owner email",
+      message:
+        `Mark ${pending || "owner/admin"} email verification as complete without OTP? ` +
+        "They can log in to the dashboard immediately.",
+      confirmLabel: "Verify email",
+    });
+    if (!ok) return;
+
+    try {
+      setVerifyEmailSaving(true);
+      const res = await verifyRestaurantOwnerEmailsForSuperAdmin(restaurant.id);
+      const count = res?.modifiedCount ?? res?.matchedCount ?? 0;
+      toast.success(
+        count > 0
+          ? `Verified ${count} owner/admin account${count === 1 ? "" : "s"}.`
+          : "Owner email already verified.",
+      );
+      loadDetail();
+    } catch (err) {
+      toast.error(err.message || "Failed to verify owner email");
+    } finally {
+      setVerifyEmailSaving(false);
+    }
+  }
+
   async function handlePermanentDelete() {
     if (!restaurant?.id) return;
     const name = website.name || "Restaurant";
@@ -710,6 +742,7 @@ export default function SuperRestaurantDetailPage() {
   const trialExpiringSoon = isExpiringWithinDays(trialEnd);
   const ownerPhone = owner?.phone || website.contactPhone;
   const lastActivityText = formatRelativeTimeShort(stats?.lastOrderAt);
+  const ownerEmailPending = owner?.allVerified === false;
 
   return (
     <AdminLayout title={website.name || "Restaurant"}>
@@ -991,6 +1024,26 @@ export default function SuperRestaurantDetailPage() {
                     Send onboarding email to owner
                   </div>
                 </button>
+                {ownerEmailPending ? (
+                  <button
+                    type="button"
+                    disabled={verifyEmailSaving}
+                    onClick={handleVerifyOwnerEmail}
+                    className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-amber-300 dark:border-amber-700 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <div className="font-semibold text-amber-900 dark:text-amber-200 inline-flex items-center gap-1.5">
+                      {verifyEmailSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <MailCheck className="w-4 h-4" />
+                      )}
+                      Verify owner email
+                    </div>
+                    <div className="text-xs text-neutral-500 mt-1">
+                      Skip OTP and unblock dashboard login
+                    </div>
+                  </button>
+                ) : null}
                 {status === "SUSPENDED" ? (
                   <button
                     type="button"
@@ -1544,8 +1597,44 @@ export default function SuperRestaurantDetailPage() {
                   <div className="divide-y divide-gray-100 dark:divide-neutral-800">
                     <DetailRow label="Name" value={owner?.name || "—"} />
                     <DetailRow label="Email" value={owner?.email || "—"} />
+                    <DetailRow
+                      label="Email verified"
+                      value={
+                        owner?.allVerified == null ? (
+                          "—"
+                        ) : owner.allVerified ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 dark:text-amber-300">
+                            Pending
+                            {owner.pendingCount > 0
+                              ? ` (${owner.pendingCount})`
+                              : ""}
+                          </span>
+                        )
+                      }
+                    />
                     <DetailRow label="Phone" value={owner?.phone || "—"} />
                   </div>
+                  {ownerEmailPending ? (
+                    <div className="px-5 py-4 border-t border-gray-100 dark:border-neutral-800">
+                      <Button
+                        type="button"
+                        disabled={verifyEmailSaving}
+                        onClick={handleVerifyOwnerEmail}
+                        className="!h-9 w-full text-xs inline-flex items-center justify-center gap-1.5 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100"
+                      >
+                        {verifyEmailSaving ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <MailCheck className="w-4 h-4" />
+                        )}
+                        Verify email without OTP
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
