@@ -3238,6 +3238,11 @@ function OrderCard({
               <TypeIcon className="w-3 h-3" />
               {typeLabel}
             </span>
+            {order.source === "WEBSITE" && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 font-bold flex-shrink-0">
+                Website
+              </span>
+            )}
           </div>
           {isActive && (
             <span
@@ -3260,20 +3265,31 @@ function OrderCard({
               {tableLabel}
             </span>
           )}
-          {order.customerName && (
+          {(order.source === "WEBSITE" || isDeliveryOrder(order)) &&
+          (order.customerName || order.customerPhone || order.phone) ? (
+            <div className="inline-flex flex-col gap-0.5 text-[10px] font-medium text-gray-600 dark:text-neutral-400">
+              {order.customerName && (
+                <span className="inline-flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  {order.customerName}
+                </span>
+              )}
+              {(order.customerPhone || order.phone) && (
+                <span className="inline-flex items-center gap-1 text-gray-500 dark:text-neutral-500">
+                  <Phone className="w-3 h-3" />
+                  {order.customerPhone || order.phone}
+                </span>
+              )}
+            </div>
+          ) : order.customerName ? (
             <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-600 dark:text-neutral-400">
               <User className="w-3 h-3" />
               Customer: {order.customerName}
             </span>
-          )}
+          ) : null}
           {order.source === "FOODPANDA" && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 dark:bg-pink-500/15 text-pink-700 dark:text-pink-400 font-bold">
               Foodpanda
-            </span>
-          )}
-          {order.source === "WEBSITE" && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 font-bold">
-              Website
             </span>
           )}
           {order.source === "WHATSAPP" && (
