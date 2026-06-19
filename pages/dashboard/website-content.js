@@ -9,6 +9,7 @@ import {
   uploadImage,
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
+import { STOREFRONT_TEMPLATES } from "../../lib/storefrontTemplates";
 import {
   Globe,
   Loader2,
@@ -72,27 +73,6 @@ const cardCls =
 
 // Unified gradient for all section icons so headings consistently use the brand primary
 const iconAccentPrimary = "from-primary to-secondary";
-
-const TEMPLATES = [
-  {
-    id: "classic",
-    name: "Classic",
-    desc: "Traditional restaurant layout with hero carousel, menu grid, and full-width sections.",
-    color: "from-red-500 to-orange-500",
-  },
-  {
-    id: "modern",
-    name: "Modern",
-    desc: "Sleek glass navbar, full-bleed hero, card grid menu, and modern typography.",
-    color: "from-violet-500 to-indigo-500",
-  },
-  {
-    id: "minimal",
-    name: "Minimal",
-    desc: "Editorial typography, wine-list menu style, serif headings. Elegant and fast.",
-    color: "from-emerald-500 to-teal-500",
-  },
-];
 
 const HOURS_DAYS = [
   { key: "monday", short: "Mon" },
@@ -943,57 +923,87 @@ export default function WebsiteContentPage() {
               isActive={activeSection === "template"}
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {TEMPLATES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    disabled={t.soon}
-                    onClick={() => update("template", t.id)}
-                    className={`relative text-left p-4 rounded-xl border-2 transition-all ${
-                      ws.template === t.id ||
-                      (!ws.template && t.id === "classic")
-                        ? "border-primary ring-4 ring-primary/10"
-                        : "border-gray-200 dark:border-neutral-700 hover:border-gray-300"
-                    } ${t.soon ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                  >
-                    <div className="mb-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2">
-                      <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 mb-2" />
-                      <div
-                        className="h-8 rounded mb-2"
-                        style={{
-                          background:
-                            t.id === "minimal"
-                              ? "linear-gradient(90deg,#f3f4f6,#e5e7eb)"
-                              : t.id === "modern"
-                                ? "linear-gradient(90deg,#0f172a,#334155)"
-                                : "linear-gradient(90deg,#fef3c7,#fde68a)",
-                        }}
-                      />
-                      <div className="grid grid-cols-3 gap-1">
-                        <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                        <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                        <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                      </div>
+                {STOREFRONT_TEMPLATES.map((t) => {
+                  const isSelected =
+                    ws.template === t.id ||
+                    (!ws.template && t.id === "classic");
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`relative text-left p-4 rounded-xl border-2 transition-all ${
+                        isSelected
+                          ? "border-primary ring-4 ring-primary/10"
+                          : "border-gray-200 dark:border-neutral-700 hover:border-gray-300"
+                      } ${t.isComingSoon ? "opacity-50" : ""}`}
+                    >
+                      <button
+                        type="button"
+                        disabled={t.isComingSoon}
+                        onClick={() => update("template", t.id)}
+                        className={`w-full text-left ${
+                          t.isComingSoon
+                            ? "cursor-not-allowed"
+                            : "cursor-pointer"
+                        }`}
+                      >
+                        <div className="mb-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2">
+                          <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 mb-2" />
+                          <div
+                            className="h-8 rounded mb-2"
+                            style={{
+                              background:
+                                t.id === "minimal"
+                                  ? "linear-gradient(90deg,#f3f4f6,#e5e7eb)"
+                                  : t.id === "modern"
+                                    ? "linear-gradient(90deg,#0f172a,#334155)"
+                                    : "linear-gradient(90deg,#fef3c7,#fde68a)",
+                            }}
+                          />
+                          <div className="grid grid-cols-3 gap-1">
+                            <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                            <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                            <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
+                          </div>
+                        </div>
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                          {t.name}
+                        </h4>
+                        <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
+                          {t.description}
+                        </p>
+                      </button>
+
+                      {displayWebsiteUrl ? (
+                        <button
+                          type="button"
+                          className={`${btnSecondary} mt-3 w-full justify-center text-xs h-9`}
+                          onClick={() =>
+                            window.open(
+                              `${displayWebsiteUrl}?previewTemplate=${encodeURIComponent(t.id)}`,
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
+                        >
+                          Preview
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                      ) : null}
+
+                      {isSelected && (
+                        <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-white" />
+                        </div>
+                      )}
+                      {t.isComingSoon && (
+                        <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-neutral-800 text-gray-500">
+                          SOON
+                        </span>
+                      )}
                     </div>
-                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                      {t.name}
-                    </h4>
-                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
-                      {t.desc}
-                    </p>
-                    {(ws.template === t.id ||
-                      (!ws.template && t.id === "classic")) && (
-                      <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                        <Check className="w-3.5 h-3.5 text-white" />
-                      </div>
-                    )}
-                    {t.soon && (
-                      <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-neutral-800 text-gray-500">
-                        SOON
-                      </span>
-                    )}
-                  </button>
-                ))}
+                  );
+                })}
               </div>
               {renderSectionSave("template")}
             </SectionCard>
