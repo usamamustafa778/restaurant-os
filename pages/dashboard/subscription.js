@@ -3,6 +3,7 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getSubscriptionStatus,
   getSubscriptionHistory,
+  getSubscriptionInvoices,
   getDaySessions,
   getRestaurantSettings,
 } from "../../lib/apiClient";
@@ -36,15 +37,34 @@ function fmtDate(date) {
 }
 
 function statusTone(status) {
-  if (status === "paid" || status === "approved") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300";
-  if (status === "trial" || status === "trial_active") return "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300";
+  const s = String(status || "").toLowerCase();
+  if (s === "paid" || s === "approved" || s === "active") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300";
+  if (s === "trial" || s === "trial_active") return "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300";
+  if (s === "sent" || s === "pending") return "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300";
+  if (s === "overdue") return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300";
   return "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300";
+}
+
+function invoiceStatusLabel(status) {
+  const s = String(status || "").toUpperCase();
+  if (s === "PAID") return "Paid";
+  if (s === "SENT") return "Sent";
+  if (s === "OVERDUE") return "Overdue";
+  return s || "—";
+}
+
+function formatInvoiceAmount(amount, currency) {
+  const code = String(currency || "PKR").toUpperCase();
+  const value = Number(amount) || 0;
+  if (code === "PKR") return `Rs ${value.toLocaleString()}`;
+  return `${code} ${value.toLocaleString()}`;
 }
 
 export default function SubscriptionPage() {
   const [loading, setLoading] = useState(true);
   const [subStatus, setSubStatus] = useState(null);
   const [history, setHistory] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [country, setCountry] = useState("PK");
   const [err, setErr] = useState("");
@@ -61,14 +81,16 @@ export default function SubscriptionPage() {
       try {
         setLoading(true);
         setErr("");
-        const [statusRes, historyRes, daySessionRes, settingsRes] = await Promise.all([
+        const [statusRes, historyRes, invoicesRes, daySessionRes, settingsRes] = await Promise.all([
           getSubscriptionStatus(),
           getSubscriptionHistory(),
+          getSubscriptionInvoices(),
           getDaySessions(undefined, { limit: 200, offset: 0 }),
           getRestaurantSettings(),
         ]);
         setSubStatus(statusRes || null);
         setHistory(historyRes?.requests || []);
+        setInvoices(invoicesRes?.invoices || []);
         setSessions(daySessionRes?.sessions || []);
 
         const currencyCode = String(settingsRes?.currencyCode || "").toUpperCase();
@@ -114,9 +136,15 @@ export default function SubscriptionPage() {
   const estimatedBill = billableDays * growthDaily;
   const trialDays = daysRemaining(subStatus?.freeTrialEndDate);
   const onTrial = subStatus?.currentStatus === "trial_active";
+  const planDisplayName = subStatus?.planDisplayName || "Starter";
   const onGrowth =
-    String(subStatus?.plan || "").toUpperCase().includes("PROFESSIONAL") ||
-    String(subStatus?.plan || "").toUpperCase().includes("GROWTH");
+    String(subStatus?.plan || "").toUpperCase() === "PROFESSIONAL" ||
+    String(subStatus?.plan || "").toUpperCase() === "ENTERPRISE" ||
+    planDisplayName === "Growth" ||
+    planDisplayName === "Enterprise";
+  const accessEndDate =
+    subStatus?.effectiveSubscriptionEndDate ||
+    (onTrial ? subStatus?.freeTrialEndDate : subStatus?.subscriptionEndDate);
   const planFeatureGroups = useMemo(() => {
     if (onTrial || onGrowth) return PLAN_DEFINITIONS.growth.sections;
     return [
@@ -160,10 +188,14 @@ export default function SubscriptionPage() {
               <div className="mt-1 flex items-center gap-2">
                 <Crown className="w-4 h-4 text-primary" />
                 <p className="text-lg font-bold text-gray-900 dark:text-white">
-                  {onTrial ? "Growth (Trial)" : onGrowth ? "Growth" : "Starter"}
+                  {onTrial ? `${planDisplayName} (Trial)` : planDisplayName}
                 </p>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusTone(subStatus?.currentStatus)}`}>
-                  {onTrial ? "Trial Active" : subStatus?.currentStatus === "active" ? "Active" : "Pending"}
+                  {onTrial
+                    ? "Trial Active"
+                    : subStatus?.currentStatus === "active"
+                      ? "Active"
+                      : "Expired"}
                 </span>
               </div>
             </div>
@@ -175,7 +207,7 @@ export default function SubscriptionPage() {
                   <p className="text-xs mt-1">Your trial includes full Growth access.</p>
                 </>
               ) : (
-                <p>Subscription ends on {fmtDate(subStatus?.subscriptionEndDate)}</p>
+                <p>Subscription ends on {fmtDate(accessEndDate)}</p>
               )}
             </div>
           </div>
@@ -302,17 +334,60 @@ export default function SubscriptionPage() {
           </div>
         </section>
 
-        {/* SECTION 5 — BILLING HISTORY */}
+        {/* SECTION 5 — INVOICE HISTORY */}
         <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
-          <h2 className="text-base font-bold text-gray-900 dark:text-white">Billing History</h2>
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Invoice History</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-neutral-400">
+            Official platform invoices from EatsDesk billing.
+          </p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-gray-500">
+                <tr>
+                  <th className="py-2">Invoice</th>
+                  <th className="py-2">Period</th>
+                  <th className="py-2">Amount</th>
+                  <th className="py-2">Due</th>
+                  <th className="py-2">Paid</th>
+                  <th className="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(invoices || []).map((inv) => (
+                  <tr key={inv.id} className="border-t border-gray-100 dark:border-neutral-800">
+                    <td className="py-2 font-semibold text-gray-900 dark:text-white">{inv.invoiceNumber || "—"}</td>
+                    <td className="py-2">{inv.billingPeriod?.label || "—"}</td>
+                    <td className="py-2">{formatInvoiceAmount(inv.paidAmount ?? inv.amount, inv.currency)}</td>
+                    <td className="py-2">{fmtDate(inv.dueDate)}</td>
+                    <td className="py-2">{fmtDate(inv.paidAt)}</td>
+                    <td className="py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusTone(inv.status)}`}>
+                        {invoiceStatusLabel(inv.status)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {(!invoices || invoices.length === 0) && (
+                  <tr><td colSpan={6} className="py-5 text-center text-gray-500">No invoices yet</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* SECTION 6 — PAYMENT REQUESTS */}
+        {(history || []).length > 0 ? (
+        <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Payment Requests</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-neutral-400">
+            Screenshot-based payment submissions awaiting platform review.
+          </p>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-gray-500">
                 <tr>
                   <th className="py-2">Month</th>
-                  <th className="py-2">Active Days</th>
-                  <th className="py-2">Rate</th>
-                  <th className="py-2">Amount</th>
+                  <th className="py-2">Duration</th>
                   <th className="py-2">Status</th>
                 </tr>
               </thead>
@@ -320,31 +395,26 @@ export default function SubscriptionPage() {
                 {(history || []).slice(0, 8).map((r) => {
                   const created = new Date(r.createdAt);
                   const monthLabel = created.toLocaleString("en-US", { month: "short", year: "numeric" });
-                  const status = r.status === "approved" ? "paid" : r.status === "pending" ? "pending" : "trial";
-                  const amount = onGrowth ? PLAN_DEFINITIONS.growth.monthlyApprox[country] : PLAN_DEFINITIONS.starter.monthlyApprox[country];
+                  const status = r.status === "approved" ? "approved" : r.status === "pending" ? "pending" : r.status;
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-neutral-800">
                       <td className="py-2">{monthLabel}</td>
-                      <td className="py-2">{r.durationInDays || "—"}</td>
-                      <td className="py-2">{formatMoney(country, growthDaily, true)}/day</td>
-                      <td className="py-2">{formatMoney(country, amount)}</td>
+                      <td className="py-2">{r.durationInDays ? `${r.durationInDays} days` : "—"}</td>
                       <td className="py-2">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusTone(status)}`}>
-                          {status === "paid" ? "Paid" : status === "pending" ? "Pending" : "Trial"}
+                          {status === "approved" ? "Approved" : status === "pending" ? "Pending" : status}
                         </span>
                       </td>
                     </tr>
                   );
                 })}
-                {(!history || history.length === 0) && (
-                  <tr><td colSpan={5} className="py-5 text-center text-gray-500">No billing history yet</td></tr>
-                )}
               </tbody>
             </table>
           </div>
         </section>
+        ) : null}
 
-        {/* SECTION 6 — PAYMENT INFO */}
+        {/* SECTION 7 — PAYMENT INFO */}
         <section className="rounded-2xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-5">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-base font-bold text-gray-900 dark:text-white">Payment Info — How to pay</h2>
