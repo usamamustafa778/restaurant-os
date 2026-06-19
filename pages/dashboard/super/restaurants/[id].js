@@ -19,6 +19,7 @@ import {
   updateRestaurantForSuperAdmin,
   updateRestaurantSubscription,
   verifyRestaurantOwnerEmailsForSuperAdmin,
+  resetRestaurantOwnerPasswordForSuperAdmin,
 } from "../../../../lib/apiClient";
 import { useConfirmDialog } from "../../../../contexts/ConfirmDialogContext";
 import {
@@ -26,6 +27,7 @@ import {
   Calendar,
   CreditCard,
   ExternalLink,
+  KeyRound,
   Loader2,
   MailCheck,
   Pencil,
@@ -305,6 +307,13 @@ export default function SuperRestaurantDetailPage() {
   const [welcomeSending, setWelcomeSending] = useState(false);
   const [verifyEmailSaving, setVerifyEmailSaving] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    password: "",
+    confirmPassword: "",
+  });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
@@ -641,6 +650,59 @@ export default function SuperRestaurantDetailPage() {
       toast.error(err.message || "Failed to verify owner email");
     } finally {
       setVerifyEmailSaving(false);
+    }
+  }
+
+  function openPasswordModal() {
+    setPasswordForm({ password: "", confirmPassword: "" });
+    setPasswordError("");
+    setPasswordModalOpen(true);
+  }
+
+  async function handleResetOwnerPassword(e) {
+    e.preventDefault();
+    if (!restaurant?.id) return;
+
+    const password = passwordForm.password.trim();
+    const confirmPassword = passwordForm.confirmPassword.trim();
+
+    if (!password) {
+      setPasswordError("Password is required.");
+      return;
+    }
+    if (password.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+
+    const loginEmail = owner?.email || "the owner";
+    const ok = await confirm({
+      title: "Reset owner password",
+      message:
+        `Set a new dashboard password for ${loginEmail}? ` +
+        "The owner will need to use this password on their next login.",
+      confirmLabel: "Reset password",
+    });
+    if (!ok) return;
+
+    try {
+      setPasswordSaving(true);
+      setPasswordError("");
+      await resetRestaurantOwnerPasswordForSuperAdmin(restaurant.id, {
+        password,
+        userId: owner?.id || undefined,
+      });
+      toast.success("Owner password updated.");
+      setPasswordModalOpen(false);
+      setPasswordForm({ password: "", confirmPassword: "" });
+    } catch (err) {
+      setPasswordError(err.message || "Failed to reset password");
+    } finally {
+      setPasswordSaving(false);
     }
   }
 
@@ -1022,6 +1084,20 @@ export default function SuperRestaurantDetailPage() {
                   </div>
                   <div className="text-xs text-neutral-500 mt-1">
                     Send onboarding email to owner
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  disabled={!owner?.email}
+                  onClick={openPasswordModal}
+                  className="text-left p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:bg-white"
+                >
+                  <div className="font-semibold text-gray-900 dark:text-white inline-flex items-center gap-1.5">
+                    <KeyRound className="w-4 h-4" />
+                    Reset owner password
+                  </div>
+                  <div className="text-xs text-neutral-500 mt-1">
+                    Set a new dashboard login password
                   </div>
                 </button>
                 {ownerEmailPending ? (
@@ -1591,7 +1667,7 @@ export default function SuperRestaurantDetailPage() {
                   <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-2">
                     <User className="w-4 h-4 text-neutral-400 shrink-0" />
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Read-only login credentials
+                      Dashboard login account
                     </p>
                   </div>
                   <div className="divide-y divide-gray-100 dark:divide-neutral-800">
@@ -1617,6 +1693,22 @@ export default function SuperRestaurantDetailPage() {
                       }
                     />
                     <DetailRow label="Phone" value={owner?.phone || "—"} />
+                  </div>
+                  <div className="px-5 py-4 border-t border-gray-100 dark:border-neutral-800 space-y-2">
+                    <Button
+                      type="button"
+                      disabled={!owner?.email}
+                      onClick={openPasswordModal}
+                      className="!h-9 w-full text-xs inline-flex items-center justify-center gap-1.5"
+                    >
+                      <KeyRound className="w-4 h-4" />
+                      Reset owner password
+                    </Button>
+                    {!owner?.email ? (
+                      <p className="text-[11px] text-neutral-500 text-center">
+                        No owner email on file
+                      </p>
+                    ) : null}
                   </div>
                   {ownerEmailPending ? (
                     <div className="px-5 py-4 border-t border-gray-100 dark:border-neutral-800">
@@ -1797,6 +1889,87 @@ export default function SuperRestaurantDetailPage() {
                   className="flex-1 px-3 py-2 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-50"
                 >
                   {editSaving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {passwordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold">Reset owner password</h2>
+              <button
+                type="button"
+                onClick={() => setPasswordModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {owner?.email ? (
+              <p className="text-xs text-neutral-500 mb-3">
+                New password for{" "}
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {owner.email}
+                </span>
+              </p>
+            ) : null}
+            {passwordError ? (
+              <p className="text-xs text-red-600 mb-2">{passwordError}</p>
+            ) : null}
+            <form onSubmit={handleResetOwnerPassword} className="space-y-3">
+              <div>
+                <label className="text-xs font-medium block mb-1">
+                  New password *
+                </label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordForm.password}
+                  onChange={(e) =>
+                    setPasswordForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm"
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1">
+                  Confirm password *
+                </label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) =>
+                    setPasswordForm((f) => ({
+                      ...f,
+                      confirmPassword: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm"
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPasswordModalOpen(false)}
+                  className="flex-1 px-3 py-2 rounded-lg border text-xs font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={passwordSaving}
+                  className="flex-1 px-3 py-2 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-50"
+                >
+                  {passwordSaving ? "Saving…" : "Reset password"}
                 </button>
               </div>
             </form>
