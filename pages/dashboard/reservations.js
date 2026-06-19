@@ -235,7 +235,7 @@ export default function ReservationsPage() {
       } else {
         const created = await createReservation(payload);
         setReservations((p) => [created, ...p]);
-        toast.success("Reservation created.", { id: toastId });
+        toast.success(`Reservation ${created.reservationNumber || "created"}.`, { id: toastId });
       }
       setSlideOpen(false);
       setForm(emptyForm());
@@ -302,6 +302,15 @@ export default function ReservationsPage() {
   });
 
   const columns = [
+    {
+      key: "reservationNumber",
+      header: "Ref",
+      render: (val) => (
+        <span className="font-mono text-xs font-semibold text-gray-700 dark:text-neutral-300">
+          {val || "—"}
+        </span>
+      ),
+    },
     {
       key: "customerName",
       header: "Guest",

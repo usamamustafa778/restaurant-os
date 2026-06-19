@@ -28,6 +28,7 @@ import {
   Eye,
   EyeOff,
   ShoppingCart,
+  CalendarDays,
   Facebook,
   Instagram,
   Twitter,
@@ -492,7 +493,10 @@ export default function WebsiteContentPage() {
       hasContent(ws.openingHoursText) ||
       Object.values(hoursDraft || {}).some((d) => d?.enabled),
     sections: Array.isArray(ws.websiteSections) && ws.websiteSections.length > 0,
-    settings: ws.isPublic !== false || ws.allowWebsiteOrders !== false,
+    settings:
+      ws.isPublic !== false ||
+      ws.allowWebsiteOrders !== false ||
+      ws.allowWebsiteReservations !== false,
   };
 
   function renderSectionSave(sectionId) {
@@ -2649,6 +2653,49 @@ export default function WebsiteContentPage() {
                     <span
                       className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
                         ws.allowWebsiteOrders !== false
+                          ? "translate-x-6"
+                          : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-neutral-900">
+                  <div className="flex items-center gap-3">
+                    <CalendarDays
+                      className={`w-5 h-5 ${
+                        ws.allowWebsiteReservations !== false
+                          ? "text-primary"
+                          : "text-gray-400"
+                      }`}
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                        Online Reservations
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-neutral-400">
+                        {ws.allowWebsiteReservations !== false
+                          ? "Customers can request a table from your website"
+                          : "Website reservations are disabled"}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update(
+                        "allowWebsiteReservations",
+                        ws.allowWebsiteReservations === false,
+                      )
+                    }
+                    className={`relative w-12 h-7 rounded-full transition-colors ${
+                      ws.allowWebsiteReservations !== false
+                        ? "bg-emerald-500"
+                        : "bg-gray-300 dark:bg-neutral-700"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                        ws.allowWebsiteReservations !== false
                           ? "translate-x-6"
                           : "translate-x-1"
                       }`}
