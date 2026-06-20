@@ -223,6 +223,8 @@ export default function CategoriesPage() {
   const { viewMode, setViewMode } = useViewMode("table");
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const {
     toggle: toggleDropdown,
     close: closeDropdown,
@@ -447,6 +449,11 @@ export default function CategoriesPage() {
           categories: prev.categories.filter((c) => !idsToRemove.has(c.id)),
           items: prev.items.filter((i) => !idsToRemove.has(i.categoryId)),
         }));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          idsToRemove.forEach((removedId) => next.delete(removedId));
+          return next;
+        });
       },
       {
         loading: "Deleting category...",
@@ -456,6 +463,85 @@ export default function CategoriesPage() {
     );
 
     setDeletingId(null);
+  }
+
+  function toggleSelectCategory(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllVisible(visibleRows) {
+    const allSelected = visibleRows.every((row) => selectedIds.has(row.id));
+    setSelectedIds(
+      allSelected ? new Set() : new Set(visibleRows.map((row) => row.id)),
+    );
+  }
+
+  async function handleBulkDelete() {
+    if (!selectedIds.size) return;
+
+    const selectedSet = new Set(selectedIds);
+    const idsToDelete = [...selectedSet].filter((id) => {
+      const cat = categories.find((c) => c.id === id);
+      if (!cat?.parentId) return true;
+      return !selectedSet.has(cat.parentId);
+    });
+
+    const subCount = idsToDelete.reduce(
+      (acc, id) => acc + categories.filter((c) => c.parentId === id).length,
+      0,
+    );
+
+    const ok = await confirm({
+      title: `Delete ${selectedSet.size} categor${selectedSet.size === 1 ? "y" : "ies"}`,
+      message:
+        subCount > 0
+          ? `This will delete ${selectedSet.size} selected categor${selectedSet.size === 1 ? "y" : "ies"}, including ${subCount} subcategor${subCount === 1 ? "y" : "ies"}, and their menu items. This cannot be undone.`
+          : `Delete ${selectedSet.size} selected categor${selectedSet.size === 1 ? "y" : "ies"} and their menu items? This cannot be undone.`,
+      confirmLabel: "Delete selected",
+    });
+    if (!ok) return;
+
+    const allIdsToRemove = new Set(selectedSet);
+    for (const id of idsToDelete) {
+      categories
+        .filter((c) => c.parentId === id)
+        .forEach((c) => allIdsToRemove.add(c.id));
+    }
+
+    setBulkDeleting(true);
+    let deleted = 0;
+    let failed = 0;
+
+    await handleAsyncAction(
+      async () => {
+        for (const id of idsToDelete) {
+          try {
+            await deleteCategory(id);
+            deleted++;
+          } catch {
+            failed++;
+          }
+        }
+        setMenuData((prev) => ({
+          ...prev,
+          categories: prev.categories.filter((c) => !allIdsToRemove.has(c.id)),
+          items: prev.items.filter((i) => !allIdsToRemove.has(i.categoryId)),
+        }));
+        setSelectedIds(new Set());
+      },
+      {
+        loading: "Deleting selected categories...",
+        success: `Deleted ${deleted} categor${deleted === 1 ? "y" : "ies"}${failed ? `, ${failed} failed` : ""}`,
+        error: "Failed to delete selected categories",
+      },
+    );
+
+    setBulkDeleting(false);
   }
 
   const filteredCategories = useMemo(() => {
@@ -490,6 +576,28 @@ export default function CategoriesPage() {
     );
     return sortCategories(topLevel, sortBy, categories, items);
   }, [filteredCategories, topLevelCategories, sortBy, categories, items]);
+
+  const tableRows = useMemo(
+    () =>
+      visibleTopLevelCategories.flatMap((cat) => {
+        const subs = filteredCategories.filter((c) => c.parentId === cat.id);
+        return [
+          {
+            ...cat,
+            itemCount: countItemsForCategory(cat.id, categories, items),
+          },
+          ...subs.map((sub) => ({
+            ...sub,
+            itemCount: items.filter((i) => i.categoryId === sub.id).length,
+          })),
+        ];
+      }),
+    [visibleTopLevelCategories, filteredCategories, categories, items],
+  );
+
+  const allVisibleSelected =
+    tableRows.length > 0 && tableRows.every((row) => selectedIds.has(row.id));
+  const someVisibleSelected = tableRows.some((row) => selectedIds.has(row.id));
 
   const editingHasSubcategories =
     !!form.id && categories.some((c) => c.parentId === form.id);
@@ -814,6 +922,34 @@ export default function CategoriesPage() {
         </button>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="categories-no-print mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 dark:border-red-500/30 dark:bg-red-500/10">
+          <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+            {selectedIds.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="text-[10px] text-red-500 underline hover:text-red-700 dark:text-red-400"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleting}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+          >
+            {bulkDeleting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="h-3 w-3" />
+            )}
+            Delete selected
+          </button>
+        </div>
+      )}
+
       {/* Loading state – inside content area */}
       {pageLoading ? (
         <div className="categories-no-print bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
@@ -878,12 +1014,25 @@ export default function CategoriesPage() {
                 return (
                   <div
                     key={cat.id}
-                    className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl p-4 hover:shadow-lg hover:border-primary/30 transition-all"
+                    className={`flex flex-col bg-white dark:bg-neutral-950 border rounded-xl p-4 hover:shadow-lg transition-all ${
+                      selectedIds.has(cat.id)
+                        ? "border-primary/50 ring-2 ring-primary/20"
+                        : "border-gray-200 dark:border-neutral-800 hover:border-primary/30"
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <h3 className="font-bold text-sm text-gray-900 dark:text-white leading-tight">
-                        {cat.name}
-                      </h3>
+                      <div className="flex min-w-0 items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(cat.id)}
+                          onChange={() => toggleSelectCategory(cat.id)}
+                          className="mt-0.5 rounded border-gray-300 text-primary cursor-pointer dark:border-neutral-600"
+                          aria-label={`Select ${cat.name}`}
+                        />
+                        <h3 className="font-bold text-sm text-gray-900 dark:text-white leading-tight">
+                          {cat.name}
+                        </h3>
+                      </div>
                       <ActionDropdown
                         isOpen={isDropdownOpen(cat.id)}
                         onToggle={() => toggleDropdown(cat.id)}
@@ -937,15 +1086,28 @@ export default function CategoriesPage() {
                           return (
                             <div
                               key={sub.id}
-                              className="flex items-center justify-between gap-1 rounded-md bg-gray-50/80 px-2 py-1 dark:bg-neutral-900/60"
+                              className={`flex items-center justify-between gap-1 rounded-md px-2 py-1 ${
+                                selectedIds.has(sub.id)
+                                  ? "bg-primary/10 dark:bg-primary/10"
+                                  : "bg-gray-50/80 dark:bg-neutral-900/60"
+                              }`}
                             >
-                              <div className="min-w-0">
-                                <p className="text-[11px] font-medium text-gray-900 dark:text-white truncate">
-                                  {sub.name}
-                                </p>
-                                <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                                  {subItemCount} items
-                                </p>
+                              <div className="flex min-w-0 items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(sub.id)}
+                                  onChange={() => toggleSelectCategory(sub.id)}
+                                  className="rounded border-gray-300 text-primary cursor-pointer dark:border-neutral-600"
+                                  aria-label={`Select ${sub.name}`}
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-medium text-gray-900 dark:text-white truncate">
+                                    {sub.name}
+                                  </p>
+                                  <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                                    {subItemCount} items
+                                  </p>
+                                </div>
                               </div>
                               <div className="flex shrink-0 items-center gap-0.5">
                                 <button
@@ -1000,6 +1162,34 @@ export default function CategoriesPage() {
             <DataTable
               variant="card"
               columns={[
+                {
+                  key: "_select",
+                  header: (
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate =
+                            someVisibleSelected && !allVisibleSelected;
+                        }
+                      }}
+                      onChange={() => toggleSelectAllVisible(tableRows)}
+                      className="rounded border-gray-300 text-primary cursor-pointer dark:border-neutral-600"
+                      aria-label="Select all visible categories"
+                    />
+                  ),
+                  align: "center",
+                  render: (_, row) => (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(row.id)}
+                      onChange={() => toggleSelectCategory(row.id)}
+                      className="rounded border-gray-300 text-primary cursor-pointer dark:border-neutral-600"
+                      aria-label={`Select ${row.name}`}
+                    />
+                  ),
+                },
                 {
                   key: "name",
                   header: "Category",
@@ -1087,26 +1277,7 @@ export default function CategoriesPage() {
                   },
                 },
               ]}
-              rows={visibleTopLevelCategories.flatMap((cat) => {
-                const subs = filteredCategories.filter(
-                  (c) => c.parentId === cat.id,
-                );
-                return [
-                  {
-                    ...cat,
-                    itemCount: countItemsForCategory(
-                      cat.id,
-                      categories,
-                      items,
-                    ),
-                  },
-                  ...subs.map((sub) => ({
-                    ...sub,
-                    itemCount: items.filter((i) => i.categoryId === sub.id)
-                      .length,
-                  })),
-                ];
-              }).map((row) => ({
+              rows={tableRows.map((row) => ({
                 ...row,
                 actions: row.id,
               }))}
