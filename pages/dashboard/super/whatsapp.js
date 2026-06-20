@@ -6,6 +6,7 @@ import {
   getSuperWhatsappRestaurants,
   postSuperWhatsappActivate,
   patchSuperWhatsappPause,
+  patchSuperWhatsappConfig,
   getSuperWhatsappConversations,
   getStoredAuth,
 } from "../../../lib/apiClient";
@@ -85,6 +86,13 @@ export default function SuperWhatsappPage() {
 
   const [pauseBusyId, setPauseBusyId] = useState(null);
   const [copiedKey, setCopiedKey] = useState("");
+
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [editPhoneNumberId, setEditPhoneNumberId] = useState("");
+  const [editAccessToken, setEditAccessToken] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,6 +176,37 @@ export default function SuperWhatsappPage() {
       toast.error(e.message || "Update failed");
     } finally {
       setPauseBusyId(null);
+    }
+  }
+
+  function openEditModal(restaurant) {
+    setEditTarget(restaurant);
+    setEditPhoneNumberId(restaurant.phoneNumberId || "");
+    setEditAccessToken("");
+    setEditError("");
+    setEditModalOpen(true);
+  }
+
+  async function handleEditSave() {
+    if (!editPhoneNumberId.trim()) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const body = {
+        phoneNumberId: editPhoneNumberId.trim(),
+      };
+      if (editAccessToken.trim()) {
+        body.accessToken = editAccessToken.trim();
+      }
+      await patchSuperWhatsappConfig(editTarget.restaurantId, body);
+      setEditModalOpen(false);
+      setEditTarget(null);
+      await load();
+      toast.success("WhatsApp config updated successfully");
+    } catch (err) {
+      setEditError(err?.message || "Failed to update config");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -375,6 +414,13 @@ export default function SuperWhatsappPage() {
                             <div className="flex flex-wrap justify-end gap-2">
                               <button
                                 type="button"
+                                onClick={() => openEditModal(r)}
+                                className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-orange-400 hover:text-orange-500 transition-colors"
+                              >
+                                Edit Config
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => openDrawer(r)}
                                 className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-800 hover:bg-gray-50 dark:border-neutral-600 dark:text-white dark:hover:bg-neutral-800"
                               >
@@ -580,6 +626,76 @@ export default function SuperWhatsappPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {editModalOpen && editTarget && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
+              Update WhatsApp Config
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-neutral-400 mb-5">{editTarget.name}</p>
+
+            {editError && (
+              <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
+                {editError}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-1.5">
+                Phone Number ID
+              </label>
+              <input
+                type="text"
+                value={editPhoneNumberId}
+                onChange={(e) => setEditPhoneNumberId(e.target.value)}
+                placeholder="e.g. 1164536070068557"
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Get this from Meta dashboard → WhatsApp → API Setup
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-1.5">
+                Access Token
+              </label>
+              <textarea
+                value={editAccessToken}
+                onChange={(e) => setEditAccessToken(e.target.value)}
+                placeholder="Paste new permanent token (leave blank to keep existing)"
+                rows={3}
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400 resize-none font-mono text-xs"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Leave blank to keep the existing token unchanged.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditTarget(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleEditSave}
+                disabled={editSaving || !editPhoneNumberId.trim()}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editSaving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
           </div>
         </div>
       )}
