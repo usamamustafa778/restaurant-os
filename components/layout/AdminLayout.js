@@ -335,7 +335,7 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin"],
   },
   {
-    label: "Website Settings",
+    label: "Website",
     icon: Globe,
     path: "/website-settings",
     roles: ["restaurant_admin", "admin", "manager"],
