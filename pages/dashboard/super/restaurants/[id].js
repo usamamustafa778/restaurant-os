@@ -109,6 +109,13 @@ function formatDate(d) {
   });
 }
 
+function toDateInputValue(d) {
+  if (!d) return "";
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
 function formatRelativeTimeShort(iso) {
   if (!iso) return "Never";
   try {
@@ -290,8 +297,9 @@ export default function SuperRestaurantDetailPage() {
 
   const [planDraft, setPlanDraft] = useState("ESSENTIAL");
   const [planSaving, setPlanSaving] = useState(false);
-  const [extendDays, setExtendDays] = useState("30");
-  const [extendSaving, setExtendSaving] = useState(false);
+  const [trialStartDraft, setTrialStartDraft] = useState("");
+  const [trialEndDraft, setTrialEndDraft] = useState("");
+  const [trialSaving, setTrialSaving] = useState(false);
   const [endTrialSaving, setEndTrialSaving] = useState(false);
   const [activationStart, setActivationStart] = useState("");
   const [activationEnd, setActivationEnd] = useState("");
@@ -326,6 +334,13 @@ export default function SuperRestaurantDetailPage() {
       const data = await getSuperRestaurantDetail(id);
       setDetail(data);
       setPlanDraft(data?.restaurant?.subscription?.plan || "ESSENTIAL");
+      const sub = data?.restaurant?.subscription || {};
+      setTrialStartDraft(
+        toDateInputValue(sub.trialStartsAt || sub.freeTrialStartDate),
+      );
+      setTrialEndDraft(
+        toDateInputValue(sub.trialEndsAt || sub.freeTrialEndDate || sub.expiresAt),
+      );
       const w = data?.restaurant?.website || {};
       setSettingsForm({
         name: w.name || "",
@@ -517,28 +532,35 @@ export default function SuperRestaurantDetailPage() {
     }
   }
 
-  async function handleExtendTrial() {
+  async function handleSaveTrialDates() {
     if (!restaurant?.id) return;
-    const days = Number(extendDays);
-    const currentEnd =
-      subscription.trialEndsAt ||
-      subscription.freeTrialEndDate ||
-      subscription.expiresAt;
-    const base = currentEnd ? new Date(currentEnd) : new Date();
-    const next = new Date(base);
-    next.setDate(next.getDate() + days);
+    if (!trialStartDraft || !trialEndDraft) {
+      toast.error("Trial start and end dates are required.");
+      return;
+    }
+    const start = new Date(trialStartDraft);
+    const end = new Date(trialEndDraft);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      toast.error("Invalid trial dates.");
+      return;
+    }
+    if (end <= start) {
+      toast.error("Trial end must be after trial start.");
+      return;
+    }
     try {
-      setExtendSaving(true);
+      setTrialSaving(true);
       await updateRestaurantSubscription(restaurant.id, {
-        trialEndsAt: next.toISOString(),
-        expiresAt: next.toISOString(),
+        setTrialDates: true,
+        trialStartsAt: start.toISOString(),
+        trialEndsAt: end.toISOString(),
       });
-      toast.success(`Trial extended by ${days} days.`);
+      toast.success("Trial dates updated.");
       loadDetail();
     } catch (err) {
-      toast.error(err.message || "Failed to extend trial");
+      toast.error(err.message || "Failed to update trial dates");
     } finally {
-      setExtendSaving(false);
+      setTrialSaving(false);
     }
   }
 
@@ -1313,40 +1335,45 @@ export default function SuperRestaurantDetailPage() {
                   </div>
                 </div>
 
-                {status === "TRIAL" && (
-                  <SectionCard
-                    title="Extend Trial"
-                    description="Add more days to the current trial period"
-                  >
-                    <div className="space-y-3">
-                      <div>
-                        <label className={FORM_LABEL} htmlFor="extend-days">
-                          Extend by
-                        </label>
-                        <select
-                          id="extend-days"
-                          value={extendDays}
-                          onChange={(e) => setExtendDays(e.target.value)}
-                          className={FORM_INPUT}
-                        >
-                          {["7", "14", "30", "60", "90"].map((d) => (
-                            <option key={d} value={d}>
-                              {d} days
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <Button
-                        type="button"
-                        disabled={extendSaving}
-                        onClick={handleExtendTrial}
-                        className="!h-9 w-full text-xs"
-                      >
-                        {extendSaving ? "Extending…" : "Extend Trial"}
-                      </Button>
+                <SectionCard
+                  title="Set Trial Dates"
+                  description="Override the trial period for this restaurant. New signups still get 30 days automatically."
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <label className={FORM_LABEL} htmlFor="trial-start">
+                        Trial start
+                      </label>
+                      <input
+                        id="trial-start"
+                        type="date"
+                        value={trialStartDraft}
+                        onChange={(e) => setTrialStartDraft(e.target.value)}
+                        className={FORM_INPUT}
+                      />
                     </div>
-                  </SectionCard>
-                )}
+                    <div>
+                      <label className={FORM_LABEL} htmlFor="trial-end">
+                        Trial end
+                      </label>
+                      <input
+                        id="trial-end"
+                        type="date"
+                        value={trialEndDraft}
+                        onChange={(e) => setTrialEndDraft(e.target.value)}
+                        className={FORM_INPUT}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={trialSaving}
+                      onClick={handleSaveTrialDates}
+                      className="!h-9 w-full text-xs"
+                    >
+                      {trialSaving ? "Saving…" : "Save Trial Dates"}
+                    </Button>
+                  </div>
+                </SectionCard>
 
                 {status === "TRIAL" && (
                   <SectionCard

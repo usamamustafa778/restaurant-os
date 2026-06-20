@@ -217,7 +217,7 @@ export default function SignupPage() {
     <>
       <SEO
         title="Start Free Trial - Eats Desk Restaurant Management System"
-        description="Start your 3-months free trial of Eats Desk. Get a complete restaurant management system with POS, inventory, and free website. No credit card required!"
+        description="Start your 30-day free trial of Eats Desk. Get a complete restaurant management system with POS, inventory, and free website. No credit card required!"
         keywords="restaurant management free trial, POS system trial, restaurant software demo, free restaurant website, start restaurant business"
       />
       <div className="auth-page">

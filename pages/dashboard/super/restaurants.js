@@ -713,7 +713,7 @@ export default function SuperRestaurantsPage() {
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
                 Manually onboard a new restaurant and create its admin user. They
-                will get a 3‑month free trial.
+                will get a 30-day free trial.
               </p>
               {createError && (
                 <p className="text-xs text-red-600 dark:text-red-400 mb-2">
