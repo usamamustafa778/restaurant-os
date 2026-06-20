@@ -71,6 +71,38 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { getTenantRoute } from "../../lib/routes";
 
+function getNavPath(asPath, pathname) {
+  const raw = (asPath || pathname || "").split("#")[0];
+  const base = raw.split("?")[0];
+  return base.replace(/^\/dashboard(?=\/|$)/, "") || "/";
+}
+
+function getNavQueryParam(asPath, key) {
+  const query = (asPath || "").split("?")[1] || "";
+  if (!query) return "";
+  return new URLSearchParams(query).get(key) || "";
+}
+
+function isNavChildActive(asPath, basePath, childPath, childHref) {
+  const navPath = getNavPath(asPath, "");
+  const base = (basePath || "").split("?")[0];
+  const childBase = (childHref || childPath || "").split("?")[0];
+
+  if (childPath.includes("section=")) {
+    const section = childPath.split("section=")[1]?.split("&")[0] || "";
+    return navPath === base && getNavQueryParam(asPath, "section") === section;
+  }
+
+  if (childPath.includes("tab=")) {
+    const tab = childPath.split("tab=")[1]?.split("&")[0] || "";
+    return navPath.includes(base.split("?")[0]) && getNavQueryParam(asPath, "tab") === tab;
+  }
+
+  if (navPath !== childBase && !navPath.startsWith(`${childBase}/`)) return false;
+  if (getNavQueryParam(asPath, "section") === "analytics") return false;
+  return true;
+}
+
 // Single tenant nav: each item has `roles` – only roles that can see it. No roles = all tenant roles.
 // Admin: all. Manager: all except Branches, Subscription. Product manager: Overview, Categories, Items, Inventory, Profile.
 // Cashier: POS, Orders, Customers, Profile only. Kitchen: KDS, Profile.
@@ -303,10 +335,18 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin"],
   },
   {
-    path: "/website-content",
     label: "Website Settings",
     icon: Globe,
+    path: "/website-settings",
     roles: ["restaurant_admin", "admin", "manager"],
+    children: [
+      { path: "/website-settings", label: "Content", icon: LayoutGrid },
+      {
+        path: "/website-settings?section=analytics",
+        label: "Analytics",
+        icon: BarChart2,
+      },
+    ],
   },
   {
     path: "/integrations",
@@ -661,6 +701,9 @@ export default function AdminLayout({
       )
         toExpand.push("/menu");
       if (router.asPath.includes("/orders")) toExpand.push("/orders");
+      if (getNavPath(router.asPath, router.pathname) === "/website-settings") {
+        toExpand.push("/website-settings");
+      }
       if (toExpand.length > 0) {
         setExpandedGroups(toExpand);
         sessionStorage.setItem(
@@ -869,23 +912,25 @@ export default function AdminLayout({
                   const hasChildren = item.children && item.children.length > 0;
                   const isExpanded = expandedGroups.includes(basePath);
                   // For groups, check if any child path matches current route
+                  const navPath = getNavPath(router.asPath, router.pathname);
                   const isActive = hasChildren
                     ? item.children.some((child) => {
                         const cHref = getTenantRoute(
                           router.asPath || router.pathname,
                           child.path,
                         );
-                        return (
-                          router.asPath === cHref ||
-                          router.asPath.startsWith(cHref + "?") ||
-                          router.asPath.startsWith(cHref + "/")
+                        return isNavChildActive(
+                          router.asPath,
+                          basePath,
+                          child.path,
+                          cHref,
                         );
                       })
                     : item.exact
-                      ? router.asPath === href
-                      : router.asPath === href ||
-                        router.asPath.startsWith(href + "?") ||
-                        router.asPath.startsWith(href + "/");
+                      ? navPath === href
+                      : navPath === href ||
+                        navPath.startsWith(`${href}/`) ||
+                        (router.asPath || "").startsWith(`${href}?`);
 
                   const effectivelyCollapsed = collapsed && !mobileSidebarOpen;
                   if (suspended && role !== "super_admin") {
@@ -942,18 +987,12 @@ export default function AdminLayout({
                               child.path,
                             );
                             // Generic active detection: tab-based or path-based
-                            const childTab = child.path.includes("tab=")
-                              ? child.path.split("tab=")[1]
-                              : "";
-                            const currentTab = router.asPath.includes("tab=")
-                              ? router.asPath.split("tab=")[1]?.split("&")[0]
-                              : "";
-                            const isChildActive = childTab
-                              ? router.asPath.includes(
-                                  basePath.split("?")[0],
-                                ) && childTab === currentTab
-                              : router.asPath === childHref ||
-                                router.asPath.startsWith(childHref + "?");
+                            const isChildActive = isNavChildActive(
+                              router.asPath,
+                              basePath,
+                              child.path,
+                              childHref,
+                            );
                             return {
                               path: child.path,
                               href: childHref,
@@ -1025,22 +1064,12 @@ export default function AdminLayout({
                                     router.asPath || router.pathname,
                                     child.path,
                                   );
-                                  const childTab = child.path.includes("tab=")
-                                    ? child.path.split("tab=")[1]
-                                    : "";
-                                  const currentTab = router.asPath.includes(
-                                    "tab=",
-                                  )
-                                    ? router.asPath
-                                        .split("tab=")[1]
-                                        ?.split("&")[0]
-                                    : "";
-                                  const isChildActive = childTab
-                                    ? router.asPath.includes(
-                                        basePath.split("?")[0],
-                                      ) && childTab === currentTab
-                                    : router.asPath === childHref ||
-                                      router.asPath.startsWith(childHref + "?");
+                                  const isChildActive = isNavChildActive(
+                                    router.asPath,
+                                    basePath,
+                                    child.path,
+                                    childHref,
+                                  );
                                   const ChildIcon = child.icon;
 
                                   return (

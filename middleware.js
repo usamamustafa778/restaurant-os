@@ -21,7 +21,7 @@ const DASHBOARD_PAGES = new Set([
   "categories", "menu-items", "menu",
   "customers", "inventory", "deals",
   "users", "business-settings", "tables", "history",
-  "website-content", "integrations", "whatsapp",
+  "website-settings", "integrations", "whatsapp",
   "subscription", "profile", "day-report",
   "order-taker", "rider", "migrate-pending",
   "sales-report",
@@ -173,6 +173,19 @@ export async function middleware(request) {
     const internalPath = pathname === "/" ? "" : pathname;
     url.pathname = `/public/${tenantSubdomain}${internalPath}`;
     return NextResponse.rewrite(url);
+  }
+
+  // ─── Legacy website settings URLs ───────────────────────────────────────
+  if (pathname === "/website-content") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/website-settings";
+    return NextResponse.redirect(url, 301);
+  }
+  if (pathname === "/website-analytics") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/website-settings";
+    url.searchParams.set("section", "analytics");
+    return NextResponse.redirect(url, 301);
   }
 
   // ─── Backward compat: /dashboard/* → redirect to /* ────────────────────

@@ -21,6 +21,7 @@ Disallow: /branches
 Disallow: /tables
 Disallow: /history
 Disallow: /website
+Disallow: /website-settings
 Disallow: /website-content
 Disallow: /integrations
 Disallow: /subscription

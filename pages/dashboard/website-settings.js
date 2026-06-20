@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
+import WebsiteAnalyticsPanel from "../../components/website/WebsiteAnalyticsPanel";
 import { useBranch } from "../../contexts/BranchContext";
 import {
   getWebsiteSettings,
@@ -48,6 +50,7 @@ import {
   Search,
   Circle,
   Film,
+  BarChart2,
 } from "lucide-react";
 
 const SECTIONS = [
@@ -61,6 +64,7 @@ const SECTIONS = [
   { id: "social", label: "Social Media", icon: Globe },
   { id: "hours", label: "Opening Hours", icon: Clock },
   { id: "sections", label: "Website Sections", icon: Layout },
+  { id: "analytics", label: "Analytics", icon: BarChart2 },
   { id: "settings", label: "Settings", icon: Eye },
 ];
 
@@ -350,7 +354,10 @@ function hexForColorInput(stored, fallback) {
   return parseHexColor(stored) ?? fallback;
 }
 
-export default function WebsiteContentPage() {
+const SECTION_IDS = new Set(SECTIONS.map((s) => s.id));
+
+export default function WebsiteSettingsPage() {
+  const router = useRouter();
   const { activeBranch } = useBranch();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -396,6 +403,13 @@ export default function WebsiteContentPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const section = router.query.section;
+    if (typeof section === "string" && SECTION_IDS.has(section)) {
+      setActiveSection(section);
+    }
+  }, [router.query.section]);
 
   function update(key, value) {
     setWs((prev) => ({ ...prev, [key]: value }));
@@ -497,6 +511,7 @@ export default function WebsiteContentPage() {
       ws.isPublic !== false ||
       ws.allowWebsiteOrders !== false ||
       ws.allowWebsiteReservations !== false,
+    analytics: true,
   };
 
   function renderSectionSave(sectionId) {
@@ -606,6 +621,18 @@ export default function WebsiteContentPage() {
 
   function scrollTo(id) {
     setActiveSection(id);
+    const as =
+      id === "template"
+        ? "/website-settings"
+        : `/website-settings?section=${encodeURIComponent(id)}`;
+    router.replace(
+      {
+        pathname: "/dashboard/website-settings",
+        query: id === "template" ? {} : { section: id },
+      },
+      as,
+      { shallow: true },
+    );
   }
 
   // Hero slide helpers
@@ -970,7 +997,7 @@ export default function WebsiteContentPage() {
               <label className={labelCls}>Active Section</label>
               <select
                 value={activeSection}
-                onChange={(e) => setActiveSection(e.target.value)}
+                onChange={(e) => scrollTo(e.target.value)}
                 className={inp}
               >
                 {SECTIONS.map((s) => (
@@ -2704,6 +2731,17 @@ export default function WebsiteContentPage() {
                 </div>
               </div>
               {renderSectionSave("settings")}
+            </SectionCard>
+
+            <SectionCard
+              id="analytics"
+              icon={BarChart2}
+              title="Analytics"
+              subtitle="Traffic insights from your public storefront — page views, visitors, and top pages"
+              iconColor={iconAccentPrimary}
+              isActive={activeSection === "analytics"}
+            >
+              <WebsiteAnalyticsPanel />
             </SectionCard>
           </div>
         </div>
