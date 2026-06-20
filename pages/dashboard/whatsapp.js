@@ -82,6 +82,39 @@ const SETUP_STEPS = [
 const inputClass =
   "w-full rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white dark:placeholder:text-neutral-600";
 
+const DEFAULT_SETTINGS = {
+  greetingMessage: "",
+  aiLanguagePreference: "auto",
+  responseStyle: "friendly",
+  defaultOrderType: "ask",
+  deliveryTimeMin: 30,
+  deliveryTimeMax: 45,
+  takeawayTimeMin: 15,
+  takeawayTimeMax: 20,
+  customInstructions: "",
+  humanHandoffNumber: "",
+  aiHoursMode: "always",
+  aiCustomHoursText: "",
+};
+
+function normalizeSettings(raw) {
+  if (!raw) return { ...DEFAULT_SETTINGS };
+  const lang = raw.aiLanguagePreference === "both" ? "auto" : raw.aiLanguagePreference || "auto";
+  return {
+    ...DEFAULT_SETTINGS,
+    ...raw,
+    aiLanguagePreference: lang,
+  };
+}
+
+const settingsFieldClass =
+  "w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm text-gray-800 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-orange-500/30";
+
+const settingsToggleClass = (active) =>
+  active
+    ? "bg-orange-500 text-white border-orange-500"
+    : "bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400";
+
 export default function WhatsAppDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState("not_connected");
@@ -95,11 +128,7 @@ export default function WhatsAppDashboardPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [greeting, setGreeting] = useState("");
-  const [handoff, setHandoff] = useState("");
-  const [setLang, setSetLang] = useState("both");
-  const [hoursMode, setHoursMode] = useState("always");
-  const [customHours, setCustomHours] = useState("");
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [convOpen, setConvOpen] = useState(false);
@@ -113,13 +142,6 @@ export default function WhatsAppDashboardPage() {
       setState(data.state || "not_connected");
       setPendingRequest(data.pendingRequest || null);
       setLive(data.live || null);
-      if (data.live?.settings) {
-        setGreeting(data.live.settings.greetingMessage || "");
-        setHandoff(data.live.settings.humanHandoffNumber || "");
-        setSetLang(data.live.settings.aiLanguagePreference || "both");
-        setHoursMode(data.live.settings.aiHoursMode || "always");
-        setCustomHours(data.live.settings.aiCustomHoursText || "");
-      }
     } catch (e) {
       const msg = String(e?.message || "");
       const isUnavailable =
@@ -146,6 +168,29 @@ export default function WhatsAppDashboardPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (live?.settings) {
+      setSettings(normalizeSettings(live.settings));
+    }
+  }, [live]);
+
+  function updateSetting(key, value) {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function saveSettings() {
+    setSavingSettings(true);
+    try {
+      await patchWhatsAppSettings(settings);
+      toast.success("Settings saved");
+      await load();
+    } catch (err) {
+      toast.error(err?.message || "Failed to save");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function handleSetupSubmit(e) {
     e.preventDefault();
     if (!reqNumber.trim()) {
@@ -169,26 +214,6 @@ export default function WhatsAppDashboardPage() {
       toast.error(err.message || "Could not submit request");
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleSaveSettings(e) {
-    e.preventDefault();
-    setSavingSettings(true);
-    try {
-      await patchWhatsAppSettings({
-        greetingMessage: greeting,
-        humanHandoffNumber: handoff,
-        aiLanguagePreference: setLang,
-        aiHoursMode: hoursMode,
-        aiCustomHoursText: customHours,
-      });
-      toast.success("Settings saved");
-      await load();
-    } catch (err) {
-      toast.error(err.message || "Save failed");
-    } finally {
-      setSavingSettings(false);
     }
   }
 
@@ -236,6 +261,10 @@ export default function WhatsAppDashboardPage() {
   const isPaused = state === "live_paused" || (live && live.isActive === false);
   const status = isLive ? (isPaused ? "live_paused" : "live") : state;
   const sc = statusConfig[status] || statusConfig.not_connected;
+  const restaurantName =
+    getStoredAuth()?.restaurant?.website?.name ||
+    getStoredAuth()?.restaurant?.name ||
+    "your restaurant";
 
   return (
     <AdminLayout title="WhatsApp AI">
@@ -575,84 +604,200 @@ export default function WhatsAppDashboardPage() {
             )}
 
             {settingsOpen && (
-              <form
-                onSubmit={handleSaveSettings}
-                className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950"
-              >
+              <div className="rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
                 {isPaused && (
-                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-200/60 bg-amber-50/80 px-3.5 py-3 text-xs leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-950/30 dark:text-amber-200">
+                  <div className="mx-5 mt-5 flex items-start gap-2.5 rounded-xl border border-amber-200/60 bg-amber-50/80 px-3.5 py-3 text-xs leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-950/30 dark:text-amber-200">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     Settings can be updated now but won&apos;t take effect until your WhatsApp AI is resumed.
                   </div>
                 )}
-                <h3 className="mb-4 text-sm font-bold text-gray-900 dark:text-white">AI settings</h3>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-neutral-400">
-                      Greeting message
-                    </span>
-                    <textarea
-                      value={greeting}
-                      onChange={(e) => setGreeting(e.target.value)}
-                      rows={3}
-                      className={inputClass}
-                      placeholder="Hi! Welcome to our restaurant. How can I help you today?"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-neutral-400">
-                      Human handoff number
-                    </span>
-                    <input
-                      value={handoff}
-                      onChange={(e) => setHandoff(e.target.value)}
-                      className={inputClass}
-                      placeholder="+92 300 1234567"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-neutral-400">
-                      Language
-                    </span>
-                    <select value={setLang} onChange={(e) => setSetLang(e.target.value)} className={inputClass}>
-                      <option value="urdu">Urdu / Roman Urdu</option>
-                      <option value="english">English</option>
-                      <option value="both">Both (auto-detect)</option>
-                    </select>
-                  </label>
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-neutral-400">
-                      Auto-reply hours
-                    </span>
-                    <select value={hoursMode} onChange={(e) => setHoursMode(e.target.value)} className={inputClass}>
-                      <option value="always">Always on</option>
-                      <option value="custom">Custom schedule</option>
-                    </select>
-                  </label>
-                  {hoursMode === "custom" && (
-                    <label className="block sm:col-span-2">
-                      <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-neutral-400">
-                        When is the AI available?
-                      </span>
-                      <textarea
-                        value={customHours}
-                        onChange={(e) => setCustomHours(e.target.value)}
-                        rows={2}
-                        placeholder="e.g. 11am – 11pm daily"
-                        className={inputClass}
-                      />
+
+                <div className="mt-4 space-y-5 p-4 rounded-2xl border border-gray-100 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50 mx-1 mb-1">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white -mt-1">AI settings</h3>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-1.5">
+                      Greeting Message
                     </label>
-                  )}
+                    <textarea
+                      value={settings.greetingMessage}
+                      onChange={(e) => updateSetting("greetingMessage", e.target.value)}
+                      rows={2}
+                      placeholder={`Assalam o Alaikum! Welcome to ${restaurantName} 🍗`}
+                      className={`${settingsFieldClass} resize-none`}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Sent when customer first messages. Leave blank for default.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-2">
+                      Language
+                    </label>
+                    <div className="flex gap-2">
+                      {[
+                        { val: "auto", label: "🌐 Auto-detect" },
+                        { val: "english", label: "🇬🇧 English" },
+                        { val: "urdu", label: "🇵🇰 Roman Urdu" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          onClick={() => updateSetting("aiLanguagePreference", opt.val)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors ${settingsToggleClass(
+                            settings.aiLanguagePreference === opt.val
+                          )}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-2">
+                      Response Style
+                    </label>
+                    <div className="flex gap-2">
+                      {[
+                        { val: "formal", label: "👔 Formal" },
+                        { val: "friendly", label: "😊 Friendly" },
+                        { val: "casual", label: "😎 Casual" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          onClick={() => updateSetting("responseStyle", opt.val)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors ${settingsToggleClass(
+                            settings.responseStyle === opt.val
+                          )}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-2">
+                      Default Order Type
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { val: "ask", label: "❓ Always ask customer" },
+                        { val: "delivery", label: "🛵 Assume delivery" },
+                        { val: "takeaway", label: "🥡 Assume takeaway" },
+                        { val: "dine_in", label: "🍽 Assume dine-in" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          onClick={() => updateSetting("defaultOrderType", opt.val)}
+                          className={`py-2 px-3 rounded-xl text-xs font-semibold border text-left transition-colors ${settingsToggleClass(
+                            settings.defaultOrderType === opt.val
+                          )}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-2">
+                      Estimated Times
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
+                        <p className="text-xs text-gray-500 mb-2">🛵 Delivery</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            value={settings.deliveryTimeMin}
+                            onChange={(e) => updateSetting("deliveryTimeMin", Number(e.target.value))}
+                            className="w-14 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-600 bg-gray-50 dark:bg-neutral-900 text-xs text-center"
+                          />
+                          <span className="text-xs text-gray-400">to</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={settings.deliveryTimeMax}
+                            onChange={(e) => updateSetting("deliveryTimeMax", Number(e.target.value))}
+                            className="w-14 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-600 bg-gray-50 dark:bg-neutral-900 text-xs text-center"
+                          />
+                          <span className="text-xs text-gray-400">min</span>
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
+                        <p className="text-xs text-gray-500 mb-2">🥡 Takeaway</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            value={settings.takeawayTimeMin}
+                            onChange={(e) => updateSetting("takeawayTimeMin", Number(e.target.value))}
+                            className="w-14 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-600 bg-gray-50 dark:bg-neutral-900 text-xs text-center"
+                          />
+                          <span className="text-xs text-gray-400">to</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={settings.takeawayTimeMax}
+                            onChange={(e) => updateSetting("takeawayTimeMax", Number(e.target.value))}
+                            className="w-14 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-600 bg-gray-50 dark:bg-neutral-900 text-xs text-center"
+                          />
+                          <span className="text-xs text-gray-400">min</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-1.5">
+                      Custom Instructions
+                    </label>
+                    <textarea
+                      value={settings.customInstructions}
+                      onChange={(e) => updateSetting("customInstructions", e.target.value)}
+                      rows={4}
+                      placeholder={
+                        "Examples:\n- We are 100% halal certified\n- Free delivery above Rs 500\n- No MSG used in our food\n- Student discount 10% with ID card"
+                      }
+                      className={`${settingsFieldClass} resize-none`}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Tell the AI anything specific about your restaurant. This is injected directly into AI instructions.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 dark:text-neutral-400 uppercase tracking-wide mb-1.5">
+                      Human Handoff Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={settings.humanHandoffNumber}
+                      onChange={(e) => updateSetting("humanHandoffNumber", e.target.value)}
+                      placeholder="03001234567"
+                      className={settingsFieldClass}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      If AI can&apos;t handle a request, it gives customers this number.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={saveSettings}
+                    disabled={savingSettings}
+                    className="w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold transition-colors disabled:opacity-50"
+                  >
+                    {savingSettings ? "Saving..." : "Save Settings"}
+                  </button>
                 </div>
-                <button
-                  type="submit"
-                  disabled={savingSettings}
-                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60 sm:w-auto sm:px-8"
-                >
-                  {savingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Save settings
-                </button>
-              </form>
+              </div>
             )}
           </div>
         )}
