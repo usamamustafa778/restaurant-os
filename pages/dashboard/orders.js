@@ -149,6 +149,14 @@ const STATUS_THEME = {
 
 const ORDER_TYPE_FILTERS = ["All", "Delivery", "Dine In", "Takeaway"];
 
+const SOURCE_FILTERS = [
+  { value: "All", label: "All sources" },
+  { value: "POS", label: "POS" },
+  { value: "WEBSITE", label: "Website" },
+  { value: "WHATSAPP", label: "WhatsApp" },
+  { value: "FOODPANDA", label: "Foodpanda" },
+];
+
 // ─── Utility functions ──────────────────────────────────────────────────────
 
 function orderStatusForTab(status) {
@@ -274,6 +282,14 @@ function getOrderTypeLabel(order) {
   return "Walk-in";
 }
 
+function getOrderSourceKey(order) {
+  const source = String(order?.source || "POS").toUpperCase();
+  if (source === "WEBSITE" || source === "WHATSAPP" || source === "FOODPANDA") {
+    return source;
+  }
+  return "POS";
+}
+
 function toCSVRow(cells) {
   return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
 }
@@ -387,6 +403,7 @@ export default function OrdersPage() {
   const [deletingId, setDeletingId] = useState(null);
   const [search, setSearch] = useState("");
   const [orderTypeFilter, setOrderTypeFilter] = useState("All");
+  const [sourceFilter, setSourceFilter] = useState("All");
   const [riderFilter, setRiderFilter] = useState("All");
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
@@ -1179,6 +1196,7 @@ export default function OrdersPage() {
     const fromMs = hasDateRange && dateRange.from ? dateRange.from.getTime() : 0;
     const toMs = hasDateRange && dateRange.to ? dateRange.to.getTime() : Infinity;
     const filterType = orderTypeFilter !== "All";
+    const filterSource = sourceFilter !== "All";
 
     const filtered = base.filter((o) => {
       if (hasDateRange) {
@@ -1194,6 +1212,7 @@ export default function OrdersPage() {
         (o.customerPhone || "").toLowerCase().includes(term)
       )) return false;
       if (filterType && getOrderTypeLabel(o) !== orderTypeFilter) return false;
+      if (filterSource && getOrderSourceKey(o) !== sourceFilter) return false;
       if (riderFilter !== "All") {
         const rider = riders.find((r) => r.id === riderFilter);
         const riderName = rider?.name?.trim().toLowerCase() || "";
@@ -1218,6 +1237,7 @@ export default function OrdersPage() {
     cashierBaseOrders,
     search,
     orderTypeFilter,
+    sourceFilter,
     riderFilter,
     riders,
     dateRange,
@@ -1346,6 +1366,23 @@ export default function OrdersPage() {
                   ))}
                 </select>
                 <Bike className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-neutral-500" />
+              </div>
+
+              {/* Source */}
+              <div className="relative flex-shrink-0">
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[8.5rem]"
+                  aria-label="Filter by order source"
+                >
+                  {SOURCE_FILTERS.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                <Globe className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-neutral-500" />
               </div>
 
               {/* Search */}
