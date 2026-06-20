@@ -21,6 +21,9 @@ import {
   X,
   User,
   ArrowRight,
+  PauseCircle,
+  Mail,
+  AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -218,29 +221,58 @@ export default function WhatsAppDashboardPage() {
       badge: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
     },
     live: {
-      label: live?.isActive ? "Live" : "Paused",
-      dot: live?.isActive ? "bg-emerald-500" : "bg-amber-500",
-      badge: live?.isActive
-        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-        : "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
+      label: "Live",
+      dot: "bg-emerald-500",
+      badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+    },
+    live_paused: {
+      label: "Paused",
+      dot: "bg-amber-500",
+      badge: "bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-200",
     },
   };
 
-  const status = state === "live" || state === "live_paused" ? "live" : state;
+  const isLive = state === "live" || state === "live_paused";
+  const isPaused = state === "live_paused" || (live && live.isActive === false);
+  const status = isLive ? (isPaused ? "live_paused" : "live") : state;
   const sc = statusConfig[status] || statusConfig.not_connected;
 
   return (
     <AdminLayout title="WhatsApp AI">
       <div className="mx-auto max-w-3xl px-4 py-6 md:py-10">
         {/* Hero */}
-        <div className="relative mb-8 overflow-hidden rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-6 dark:border-emerald-500/20 dark:from-emerald-950/30 dark:via-neutral-950 dark:to-teal-950/20 md:p-8">
-          <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-emerald-400/10 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-6 -left-6 h-32 w-32 rounded-full bg-teal-400/10 blur-2xl" />
+        <div
+          className={`relative mb-8 overflow-hidden rounded-2xl border p-6 md:p-8 ${
+            isPaused
+              ? "border-amber-200/70 bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:border-amber-500/25 dark:from-amber-950/40 dark:via-neutral-950 dark:to-orange-950/20"
+              : "border-emerald-200/60 bg-gradient-to-br from-emerald-50 via-white to-teal-50 dark:border-emerald-500/20 dark:from-emerald-950/30 dark:via-neutral-950 dark:to-teal-950/20"
+          }`}
+        >
+          <div
+            className={`pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full blur-3xl ${
+              isPaused ? "bg-amber-400/10" : "bg-emerald-400/10"
+            }`}
+          />
+          <div
+            className={`pointer-events-none absolute -bottom-6 -left-6 h-32 w-32 rounded-full blur-2xl ${
+              isPaused ? "bg-orange-400/10" : "bg-teal-400/10"
+            }`}
+          />
 
           <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25">
-                <MessageCircle className="h-7 w-7" strokeWidth={1.75} />
+              <div
+                className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg ${
+                  isPaused
+                    ? "bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
+                    : "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/25"
+                }`}
+              >
+                {isPaused ? (
+                  <PauseCircle className="h-7 w-7" strokeWidth={1.75} />
+                ) : (
+                  <MessageCircle className="h-7 w-7" strokeWidth={1.75} />
+                )}
               </div>
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -255,7 +287,9 @@ export default function WhatsAppDashboardPage() {
                   )}
                 </div>
                 <p className="max-w-md text-sm leading-relaxed text-gray-600 dark:text-neutral-400">
-                  Your AI answers WhatsApp, takes orders, and books tables — 24/7. We host everything on EatsDesk.
+                  {isPaused
+                    ? "Your WhatsApp line is connected but the AI is turned off. Customers won't get automated replies until service is resumed."
+                    : "Your AI answers WhatsApp, takes orders, and books tables — 24/7. We host everything on EatsDesk."}
                 </p>
               </div>
             </div>
@@ -372,35 +406,98 @@ export default function WhatsAppDashboardPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Live stats */}
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
+            {isPaused && (
+              <div className="overflow-hidden rounded-2xl border border-amber-200/80 bg-amber-50/90 dark:border-amber-500/30 dark:bg-amber-950/30">
+                <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                    <AlertTriangle className="h-5 w-5" strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-base font-bold text-amber-950 dark:text-amber-100">
+                      Service paused — AI is not responding
+                    </h2>
+                    <p className="mt-1.5 text-sm leading-relaxed text-amber-900/80 dark:text-amber-200/80">
+                      Incoming WhatsApp messages on{" "}
+                      <span className="font-mono font-semibold">{live?.maskedNumber}</span> will not be
+                      answered by your AI receptionist. New orders and bookings are not being taken until
+                      EatsDesk reactivates your line.
+                    </p>
+                    <ul className="mt-3 space-y-1.5 text-sm text-amber-900/70 dark:text-amber-200/70">
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                        Your number stays connected — only the AI auto-replies are off
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                        Past conversations and settings are saved and will apply when resumed
+                      </li>
+                    </ul>
+                    <a
+                      href="mailto:support@eatsdesk.com?subject=Resume%20WhatsApp%20AI"
+                      className="mt-4 inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-amber-700 active:scale-[0.98] dark:bg-amber-600 dark:hover:bg-amber-500"
+                    >
+                      <Mail className="h-4 w-4" />
+                      Contact support to resume
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Live / paused stats */}
+            <div
+              className={`rounded-2xl border bg-white p-5 dark:bg-neutral-950 ${
+                isPaused
+                  ? "border-amber-200/60 dark:border-amber-500/20"
+                  : "border-gray-200 dark:border-neutral-800"
+              }`}
+            >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-gray-500 dark:text-neutral-500">
                   Connected line{" "}
                   <span className="font-mono font-semibold text-gray-900 dark:text-white">{live?.maskedNumber}</span>
                 </p>
+                {isPaused && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                    <PauseCircle className="h-3 w-3" />
+                    Not accepting messages
+                  </span>
+                )}
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className={`grid grid-cols-3 gap-3 ${isPaused ? "opacity-60" : ""}`}>
                 {[
                   { icon: MessageCircle, value: live?.stats?.conversationsToday ?? 0, label: "Chats today" },
                   { icon: ShoppingBag, value: live?.stats?.ordersToday ?? 0, label: "Orders placed" },
                   {
                     icon: Zap,
-                    value: live?.stats?.avgResponseSec != null ? `${live.stats.avgResponseSec}s` : "—",
+                    value: isPaused ? "—" : live?.stats?.avgResponseSec != null ? `${live.stats.avgResponseSec}s` : "—",
                     label: "Avg response",
                   },
                 ].map(({ icon: Icon, value, label }) => (
                   <div
                     key={label}
-                    className="rounded-xl border border-gray-100 bg-gray-50/80 px-3 py-4 text-center dark:border-neutral-800 dark:bg-neutral-900/80"
+                    className={`rounded-xl border px-3 py-4 text-center ${
+                      isPaused
+                        ? "border-amber-100/80 bg-amber-50/50 dark:border-amber-500/10 dark:bg-amber-950/20"
+                        : "border-gray-100 bg-gray-50/80 dark:border-neutral-800 dark:bg-neutral-900/80"
+                    }`}
                   >
-                    <Icon className="mx-auto mb-2 h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <Icon
+                      className={`mx-auto mb-2 h-4 w-4 ${
+                        isPaused ? "text-amber-600 dark:text-amber-500" : "text-emerald-600 dark:text-emerald-400"
+                      }`}
+                    />
                     <p className="text-2xl font-black tabular-nums text-gray-900 dark:text-white">{value}</p>
                     <p className="mt-0.5 text-[11px] font-medium text-gray-500 dark:text-neutral-500">{label}</p>
                   </div>
                 ))}
               </div>
+              {isPaused && (
+                <p className="mt-3 text-center text-xs text-amber-800/70 dark:text-amber-300/60">
+                  Stats shown are from today — no new AI activity while paused
+                </p>
+              )}
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <button
@@ -408,7 +505,9 @@ export default function WhatsAppDashboardPage() {
                   onClick={toggleConversations}
                   className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition ${
                     convOpen
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                      ? isPaused
+                        ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                        : "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
                       : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:hover:bg-neutral-800"
                   }`}
                 >
@@ -421,7 +520,9 @@ export default function WhatsAppDashboardPage() {
                   onClick={() => setSettingsOpen((s) => !s)}
                   className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition ${
                     settingsOpen
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                      ? isPaused
+                        ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                        : "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
                       : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:hover:bg-neutral-800"
                   }`}
                 >
@@ -478,6 +579,12 @@ export default function WhatsAppDashboardPage() {
                 onSubmit={handleSaveSettings}
                 className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950"
               >
+                {isPaused && (
+                  <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-200/60 bg-amber-50/80 px-3.5 py-3 text-xs leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-950/30 dark:text-amber-200">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Settings can be updated now but won&apos;t take effect until your WhatsApp AI is resumed.
+                  </div>
+                )}
                 <h3 className="mb-4 text-sm font-bold text-gray-900 dark:text-white">AI settings</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block sm:col-span-2">
