@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
   getWhatsAppDashboardState,
   postWhatsAppSetupRequest,
   patchWhatsAppSettings,
   getWhatsAppConversations,
+  getWhatsAppConversation,
+  takeOverWhatsAppConversation,
+  releaseWhatsAppConversation,
+  replyWhatsAppConversation,
   getStoredAuth,
 } from "../../lib/apiClient";
+import { useSocket } from "../../contexts/SocketContext";
 import {
   Loader2,
   MessageCircle,
@@ -134,6 +139,13 @@ export default function WhatsAppDashboardPage() {
   const [convOpen, setConvOpen] = useState(false);
   const [convLoading, setConvLoading] = useState(false);
   const [conversations, setConversations] = useState([]);
+  const [activeConv, setActiveConv] = useState(null);
+  const [convDetail, setConvDetail] = useState(null);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [takingOver, setTakingOver] = useState(false);
+  const messagesEndRef = useRef(null);
+  const { socket } = useSocket() || {};
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -233,6 +245,179 @@ export default function WhatsAppDashboardPage() {
       setConvLoading(false);
     }
   }
+
+  async function openConversation(conv) {
+    setActiveConv(conv);
+    try {
+      const data = await getWhatsAppConversation(conv._id);
+      setConvDetail(data.conversation);
+    } catch {
+      toast.error("Could not load conversation");
+    }
+  }
+
+  async function handleTakeOver() {
+    if (!activeConv) return;
+    setTakingOver(true);
+    try {
+      const res = await takeOverWhatsAppConversation(activeConv._id);
+      setConvDetail((prev) => ({
+        ...prev,
+        mode: "human",
+        assignedToName: res.assignedToName || "You",
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c._id === activeConv._id
+            ? { ...c, mode: "human", assignedToName: res.assignedToName || "You", needsHuman: false }
+            : c
+        )
+      );
+      toast.success("You are now handling this chat");
+    } catch (err) {
+      toast.error(err?.message || "Takeover failed");
+    } finally {
+      setTakingOver(false);
+    }
+  }
+
+  async function handleRelease() {
+    if (!activeConv) return;
+    try {
+      await releaseWhatsAppConversation(activeConv._id);
+      setConvDetail((prev) => ({
+        ...prev,
+        mode: "ai",
+        assignedToName: "",
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c._id === activeConv._id ? { ...c, mode: "ai", assignedToName: "" } : c
+        )
+      );
+      setReplyText("");
+      toast.success("Released back to AI");
+    } catch (err) {
+      toast.error(err?.message || "Release failed");
+    }
+  }
+
+  async function handleSendReply() {
+    if (!replyText.trim() || sending || !activeConv) return;
+    setSending(true);
+    try {
+      await replyWhatsAppConversation(activeConv._id, replyText.trim());
+      const newMsg = {
+        role: "human",
+        content: replyText.trim(),
+        timestamp: new Date(),
+        sentByName: "You",
+      };
+      setConvDetail((prev) => ({
+        ...prev,
+        messages: [...(prev.messages || []), newMsg],
+      }));
+      setReplyText("");
+    } catch (err) {
+      toast.error(err?.message || "Failed to send");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [convDetail?.messages]);
+
+  useEffect(() => {
+    if (!socket || !convOpen) return;
+
+    const onMessage = (payload) => {
+      const cid = String(payload.conversationId);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (String(c._id) !== cid) return c;
+          return {
+            ...c,
+            lastMessageAt: payload.timestamp || new Date(),
+            messages: [
+              ...(c.messages || []),
+              {
+                role: payload.role,
+                content: payload.content,
+                timestamp: payload.timestamp,
+                sentByName: payload.sentByName,
+              },
+            ],
+          };
+        })
+      );
+      setConvDetail((prev) => {
+        if (!prev || String(prev._id) !== cid) return prev;
+        return {
+          ...prev,
+          messages: [
+            ...(prev.messages || []),
+            {
+              role: payload.role,
+              content: payload.content,
+              timestamp: payload.timestamp,
+              sentByName: payload.sentByName,
+            },
+          ],
+        };
+      });
+    };
+
+    const onTakeover = (payload) => {
+      const cid = String(payload.conversationId);
+      setConversations((prev) =>
+        prev.map((c) =>
+          String(c._id) === cid
+            ? { ...c, mode: "human", assignedToName: payload.assignedToName, needsHuman: false }
+            : c
+        )
+      );
+      setConvDetail((prev) => {
+        if (!prev || String(prev._id) !== cid) return prev;
+        return { ...prev, mode: "human", assignedToName: payload.assignedToName, needsHuman: false };
+      });
+    };
+
+    const onReleased = (payload) => {
+      const cid = String(payload.conversationId);
+      setConversations((prev) =>
+        prev.map((c) => (String(c._id) === cid ? { ...c, mode: "ai", assignedToName: "" } : c))
+      );
+      setConvDetail((prev) => {
+        if (!prev || String(prev._id) !== cid) return prev;
+        return { ...prev, mode: "ai", assignedToName: "" };
+      });
+    };
+
+    const onNeedsHuman = (payload) => {
+      const cid = String(payload.conversationId);
+      setConversations((prev) =>
+        prev.map((c) => (String(c._id) === cid ? { ...c, needsHuman: true } : c))
+      );
+      setConvDetail((prev) => {
+        if (!prev || String(prev._id) !== cid) return prev;
+        return { ...prev, needsHuman: true };
+      });
+    };
+
+    socket.on("whatsapp:message", onMessage);
+    socket.on("whatsapp:takeover", onTakeover);
+    socket.on("whatsapp:released", onReleased);
+    socket.on("whatsapp:needs_human", onNeedsHuman);
+
+    return () => {
+      socket.off("whatsapp:message", onMessage);
+      socket.off("whatsapp:takeover", onTakeover);
+      socket.off("whatsapp:released", onReleased);
+      socket.off("whatsapp:needs_human", onNeedsHuman);
+    };
+  }, [socket, convOpen]);
 
   const statusConfig = {
     not_connected: {
@@ -563,9 +748,9 @@ export default function WhatsAppDashboardPage() {
             </div>
 
             {convOpen && (
-              <div className="rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
                 <div className="border-b border-gray-100 px-5 py-3.5 dark:border-neutral-800">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Recent conversations</h3>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Conversations</h3>
                 </div>
                 {convLoading ? (
                   <div className="flex justify-center py-12">
@@ -577,28 +762,167 @@ export default function WhatsAppDashboardPage() {
                     <p className="text-sm text-gray-500 dark:text-neutral-500">No conversations yet</p>
                   </div>
                 ) : (
-                  <ul className="max-h-80 divide-y divide-gray-100 overflow-y-auto dark:divide-neutral-800">
-                    {conversations.map((c) => (
-                      <li key={c._id} className="flex gap-3 px-5 py-3.5 transition hover:bg-gray-50 dark:hover:bg-neutral-900/50">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
-                          <User className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">
-                              {c.customerName || c.customerPhone}
+                  <div className="grid min-h-[28rem] md:grid-cols-[minmax(0,280px)_1fr]">
+                    <div className="max-h-[28rem] overflow-y-auto border-b border-gray-100 p-2 dark:border-neutral-800 md:border-b-0 md:border-r">
+                      {conversations.map((conv) => (
+                        <div
+                          key={conv._id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openConversation(conv)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") openConversation(conv);
+                          }}
+                          className={`mb-1 cursor-pointer rounded-xl border p-3 transition-all ${
+                            activeConv?._id === conv._id
+                              ? "border-orange-400 bg-orange-50 dark:bg-orange-900/20"
+                              : "border-gray-100 hover:border-gray-200 dark:border-neutral-800 dark:hover:border-neutral-700"
+                          }`}
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-semibold text-gray-800 dark:text-neutral-200">
+                              {conv.customerName || conv.customerPhone}
                             </span>
-                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-neutral-500">
-                              {formatRelativeTime(c.lastMessageAt)}
-                            </span>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {conv.needsHuman && (
+                                <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                                  ⚠️ Needs Help
+                                </span>
+                              )}
+                              {conv.mode === "human" ? (
+                                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-600">
+                                  👤 {conv.assignedToName || "Staff"}
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-600">
+                                  🤖 AI
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500 dark:text-neutral-500">
-                            {c.lastMessagePreview || "No preview"}
+                          <p className="truncate text-xs text-gray-500 dark:text-neutral-500">
+                            {conv.messages?.[conv.messages.length - 1]?.content ||
+                              conv.lastMessagePreview ||
+                              "No messages"}
                           </p>
                         </div>
-                      </li>
-                    ))}
-                  </ul>
+                      ))}
+                    </div>
+
+                    {convDetail ? (
+                      <div className="flex max-h-[28rem] min-h-[20rem] flex-col">
+                        <div className="flex items-center justify-between border-b border-gray-100 p-4 dark:border-neutral-800">
+                          <div>
+                            <p className="text-sm font-bold text-gray-800 dark:text-neutral-200">
+                              {convDetail.customerName || convDetail.customerPhone}
+                            </p>
+                            <p className="text-xs text-gray-500">{convDetail.customerPhone}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            {convDetail.mode === "ai" ? (
+                              <button
+                                type="button"
+                                onClick={handleTakeOver}
+                                disabled={takingOver}
+                                className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+                              >
+                                {takingOver ? "Taking over..." : "👤 Take Over"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleRelease}
+                                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 transition-colors hover:border-orange-400 hover:text-orange-500 dark:border-neutral-700 dark:text-neutral-400"
+                              >
+                                🤖 Release to AI
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {convDetail.mode === "human" && (
+                          <div className="border-b border-blue-100 bg-blue-50 px-4 py-2 dark:border-blue-800/30 dark:bg-blue-900/20">
+                            <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                              👤 You are handling this conversation — AI is paused
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                          {(convDetail.messages || []).map((msg, i) => (
+                            <div
+                              key={`${msg.timestamp}-${i}`}
+                              className={`flex ${msg.role === "user" ? "justify-start" : "justify-end"}`}
+                            >
+                              <div
+                                className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                                  msg.role === "user"
+                                    ? "rounded-tl-sm bg-gray-100 text-gray-800 dark:bg-neutral-800 dark:text-neutral-200"
+                                    : msg.role === "human"
+                                      ? "rounded-tr-sm bg-blue-500 text-white"
+                                      : "rounded-tr-sm bg-orange-500 text-white"
+                                }`}
+                              >
+                                {msg.role !== "user" && (
+                                  <p className="mb-0.5 text-[10px] opacity-75">
+                                    {msg.role === "human" ? `👤 ${msg.sentByName || "Staff"}` : "🤖 AI"}
+                                  </p>
+                                )}
+                                <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                                <p className="mt-1 text-right text-[10px] opacity-60">
+                                  {msg.timestamp
+                                    ? new Date(msg.timestamp).toLocaleTimeString([], {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : ""}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                          <div ref={messagesEndRef} />
+                        </div>
+
+                        {convDetail.mode === "human" ? (
+                          <div className="border-t border-gray-100 p-4 dark:border-neutral-800">
+                            <div className="flex gap-2">
+                              <textarea
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSendReply();
+                                  }
+                                }}
+                                placeholder="Type your message... (Enter to send)"
+                                rows={2}
+                                className="flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/30 dark:border-neutral-700 dark:bg-neutral-800"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSendReply}
+                                disabled={sending || !replyText.trim()}
+                                className="self-end rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+                              >
+                                {sending ? "..." : "Send"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border-t border-gray-100 p-4 dark:border-neutral-800">
+                            <p className="text-center text-xs text-gray-400 dark:text-neutral-600">
+                              🤖 AI is handling this conversation. Click &quot;Take Over&quot; to reply manually.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center p-8 text-sm text-gray-400 dark:text-neutral-600">
+                        Select a conversation to view messages
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}

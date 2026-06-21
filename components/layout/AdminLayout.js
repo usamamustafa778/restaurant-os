@@ -60,6 +60,8 @@ import {
   ArrowDownToLine,
   Sparkles,
   Bot,
+  ShieldCheck,
+  KeyRound,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
 import {
@@ -408,6 +410,16 @@ const superNav = [
     href: "/super/users",
     label: "Users",
     icon: Users,
+  },
+  {
+    href: "/super/roles",
+    label: "Roles",
+    icon: ShieldCheck,
+  },
+  {
+    href: "/super/permissions",
+    label: "Permissions",
+    icon: KeyRound,
   },
   { href: "/super/leads", label: "Leads", icon: Mail },
   { href: "/super/whatsapp", label: "WhatsApp", icon: MessageCircle },
