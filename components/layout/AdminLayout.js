@@ -60,7 +60,6 @@ import {
   ArrowDownToLine,
   Sparkles,
   Bot,
-  ShieldCheck,
   KeyRound,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
