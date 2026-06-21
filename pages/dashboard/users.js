@@ -104,6 +104,10 @@ function getRelativeTime(dt) {
   return `${months} month${months > 1 ? "s" : ""} ago`;
 }
 
+function getStaffLastActive(user) {
+  return user?.lastActiveAt || user?.lastLoginAt || null;
+}
+
 function getRolePillClass(role) {
   switch (role) {
     case "restaurant_admin": return "bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400";
@@ -350,7 +354,7 @@ export default function UsersPage() {
 
   const topStats = useMemo(() => {
     const total = users.length;
-    const neverLoggedIn = users.filter((u) => !u.lastLoginAt && u.isActive !== false).length;
+    const neverLoggedIn = users.filter((u) => !getStaffLastActive(u) && u.isActive !== false).length;
     const riders = users.filter((u) => u.role === "delivery_rider" && u.isActive !== false).length;
     const managers = users.filter((u) => ["manager", "admin", "restaurant_admin", "product_manager"].includes(u.role) && u.isActive !== false).length;
     const inactive = users.filter((u) => u.isActive === false).length;
@@ -376,7 +380,7 @@ export default function UsersPage() {
   }, [users, showAllBranches, currentBranch]);
 
   const neverLoggedInCount = useMemo(
-    () => users.filter((u) => !u.lastLoginAt && u.isActive !== false).length,
+    () => users.filter((u) => !getStaffLastActive(u) && u.isActive !== false).length,
     [users]
   );
 
@@ -528,8 +532,9 @@ export default function UsersPage() {
                   {filtered.map((u) => {
                     const uIsOwner = u.role === "restaurant_admin";
                     const inactive = u.isActive === false;
-                    const relTime = getRelativeTime(u.lastLoginAt);
-                    const isOld = u.lastLoginAt && daysAgo(u.lastLoginAt) > 30;
+                    const lastActive = getStaffLastActive(u);
+                    const relTime = getRelativeTime(lastActive);
+                    const isOld = lastActive && daysAgo(lastActive) > 30;
                     return (
                       <tr
                         key={u.id}
@@ -579,9 +584,9 @@ export default function UsersPage() {
                         </td>
                         {/* Last Active */}
                         <td className="px-4 py-3 whitespace-nowrap">
-                          {!u.lastLoginAt ? (
+                          {!lastActive ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400">
-                              Never logged in
+                              No activity yet
                             </span>
                           ) : (
                             <span className={`text-xs ${isOld ? "text-amber-600 dark:text-amber-400" : "text-gray-500 dark:text-neutral-400"}`}>
@@ -631,8 +636,9 @@ export default function UsersPage() {
               {filtered.map((u) => {
                 const uIsOwner = u.role === "restaurant_admin";
                 const inactive = u.isActive === false;
-                const relTime = getRelativeTime(u.lastLoginAt);
-                const isOld = u.lastLoginAt && daysAgo(u.lastLoginAt) > 30;
+                const lastActive = getStaffLastActive(u);
+                const relTime = getRelativeTime(lastActive);
+                const isOld = lastActive && daysAgo(lastActive) > 30;
                 return (
                   <div
                     key={u.id}
@@ -668,8 +674,8 @@ export default function UsersPage() {
                       <p className="text-xs text-gray-500 dark:text-neutral-400 flex items-center gap-1.5"><MapPin className="w-3 h-3 flex-shrink-0" /><span className="truncate">{uIsOwner ? "All branches" : (u.branches || []).map((b) => b.branchName).join(", ") || "—"}</span></p>
                     </div>
                     <div className="mt-2">
-                      {!u.lastLoginAt ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400">Never logged in</span>
+                      {!lastActive ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400">No activity yet</span>
                       ) : (
                         <p className={`text-[11px] ${isOld ? "text-amber-600 dark:text-amber-400" : "text-gray-400 dark:text-neutral-500"}`}>
                           Last active: {relTime}
@@ -728,11 +734,12 @@ export default function UsersPage() {
                   { label: "Phone", value: selectedUser.phone || "—" },
                   { label: "Branch", value: selectedUser.role === "restaurant_admin" ? "All branches" : (selectedUser.branches || []).map((b) => b.branchName).join(", ") || "—" },
                   { label: "Joined", value: fmtDate(selectedUser.createdAt) },
-                  { label: "Last login", value: selectedUser.lastLoginAt ? fmtDate(selectedUser.lastLoginAt) : "Never" },
-                ].map(({ label, value }) => (
+                  { label: "Last active", value: getStaffLastActive(selectedUser) ? fmtDate(getStaffLastActive(selectedUser)) : "No activity yet", warn: !getStaffLastActive(selectedUser) },
+                  { label: "Last login", value: selectedUser.lastLoginAt ? fmtDate(selectedUser.lastLoginAt) : "Never", warn: !selectedUser.lastLoginAt },
+                ].map(({ label, value, warn }) => (
                   <div key={label} className="flex items-start gap-2 px-3 py-2.5">
                     <span className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide w-20 flex-shrink-0 pt-px">{label}</span>
-                    <span className={`text-xs text-gray-700 dark:text-neutral-300 ${label === "Last login" && !selectedUser.lastLoginAt ? "text-red-600 dark:text-red-400 font-semibold" : ""}`}>{value}</span>
+                    <span className={`text-xs text-gray-700 dark:text-neutral-300 ${warn ? "text-red-600 dark:text-red-400 font-semibold" : ""}`}>{value}</span>
                   </div>
                 ))}
               </div>
