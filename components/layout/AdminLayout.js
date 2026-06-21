@@ -426,7 +426,6 @@ const superNav = [
   },
   { href: "/super/leads", label: "Leads", icon: Mail },
   { href: "/super/whatsapp", label: "WhatsApp", icon: MessageCircle },
-  { href: "/super/permissions", label: "Permissions", icon: ShieldCheck },
   {
     href: "/super/settings",
     label: "System Settings",
