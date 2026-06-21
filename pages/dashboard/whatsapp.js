@@ -9,6 +9,8 @@ import {
   takeOverWhatsAppConversation,
   releaseWhatsAppConversation,
   replyWhatsAppConversation,
+  deleteWhatsAppConversation,
+  clearAllWhatsAppConversations,
   getStoredAuth,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
@@ -144,6 +146,12 @@ export default function WhatsAppDashboardPage() {
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [takingOver, setTakingOver] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({
+    open: false,
+    type: null,
+    target: null,
+  });
+  const [deleting, setDeleting] = useState(false);
   const messagesEndRef = useRef(null);
   const { socket } = useSocket() || {};
 
@@ -253,6 +261,52 @@ export default function WhatsAppDashboardPage() {
       setConvDetail(data.conversation);
     } catch {
       toast.error("Could not load conversation");
+    }
+  }
+
+  function confirmDeleteConversation(conv) {
+    setDeleteModal({
+      open: true,
+      type: "single",
+      target: conv,
+    });
+  }
+
+  function confirmClearAll() {
+    setDeleteModal({
+      open: true,
+      type: "all",
+      target: null,
+    });
+  }
+
+  async function handleDeleteConfirm() {
+    setDeleting(true);
+    try {
+      if (deleteModal.type === "all") {
+        const result = await clearAllWhatsAppConversations();
+        setConversations([]);
+        setActiveConv(null);
+        setConvDetail(null);
+        toast.success(`${result.cleared} conversations cleared`);
+      } else {
+        await deleteWhatsAppConversation(deleteModal.target._id);
+        setConversations((prev) => prev.filter((c) => c._id !== deleteModal.target._id));
+        if (activeConv?._id === deleteModal.target._id) {
+          setActiveConv(null);
+          setConvDetail(null);
+        }
+        toast.success("Conversation deleted");
+      }
+      setDeleteModal({
+        open: false,
+        type: null,
+        target: null,
+      });
+    } catch (err) {
+      toast.error(err?.message || "Failed to delete");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -750,7 +804,39 @@ export default function WhatsAppDashboardPage() {
             {convOpen && (
               <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
                 <div className="border-b border-gray-100 px-5 py-3.5 dark:border-neutral-800">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Conversations</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-gray-700 dark:text-neutral-300">
+                      Conversations
+                      {conversations.length > 0 && (
+                        <span className="ml-2 text-xs font-normal text-gray-400">
+                          ({conversations.length})
+                        </span>
+                      )}
+                    </h3>
+                    {conversations.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={confirmClearAll}
+                        className="flex items-center gap-1 text-xs text-gray-400 transition-colors hover:text-red-500 dark:hover:text-red-400"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-3 w-3"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                        Clear all
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {convLoading ? (
                   <div className="flex justify-center py-12">
@@ -773,12 +859,35 @@ export default function WhatsAppDashboardPage() {
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") openConversation(conv);
                           }}
-                          className={`mb-1 cursor-pointer rounded-xl border p-3 transition-all ${
+                          className={`group relative mb-1 cursor-pointer rounded-xl border p-3 transition-all ${
                             activeConv?._id === conv._id
                               ? "border-orange-400 bg-orange-50 dark:bg-orange-900/20"
                               : "border-gray-100 hover:border-gray-200 dark:border-neutral-800 dark:hover:border-neutral-700"
                           }`}
                         >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmDeleteConversation(conv);
+                            }}
+                            className="absolute right-2 top-2 rounded-lg p-1.5 text-gray-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
                           <div className="mb-1 flex items-center justify-between gap-2">
                             <span className="truncate text-sm font-semibold text-gray-800 dark:text-neutral-200">
                               {conv.customerName || conv.customerPhone}
@@ -1207,6 +1316,69 @@ export default function WhatsAppDashboardPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {deleteModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-neutral-900">
+              <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-red-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </div>
+
+              <h3 className="mb-2 text-center text-base font-bold text-gray-900 dark:text-white">
+                {deleteModal.type === "all" ? "Clear all conversations?" : "Delete this conversation?"}
+              </h3>
+
+              <p className="mb-6 text-center text-sm text-gray-500 dark:text-neutral-400">
+                {deleteModal.type === "all"
+                  ? `This will close all ${conversations.length} conversations. The AI will start fresh with each customer next time they message.`
+                  : `Conversation with ${
+                      deleteModal.target?.customerName || deleteModal.target?.customerPhone
+                    } will be closed. Orders placed in this conversation are not affected.`}
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDeleteModal({
+                      open: false,
+                      type: null,
+                      target: null,
+                    })
+                  }
+                  className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting}
+                  className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+                >
+                  {deleting
+                    ? "Clearing..."
+                    : deleteModal.type === "all"
+                      ? "Clear all"
+                      : "Delete"}
+                </button>
+              </div>
             </div>
           </div>
         )}
