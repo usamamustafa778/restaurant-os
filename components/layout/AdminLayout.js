@@ -97,10 +97,14 @@ function isNavChildActive(asPath, basePath, childPath, childHref) {
 
   if (childPath.includes("tab=")) {
     const tab = childPath.split("tab=")[1]?.split("&")[0] || "";
-    return navPath.includes(base.split("?")[0]) && getNavQueryParam(asPath, "tab") === tab;
+    return (
+      navPath.includes(base.split("?")[0]) &&
+      getNavQueryParam(asPath, "tab") === tab
+    );
   }
 
-  if (navPath !== childBase && !navPath.startsWith(`${childBase}/`)) return false;
+  if (navPath !== childBase && !navPath.startsWith(`${childBase}/`))
+    return false;
   if (getNavQueryParam(asPath, "section") === "analytics") return false;
   return true;
 }
@@ -423,7 +427,6 @@ const superNav = [
   { href: "/super/leads", label: "Leads", icon: Mail },
   { href: "/super/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { href: "/super/permissions", label: "Permissions", icon: ShieldCheck },
-  { href: "/super/roles", label: "Custom Roles", icon: Users },
   {
     href: "/super/settings",
     label: "System Settings",
@@ -1229,11 +1232,17 @@ export default function AdminLayout({
                   ) : (
                     <div className="h-7 w-7 rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-700 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/favicon.png" alt="Eats Desk" className="h-full w-full object-cover" />
+                      <img
+                        src="/favicon.png"
+                        alt="Eats Desk"
+                        className="h-full w-full object-cover"
+                      />
                     </div>
                   )}
                   <span className="text-xs font-bold text-gray-900 dark:text-white leading-tight truncate max-w-[80px]">
-                    {restaurantName && role !== "super_admin" ? restaurantName : "Eats Desk"}
+                    {restaurantName && role !== "super_admin"
+                      ? restaurantName
+                      : "Eats Desk"}
                   </span>
                 </>
               )}
@@ -1603,18 +1612,39 @@ export default function AdminLayout({
           </main>
 
           {/* ─── Bottom nav bar — mobile only ───────────────────────────── */}
-          {["restaurant_admin","admin","manager","product_manager","cashier"].includes(role) && (
-            <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex items-stretch shadow-[0_-1px_8px_rgba(0,0,0,0.06)]"
-              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+          {[
+            "restaurant_admin",
+            "admin",
+            "manager",
+            "product_manager",
+            "cashier",
+          ].includes(role) && (
+            <nav
+              className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex items-stretch shadow-[0_-1px_8px_rgba(0,0,0,0.06)]"
+              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+            >
               {[
-                ["restaurant_admin","admin","manager","product_manager"].includes(role) && {
-                  path: "/overview", label: "Home", icon: LayoutDashboard,
+                [
+                  "restaurant_admin",
+                  "admin",
+                  "manager",
+                  "product_manager",
+                ].includes(role) && {
+                  path: "/overview",
+                  label: "Home",
+                  icon: LayoutDashboard,
                 },
-                ["restaurant_admin","admin","manager","cashier"].includes(role) && {
-                  path: "/orders", label: "Orders", icon: ClipboardList,
+                ["restaurant_admin", "admin", "manager", "cashier"].includes(
+                  role,
+                ) && {
+                  path: "/orders",
+                  label: "Orders",
+                  icon: ClipboardList,
                 },
-                ["restaurant_admin","admin","manager"].includes(role) && {
-                  path: "/sales-report", label: "Sales", icon: BarChart3,
+                ["restaurant_admin", "admin", "manager"].includes(role) && {
+                  path: "/sales-report",
+                  label: "Sales",
+                  icon: BarChart3,
                 },
               ]
                 .filter(Boolean)
@@ -1635,12 +1665,16 @@ export default function AdminLayout({
                       }`}
                     >
                       <div className="relative">
-                        <Icon className={`w-5 h-5 transition-transform ${active ? "scale-110" : ""}`} />
+                        <Icon
+                          className={`w-5 h-5 transition-transform ${active ? "scale-110" : ""}`}
+                        />
                         {active && (
                           <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
                         )}
                       </div>
-                      <span className={`text-[10px] font-semibold leading-none mt-1 ${active ? "text-primary" : ""}`}>
+                      <span
+                        className={`text-[10px] font-semibold leading-none mt-1 ${active ? "text-primary" : ""}`}
+                      >
                         {tab.label}
                       </span>
                     </Link>
@@ -1654,7 +1688,9 @@ export default function AdminLayout({
                 className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-gray-400 dark:text-neutral-500 hover:text-gray-700 dark:hover:text-neutral-300 transition-colors"
               >
                 <Menu className="w-5 h-5" />
-                <span className="text-[10px] font-semibold leading-none mt-1">More</span>
+                <span className="text-[10px] font-semibold leading-none mt-1">
+                  More
+                </span>
               </button>
             </nav>
           )}
