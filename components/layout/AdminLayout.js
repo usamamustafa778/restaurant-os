@@ -53,6 +53,7 @@ import {
   Boxes,
   ShoppingCart,
   MessageCircle,
+  ShieldCheck,
   PackageCheck,
   Package,
   LayoutList,
@@ -410,6 +411,8 @@ const superNav = [
   },
   { href: "/super/leads", label: "Leads", icon: Mail },
   { href: "/super/whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { href: "/super/permissions", label: "Permissions", icon: ShieldCheck },
+  { href: "/super/roles", label: "Custom Roles", icon: Users },
   {
     href: "/super/settings",
     label: "System Settings",

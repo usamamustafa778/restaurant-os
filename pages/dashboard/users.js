@@ -6,6 +6,7 @@ import {
   updateUser,
   deleteUser,
   getUserOrderStats,
+  getCustomRolesForRestaurant,
   SubscriptionInactiveError,
   getStoredAuth,
 } from "../../lib/apiClient";
@@ -59,11 +60,15 @@ const ROLE_TAB_MAP = {
   rider: (u) => u.role === "delivery_rider",
 };
 
-function getRoleLabel(role) {
+function getRoleLabel(role, customRoles = []) {
+  const custom = customRoles.find((r) => r.slug === role);
+  if (custom) return custom.name;
   return ROLE_LABELS[role] || role;
 }
 
-function getRoleDescription(role) {
+function getRoleDescription(role, customRoles = []) {
+  const custom = customRoles.find((r) => r.slug === role);
+  if (custom) return custom.description || `Custom role (base: ${custom.baseRole || "cashier"})`;
   return ROLE_OPTIONS.find((r) => r.value === role)?.desc || "";
 }
 
@@ -161,6 +166,7 @@ export default function UsersPage() {
     canManageInventory: false,
   };
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
+  const [customRoles, setCustomRoles] = useState([]);
 
   const roleOptions = useMemo(
     () =>
@@ -183,6 +189,13 @@ export default function UsersPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!currentBranch) return;
+    getCustomRolesForRestaurant()
+      .then((data) => setCustomRoles(data.roles || []))
+      .catch(() => setCustomRoles([]));
+  }, [currentBranch]);
 
   function resetForm() {
     setForm({
@@ -537,7 +550,7 @@ export default function UsersPage() {
                         {/* Role */}
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${getRolePillClass(u.role)}`}>
-                            {getRoleLabel(u.role)}
+                            {getRoleLabel(u.role, customRoles)}
                           </span>
                         </td>
                         {/* Branch */}
@@ -633,7 +646,7 @@ export default function UsersPage() {
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{u.name}</p>
                           <span className={`inline-flex items-center mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${getRolePillClass(u.role)}`}>
-                            {getRoleLabel(u.role)}
+                            {getRoleLabel(u.role, customRoles)}
                           </span>
                         </div>
                       </button>
@@ -705,7 +718,7 @@ export default function UsersPage() {
                 <div>
                   <p className="font-bold text-gray-900 dark:text-white text-base">{selectedUser.name}</p>
                   <span className={`inline-flex mt-1 items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${getRolePillClass(selectedUser.role)}`}>
-                    {getRoleLabel(selectedUser.role)}
+                    {getRoleLabel(selectedUser.role, customRoles)}
                   </span>
                 </div>
               </div>
@@ -775,9 +788,20 @@ export default function UsersPage() {
                 <input value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} placeholder="Email" type="email" className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm" />
                 <input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Phone (required for riders)" className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm" />
                 <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm">
-                  {roleOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  <optgroup label="System Roles">
+                    {roleOptions.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </optgroup>
+                  {customRoles.length > 0 && (
+                    <optgroup label="Custom Roles">
+                      {customRoles.map((r) => (
+                        <option key={r._id} value={r.slug}>{r.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
-                <p className="text-xs text-gray-500">{getRoleDescription(form.role)}</p>
+                <p className="text-xs text-gray-500">{getRoleDescription(form.role, customRoles)}</p>
 
                 {/* Cashier-only extra permissions */}
                 {form.role === "cashier" && (
