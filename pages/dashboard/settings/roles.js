@@ -12,7 +12,14 @@ import {
   deleteAdminRoleForTenant,
   getStoredAuth,
 } from "../../../lib/apiClient";
-import { ChevronDown, ChevronRight, Loader2, Plus, Search, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 
@@ -68,7 +75,11 @@ export default function TenantRolesPage() {
         getPermissionsGroupedForAdmin(),
       ]);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
-      setGroupedPerms(permRes?.groups && typeof permRes.groups === "object" ? permRes.groups : {});
+      setGroupedPerms(
+        permRes?.groups && typeof permRes.groups === "object"
+          ? permRes.groups
+          : {},
+      );
     } catch (err) {
       toast.error(err.message || "Failed to load roles");
       setRoles([]);
@@ -87,7 +98,10 @@ export default function TenantRolesPage() {
     setCanManage(role === "restaurant_admin" || role === "admin");
   }, []);
 
-  const permissionGroups = useMemo(() => Object.keys(groupedPerms).sort(), [groupedPerms]);
+  const permissionGroups = useMemo(
+    () => Object.keys(groupedPerms).sort(),
+    [groupedPerms],
+  );
 
   const filteredGroupedPerms = useMemo(() => {
     const q = permSearch.trim().toLowerCase();
@@ -126,7 +140,11 @@ export default function TenantRolesPage() {
     setCreateName("");
   }
 
-  async function openPermissionsDrawer(role, initialPermissions = undefined, { skipFetch = false } = {}) {
+  async function openPermissionsDrawer(
+    role,
+    initialPermissions = undefined,
+    { skipFetch = false } = {},
+  ) {
     setDrawerRole(role);
     setPermSearch("");
     setExpandedGroups({});
@@ -147,7 +165,9 @@ export default function TenantRolesPage() {
       setDrawerLoading(true);
       const fresh = await getAdminRoleForTenant(role.id);
       setDrawerRole(fresh);
-      setSelectedPermissions(Array.isArray(fresh.permissions) ? [...fresh.permissions] : []);
+      setSelectedPermissions(
+        Array.isArray(fresh.permissions) ? [...fresh.permissions] : [],
+      );
     } catch (err) {
       toast.error(err.message || "Failed to load role permissions");
     } finally {
@@ -260,92 +280,102 @@ export default function TenantRolesPage() {
   }
 
   return (
-    <AdminLayout title="Staff Roles" subtitle="Create custom roles for your team">
-      <Card title="Custom roles" description="Define permissions for roles you assign to staff members.">
-        {canManage && (
-          <div className="flex justify-end mb-4">
-            <Button type="button" onClick={openCreateModal} className="inline-flex items-center gap-1.5">
-              <Plus className="w-4 h-4" />
-              New Role
-            </Button>
-          </div>
-        )}
+    <AdminLayout
+      title="Staff Roles"
+      subtitle="Create custom roles for your team"
+    >
+      {canManage && (
+        <div className="flex justify-end mb-4">
+          <Button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            New Role
+          </Button>
+        </div>
+      )}
 
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-neutral-500">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            Loading...
-          </div>
-        ) : (
-          <DataTable
-            data={roles}
-            emptyMessage="No custom roles yet. Create your first role to assign to staff."
-            columns={[
-              {
-                key: "name",
-                header: "Role Name",
-                render: (_, r) => (
-                  <div className="font-semibold text-gray-900 dark:text-white">{r.name}</div>
-                ),
-              },
-              {
-                key: "baseRole",
-                header: "Base Template",
-                render: (_, r) => TEMPLATE_LABELS[r.baseRole] || r.baseRole || "—",
-              },
-              {
-                key: "permissions",
-                header: "Permissions",
-                render: (_, r) => `${(r.permissions || []).length} permissions`,
-              },
-              {
-                key: "createdAt",
-                header: "Created",
-                render: (_, r) => (
-                  <span className="text-xs text-neutral-500">{fmtDate(r.createdAt)}</span>
-                ),
-              },
-              {
-                key: "actions",
-                header: "Actions",
-                align: "right",
-                render: (_, r) => (
-                  <div className="flex gap-2 justify-end">
-                    {canManage ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => openPermissionsDrawer(r)}
-                          className="text-xs font-medium text-primary hover:underline"
-                        >
-                          Edit permissions
-                        </button>
-                        {r.isActive !== false && (
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(r)}
-                            className="text-xs font-medium text-red-600 hover:underline"
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </>
-                    ) : (
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-neutral-500">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" />
+          Loading...
+        </div>
+      ) : (
+        <DataTable
+          data={roles}
+          emptyMessage="No custom roles yet. Create your first role to assign to staff."
+          columns={[
+            {
+              key: "name",
+              header: "Role Name",
+              render: (_, r) => (
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  {r.name}
+                </div>
+              ),
+            },
+            {
+              key: "baseRole",
+              header: "Base Template",
+              render: (_, r) =>
+                TEMPLATE_LABELS[r.baseRole] || r.baseRole || "—",
+            },
+            {
+              key: "permissions",
+              header: "Permissions",
+              render: (_, r) => `${(r.permissions || []).length} permissions`,
+            },
+            {
+              key: "createdAt",
+              header: "Created",
+              render: (_, r) => (
+                <span className="text-xs text-neutral-500">
+                  {fmtDate(r.createdAt)}
+                </span>
+              ),
+            },
+            {
+              key: "actions",
+              header: "Actions",
+              align: "right",
+              render: (_, r) => (
+                <div className="flex gap-2 justify-end">
+                  {canManage ? (
+                    <>
                       <button
                         type="button"
                         onClick={() => openPermissionsDrawer(r)}
-                        className="text-xs font-medium text-neutral-500 hover:underline"
+                        className="text-xs font-medium text-primary hover:underline"
                       >
-                        View permissions
+                        Edit permissions
                       </button>
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-          />
-        )}
-      </Card>
+                      {r.isActive !== false && (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(r)}
+                          className="text-xs font-medium text-red-600 hover:underline"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openPermissionsDrawer(r)}
+                      className="text-xs font-medium text-neutral-500 hover:underline"
+                    >
+                      View permissions
+                    </button>
+                  )}
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
 
       {createModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -362,7 +392,9 @@ export default function TenantRolesPage() {
             </div>
             <form onSubmit={handleCreateRole}>
               <div className="p-5">
-                <label className="block text-xs font-medium mb-1">Role Name</label>
+                <label className="block text-xs font-medium mb-1">
+                  Role Name
+                </label>
                 <input
                   required
                   autoFocus
@@ -376,11 +408,19 @@ export default function TenantRolesPage() {
                 </p>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
-                <Button type="button" variant="ghost" onClick={closeCreateModal}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={closeCreateModal}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={creating}>
-                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Role"}
+                  {creating ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    "Create Role"
+                  )}
                 </Button>
               </div>
             </form>
@@ -409,7 +449,9 @@ export default function TenantRolesPage() {
                 >
                   {drawerRole.name}
                 </h3>
-                <p className="text-xs text-neutral-500 mt-0.5">Edit permissions</p>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Edit permissions
+                </p>
               </div>
               <button
                 type="button"
@@ -461,8 +503,11 @@ export default function TenantRolesPage() {
                     const items = filteredGroupedPerms[group] || [];
                     const keys = items.map((p) => p.key);
                     const expanded = expandedGroups[group] === true;
-                    const selected = keys.filter((k) => selectedPermissions.includes(k)).length;
-                    const allSelected = keys.length > 0 && selected === keys.length;
+                    const selected = keys.filter((k) =>
+                      selectedPermissions.includes(k),
+                    ).length;
+                    const allSelected =
+                      keys.length > 0 && selected === keys.length;
 
                     return (
                       <div key={group}>
@@ -470,7 +515,10 @@ export default function TenantRolesPage() {
                           <button
                             type="button"
                             onClick={() =>
-                              setExpandedGroups((prev) => ({ ...prev, [group]: !expanded }))
+                              setExpandedGroups((prev) => ({
+                                ...prev,
+                                [group]: !expanded,
+                              }))
                             }
                             className="flex items-center gap-2 flex-1 min-w-0 text-left text-xs font-semibold hover:text-primary"
                           >
@@ -487,7 +535,9 @@ export default function TenantRolesPage() {
                           {canManage && (
                             <button
                               type="button"
-                              onClick={() => setGroupPermissions(keys, !allSelected)}
+                              onClick={() =>
+                                setGroupPermissions(keys, !allSelected)
+                              }
                               className="text-[11px] font-medium text-primary hover:underline shrink-0"
                             >
                               {allSelected ? "None" : "All"}
@@ -529,10 +579,15 @@ export default function TenantRolesPage() {
 
             <div className="shrink-0 px-5 py-4 border-t border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex items-center justify-between gap-3">
               <span className="text-xs text-neutral-500">
-                {selectedPermissions.length} permission{selectedPermissions.length === 1 ? "" : "s"} selected
+                {selectedPermissions.length} permission
+                {selectedPermissions.length === 1 ? "" : "s"} selected
               </span>
               <div className="flex gap-2">
-                <Button type="button" variant="ghost" onClick={closePermissionsDrawer}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={closePermissionsDrawer}
+                >
                   Cancel
                 </Button>
                 {canManage && (
@@ -541,7 +596,11 @@ export default function TenantRolesPage() {
                     onClick={handleSavePermissions}
                     disabled={drawerSaving || drawerLoading}
                   >
-                    {drawerSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save permissions"}
+                    {drawerSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      "Save permissions"
+                    )}
                   </Button>
                 )}
               </div>
