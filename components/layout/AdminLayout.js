@@ -189,6 +189,12 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager"],
   },
   {
+    path: "/settings/roles",
+    label: "Staff Roles",
+    icon: UserCog,
+    roles: ["restaurant_admin", "admin", "manager"],
+  },
+  {
     path: "/riders",
     label: "Riders",
     icon: Truck,
@@ -201,29 +207,25 @@ const tenantNav = [
     label: "Stock Items",
     icon: Boxes,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
-    permissionFlag: "canManageInventory",
     exact: true,
   },
   {
     path: "/inventory/purchase-orders",
     label: "Purchase Orders",
     icon: ShoppingCart,
-    roles: ["restaurant_admin", "admin", "manager"],
-    permissionFlag: "canManageInventory",
+    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
   {
     path: "/inventory/receive-stock",
     label: "Receive Stock",
     icon: PackageCheck,
-    roles: ["restaurant_admin", "admin", "manager"],
-    permissionFlag: "canManageInventory",
+    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
   {
     path: "/inventory/purchase-history",
     label: "Purchase History",
     icon: ClipboardList,
-    roles: ["restaurant_admin", "admin", "manager"],
-    permissionFlag: "canManageInventory",
+    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
 
   { type: "section", label: "ACCOUNTS" },
@@ -232,7 +234,6 @@ const tenantNav = [
     label: "Accounts Board",
     icon: LayoutGrid,
     roles: ["restaurant_admin", "admin", "manager"],
-    permissionFlag: "canViewAccounts",
     exact: true,
   },
   {
@@ -240,7 +241,6 @@ const tenantNav = [
     label: "Sales",
     icon: BarChart3,
     roles: ["restaurant_admin", "admin", "manager"],
-    permissionFlag: "canViewSalesDetails",
   },
   {
     label: "Vouchers",
@@ -367,12 +367,6 @@ const tenantNav = [
     label: "Subscription",
     icon: CreditCard,
     roles: ["restaurant_admin", "admin"],
-  },
-  {
-    path: "/settings/roles",
-    label: "Roles",
-    icon: Users,
-    roles: ["restaurant_admin", "admin", "manager"],
   },
   {
     path: "/profile",
@@ -588,7 +582,6 @@ export default function AdminLayout({
     loading: branchLoading,
   } = useBranch() || {};
   const [role, setRole] = useState(null);
-  const [userPermissions, setUserPermissions] = useState({});
   const [actingAsSlug, setActingAsSlug] = useState(null);
   const [userName, setUserName] = useState("");
   const [userInitials, setUserInitials] = useState("");
@@ -633,7 +626,12 @@ export default function AdminLayout({
     }
   }, [role, router]);
 
-  const whatsappNavRoles = ["restaurant_admin", "admin", "manager", "kitchen_staff"];
+  const whatsappNavRoles = [
+    "restaurant_admin",
+    "admin",
+    "manager",
+    "kitchen_staff",
+  ];
   useEffect(() => {
     if (!role || role === "super_admin" || !whatsappNavRoles.includes(role)) {
       setWhatsappNeedsHumanCount(0);
@@ -701,7 +699,6 @@ export default function AdminLayout({
     setRole(r);
 
     const auth = getStoredAuth();
-    setUserPermissions(auth?.user?.permissions || {});
     const name = auth?.user?.name || auth?.user?.email || "";
     setUserName(name);
     if (name) {
@@ -768,20 +765,10 @@ export default function AdminLayout({
   // When super_admin is acting as a tenant, show full tenant nav (treat as restaurant_admin)
   const navRole =
     role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
-  // Filter nav items by role — cashiers may also see items via explicit permission flags
   const withRole = rawNavItems.filter((item) => {
     if (item.type === "section") return true;
     if (!item.roles) return true;
-    if (item.roles.includes(navRole)) return true;
-    // Cashier with a matching permission flag can see the item
-    if (
-      navRole === "cashier" &&
-      item.permissionFlag &&
-      userPermissions[item.permissionFlag]
-    ) {
-      return true;
-    }
-    return false;
+    return item.roles.includes(navRole);
   });
   const navItems = withRole.filter((item, i) => {
     if (item.type !== "section") return true;
@@ -1170,9 +1157,10 @@ export default function AdminLayout({
                         {(!collapsed || mobileSidebarOpen) && (
                           <>
                             <span className="flex-1">{item.label}</span>
-                            {item.path === "/whatsapp" && whatsappNeedsHumanCount > 0 && (
-                              <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-orange-500" />
-                            )}
+                            {item.path === "/whatsapp" &&
+                              whatsappNeedsHumanCount > 0 && (
+                                <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-orange-500" />
+                              )}
                           </>
                         )}
                       </Link>
@@ -1293,9 +1281,9 @@ export default function AdminLayout({
 
             {/* Right — notifications + user avatar */}
             <div className="ml-auto z-10 flex items-center gap-2">
-              {role && whatsappNavRoles.includes(role) && role !== "super_admin" && (
-                <WhatsAppNotificationBell />
-              )}
+              {role &&
+                whatsappNavRoles.includes(role) &&
+                role !== "super_admin" && <WhatsAppNotificationBell />}
               <Link
                 href="/profile"
                 className="flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-primary to-secondary text-white text-[10px] font-bold flex-shrink-0 shadow-sm"
@@ -1331,9 +1319,9 @@ export default function AdminLayout({
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
-              {role && whatsappNavRoles.includes(role) && role !== "super_admin" && (
-                <WhatsAppNotificationBell />
-              )}
+              {role &&
+                whatsappNavRoles.includes(role) &&
+                role !== "super_admin" && <WhatsAppNotificationBell />}
               {role === "super_admin" && actingAsSlug && (
                 <button
                   type="button"

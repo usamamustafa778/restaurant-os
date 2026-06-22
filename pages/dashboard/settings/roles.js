@@ -43,9 +43,7 @@ function fmtDate(dt) {
 
 export default function TenantRolesPage() {
   const { confirm } = useConfirmDialog();
-  const auth = getStoredAuth();
-  const currentRole = auth?.user?.role;
-  const canManage = currentRole === "restaurant_admin" || currentRole === "admin";
+  const [canManage, setCanManage] = useState(false);
 
   const [roles, setRoles] = useState([]);
   const [groupedPerms, setGroupedPerms] = useState({});
@@ -82,6 +80,12 @@ export default function TenantRolesPage() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    const auth = getStoredAuth();
+    const role = auth?.user?.role;
+    setCanManage(role === "restaurant_admin" || role === "admin");
+  }, []);
 
   const permissionGroups = useMemo(() => Object.keys(groupedPerms).sort(), [groupedPerms]);
 
