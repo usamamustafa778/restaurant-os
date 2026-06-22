@@ -1353,7 +1353,7 @@ export default function RidersPage() {
                                         className="flex justify-between gap-2"
                                       >
                                         <Link
-                                          href={`/dashboard/orders?editOrder=${encodeURIComponent(mongoId)}`}
+                                          href={`/pos?editOrder=${encodeURIComponent(mongoId)}`}
                                           className="text-primary font-semibold hover:underline truncate"
                                         >
                                           {label}
@@ -1492,7 +1492,7 @@ export default function RidersPage() {
                                   >
                                     <td className="p-2 font-mono">
                                       <Link
-                                        href={`/dashboard/orders?editOrder=${encodeURIComponent(mongoId)}`}
+                                        href={`/pos?editOrder=${encodeURIComponent(mongoId)}`}
                                         className="text-primary font-semibold hover:underline"
                                       >
                                         {label}
@@ -1835,7 +1835,7 @@ export default function RidersPage() {
                           >
                             <td className="p-2">
                               <Link
-                                href={`/dashboard/orders?editOrder=${encodeURIComponent(mongoId)}`}
+                                href={`/pos?editOrder=${encodeURIComponent(mongoId)}`}
                                 className="text-primary font-semibold hover:underline font-mono"
                               >
                                 {label}

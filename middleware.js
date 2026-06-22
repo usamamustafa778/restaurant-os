@@ -17,7 +17,7 @@ const ALLOWED_ROLES = [
 
 // Dashboard pages that live under pages/dashboard/ and are now served at /<page>
 const DASHBOARD_PAGES = new Set([
-  "overview", "orders", "kitchen", "reservations",
+  "overview", "pos", "orders", "kitchen", "reservations",
   "categories", "menu-items", "menu",
   "customers", "inventory", "deals",
   "users", "business-settings", "settings", "tables", "history",
@@ -98,7 +98,7 @@ async function checkAuth(request) {
 
 /**
  * Check if the first path segment is a known dashboard page.
- * e.g. /overview → "overview", /orders → "orders"
+ * e.g. /overview → "overview", /pos → "pos"
  */
 function getDashboardPage(pathname) {
   const match = pathname.match(/^\/([^/]+)/);
@@ -190,7 +190,10 @@ export async function middleware(request) {
 
   // ─── Backward compat: /dashboard/* → redirect to /* ────────────────────
   if (pathname.startsWith("/dashboard")) {
-    const cleanPath = pathname.replace(/^\/dashboard/, "") || "/";
+    let cleanPath = pathname.replace(/^\/dashboard/, "") || "/";
+    if (cleanPath === "/orders" || cleanPath.startsWith("/orders/")) {
+      cleanPath = `/pos${cleanPath.slice("/orders".length)}`;
+    }
     const url = request.nextUrl.clone();
     url.pathname = cleanPath;
     return NextResponse.redirect(url, 301);
@@ -250,14 +253,14 @@ export async function middleware(request) {
     return NextResponse.rewrite(url);
   }
 
-  // ─── Legacy /pos redirect → merged into /orders ───────────────────────
-  if (pathname === "/pos") {
+  // ─── Legacy /orders → /pos (bookmarks) ─────────────────────────────────
+  if (pathname === "/orders" || pathname.startsWith("/orders/")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/orders";
-    return NextResponse.redirect(url);
+    url.pathname = `/pos${pathname.slice("/orders".length)}`;
+    return NextResponse.redirect(url, 301);
   }
 
-  // ─── Dashboard pages: /overview, /orders, etc. ────────────────────────
+  // ─── Dashboard pages: /overview, /pos, etc. ────────────────────────────
   if (getDashboardPage(pathname)) {
     const payload = await checkAuth(request);
     if (!payload) {

@@ -463,7 +463,7 @@ function TableCard({ table, activeOrder, reservation, onEdit, onDelete, router }
           {table.status === "available" && (
             <button
               type="button"
-              onClick={() => router.push(`/dashboard/orders?view=pos&table=${encodeURIComponent(table.name)}`)}
+              onClick={() => router.push(`/pos?view=pos&table=${encodeURIComponent(table.name)}`)}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary text-white text-[10px] font-semibold hover:bg-secondary transition-colors"
             >
               <UserCheck className="w-3 h-3" />
@@ -473,7 +473,7 @@ function TableCard({ table, activeOrder, reservation, onEdit, onDelete, router }
           {table.status === "occupied" && activeOrder && (
             <button
               type="button"
-              onClick={() => router.push(`/dashboard/orders?editOrder=${activeOrder.id}`)}
+              onClick={() => router.push(`/pos?editOrder=${activeOrder.id}`)}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-red-500 text-white text-[10px] font-semibold hover:bg-red-600 transition-colors"
             >
               <Eye className="w-3 h-3" />
@@ -483,7 +483,7 @@ function TableCard({ table, activeOrder, reservation, onEdit, onDelete, router }
           {table.status === "reserved" && (
             <button
               type="button"
-              onClick={() => router.push(`/dashboard/orders?view=pos&table=${encodeURIComponent(table.name)}`)}
+              onClick={() => router.push(`/pos?view=pos&table=${encodeURIComponent(table.name)}`)}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-500 text-white text-[10px] font-semibold hover:bg-orange-600 transition-colors"
             >
               <ChevronRight className="w-3 h-3" />

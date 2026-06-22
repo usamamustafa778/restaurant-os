@@ -171,7 +171,7 @@ export default function LoginPage() {
     } else if (user.role === "delivery_rider") {
       target = "/rider";
     } else if (user.role === "cashier") {
-      target = "/orders";
+      target = "/pos";
     } else if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
       target = fromQuery;
     } else if (user.role === "super_admin") {

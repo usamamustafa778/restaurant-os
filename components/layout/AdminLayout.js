@@ -125,7 +125,7 @@ const tenantNav = [
 
   { type: "section", label: "ORDERS & SERVICE" },
   {
-    path: "/orders",
+    path: "/pos",
     label: "POS",
     icon: ClipboardList,
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
@@ -660,7 +660,7 @@ export default function AdminLayout({
     const path =
       (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
     if (path === "/overview") {
-      router.replace("/orders");
+      router.replace("/pos");
     }
   }, [role, router]);
 
@@ -669,7 +669,7 @@ export default function AdminLayout({
     if (role !== "delivery_rider") return;
     const path =
       (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
-    if (path === "/overview" || path === "/orders" || path === "/kitchen") {
+    if (path === "/overview" || path === "/pos" || path === "/kitchen") {
       router.replace("/rider");
     }
   }, [role, router]);
@@ -745,7 +745,7 @@ export default function AdminLayout({
         router.asPath.includes("/menu-items")
       )
         toExpand.push("/menu");
-      if (router.asPath.includes("/orders")) toExpand.push("/orders");
+      if (router.asPath.includes("/pos")) toExpand.push("/pos");
       if (getNavPath(router.asPath, router.pathname) === "/website-settings") {
         toExpand.push("/website-settings");
       }
@@ -1667,7 +1667,7 @@ export default function AdminLayout({
                 ["restaurant_admin", "admin", "manager", "cashier"].includes(
                   role,
                 ) && {
-                  path: "/orders",
+                  path: "/pos",
                   label: "Orders",
                   icon: ClipboardList,
                 },

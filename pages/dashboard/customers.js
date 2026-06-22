@@ -914,7 +914,7 @@ export default function CustomersPage() {
                       >
                         <div>
                           <Link
-                            href={`/dashboard/orders?editOrder=${encodeURIComponent(o.id)}`}
+                            href={`/pos?editOrder=${encodeURIComponent(o.id)}`}
                             className="font-mono font-semibold text-primary hover:underline"
                           >
                             {o.orderNumber || o.id}

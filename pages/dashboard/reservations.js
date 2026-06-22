@@ -266,7 +266,7 @@ export default function ReservationsPage() {
       setReservations((p) => p.map((r) => (r.id === res.id ? { ...r, status: "seated" } : r)));
       toast.success("Guests seated!", { id: toastId });
       const tp = res.tableNumber ? `&table=${encodeURIComponent(res.tableNumber)}` : "";
-      router.push(`/dashboard/orders?view=pos${tp}`);
+      router.push(`/pos?view=pos${tp}`);
     } catch (err) {
       toast.error(err.message || "Failed", { id: toastId });
     }

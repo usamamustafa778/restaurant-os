@@ -56,7 +56,6 @@ import {
   CircleCheckBig,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Utensils,
   Package,
   Truck,
@@ -87,6 +86,45 @@ function isBranchRequiredError(msg) {
     msg.toLowerCase().includes("branchid") &&
     msg.toLowerCase().includes("required")
   );
+}
+
+/** Match saved order to branch delivery zone id (API id, name, or address prefix). */
+function resolveDeliveryLocationIdFromOrder(order, zones) {
+  if (!order) return "";
+  const zoneList = Array.isArray(zones) ? zones : [];
+  const rawId =
+    order.deliveryLocationId != null ? String(order.deliveryLocationId) : "";
+  if (rawId && zoneList.some((z) => z.id === rawId)) return rawId;
+
+  const zoneName = String(order.deliveryLocationName || "").trim();
+  if (zoneName) {
+    const byName = zoneList.find((z) => z.name === zoneName);
+    if (byName) return byName.id;
+  }
+
+  const addr = String(order.deliveryAddress || "").trim();
+  if (addr && zoneList.length) {
+    const byAddr = zoneList.find(
+      (z) => addr === z.name || addr.startsWith(`${z.name} —`),
+    );
+    if (byAddr) return byAddr.id;
+  }
+  return rawId;
+}
+
+function mapBranchDeliveryZones(branch) {
+  const raw = Array.isArray(branch?.deliveryLocations)
+    ? branch.deliveryLocations
+    : [];
+  return raw
+    .map((z) => ({
+      id: z._id != null ? String(z._id) : z.id != null ? String(z.id) : "",
+      name: String(z.name || "").trim(),
+      fee: Math.max(0, Number(z.fee) || 0),
+      sortOrder: Number(z.sortOrder) || 0,
+    }))
+    .filter((z) => z.name && z.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 const ALL_POS_ORDER_TYPES = ["DINE_IN", "TAKEAWAY", "DELIVERY"];
@@ -187,7 +225,6 @@ export default function POSView({
   onOrderChanged,
   isActive = true,
   initialTableName = "",
-  onOpenTodayReport,
 }) {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
@@ -298,9 +335,13 @@ export default function POSView({
   // Local display preference: flatten required-variation items into individual cards
   const [flattenVariations, setFlattenVariations] = useState(() => {
     try {
-      const v = typeof window !== 'undefined' && localStorage.getItem('pos_flatten_variations');
-      return v === null ? true : v !== 'false';
-    } catch { return true; }
+      const v =
+        typeof window !== "undefined" &&
+        localStorage.getItem("pos_flatten_variations");
+      return v === null ? true : v !== "false";
+    } catch {
+      return true;
+    }
   });
   const [showPosTableSettingsModal, setShowPosTableSettingsModal] =
     useState(false);
@@ -331,9 +372,9 @@ export default function POSView({
 
   const orderTypePickerOptions = useMemo(() => {
     const all = [
-      { type: "DINE_IN", icon: "🍽️", label: "Dine In" },
-      { type: "TAKEAWAY", icon: "📦", label: "Take Away" },
-      { type: "DELIVERY", icon: "🚚", label: "Delivery" },
+      { type: "DINE_IN", label: "Dine In" },
+      { type: "TAKEAWAY", label: "Take Away" },
+      { type: "DELIVERY", label: "Delivery" },
     ];
     if (editingOrderId) return all;
     return all.filter((o) => posAllowedOrderTypes.includes(o.type));
@@ -566,8 +607,12 @@ export default function POSView({
           // not a branch-wide restriction — read from localStorage, not the API.
           try {
             const stored = localStorage.getItem(POS_ORDER_TYPES_KEY);
-            const localTypes = stored ? JSON.parse(stored) : ALL_POS_ORDER_TYPES;
-            setPosAllowedOrderTypes(normalizePosAllowedOrderTypesFromApi(localTypes));
+            const localTypes = stored
+              ? JSON.parse(stored)
+              : ALL_POS_ORDER_TYPES;
+            setPosAllowedOrderTypes(
+              normalizePosAllowedOrderTypesFromApi(localTypes),
+            );
           } catch {
             setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
           }
@@ -595,24 +640,25 @@ export default function POSView({
       setDeliveryLocationId("");
       return;
     }
-    const raw = Array.isArray(currentBranch?.deliveryLocations)
-      ? currentBranch.deliveryLocations
-      : [];
-    const mapped = raw
-      .map((z) => ({
-        id: z._id != null ? String(z._id) : z.id != null ? String(z.id) : "",
-        name: String(z.name || "").trim(),
-        fee: Math.max(0, Number(z.fee) || 0),
-        sortOrder: Number(z.sortOrder) || 0,
-      }))
-      .filter((z) => z.name && z.id)
-      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const mapped = mapBranchDeliveryZones(currentBranch);
     setDeliveryZones(mapped);
     setDeliveryLocationId((prev) => {
       if (prev && mapped.some((m) => m.id === prev)) return prev;
+      if (editingOrder) {
+        const resolved = resolveDeliveryLocationIdFromOrder(
+          editingOrder,
+          mapped,
+        );
+        if (resolved && mapped.some((m) => m.id === resolved)) return resolved;
+      }
       return "";
     });
-  }, [currentBranch?.id, currentBranch?.deliveryLocations, isActive]);
+  }, [
+    currentBranch?.id,
+    currentBranch?.deliveryLocations,
+    isActive,
+    editingOrder,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -811,7 +857,12 @@ export default function POSView({
               ? "DELIVERY"
               : "DINE_IN",
         );
-        setDeliveryLocationId(order.deliveryLocationId || "");
+        setDeliveryLocationId(
+          resolveDeliveryLocationIdFromOrder(
+            order,
+            mapBranchDeliveryZones(currentBranch),
+          ),
+        );
         setEditSessionDeliveryCharges(
           Math.max(0, Number(order.deliveryCharges) || 0),
         );
@@ -844,7 +895,12 @@ export default function POSView({
     return () => {
       cancelled = true;
     };
-  }, [propEditOrderId, menu?.items?.length]);
+  }, [
+    propEditOrderId,
+    menu?.items?.length,
+    currentBranch?.id,
+    currentBranch?.deliveryLocations,
+  ]);
 
   async function loadTables() {
     try {
@@ -1035,14 +1091,18 @@ export default function POSView({
       const cashPart = Number(splitCashAmount) || 0;
       const cardPart = Number(splitCardAmount) || 0;
       const onlinePart = Number(splitOnlineAmount) || 0;
-      const positiveParts = [cashPart, cardPart, onlinePart].filter((n) => n > 0).length;
+      const positiveParts = [cashPart, cardPart, onlinePart].filter(
+        (n) => n > 0,
+      ).length;
       if (positiveParts < 2) {
         setPaymentError("Split payment needs at least 2 non-zero parts.");
         return;
       }
       const splitTotal = cashPart + cardPart + onlinePart;
       if (Math.abs(splitTotal - billTotal) > 0.01) {
-        setPaymentError(`Split amounts must add up to Rs ${billTotal.toFixed(2)}.`);
+        setPaymentError(
+          `Split amounts must add up to Rs ${billTotal.toFixed(2)}.`,
+        );
         return;
       }
       if (onlinePart > 0 && !onlineProvider) {
@@ -1073,7 +1133,12 @@ export default function POSView({
           orderType,
           tableName:
             orderType === "DINE_IN" && tableName ? tableName : undefined,
-          ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
+          ...(orderType === "DELIVERY"
+            ? {
+                deliveryCharges: deliveryFee,
+                ...(deliveryLocationId ? { deliveryLocationId } : {}),
+              }
+            : {}),
         });
         const receivedAmt =
           paymentMethod === "CASH" ? Number(amountReceived) : undefined;
@@ -1243,7 +1308,12 @@ export default function POSView({
         data = await getMenu();
       }
 
-      console.log('menu API response — item count:', (data?.items || []).length, 'ids:', (data?.items || []).map((i) => i.id));
+      console.log(
+        "menu API response — item count:",
+        (data?.items || []).length,
+        "ids:",
+        (data?.items || []).map((i) => i.id),
+      );
       setMenu(data);
       setPageLoading(false);
     } catch (err) {
@@ -1389,7 +1459,7 @@ export default function POSView({
   // Flatten items with required size groups into individual cards (one per required option)
   const flattenedMenuItems = useMemo(() => {
     if (!flattenVariations) {
-      console.log('flatten OFF, items count:', allItemsForGrid.length);
+      console.log("flatten OFF, items count:", allItemsForGrid.length);
       return allItemsForGrid;
     }
     const result = [];
@@ -1408,10 +1478,13 @@ export default function POSView({
       // Pick the required group that has price variance (any option > Rs 0) as the
       // primary flatten axis. Falls back to first required group if all prices are 0.
       const primaryGroup =
-        requiredGroups.find((g) => (g.options || []).some((o) => o.price > 0)) ||
-        requiredGroups[0];
+        requiredGroups.find((g) =>
+          (g.options || []).some((o) => o.price > 0),
+        ) || requiredGroups[0];
       // Remaining required groups (e.g. flavour at Rs 0) appear in the per-card modal
-      const remainingRequiredGroups = requiredGroups.filter((g) => g !== primaryGroup);
+      const remainingRequiredGroups = requiredGroups.filter(
+        (g) => g !== primaryGroup,
+      );
       const availableOptions = (primaryGroup.options || [])
         .filter((o) => o.isAvailable !== false)
         .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
@@ -1428,7 +1501,11 @@ export default function POSView({
           _preselectedRequired: {
             groupId: primaryGroup.id,
             groupName: primaryGroup.groupName,
-            option: { optionId: option.id, name: option.name, price: option.price },
+            option: {
+              optionId: option.id,
+              name: option.name,
+              price: option.price,
+            },
           },
           _optionalGroups: optionalGroups,
           _remainingRequiredGroups: remainingRequiredGroups,
@@ -1554,28 +1631,39 @@ export default function POSView({
         const cartKey = item._flattenedId || item.id;
         const unitPrice = presel.option.price;
         const variantLabel = presel.option.name;
-        const modifierSelectionsForOrder = [{
-          groupId: presel.groupId,
-          groupName: presel.groupName,
-          options: [presel.option],
-        }];
+        const modifierSelectionsForOrder = [
+          {
+            groupId: presel.groupId,
+            groupName: presel.groupName,
+            options: [presel.option],
+          },
+        ];
         const existing = cart.find((i) => i._cartKey === cartKey);
         if (existing) {
-          setCart(cart.map((i) =>
-            i._cartKey === cartKey
-              ? { ...i, quantity: i.quantity + Math.max(1, Math.floor(Number(qty)) || 1) }
-              : i,
-          ));
+          setCart(
+            cart.map((i) =>
+              i._cartKey === cartKey
+                ? {
+                    ...i,
+                    quantity:
+                      i.quantity + Math.max(1, Math.floor(Number(qty)) || 1),
+                  }
+                : i,
+            ),
+          );
         } else {
-          setCart([...cart, {
-            ...item,
-            id: item.id,
-            _cartKey: cartKey,
-            price: unitPrice,
-            quantity: Math.max(1, Math.floor(Number(qty)) || 1),
-            size: variantLabel,
-            _modifierSelectionsForOrder: modifierSelectionsForOrder,
-          }]);
+          setCart([
+            ...cart,
+            {
+              ...item,
+              id: item.id,
+              _cartKey: cartKey,
+              price: unitPrice,
+              quantity: Math.max(1, Math.floor(Number(qty)) || 1),
+              size: variantLabel,
+              _modifierSelectionsForOrder: modifierSelectionsForOrder,
+            },
+          ]);
         }
         setBulkAddQtyInput("1");
       } else {
@@ -1649,12 +1737,21 @@ export default function POSView({
     // Build a fingerprint so same item with different modifiers = different cart entries
     const selectionFingerprint = Object.entries(modifierSelections)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([gId, opts]) => gId + ':' + opts.map((o) => o.optionId).sort().join(','))
-      .join('|');
+      .map(
+        ([gId, opts]) =>
+          gId +
+          ":" +
+          opts
+            .map((o) => o.optionId)
+            .sort()
+            .join(","),
+      )
+      .join("|");
 
     // Use _flattenedId as the cart key base when this is a flattened card (Case 2)
     const cartKeyBase = item._flattenedId || item.id;
-    const cartKey = cartKeyBase + (selectionFingerprint ? '|' + selectionFingerprint : '');
+    const cartKey =
+      cartKeyBase + (selectionFingerprint ? "|" + selectionFingerprint : "");
 
     // Compute unit price from all groups shown in the modal
     const allModalGroups = item.modifierGroups || [];
@@ -1672,7 +1769,10 @@ export default function POSView({
     let unitPrice;
     if (item._preselectedRequired) {
       // Pre-baked required price + any remaining-required + optional prices from modal
-      unitPrice = item._preselectedRequired.option.price + requiredModalTotal + optionalModalTotal;
+      unitPrice =
+        item._preselectedRequired.option.price +
+        requiredModalTotal +
+        optionalModalTotal;
     } else {
       if (requiredInModal.length > 0 && requiredModalTotal > 0) {
         unitPrice = requiredModalTotal + optionalModalTotal;
@@ -1684,13 +1784,17 @@ export default function POSView({
     // Build variant label
     let variantLabel;
     if (item._preselectedRequired) {
-      const modalSelectedNames = Object.values(modifierSelections).flat().map((o) => o.name);
+      const modalSelectedNames = Object.values(modifierSelections)
+        .flat()
+        .map((o) => o.name);
       variantLabel = modalSelectedNames.length
-        ? `${item._preselectedRequired.option.name} (${modalSelectedNames.join(', ')})`
+        ? `${item._preselectedRequired.option.name} (${modalSelectedNames.join(", ")})`
         : item._preselectedRequired.option.name;
     } else {
-      const allSelectedNames = Object.values(modifierSelections).flat().map((o) => o.name);
-      variantLabel = allSelectedNames.join(', ') || 'Regular';
+      const allSelectedNames = Object.values(modifierSelections)
+        .flat()
+        .map((o) => o.name);
+      variantLabel = allSelectedNames.join(", ") || "Regular";
     }
 
     // Build modifierSelections array for the order payload
@@ -1722,7 +1826,11 @@ export default function POSView({
 
     const existingItem = cart.find((i) => i._cartKey === cartKey);
     if (existingItem) {
-      setCart(cart.map((i) => (i._cartKey === cartKey ? { ...i, quantity: i.quantity + qty } : i)));
+      setCart(
+        cart.map((i) =>
+          i._cartKey === cartKey ? { ...i, quantity: i.quantity + qty } : i,
+        ),
+      );
     } else {
       setCart([
         ...cart,
@@ -1743,7 +1851,9 @@ export default function POSView({
 
   const isModifierSelectionComplete = () => {
     if (!modifierPickerItem) return false;
-    const requiredGroups = (modifierPickerItem.modifierGroups || []).filter((g) => g.required);
+    const requiredGroups = (modifierPickerItem.modifierGroups || []).filter(
+      (g) => g.required,
+    );
     return requiredGroups.every((g) => {
       const sel = modifierSelections[g.id] || [];
       return sel.length > 0;
@@ -2147,7 +2257,12 @@ export default function POSView({
         deliveryAddress: customerAddress.trim(),
         orderType,
         tableName: orderType === "DINE_IN" && tableName ? tableName : undefined,
-        ...(orderType === "DELIVERY" ? { deliveryCharges: deliveryFee } : {}),
+        ...(orderType === "DELIVERY"
+          ? {
+              deliveryCharges: deliveryFee,
+              ...(deliveryLocationId ? { deliveryLocationId } : {}),
+            }
+          : {}),
       });
       toast.success("Order updated successfully!", { id: toastId });
       setEditingOrderId(null);
@@ -2199,11 +2314,8 @@ export default function POSView({
       manualDiscountLine:
         manualDiscountPercentClamped > 0 ? manualDiscountSummaryLine : "",
       posManualDiscountPercent:
-        manualDiscountPercentClamped > 0
-          ? manualDiscountPercentClamped
-          : null,
-      posDiscountReason:
-        manualDiscountPercentClamped > 0 ? discountReason : "",
+        manualDiscountPercentClamped > 0 ? manualDiscountPercentClamped : null,
+      posDiscountReason: manualDiscountPercentClamped > 0 ? discountReason : "",
       posDiscountPresetLabel:
         manualDiscountPercentClamped > 0 ? discountPresetLabel : "",
       posDiscountReasonOptions,
@@ -3073,7 +3185,10 @@ export default function POSView({
                                 <span
                                   className={`text-sm font-bold ${outOfStock ? "text-gray-400" : "text-primary"}`}
                                 >
-                                  Rs {item._flattenedPrice ?? item.finalPrice ?? item.price}
+                                  Rs{" "}
+                                  {item._flattenedPrice ??
+                                    item.finalPrice ??
+                                    item.price}
                                 </span>
                               </div>
 
@@ -3139,7 +3254,7 @@ export default function POSView({
           {editingOrderId && (
             <div className="px-3 py-2 bg-amber-500/15 dark:bg-amber-500/20 border-b border-amber-500/30 flex items-center justify-between">
               <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                Editing order #{editingOrder?.id || editingOrderId}
+                Editing #{editingOrder?.id || editingOrderId}
               </span>
               <button
                 type="button"
@@ -3163,36 +3278,17 @@ export default function POSView({
           )}
           {/* Order Header */}
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => handleNavigateAwayFromEdit(() => onClose?.())}
-                  className="flex items-center gap-1.5 text-base font-bold text-gray-900 dark:text-white hover:text-primary dark:hover:text-primary transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  View Orders
-                </button>
-                {onOpenTodayReport && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenTodayReport()}
-                    className="flex-shrink-0 p-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-                    title="Today's session report"
-                  >
-                    <Clock className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-              {editingOrderId && (
-                <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">
-                  #{editingOrder?.orderNumber || editingOrderId}
-                </span>
-              )}
-            </div>
-
-            {/* Order Type Buttons + Settings (beside Delivery) */}
+            {/* Back + order type + settings */}
             <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => handleNavigateAwayFromEdit(() => onClose?.())}
+                className="py-0.5 px-1 rounded-lg bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:text-primary dark:hover:text-primary hover:bg-gray-200 dark:hover:bg-neutral-800 transition-colors flex-shrink-0"
+                title="View orders"
+                aria-label="View orders"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
               {orderTypePickerOptions.map((option) => (
                 <button
                   key={option.type}
@@ -3204,13 +3300,12 @@ export default function POSView({
                       setSelectedWaiter("");
                     }
                   }}
-                  className={`flex-1 px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 px-2 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center ${
                     orderType === option.type
                       ? "bg-primary text-white"
                       : "bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400"
                   }`}
                 >
-                  <span className="text-sm">{option.icon}</span>
                   {option.label}
                 </button>
               ))}
@@ -3286,7 +3381,7 @@ export default function POSView({
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                Ordered Menus
+                Items Cart
               </h3>
               <div className="flex items-center gap-3 flex-shrink-0">
                 {cart.length > 0 && (
@@ -3325,10 +3420,14 @@ export default function POSView({
                 const originalEntry = originalOrderItems.find(
                   (o) => o.cartKey === (item._cartKey || item.id),
                 );
-                const originalQty = editingOrderId ? (originalEntry?.quantity || 0) : 0;
+                const originalQty = editingOrderId
+                  ? originalEntry?.quantity || 0
+                  : 0;
                 const isPrivilegedEditor =
                   !editingOrderId ||
-                  ["admin", "manager", "restaurant_admin"].includes(currentUser?.role);
+                  ["admin", "manager", "restaurant_admin"].includes(
+                    currentUser?.role,
+                  );
                 const canDecrease =
                   isPrivilegedEditor || item.quantity > originalQty;
                 return (
@@ -3369,19 +3468,26 @@ export default function POSView({
                               {item.name}
                               {item.size && (
                                 <span className="text-xs font-normal text-gray-500 dark:text-neutral-500">
-                                  {" "}({item.size})
+                                  {" "}
+                                  ({item.size})
                                 </span>
                               )}
                             </h4>
                             {item._modifierSelectionsForOrder
                               ?.filter((s) => {
-                                const group = item.modifierGroups?.find((g) => g.id === s.groupId);
+                                const group = item.modifierGroups?.find(
+                                  (g) => g.id === s.groupId,
+                                );
                                 return group && !group.required;
                               })
                               .flatMap((s) => s.options)
                               .map((o, i) => (
-                                <div key={i} className="text-xs text-gray-400 dark:text-neutral-500 leading-tight">
-                                  + {o.name}{o.price > 0 && <span> (Rs {o.price})</span>}
+                                <div
+                                  key={i}
+                                  className="text-xs text-gray-400 dark:text-neutral-500 leading-tight"
+                                >
+                                  + {o.name}
+                                  {o.price > 0 && <span> (Rs {o.price})</span>}
                                 </div>
                               ))}
                           </div>
@@ -3412,7 +3518,9 @@ export default function POSView({
                               }}
                               disabled={!canDecrease}
                               className={`w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors ${
-                                !canDecrease ? "opacity-30 cursor-not-allowed" : ""
+                                !canDecrease
+                                  ? "opacity-30 cursor-not-allowed"
+                                  : ""
                               }`}
                             >
                               <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-400" />
@@ -4753,7 +4861,9 @@ export default function POSView({
                             min="0"
                             step="1"
                             value={splitOnlineAmount}
-                            onChange={(e) => setSplitOnlineAmount(e.target.value)}
+                            onChange={(e) =>
+                              setSplitOnlineAmount(e.target.value)
+                            }
                             placeholder="0"
                             className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                           />
@@ -4763,7 +4873,9 @@ export default function POSView({
                         <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">
                           Remaining
                         </span>
-                        <span className={`text-sm font-black tabular-nums ${Math.abs(diff) < 0.01 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                        <span
+                          className={`text-sm font-black tabular-nums ${Math.abs(diff) < 0.01 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}
+                        >
                           Rs {diff.toFixed(2)}
                         </span>
                       </div>
@@ -4942,16 +5054,23 @@ export default function POSView({
                       (amountReceived === "" ||
                         Number(amountReceived) < total)) ||
                     (paymentMethod === "ONLINE" && !onlineProvider) ||
-                    (paymentMethod === "SPLIT" && (() => {
-                      const cashPart = Number(splitCashAmount) || 0;
-                      const cardPart = Number(splitCardAmount) || 0;
-                      const onlinePart = Number(splitOnlineAmount) || 0;
-                      const splitSum = cashPart + cardPart + onlinePart;
-                      const positiveParts = [cashPart, cardPart, onlinePart].filter((n) => n > 0).length;
-                      return positiveParts < 2 ||
-                        Math.abs(splitSum - total) > 0.01 ||
-                        (onlinePart > 0 && !onlineProvider);
-                    })())
+                    (paymentMethod === "SPLIT" &&
+                      (() => {
+                        const cashPart = Number(splitCashAmount) || 0;
+                        const cardPart = Number(splitCardAmount) || 0;
+                        const onlinePart = Number(splitOnlineAmount) || 0;
+                        const splitSum = cashPart + cardPart + onlinePart;
+                        const positiveParts = [
+                          cashPart,
+                          cardPart,
+                          onlinePart,
+                        ].filter((n) => n > 0).length;
+                        return (
+                          positiveParts < 2 ||
+                          Math.abs(splitSum - total) > 0.01 ||
+                          (onlinePart > 0 && !onlineProvider)
+                        );
+                      })())
                   }
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50 transition-colors"
                 >
@@ -5112,7 +5231,8 @@ export default function POSView({
                         Show variations as separate items
                       </span>
                       <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5">
-                        Items with size variations appear as individual cards. Faster for cashiers who search by name.
+                        Items with size variations appear as individual cards.
+                        Faster for cashiers who search by name.
                       </span>
                     </div>
                     <input
@@ -5121,7 +5241,12 @@ export default function POSView({
                       onChange={(e) => {
                         const v = e.target.checked;
                         setFlattenVariations(v);
-                        try { localStorage.setItem('pos_flatten_variations', String(v)); } catch {}
+                        try {
+                          localStorage.setItem(
+                            "pos_flatten_variations",
+                            String(v),
+                          );
+                        } catch {}
                       }}
                       className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
                     />
@@ -5162,7 +5287,10 @@ export default function POSView({
                       setShowCustomerPos(posCustomerSettingsDraft);
                       // Save order types to localStorage (per-terminal, not per-branch)
                       try {
-                        localStorage.setItem(POS_ORDER_TYPES_KEY, JSON.stringify(chosen));
+                        localStorage.setItem(
+                          POS_ORDER_TYPES_KEY,
+                          JSON.stringify(chosen),
+                        );
                       } catch {}
                       setPosAllowedOrderTypes(
                         normalizePosAllowedOrderTypesFromApi(chosen),
@@ -6223,7 +6351,12 @@ export default function POSView({
                                 ? "DELIVERY"
                                 : "DINE_IN",
                           );
-                          setDeliveryLocationId(order.deliveryLocationId || "");
+                          setDeliveryLocationId(
+                            resolveDeliveryLocationIdFromOrder(
+                              order,
+                              mapBranchDeliveryZones(currentBranch),
+                            ),
+                          );
                           setEditSessionDeliveryCharges(
                             Math.max(0, Number(order.deliveryCharges) || 0),
                           );
@@ -6417,7 +6550,9 @@ export default function POSView({
                         .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
                         .map((option) => {
                           const groupSel = modifierSelections[group.id] || [];
-                          const isSelected = groupSel.some((s) => s.optionId === option.id);
+                          const isSelected = groupSel.some(
+                            (s) => s.optionId === option.id,
+                          );
 
                           const toggleOption = () => {
                             setModifierSelections((prev) => {
@@ -6428,21 +6563,35 @@ export default function POSView({
                                   ...prev,
                                   [group.id]: isSelected
                                     ? []
-                                    : [{ optionId: option.id, name: option.name, price: option.price }],
+                                    : [
+                                        {
+                                          optionId: option.id,
+                                          name: option.name,
+                                          price: option.price,
+                                        },
+                                      ],
                                 };
                               } else {
                                 // Checkbox behaviour
                                 if (isSelected) {
                                   return {
                                     ...prev,
-                                    [group.id]: existing.filter((s) => s.optionId !== option.id),
+                                    [group.id]: existing.filter(
+                                      (s) => s.optionId !== option.id,
+                                    ),
                                   };
-                                } else if (existing.length < group.maxSelections) {
+                                } else if (
+                                  existing.length < group.maxSelections
+                                ) {
                                   return {
                                     ...prev,
                                     [group.id]: [
                                       ...existing,
-                                      { optionId: option.id, name: option.name, price: option.price },
+                                      {
+                                        optionId: option.id,
+                                        name: option.name,
+                                        price: option.price,
+                                      },
                                     ],
                                   };
                                 }
@@ -6470,7 +6619,9 @@ export default function POSView({
                                       : "border-gray-300 dark:border-neutral-600"
                                   }`}
                                 >
-                                  {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                                  {isSelected && (
+                                    <div className="w-2 h-2 rounded-full bg-white" />
+                                  )}
                                 </div>
                                 <span
                                   className={`text-sm font-medium ${
@@ -6489,7 +6640,9 @@ export default function POSView({
                                     : "text-gray-500 dark:text-neutral-400"
                                 }`}
                               >
-                                {option.price > 0 ? `Rs ${option.price.toLocaleString()}` : ""}
+                                {option.price > 0
+                                  ? `Rs ${option.price.toLocaleString()}`
+                                  : ""}
                               </span>
                             </button>
                           );
@@ -6517,11 +6670,14 @@ export default function POSView({
                 const displayTotal =
                   requiredTotal > 0
                     ? requiredTotal + optionalTotal
-                    : (modifierPickerItem.finalPrice ?? modifierPickerItem.price) + optionalTotal;
+                    : (modifierPickerItem.finalPrice ??
+                        modifierPickerItem.price) + optionalTotal;
 
                 return (
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm text-gray-500 dark:text-neutral-400">Total</span>
+                    <span className="text-sm text-gray-500 dark:text-neutral-400">
+                      Total
+                    </span>
                     <span className="text-lg font-bold text-gray-900 dark:text-white">
                       Rs {displayTotal.toLocaleString()}
                     </span>
@@ -6538,7 +6694,9 @@ export default function POSView({
                     : "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-600 cursor-not-allowed"
                 }`}
               >
-                {isModifierSelectionComplete() ? "Add to Order" : "Select required options"}
+                {isModifierSelectionComplete()
+                  ? "Add to Order"
+                  : "Select required options"}
               </button>
             </div>
           </div>
