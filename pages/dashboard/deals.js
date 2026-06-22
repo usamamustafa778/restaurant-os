@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import DataTable from "../../components/ui/DataTable";
 import PageLoader from "../../components/ui/PageLoader";
 import ViewToggle from "../../components/ui/ViewToggle";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import { usePageData } from "../../hooks/usePageData";
 import { useViewMode } from "../../hooks/useViewMode";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
@@ -92,6 +94,7 @@ function getEmptyForm() {
 export default function DealsPage() {
   const sym = getCurrencySymbol();
   const { currentBranch, branches } = useBranch() || {};
+  const { hasPermission } = usePermissions();
   const { confirm } = useConfirmDialog();
   const { viewMode, setViewMode } = useViewMode("table");
 
@@ -916,6 +919,7 @@ export default function DealsPage() {
 
   return (
     <AdminLayout title="Deals" suspended={suspended}>
+      <PermissionGate permission="menu.manage_deals">
       <input
         ref={fileInputRef}
         type="file"
@@ -1023,6 +1027,7 @@ export default function DealsPage() {
               </div>
             )}
           </div>
+          {hasPermission("menu.manage_deals") && (
           <button
             type="button"
             onClick={startCreate}
@@ -1031,6 +1036,7 @@ export default function DealsPage() {
             <Plus className="w-4 h-4" />
             New Deal
           </button>
+          )}
         </div>
 
         {/* Filter + Sort pills */}
@@ -1143,6 +1149,7 @@ export default function DealsPage() {
                         </span>
                       </div>
                       {/* Action buttons */}
+                      {hasPermission("menu.manage_deals") && (
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
@@ -1161,6 +1168,7 @@ export default function DealsPage() {
                           {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                         </button>
                       </div>
+                      )}
                     </div>
 
                     {/* Body */}
@@ -1295,7 +1303,7 @@ export default function DealsPage() {
                   render: (_, row) => {
                     const id = row._id || row.id;
                     const isDeleting = deletingId === id;
-                    return (
+                    return hasPermission("menu.manage_deals") ? (
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -1316,7 +1324,7 @@ export default function DealsPage() {
                           {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                         </button>
                       </div>
-                    );
+                    ) : null;
                   },
                 },
               ]}
@@ -1784,6 +1792,7 @@ export default function DealsPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

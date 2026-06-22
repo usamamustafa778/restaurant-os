@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import {
   getUsers,
   createUser,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import toast from "react-hot-toast";
 
 const ROLE_OPTIONS = [
@@ -135,6 +137,7 @@ export default function UsersPage() {
   const currentUserRole = auth?.user?.role;
   const isManager = currentUserRole === "manager";
   const { confirm } = useConfirmDialog();
+  const { hasPermission } = usePermissions();
 
   const [users, setUsers] = useState([]);
   const [suspended, setSuspended] = useState(false);
@@ -386,6 +389,7 @@ export default function UsersPage() {
 
   return (
     <AdminLayout title="Staff Management" suspended={suspended}>
+      <PermissionGate permission="staff.view">
 
       {/* ── Stat cards ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
@@ -459,10 +463,12 @@ export default function UsersPage() {
               <LayoutGrid className="w-4 h-4" />
             </button>
           </div>
+          {hasPermission("staff.manage") && (
           <button type="button" onClick={openCreate} className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors">
             <UserPlus className="w-4 h-4" />
             Add Member
           </button>
+          )}
         </div>
       </div>
 
@@ -512,9 +518,11 @@ export default function UsersPage() {
             <p className="text-sm text-gray-500 dark:text-neutral-500 mt-1">
               {showInactive ? "Try a different search or filter." : "Add your first team member or adjust the filters."}
             </p>
+            {hasPermission("staff.manage") && (
             <button type="button" onClick={openCreate} className="mt-4 inline-flex h-9 items-center gap-2 px-4 rounded-lg bg-primary text-white text-sm font-semibold">
               <UserPlus className="w-4 h-4" /> Add Team Member
             </button>
+            )}
           </div>
         ) : (
           <>
@@ -603,6 +611,7 @@ export default function UsersPage() {
                         {/* Actions */}
                         <td className="px-4 py-3">
                           {!uIsOwner ? (
+                            hasPermission("staff.manage") ? (
                             <div className="flex items-center gap-1 flex-wrap">
                               <button type="button" onClick={() => openEdit(u)} className="h-7 px-2.5 rounded-md border border-gray-200 dark:border-neutral-700 text-xs font-medium text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors whitespace-nowrap">
                                 Edit
@@ -620,6 +629,9 @@ export default function UsersPage() {
                                 {inactive ? "Activate" : "Deactivate"}
                               </button>
                             </div>
+                            ) : (
+                              <span className="text-xs text-gray-400 dark:text-neutral-600">—</span>
+                            )
                           ) : (
                             <span className="text-xs text-gray-400 dark:text-neutral-600 italic">Owner</span>
                           )}
@@ -682,7 +694,7 @@ export default function UsersPage() {
                         </p>
                       )}
                     </div>
-                    {!uIsOwner && (
+                    {!uIsOwner && hasPermission("staff.manage") && (
                       <div className="mt-3 pt-3 border-t border-gray-100 dark:border-neutral-800 flex items-center gap-1.5 flex-wrap">
                         <button type="button" onClick={() => openEdit(u)} className="h-7 px-2.5 rounded-md border border-gray-200 dark:border-neutral-700 text-xs font-medium hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">Edit</button>
                         {isOwner && (
@@ -753,6 +765,7 @@ export default function UsersPage() {
                   )}
                 </div>
               )}
+              {hasPermission("staff.manage") && (
               <div className="pt-2 flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
@@ -768,6 +781,7 @@ export default function UsersPage() {
                 )}
                 <button type="button" onClick={() => openEdit(selectedUser)} className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors">Edit role</button>
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -906,6 +920,7 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

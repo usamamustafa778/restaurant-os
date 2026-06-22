@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import PermissionGate from "../../../components/PermissionGate";
 import Button from "../../../components/ui/Button";
 import {
   ClipboardList,
@@ -164,6 +165,7 @@ export default function ReceiveStockPage() {
   if (result?.grn) {
     return (
       <AdminLayout title="Receive Stock">
+        <PermissionGate permission="inventory.receive_stock">
         <div className="max-w-2xl mx-auto mt-8 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-6 text-center space-y-4">
           <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
           <h3 className="text-xl font-black">GRN {result.grn.grnNumber} posted</h3>
@@ -175,12 +177,14 @@ export default function ReceiveStockPage() {
             <Button type="button" variant="ghost" onClick={() => router.push("/dashboard/inventory/purchase-history")}>View Purchase History</Button>
           </div>
         </div>
+        </PermissionGate>
       </AdminLayout>
     );
   }
 
   return (
     <AdminLayout title="Receive Stock">
+      <PermissionGate permission="inventory.receive_stock">
       <div className="space-y-4">
         {!mode && (
           <div className="grid md:grid-cols-2 gap-4">
@@ -325,6 +329,7 @@ export default function ReceiveStockPage() {
           </div>
         )}
       </div>
+      </PermissionGate>
     </AdminLayout>
   );
 }

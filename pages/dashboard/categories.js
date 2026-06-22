@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
 import ViewToggle from "../../components/ui/ViewToggle";
@@ -30,6 +31,7 @@ import {
   Printer,
 } from "lucide-react";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { usePageData } from "../../hooks/usePageData";
 import { useViewMode } from "../../hooks/useViewMode";
@@ -193,6 +195,7 @@ function sortCategories(list, sortBy, categories, items) {
 
 export default function CategoriesPage() {
   const { branches, currentBranch } = useBranch() || {};
+  const { hasPermission } = usePermissions();
   const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
   const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
   const {
@@ -718,6 +721,7 @@ export default function CategoriesPage() {
 
   return (
     <AdminLayout title="Categories" suspended={suspended}>
+      <PermissionGate permission="menu.manage_categories">
       <style>{`@media print { .categories-no-print { display: none !important; } }`}</style>
       {error && !pageLoading && (
         <div className="categories-no-print mb-4 rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-500/10 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
@@ -1541,6 +1545,7 @@ export default function CategoriesPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import PermissionGate from "../../../components/PermissionGate";
 import DataTable from "../../../components/ui/DataTable";
 import Button from "../../../components/ui/Button";
 import { Eye, Printer, X, ClipboardList } from "lucide-react";
@@ -83,6 +84,7 @@ export default function PurchaseHistoryPage() {
 
   return (
     <AdminLayout title="Purchase History">
+      <PermissionGate permission="inventory.purchase_orders">
       <div className="space-y-4">
         <div className="grid md:grid-cols-4 gap-3">
           <StatCard label="This Month" value={`${sym} ${Number(summary.thisMonthTotal || 0).toLocaleString()}`} />
@@ -149,6 +151,7 @@ export default function PurchaseHistoryPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

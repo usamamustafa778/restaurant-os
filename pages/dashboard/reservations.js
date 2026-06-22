@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
 import {
@@ -426,6 +427,7 @@ export default function ReservationsPage() {
 
   return (
     <AdminLayout title="Reservations" suspended={suspended}>
+      <PermissionGate permission="reservations.view">
       {pageLoading ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
@@ -653,6 +655,7 @@ export default function ReservationsPage() {
           </div>
         </form>
       </SlideOver>
+    </PermissionGate>
     </AdminLayout>
   );
 }

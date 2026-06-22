@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import PermissionGate from "../../../components/PermissionGate";
 import DataTable from "../../../components/ui/DataTable";
 import Button from "../../../components/ui/Button";
 import AsyncCombobox from "../../../components/accounting/AsyncCombobox";
@@ -686,6 +687,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <AdminLayout title="Purchase Orders">
+      <PermissionGate permission="inventory.purchase_orders">
       <div className="space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="Total POs" value={stats.total} sub="all statuses" />
@@ -824,6 +826,7 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

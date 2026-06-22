@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import Button from "../../components/ui/Button";
 import {
   getTables,
@@ -242,6 +243,7 @@ export default function TablesPage() {
 
   return (
     <AdminLayout title="Tables" suspended={suspended}>
+      <PermissionGate permission="tables.view">
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-5">
         <input
@@ -407,6 +409,7 @@ export default function TablesPage() {
           </div>
         </form>
       </SlideOver>
+    </PermissionGate>
     </AdminLayout>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import {
   getWhatsAppDashboardState,
   postWhatsAppSetupRequest,
@@ -15,6 +16,7 @@ import {
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { useWhatsAppNotifications } from "../../contexts/WhatsAppNotificationContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import {
   Loader2,
   MessageCircle,
@@ -163,6 +165,7 @@ export default function WhatsAppDashboardPage() {
   const activeConvRef = useRef(null);
   const livePanelInitRef = useRef(false);
   const { socket } = useSocket() || {};
+  const { hasPermission } = usePermissions();
   const { setConversationClickHandler, setActiveConversationId, consumePendingOpenConversationId, markAlertRead } =
     useWhatsAppNotifications();
 
@@ -639,6 +642,7 @@ export default function WhatsAppDashboardPage() {
           : "Conversations, orders & settings"
       }
     >
+      <PermissionGate permission="whatsapp.view">
       {loading ? (
         <div className="mx-auto flex max-w-lg flex-col items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white py-20 dark:border-neutral-800 dark:bg-neutral-950">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
@@ -1020,7 +1024,7 @@ export default function WhatsAppDashboardPage() {
                           </span>
                         )}
                       </h3>
-                      {conversations.length > 0 && (
+                      {conversations.length > 0 && hasPermission("whatsapp.conversations.delete") && (
                         <button
                           type="button"
                           onClick={confirmClearAll}
@@ -1075,6 +1079,7 @@ export default function WhatsAppDashboardPage() {
                                 : "border-transparent bg-white/80 hover:border-gray-200 hover:bg-white dark:bg-neutral-900/50 dark:hover:border-neutral-700 dark:hover:bg-neutral-900"
                             }`}
                           >
+                            {hasPermission("whatsapp.conversations.delete") && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1098,6 +1103,7 @@ export default function WhatsAppDashboardPage() {
                                 />
                               </svg>
                             </button>
+                            )}
                             <div className="mb-2 flex items-start gap-2.5 pr-6">
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">
                                 {(
@@ -1165,7 +1171,8 @@ export default function WhatsAppDashboardPage() {
                               </p>
                             </div>
                             <div className="flex gap-2">
-                              {convDetail.mode === "ai" ? (
+                              {hasPermission("whatsapp.conversations.manage") && (
+                              convDetail.mode === "ai" ? (
                                 <button
                                   type="button"
                                   onClick={handleTakeOver}
@@ -1184,6 +1191,7 @@ export default function WhatsAppDashboardPage() {
                                 >
                                   🤖 Release to AI
                                 </button>
+                              )
                               )}
                             </div>
                           </div>
@@ -1244,7 +1252,7 @@ export default function WhatsAppDashboardPage() {
                             <div ref={messagesEndRef} />
                           </div>
 
-                          {convDetail.mode === "human" ? (
+                          {convDetail.mode === "human" && hasPermission("whatsapp.conversations.manage") ? (
                             <div className="shrink-0 border-t border-gray-100 p-4 dark:border-neutral-800">
                               <div className="flex gap-2">
                                 <textarea
@@ -1269,6 +1277,12 @@ export default function WhatsAppDashboardPage() {
                                   {sending ? "..." : "Send"}
                                 </button>
                               </div>
+                            </div>
+                          ) : convDetail.mode === "human" ? (
+                            <div className="shrink-0 border-t border-gray-100 p-4 dark:border-neutral-800">
+                              <p className="text-center text-xs text-gray-400 dark:text-neutral-600">
+                                You don&apos;t have permission to reply to conversations.
+                              </p>
                             </div>
                           ) : (
                             <div className="shrink-0 border-t border-gray-100 p-4 dark:border-neutral-800">
@@ -1696,6 +1710,7 @@ export default function WhatsAppDashboardPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

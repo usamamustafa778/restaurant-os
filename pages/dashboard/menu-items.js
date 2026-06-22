@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
 import ViewToggle from "../../components/ui/ViewToggle";
@@ -21,6 +22,7 @@ import {
 import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import { usePageData } from "../../hooks/usePageData";
 import { useViewMode } from "../../hooks/useViewMode";
 import { useDropdown } from "../../hooks/useDropdown";
@@ -277,6 +279,7 @@ function SuggestionPopover({ anchorEl, open, children }) {
 export default function MenuItemsPage() {
   const sym = getCurrencySymbol();
   const { currentBranch, branches } = useBranch() || {};
+  const { hasPermission } = usePermissions();
   const isAdmin = isAdminRole(getStoredAuth()?.user?.role);
   const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
   
@@ -1471,6 +1474,7 @@ export default function MenuItemsPage() {
 
   return (
     <AdminLayout title="Menu Items" suspended={suspended}>
+      <PermissionGate permission="menu.manage">
       <style>{`@media print { .menu-items-no-print { display: none !important; } }`}</style>
       <input
         ref={fileInputRef}
@@ -1688,6 +1692,7 @@ export default function MenuItemsPage() {
               <FileDown className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">Export selected</span>
             </button>
+            {hasPermission("menu.manage") && (
             <button
               type="button"
               onClick={handleBulkDelete}
@@ -1696,6 +1701,7 @@ export default function MenuItemsPage() {
               <Trash2 className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">Delete selected</span>
             </button>
+            )}
           </>
         )}
 
@@ -1812,6 +1818,7 @@ export default function MenuItemsPage() {
           )}
         </div>
 
+        {hasPermission("menu.manage") && (
         <button
           type="button"
           onClick={startCreate}
@@ -1821,6 +1828,7 @@ export default function MenuItemsPage() {
           <span className="hidden sm:inline">Add item</span>
           <span className="sm:hidden">Add</span>
         </button>
+        )}
       </div>
 
       {pageLoading ? (
@@ -1896,19 +1904,23 @@ export default function MenuItemsPage() {
                             onClick: () => openRecipeDialog(item),
                             disabled: isDeleting
                           },
-                          {
-                            label: "Edit",
-                            icon: <Edit2 className="w-4 h-4" />,
-                            onClick: () => startEdit(item),
-                            disabled: isDeleting
-                          },
-                          {
-                            label: isDeleting ? "Deleting..." : "Delete",
-                            icon: isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />,
-                            onClick: () => handleDelete(item.id),
-                            variant: "danger",
-                            disabled: isDeleting
-                          }
+                          ...(hasPermission("menu.manage")
+                            ? [
+                                {
+                                  label: "Edit",
+                                  icon: <Edit2 className="w-4 h-4" />,
+                                  onClick: () => startEdit(item),
+                                  disabled: isDeleting
+                                },
+                                {
+                                  label: isDeleting ? "Deleting..." : "Delete",
+                                  icon: isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />,
+                                  onClick: () => handleDelete(item.id),
+                                  variant: "danger",
+                                  disabled: isDeleting
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </div>
@@ -2119,6 +2131,8 @@ export default function MenuItemsPage() {
                       <ShoppingBag className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">Recipe</span>
                     </button>
+                    {hasPermission("menu.manage") && (
+                    <>
                     <button
                       type="button"
                       onClick={() => startEdit(item)}
@@ -2137,6 +2151,8 @@ export default function MenuItemsPage() {
                     >
                       {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                     </button>
+                    </>
+                    )}
                   </div>
                 );
               }
@@ -3030,6 +3046,7 @@ export default function MenuItemsPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

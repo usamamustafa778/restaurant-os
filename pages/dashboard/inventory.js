@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import Button from "../../components/ui/Button";
 import {
   Plus, Trash2, Edit2, Package, TrendingUp, TrendingDown,
@@ -15,6 +16,7 @@ import {
 } from "../../lib/apiClient";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import toast from "react-hot-toast";
 
 // ─── Units ────────────────────────────────────────────────────────────────────
@@ -389,6 +391,7 @@ export default function InventoryPage() {
 
   const { confirm } = useConfirmDialog();
   const { currentBranch } = useBranch() || {};
+  const { hasPermission } = usePermissions();
 
   useEffect(() => {
     (async () => {
@@ -968,6 +971,7 @@ export default function InventoryPage() {
 
   return (
     <AdminLayout title="Inventory Management" suspended={suspended}>
+      <PermissionGate permission="inventory.view">
 
       {/* ── Import CSV modal ──────────────────────────────────────────────── */}
       {importModalOpen && (
@@ -1304,15 +1308,17 @@ export default function InventoryPage() {
               </>
             )}
           </div>
+          {hasPermission("inventory.manage") && (
           <button type="button" onClick={startCreateItem}
             className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap">
             <Plus className="w-4 h-4" /> Add Item
           </button>
+          )}
         </div>
       </div>
 
       {/* ── Bulk action bar ───────────────────────────────────────────────── */}
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && hasPermission("inventory.manage") && (
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 mb-4">
           <span className="text-xs font-semibold text-red-700 dark:text-red-400">
             {selectedIds.size} selected
@@ -1348,10 +1354,12 @@ export default function InventoryPage() {
             </div>
             <p className="text-base font-bold text-gray-700 dark:text-neutral-300">No inventory items yet</p>
             <p className="text-sm text-gray-500 dark:text-neutral-400 mt-2 max-w-md">Start by adding ingredients or raw materials to track</p>
+            {hasPermission("inventory.manage") && (
             <button onClick={startCreateItem}
               className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all">
               <Plus className="w-4 h-4" /> Add Your First Item
             </button>
+            )}
           </div>
         ) : sortedFiltered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -1522,6 +1530,8 @@ export default function InventoryPage() {
                       className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-violet-50 dark:hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400 transition-colors" title="Stock change history">
                       <History className="w-3.5 h-3.5" />
                     </button>
+                    {hasPermission("inventory.manage") && (
+                    <>
                     <button type="button" onClick={() => startEditItem(item)}
                       className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors" title="Edit">
                       <Edit2 className="w-3.5 h-3.5" />
@@ -1538,6 +1548,8 @@ export default function InventoryPage() {
                       className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 transition-colors" title="Delete">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
+                    </>
+                    )}
                   </div>
                 ),
               },
@@ -1837,6 +1849,7 @@ export default function InventoryPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 
 import {
   getSalesReport,
@@ -5960,6 +5961,7 @@ export default function HistoryPage() {
 
   return (
     <AdminLayout title="Sales & Reports" suspended={suspended}>
+      <PermissionGate permission="reports.view_sales">
       {pageLoading ? (
         <SalesReportScreenSkeleton />
       ) : (
@@ -6833,6 +6835,7 @@ export default function HistoryPage() {
           </div>
         </div>
       )}
+      </PermissionGate>
     </AdminLayout>
   );
 }

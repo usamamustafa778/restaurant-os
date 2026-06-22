@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import { getOrders, getNextStatuses, updateOrderStatus, recallKitchenOrder, getDaySessions } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import {
@@ -599,6 +600,7 @@ export default function KitchenPage() {
   if (pageLoading) {
     return (
       <AdminLayout title="Kitchen (KDS)">
+        <PermissionGate permission="orders.start_cooking">
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-16 h-16 rounded-2xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center mb-4">
             <ChefHat className="w-8 h-8 text-orange-500 animate-pulse" />
@@ -608,12 +610,14 @@ export default function KitchenPage() {
             <p className="text-sm text-gray-500">Loading kitchen orders…</p>
           </div>
         </div>
+        </PermissionGate>
       </AdminLayout>
     );
   }
 
   return (
     <AdminLayout title="Kitchen (KDS)">
+      <PermissionGate permission="orders.start_cooking">
       <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 110px)" }}>
 
         {/* ── Top bar ────────────────────────────────────────────────── */}
@@ -745,6 +749,7 @@ export default function KitchenPage() {
           })}
         </div>
       </div>
+      </PermissionGate>
     </AdminLayout>
   );
 }

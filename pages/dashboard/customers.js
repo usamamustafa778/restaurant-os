@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import {
   getCustomers,
   getCustomerOrderHistory,
@@ -380,6 +381,7 @@ export default function CustomersPage() {
 
   return (
     <AdminLayout title="Customers" suspended={suspended}>
+      <PermissionGate permission="customers.view">
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-end gap-2 overflow-x-auto pb-1">
           <div className="flex-1 min-w-[320px]">
@@ -1118,6 +1120,7 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+    </PermissionGate>
     </AdminLayout>
   );
 }

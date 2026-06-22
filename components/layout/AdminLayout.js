@@ -73,6 +73,7 @@ import {
 } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import { getTenantRoute } from "../../lib/routes";
 
 function getNavPath(asPath, pathname) {
@@ -111,7 +112,10 @@ function isNavChildActive(asPath, basePath, childPath, childHref) {
   return true;
 }
 
-// Single tenant nav: each item has `roles` – only roles that can see it. No roles = all tenant roles.
+const HEADER_TOOLBAR_BTN =
+  "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold leading-none shadow-sm transition-all";
+
+// Single tenant nav:
 // Admin: all. Manager: all except Branches, Subscription. Product manager: Overview, Categories, Items, Inventory, Profile.
 // Cashier: POS, Orders, Customers, Profile only. Kitchen: KDS, Profile.
 // Order taker uses dedicated /order-taker mobile UI and does not see the dashboard sidebar.
@@ -129,30 +133,35 @@ const tenantNav = [
     label: "POS",
     icon: ClipboardList,
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
+    permission: "orders.view",
   },
   {
     path: "/kitchen",
     label: "Kitchen (KDS)",
     icon: ChefHat,
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
+    permission: "orders.start_cooking",
   },
   {
     path: "/whatsapp",
     label: "AI Receptionist",
     icon: MessageCircle,
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
+    permission: "whatsapp.view",
   },
   {
     path: "/tables",
     label: "Tables",
     icon: UtensilsCrossed,
     roles: ["restaurant_admin", "admin", "manager"],
+    permission: "tables.view",
   },
   {
     path: "/reservations",
     label: "Reservations",
     icon: History,
     roles: ["restaurant_admin", "admin", "manager"],
+    permission: "reservations.view",
   },
 
   { type: "section", label: "MENU" },
@@ -161,18 +170,21 @@ const tenantNav = [
     label: "Categories",
     icon: FolderOpen,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "menu.manage_categories",
   },
   {
     path: "/menu-items",
     label: "Menu Items",
     icon: ShoppingBag,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "menu.manage",
   },
   {
     path: "/deals",
     label: "Deals",
     icon: Percent,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "menu.manage_deals",
   },
 
   { type: "section", label: "PEOPLE" },
@@ -181,12 +193,14 @@ const tenantNav = [
     label: "Customers",
     icon: UserCheck,
     roles: ["restaurant_admin", "admin", "manager"],
+    permission: "customers.view",
   },
   {
     path: "/users",
     label: "Staff Management",
     icon: Users,
     roles: ["restaurant_admin", "admin", "manager"],
+    permission: "staff.view",
   },
   {
     path: "/settings/roles",
@@ -199,6 +213,7 @@ const tenantNav = [
     label: "Riders",
     icon: Truck,
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
+    permission: "staff.view_riders",
   },
 
   { type: "section", label: "INVENTORY" },
@@ -208,24 +223,28 @@ const tenantNav = [
     icon: Boxes,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     exact: true,
+    permission: "inventory.view",
   },
   {
     path: "/inventory/purchase-orders",
     label: "Purchase Orders",
     icon: ShoppingCart,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "inventory.purchase_orders",
   },
   {
     path: "/inventory/receive-stock",
     label: "Receive Stock",
     icon: PackageCheck,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "inventory.receive_stock",
   },
   {
     path: "/inventory/purchase-history",
     label: "Purchase History",
     icon: ClipboardList,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "inventory.purchase_orders",
   },
 
   { type: "section", label: "ACCOUNTS" },
@@ -235,18 +254,21 @@ const tenantNav = [
     icon: LayoutGrid,
     roles: ["restaurant_admin", "admin", "manager"],
     exact: true,
+    permission: "accounts.view_board",
   },
   {
     path: "/sales-report",
     label: "Sales",
     icon: BarChart3,
     roles: ["restaurant_admin", "admin", "manager"],
+    permission: "reports.view_sales",
   },
   {
     label: "Vouchers",
     icon: Receipt,
     path: "/accounting/vouchers",
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
+    permission: "accounts.create_vouchers",
     children: [
       {
         path: "/accounting/vouchers/cash-payment",
@@ -341,12 +363,14 @@ const tenantNav = [
     label: "Business Settings",
     icon: MapPin,
     roles: ["restaurant_admin", "admin"],
+    permission: "settings.view",
   },
   {
     label: "Website",
     icon: Globe,
     path: "/website-settings",
     roles: ["restaurant_admin", "admin", "manager"],
+    permission: "settings.view",
     children: [
       { path: "/website-settings", label: "Content", icon: LayoutGrid },
       {
@@ -361,6 +385,7 @@ const tenantNav = [
     label: "Integrations / API",
     icon: Plug,
     roles: ["restaurant_admin", "admin", "manager"],
+    permission: "settings.view",
   },
   {
     path: "/subscription",
@@ -596,6 +621,7 @@ export default function AdminLayout({
   const [expandedGroups, setExpandedGroups] = useState([]);
   const [whatsappNeedsHumanCount, setWhatsappNeedsHumanCount] = useState(0);
   const { theme, toggleTheme } = useTheme();
+  const { hasPermission } = usePermissions();
 
   // Load sidebar state from sessionStorage after mount (client-side only)
   useEffect(() => {
@@ -770,9 +796,14 @@ export default function AdminLayout({
     if (!item.roles) return true;
     return item.roles.includes(navRole);
   });
-  const navItems = withRole.filter((item, i) => {
+  const withPermission = withRole.filter((item) => {
+    if (item.type === "section") return true;
+    if (item.permission && !hasPermission(item.permission)) return false;
+    return true;
+  });
+  const navItems = withPermission.filter((item, i) => {
     if (item.type !== "section") return true;
-    const after = withRole.slice(i + 1);
+    const after = withPermission.slice(i + 1);
     const nextSectionIdx = after.findIndex((x) => x.type === "section");
     const until =
       nextSectionIdx === -1 ? after : after.slice(0, nextSectionIdx);
@@ -1318,10 +1349,7 @@ export default function AdminLayout({
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3 text-xs">
-              {role &&
-                whatsappNavRoles.includes(role) &&
-                role !== "super_admin" && <WhatsAppNotificationBell />}
+            <div className="flex items-center gap-2 text-xs">
               {role === "super_admin" && actingAsSlug && (
                 <button
                   type="button"
@@ -1330,50 +1358,55 @@ export default function AdminLayout({
                     setActingAsSlug(null);
                     window.location.href = "/super/overview";
                   }}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary dark:text-primary font-semibold text-sm hover:bg-primary/10 dark:hover:bg-primary/20 transition-all"
+                  className={`${HEADER_TOOLBAR_BTN} gap-2 border-primary/30 bg-primary/5 px-3 text-primary hover:bg-primary/10 dark:border-primary/30 dark:bg-primary/10 dark:text-primary dark:hover:bg-primary/20`}
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="h-4 w-4" />
                   <span className="hidden sm:inline">
                     Go back to Super Admin Dashboard
                   </span>
                 </button>
               )}
-              {/* AI Feature Buttons — visible to tenant roles only */}
-              {role !== "super_admin" && (
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setAiSidebarOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 shadow-sm hover:shadow-md"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Ask AI
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAiSidebarOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20"
-                  >
-                    <Bot className="w-3.5 h-3.5" />
-                    Agents
-                    <span className="text-[10px] font-bold bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400 px-1.5 py-0.5 rounded-full ml-0.5">
-                      Soon
-                    </span>
-                  </button>
-                </div>
-              )}
 
-              {(role !== "super_admin" || actingAsSlug) && !branchLoading && (
-                <div className="relative flex-shrink-0">
+              {(role !== "super_admin" || actingAsSlug) && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {role !== "super_admin" && whatsappNavRoles.includes(role) && (
+                    <WhatsAppNotificationBell />
+                  )}
+                  {role !== "super_admin" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setAiSidebarOpen(true)}
+                        className={`${HEADER_TOOLBAR_BTN} border-transparent bg-gradient-to-r from-orange-500 to-orange-600 px-3 text-white hover:from-orange-600 hover:to-orange-700 hover:shadow-md`}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Ask AI
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAiSidebarOpen(true)}
+                        className={`${HEADER_TOOLBAR_BTN} border-gray-200 bg-white px-3 text-gray-700 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-orange-500/40 dark:hover:bg-orange-950/30 dark:hover:text-orange-400`}
+                      >
+                        <Bot className="h-4 w-4" />
+                        Agents
+                        <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold leading-none text-orange-600 dark:bg-orange-900/40 dark:text-orange-400">
+                          Soon
+                        </span>
+                      </button>
+                    </>
+                  )}
+
+                  {!branchLoading && (
+                    <div className="relative">
                   <button
                     type="button"
                     onClick={() => setBranchDropdownOpen((prev) => !prev)}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-900 dark:text-neutral-100 font-bold text-sm shadow-sm hover:shadow-md transition-all"
+                    className={`${HEADER_TOOLBAR_BTN} gap-2 border-gray-200 bg-white px-3 text-gray-900 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800`}
                   >
-                    <div className="h-5 w-5 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                      <MapPin className="w-3 h-3 text-white" />
+                    <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-secondary">
+                      <MapPin className="h-2.5 w-2.5 text-white" />
                     </div>
-                    <span className="truncate max-w-[160px]">
+                    <span className="max-w-[160px] truncate">
                       {currentBranch
                         ? currentBranch.name
                         : role === "restaurant_admin" || role === "admin"
@@ -1381,7 +1414,7 @@ export default function AdminLayout({
                           : (branches?.[0]?.name ?? "Select branch")}
                     </span>
                     <ChevronDown
-                      className={`w-4 h-4 text-gray-500 dark:text-neutral-400 transition-transform ${branchDropdownOpen ? "rotate-180" : ""}`}
+                      className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-neutral-400 ${branchDropdownOpen ? "rotate-180" : ""}`}
                     />
                   </button>
                   {branchDropdownOpen && (
@@ -1391,13 +1424,13 @@ export default function AdminLayout({
                         aria-hidden
                         onClick={() => setBranchDropdownOpen(false)}
                       />
-                      <div className="absolute right-0 top-full mt-2 z-50 min-w-[260px] rounded-2xl bg-white dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 shadow-2xl overflow-hidden">
-                        <div className="p-3 border-b-2 border-gray-100 dark:border-neutral-800">
-                          <p className="text-xs font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+                      <div className="absolute right-0 top-full z-50 mt-2 min-w-[260px] overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
+                        <div className="border-b-2 border-gray-100 p-3 dark:border-neutral-800">
+                          <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
                             Select Branch
                           </p>
                         </div>
-                        <div className="p-2 max-h-[300px] overflow-y-auto">
+                        <div className="max-h-[300px] overflow-y-auto p-2">
                           {(role === "restaurant_admin" ||
                             role === "admin" ||
                             (role === "super_admin" && actingAsSlug)) && (
@@ -1408,17 +1441,17 @@ export default function AdminLayout({
                                 setBranchDropdownOpen(false);
                                 window.location.reload();
                               }}
-                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold transition-all ${
+                              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
                                 !currentBranch
-                                  ? "bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary border-2 border-primary/20"
-                                  : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                  ? "border-2 border-primary/20 bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary"
+                                  : "text-gray-700 hover:bg-gray-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
                               }`}
                             >
                               <div
-                                className={`h-8 w-8 rounded-lg flex items-center justify-center ${!currentBranch ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
+                                className={`flex h-8 w-8 items-center justify-center rounded-lg ${!currentBranch ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
                               >
                                 <MapPin
-                                  className={`w-4 h-4 ${!currentBranch ? "text-white" : "text-gray-500"}`}
+                                  className={`h-4 w-4 ${!currentBranch ? "text-white" : "text-gray-500"}`}
                                 />
                               </div>
                               <span>All branches</span>
@@ -1440,18 +1473,18 @@ export default function AdminLayout({
                                   setBranchDropdownOpen(false);
                                 }
                               }}
-                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-semibold transition-all mt-1 ${
+                              className={`mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
                                 currentBranch?.id === b.id
-                                  ? "bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary border-2 border-primary/20"
-                                  : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                  ? "border-2 border-primary/20 bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary"
+                                  : "text-gray-700 hover:bg-gray-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
                               }`}
                               disabled={b.id === "none"}
                             >
                               <div
-                                className={`h-8 w-8 rounded-lg flex items-center justify-center ${currentBranch?.id === b.id ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
+                                className={`flex h-8 w-8 items-center justify-center rounded-lg ${currentBranch?.id === b.id ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
                               >
                                 <MapPin
-                                  className={`w-4 h-4 ${currentBranch?.id === b.id ? "text-white" : "text-gray-500"}`}
+                                  className={`h-4 w-4 ${currentBranch?.id === b.id ? "text-white" : "text-gray-500"}`}
                                 />
                               </div>
                               <span className="truncate">{b.name}</span>
@@ -1461,7 +1494,7 @@ export default function AdminLayout({
                         {(role === "restaurant_admin" ||
                           role === "admin" ||
                           (role === "super_admin" && actingAsSlug)) && (
-                          <div className="border-t-2 border-gray-100 dark:border-neutral-800 p-2">
+                          <div className="border-t-2 border-gray-100 p-2 dark:border-neutral-800">
                             <Link
                               href="/business-settings"
                               onClick={(e) => {
@@ -1470,15 +1503,17 @@ export default function AdminLayout({
                                   setBranchDropdownOpen(false);
                                 }
                               }}
-                              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-primary dark:text-primary hover:bg-primary/10 transition-all"
+                              className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-primary transition-all hover:bg-primary/10 dark:text-primary"
                             >
-                              <PlusSquare className="w-4 h-4" />
+                              <PlusSquare className="h-4 w-4" />
                               Manage branches
                             </Link>
                           </div>
                         )}
                       </div>
                     </>
+                  )}
+                    </div>
                   )}
                 </div>
               )}

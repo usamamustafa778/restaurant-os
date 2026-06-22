@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
+import PermissionGate from "../../components/PermissionGate";
 import POSView from "../../components/pos/POSView";
 import StatusBadge from "../../components/ui/StatusBadge";
 import {
@@ -39,6 +40,7 @@ import {
 import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import toast from "react-hot-toast";
 import {
   Loader2,
@@ -380,6 +382,7 @@ function getActionLabel(primaryNext, order) {
   if (!primaryNext) return null;
   if (primaryNext === "PROCESSING") return "Start Cooking";
   if (primaryNext === "READY") return "Mark Ready";
+  if (primaryNext === "OUT_FOR_DELIVERY") return "Send Delivery";
   if (primaryNext === "DELIVERED") {
     const s = orderStatusForTab(order.status);
     if (s === "OUT_FOR_DELIVERY") return "Mark Delivered";
@@ -391,6 +394,12 @@ function getActionLabel(primaryNext, order) {
   return primaryNext;
 }
 
+function getStatusAdvancePermission(primaryNext) {
+  if (primaryNext === "PROCESSING") return "orders.start_cooking";
+  if (primaryNext === "READY") return "orders.mark_ready";
+  return "orders.edit";
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function OrdersPage() {
@@ -398,6 +407,16 @@ export default function OrdersPage() {
   const router = useRouter();
   const { socket } = useSocket() || {};
   const { currentBranch, setCurrentBranch } = useBranch() || {};
+  const { hasPermission } = usePermissions();
+  const canViewClosedCount = hasPermission("orders.view_closed_count");
+  const canViewClosedAmount = hasPermission("orders.view_closed_amount");
+  const canDownloadClosedReport = hasPermission("orders.download_closed_report");
+  const canViewAwaitingPaymentSummary = hasPermission(
+    "orders.view_awaiting_payment",
+  );
+  const canViewSessionReport = hasPermission("orders.view_session_report");
+  const showClosedOrdersBar =
+    canViewClosedCount || canViewClosedAmount;
   const [orders, setOrders] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -471,11 +490,18 @@ export default function OrdersPage() {
   const [posEditOrderId, setPosEditOrderId] = useState(null);
   const [posInitialTableName, setPosInitialTableName] = useState("");
 
-  const openPOS = useCallback((editId = null, tableName = "") => {
-    setPosEditOrderId(editId);
-    setPosInitialTableName(tableName || "");
-    setActiveView("pos");
-  }, []);
+  const openPOS = useCallback(
+    (editId = null, tableName = "") => {
+      if (editId && !hasPermission("orders.edit")) {
+        toast.error("You don't have permission to edit orders");
+        return;
+      }
+      setPosEditOrderId(editId);
+      setPosInitialTableName(tableName || "");
+      setActiveView("pos");
+    },
+    [hasPermission],
+  );
 
   const closePOS = useCallback(() => {
     setPosEditOrderId(null);
@@ -1317,6 +1343,7 @@ export default function OrdersPage() {
       subtitle="Manage orders and payments"
       suspended={suspended}
     >
+      <PermissionGate permission="orders.view">
       {/* ── POS View ──────────────────────────────────────────────── */}
       <div style={{ display: activeView === "pos" ? "block" : "none" }}>
         <POSView
@@ -1409,6 +1436,7 @@ export default function OrdersPage() {
 
               <div className="flex items-center gap-2 flex-shrink-0">
                 {/* New Order */}
+                {hasPermission("orders.create") && (
                 <button
                   type="button"
                   onClick={() => openPOS()}
@@ -1416,6 +1444,7 @@ export default function OrdersPage() {
                 >
                   <Plus className="w-3.5 h-3.5" /> New Order
                 </button>
+                )}
 
                 {/* Date filter */}
                 <div className="relative">
@@ -1534,6 +1563,7 @@ export default function OrdersPage() {
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
                   {formatBusinessDate(businessDateStr)}
                 </span>
+                {canViewSessionReport && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1545,6 +1575,7 @@ export default function OrdersPage() {
                 >
                   <Clock className="w-3.5 h-3.5" />
                 </button>
+                )}
                 <button
                   type="button"
                   onClick={openEndDayModal}
@@ -1578,12 +1609,16 @@ export default function OrdersPage() {
                         {col.label}
                       </span>
                       <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                      {(col.status !== "AWAITING_PAYMENT" ||
+                        canViewAwaitingPaymentSummary) && (
                         <span
                           className={`text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
                         >
                           {allColOrders.length}
                         </span>
+                      )}
                         {col.status === "AWAITING_PAYMENT" &&
+                          canViewAwaitingPaymentSummary &&
                           allColOrders.length > 0 && (
                             <span
                               className={`text-[11px] font-bold text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
@@ -1639,7 +1674,7 @@ export default function OrdersPage() {
       {!pageLoading && (
         <div className="fixed bottom-0 right-4 z-40 flex items-end gap-2">
           {/* Closed popup */}
-          {closedCount > 0 && (
+          {closedCount > 0 && showClosedOrdersBar && (
             <div className="w-[300px] flex flex-col rounded-t-xl shadow-2xl overflow-hidden border border-b-0 border-gray-200 dark:border-neutral-700">
               <button
                 type="button"
@@ -1649,27 +1684,29 @@ export default function OrdersPage() {
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   <span className="text-sm font-semibold">Closed</span>
-                  <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                    {closedCount}
-                  </span>
-                  {!isCashier && (
-                    <>
-                      <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                        {sym} {Math.round(closedTotalAmount).toLocaleString()}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          downloadClosedOrdersCSV(groupedOrders.DELIVERED);
-                        }}
-                        className="p-1 rounded-md hover:bg-white/20 transition-colors"
-                        aria-label="Download closed orders"
-                        title="Download closed orders (CSV)"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                    </>
+                  {canViewClosedCount && (
+                    <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
+                      {closedCount}
+                    </span>
+                  )}
+                  {canViewClosedAmount && (
+                    <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
+                      {sym} {Math.round(closedTotalAmount).toLocaleString()}
+                    </span>
+                  )}
+                  {canDownloadClosedReport && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadClosedOrdersCSV(groupedOrders.DELIVERED);
+                      }}
+                      className="p-1 rounded-md hover:bg-white/20 transition-colors"
+                      aria-label="Download closed orders"
+                      title="Download closed orders (CSV)"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
                 <ChevronDown
@@ -3143,6 +3180,7 @@ export default function OrdersPage() {
         </div>
       )}
 
+      </PermissionGate>
     </AdminLayout>
   );
 }
@@ -3282,6 +3320,7 @@ function OrderCard({
   onPrint,
   onEdit,
 }) {
+  const { hasPermission } = usePermissions();
   const [expanded, setExpanded] = useState(false);
   const sym = getCurrencySymbol();
   const orderId = order.id || order._id;
@@ -3334,7 +3373,7 @@ function OrderCard({
     status === "OUT_FOR_DELIVERY" &&
     canAdvanceStatus;
   const showRiderReassignOutForDelivery =
-    isDeliveryOrder(order) && status === "OUT_FOR_DELIVERY" && isAdmin;
+    isDeliveryOrder(order) && status === "OUT_FOR_DELIVERY" && !isOrderTaker;
   const isAwaitingPayment =
     (status === "DELIVERED" || status === "COMPLETED") &&
     paymentStatus === "unpaid";
@@ -3355,14 +3394,39 @@ function OrderCard({
   const visibleItems = displayItems.slice(0, 3);
   const hiddenCount = displayItems.length - 3;
 
+  const statusAdvancePerm = primaryNext
+    ? getStatusAdvancePermission(primaryNext)
+    : null;
+  const canAdvanceWithPermission =
+    canAdvanceStatus && statusAdvancePerm && hasPermission(statusAdvancePerm);
+  const showAssignRiderPerm =
+    showAssignRider && hasPermission("orders.assign_rider");
+  const showChangeRiderPerm =
+    showChangeRider && hasPermission("orders.assign_rider");
+  const showOutForDeliveryPerm =
+    showOutForDelivery && hasPermission("orders.edit");
+  const showOutForDeliveryMarkDeliveredPerm =
+    showOutForDeliveryMarkDelivered &&
+    statusAdvancePerm &&
+    hasPermission(statusAdvancePerm);
+  const showRiderReassignPerm =
+    showRiderReassignOutForDelivery && hasPermission("orders.reassign_rider");
+  const showCollectFromRiderPerm =
+    showCollectFromRider && hasPermission("orders.collect_payment");
+  const showTakePaymentPerm =
+    showTakePayment && hasPermission("orders.collect_payment");
+  const showEarlyPaymentPerm =
+    showEarlyPayment && hasPermission("orders.collect_payment");
+  const canCancelPerm = canCancel && hasPermission("orders.cancel");
+
   const hasCTA =
     !isOrderTaker &&
-    (showCollectFromRider ||
-      showTakePayment ||
-      showOutForDelivery ||
-      showAssignRider ||
-      showOutForDeliveryMarkDelivered ||
-      canAdvanceStatus);
+    (showCollectFromRiderPerm ||
+      showTakePaymentPerm ||
+      showOutForDeliveryPerm ||
+      showAssignRiderPerm ||
+      showOutForDeliveryMarkDeliveredPerm ||
+      canAdvanceWithPermission);
 
   return (
     <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
@@ -3639,7 +3703,7 @@ function OrderCard({
         </div>
         {!isOrderTaker && (
           <div className="flex items-center gap-0.5">
-            {status !== "CANCELLED" && (
+            {status !== "CANCELLED" && hasPermission("orders.print") && (
               <button
                 type="button"
                 onClick={() =>
@@ -3652,6 +3716,7 @@ function OrderCard({
               </button>
             )}
             {status !== "CANCELLED" &&
+              hasPermission("orders.edit") &&
               (isAdmin ||
                 (paymentStatus === "unpaid" &&
                   !["DELIVERED", "COMPLETED"].includes(status))) && (
@@ -3664,7 +3729,7 @@ function OrderCard({
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
               )}
-            {canCancel && (
+            {canCancelPerm && (
               <button
                 type="button"
                 disabled={isUpdating}
@@ -3675,7 +3740,7 @@ function OrderCard({
                 <XCircle className="w-3.5 h-3.5" />
               </button>
             )}
-            {showEarlyPayment && (
+            {showEarlyPaymentPerm && (
               <button
                 type="button"
                 onClick={() => onOpenPayment(order)}
@@ -3692,7 +3757,7 @@ function OrderCard({
       {/* Primary CTA — full width */}
       {hasCTA && (
         <div className="px-2.5 pb-2.5">
-          {showCollectFromRider ? (
+          {showCollectFromRiderPerm ? (
             <button
               type="button"
               onClick={() => onOpenCollect(order)}
@@ -3700,7 +3765,7 @@ function OrderCard({
             >
               <Banknote className="w-3.5 h-3.5" /> Collect from Rider
             </button>
-          ) : showTakePayment ? (
+          ) : showTakePaymentPerm ? (
             <button
               type="button"
               onClick={() => onOpenPayment(order)}
@@ -3708,7 +3773,7 @@ function OrderCard({
             >
               <Banknote className="w-3.5 h-3.5" /> Collect Payment
             </button>
-          ) : showAssignRider ? (
+          ) : showAssignRiderPerm ? (
             <RiderPickerDropdown
               order={order}
               riders={riders}
@@ -3718,9 +3783,9 @@ function OrderCard({
               label="— Assign rider —"
               fullWidth
             />
-          ) : showOutForDelivery ? (
+          ) : showOutForDeliveryPerm ? (
             <div className="space-y-2">
-              {showChangeRider && (
+              {showChangeRiderPerm && (
                 <RiderPickerDropdown
                   order={order}
                   riders={riders}
@@ -3745,7 +3810,7 @@ function OrderCard({
                 Send Delivery
               </button>
             </div>
-          ) : showOutForDeliveryMarkDelivered ? (
+          ) : showOutForDeliveryMarkDeliveredPerm ? (
             <div className="flex gap-1.5 items-stretch">
               <button
                 type="button"
@@ -3759,7 +3824,7 @@ function OrderCard({
                   actionLabel
                 )}
               </button>
-              {showRiderReassignOutForDelivery && (
+              {showRiderReassignPerm && (
                 <RiderPickerDropdown
                   order={order}
                   riders={riders}
@@ -3769,7 +3834,7 @@ function OrderCard({
                 />
               )}
             </div>
-          ) : canAdvanceStatus ? (
+          ) : canAdvanceWithPermission ? (
             <button
               type="button"
               disabled={isUpdating}

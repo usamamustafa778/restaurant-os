@@ -38,6 +38,7 @@ import {
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import { useSocket } from "../../contexts/SocketContext";
 import {
   ShoppingCart,
@@ -228,6 +229,7 @@ export default function POSView({
 }) {
   const { currentBranch, branches, setCurrentBranch } = useBranch() || {};
   const { socket } = useSocket() || {};
+  const { hasPermission } = usePermissions();
   const currentUser = getStoredAuth()?.user;
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
@@ -732,6 +734,10 @@ export default function POSView({
   /** Called from the "Clear all" button in the cart sidebar. Shows a toast; wraps clearCart(). */
   function clearAllCartItems() {
     if (cart.length === 0) return;
+    if (!isPrivilegedEditor) {
+      toast.error("You don't have permission to remove items");
+      return;
+    }
     clearCart();
     setExpandedCartItems([]);
     toast.success("Cart cleared");
@@ -768,6 +774,11 @@ export default function POSView({
   useEffect(() => {
     const editId = propEditOrderId;
     if (!editId || !menu?.items?.length) return;
+    if (!hasPermission("orders.edit")) {
+      toast.error("You don't have permission to edit orders");
+      onClose?.();
+      return;
+    }
 
     let cancelled = false;
     setLoadingEditOrder(true);
@@ -896,6 +907,8 @@ export default function POSView({
     menu?.items?.length,
     currentBranch?.id,
     currentBranch?.deliveryLocations,
+    hasPermission,
+    onClose,
   ]);
 
   async function loadTables() {
@@ -1535,6 +1548,19 @@ export default function POSView({
     return matchesCategory && matchesSearch && matchesDietary && isAvailable;
   });
 
+  const isPrivilegedEditor = hasPermission("orders.delete_items");
+
+  function canDecreaseCartQuantity(cartKey, currentQty) {
+    const newQty = currentQty - 1;
+    if (newQty <= 0) return isPrivilegedEditor;
+    if (editingOrderId) {
+      const originalQty =
+        originalOrderItems.find((o) => o.cartKey === cartKey)?.quantity || 0;
+      if (newQty < originalQty) return isPrivilegedEditor;
+    }
+    return true;
+  }
+
   const filteredRecentOrders = recentOrders
     .filter((o) => orderFilter === "all" || o.type === orderFilter)
     .filter(
@@ -1700,6 +1726,10 @@ export default function POSView({
   };
 
   const updateQuantity = (cartKey, change) => {
+    if (change < 0) {
+      const item = cart.find((i) => (i._cartKey || i.id) === cartKey);
+      if (item && !canDecreaseCartQuantity(cartKey, item.quantity)) return;
+    }
     setCart(
       cart
         .map((item) => {
@@ -1714,6 +1744,7 @@ export default function POSView({
   };
 
   const removeFromCart = (cartKey) => {
+    if (!isPrivilegedEditor) return;
     setCart(cart.filter((item) => (item._cartKey || item.id) !== cartKey));
   };
 
@@ -3075,6 +3106,9 @@ export default function POSView({
                       const inCart = cart.find(
                         (c) => (c._cartKey || c.id) === cardKey,
                       );
+                      const menuCanDecrease =
+                        inCart &&
+                        canDecreaseCartQuantity(cardKey, inCart.quantity);
                       const outOfStock = item.inventorySufficient === false;
                       const category = menu.categories.find(
                         (c) => c.id === item.categoryId,
@@ -3188,10 +3222,16 @@ export default function POSView({
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <button
-                                      onClick={() =>
-                                        updateQuantity(cardKey, -1)
-                                      }
-                                      className="w-5 h-5 flex items-center justify-center rounded hover:bg-white dark:hover:bg-neutral-700 transition-colors"
+                                      onClick={() => {
+                                        if (!menuCanDecrease) return;
+                                        updateQuantity(cardKey, -1);
+                                      }}
+                                      disabled={!menuCanDecrease}
+                                      className={`w-5 h-5 flex items-center justify-center rounded hover:bg-white dark:hover:bg-neutral-700 transition-colors ${
+                                        !menuCanDecrease
+                                          ? "opacity-30 cursor-not-allowed"
+                                          : ""
+                                      }`}
                                     >
                                       <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-300" />
                                     </button>
@@ -3373,7 +3413,7 @@ export default function POSView({
                 Items Cart
               </h3>
               <div className="flex items-center gap-3 flex-shrink-0">
-                {cart.length > 0 && (
+                {cart.length > 0 && isPrivilegedEditor && (
                   <button
                     type="button"
                     onClick={clearAllCartItems}
@@ -3406,19 +3446,11 @@ export default function POSView({
             ) : (
               cart.map((item) => {
                 const isExpanded = expandedCartItems.includes(item.id);
-                const originalEntry = originalOrderItems.find(
-                  (o) => o.cartKey === (item._cartKey || item.id),
+                const cartKey = item._cartKey || item.id;
+                const canDecrease = canDecreaseCartQuantity(
+                  cartKey,
+                  item.quantity,
                 );
-                const originalQty = editingOrderId
-                  ? originalEntry?.quantity || 0
-                  : 0;
-                const isPrivilegedEditor =
-                  !editingOrderId ||
-                  ["admin", "manager", "restaurant_admin"].includes(
-                    currentUser?.role,
-                  );
-                const canDecrease =
-                  isPrivilegedEditor || item.quantity > originalQty;
                 return (
                   <div
                     key={item.id}
@@ -3823,6 +3855,7 @@ export default function POSView({
 
               {/* Place Order / Update Order Button */}
               {editingOrderId ? (
+                hasPermission("orders.edit") && (
                 <button
                   onClick={handleUpdateOrder}
                   disabled={loading || cart.length === 0}
@@ -3840,7 +3873,9 @@ export default function POSView({
                     </>
                   )}
                 </button>
+                )
               ) : (
+                hasPermission("orders.create") && (
                 <button
                   onClick={handleCheckout}
                   disabled={loading}
@@ -3858,6 +3893,7 @@ export default function POSView({
                     </>
                   )}
                 </button>
+                )
               )}
 
               {/* Add Customer + Print + Discount + Take Payment */}
@@ -3881,6 +3917,7 @@ export default function POSView({
                     <UserPlus className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
                   </button>
                 )}
+                {hasPermission("orders.print") && (
                 <button
                   type="button"
                   onClick={printMenuBill}
@@ -3891,6 +3928,8 @@ export default function POSView({
                 >
                   <Printer className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
                 </button>
+                )}
+                {hasPermission("orders.apply_discount") && (
                 <button
                   type="button"
                   onClick={openDiscountModal}
@@ -3904,6 +3943,8 @@ export default function POSView({
                   <Percent className="w-4 h-4" />
                   <span className="text-xs font-medium">Discount</span>
                 </button>
+                )}
+                {hasPermission("orders.collect_payment") && (
                 <button
                   type="button"
                   onClick={() => openTakePaymentModal("CASH")}
@@ -3913,6 +3954,7 @@ export default function POSView({
                   <Receipt className="w-4 h-4" />
                   Take Payment
                 </button>
+                )}
               </div>
 
               {/* Save as Draft Button (only when not editing) */}
@@ -6271,6 +6313,7 @@ export default function POSView({
             </div>
             <div className="px-6 pb-6 pt-4 space-y-3 bg-white dark:bg-neutral-950">
               <div className="grid grid-cols-3 gap-2.5">
+                {hasPermission("orders.edit") && (
                 <button
                   type="button"
                   onClick={() => {
@@ -6377,6 +6420,7 @@ export default function POSView({
                   <Edit3 className="w-3.5 h-3.5" />
                   Edit
                 </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {

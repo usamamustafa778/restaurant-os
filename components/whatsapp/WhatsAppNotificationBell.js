@@ -10,6 +10,9 @@ import {
 } from "lucide-react";
 import { useWhatsAppNotifications } from "../../contexts/WhatsAppNotificationContext";
 
+const HEADER_TOOLBAR_BTN =
+  "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold leading-none shadow-sm transition-all";
+
 function formatAlertTime(timestamp) {
   if (!timestamp) return "";
   try {
@@ -130,7 +133,7 @@ export default function WhatsAppNotificationBell({ className = "" }) {
   };
 
   return (
-    <div className={`relative ${className}`} ref={ref}>
+    <div className={`relative shrink-0 ${className}`} ref={ref}>
       <style jsx global>{`
         @keyframes waPopupIn {
           from {
@@ -162,25 +165,18 @@ export default function WhatsAppNotificationBell({ className = "" }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all ${
-          permission === "granted"
-            ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-400"
-            : permission === "denied"
-              ? "border-gray-200 bg-gray-50 text-gray-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-500"
-              : "border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:border-orange-500/30 dark:bg-orange-950/40 dark:text-orange-400"
-        }`}
+        className={`${HEADER_TOOLBAR_BTN} relative border-gray-200 bg-white px-2.5 text-gray-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400`}
         title="WhatsApp notifications"
         aria-label="WhatsApp notifications"
       >
-        <Icon className="h-4 w-4" />
-        {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white ring-2 ring-white dark:ring-neutral-950">
+        <Icon className="h-4 w-4 shrink-0" />
+        {unreadCount > 0 ? (
+          <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
-        )}
-        {unreadCount === 0 && permission === "default" && (
-          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-orange-500 ring-2 ring-white dark:ring-neutral-950" />
-        )}
+        ) : permission === "default" ? (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-white dark:ring-neutral-950" />
+        ) : null}
       </button>
 
       {popups.length > 0 && (
@@ -273,33 +269,32 @@ export default function WhatsAppNotificationBell({ className = "" }) {
             )}
           </div>
 
-          <div className="border-t border-gray-100 px-4 py-3 dark:border-neutral-800">
-            <p className="text-[11px] leading-relaxed text-gray-500 dark:text-neutral-400">
-              {permission === "granted" &&
-                "Browser alerts also fire when this tab is in the background."}
-              {permission === "default" &&
-                "Enable browser notifications for alerts when this tab is in the background."}
-              {permission === "denied" &&
-                "Browser notifications are blocked in your browser settings."}
-            </p>
-            {permission === "default" && (
-              <button
-                type="button"
-                onClick={async () => {
-                  await requestPermission();
-                }}
-                className="mt-2 w-full rounded-xl bg-orange-500 py-2 text-xs font-bold text-white transition hover:bg-orange-600"
-              >
-                Enable browser notifications
-              </button>
-            )}
-            {permission === "granted" && (
-              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                Browser alerts active
-              </p>
-            )}
-          </div>
+          {(permission === "default" || permission === "denied") && (
+            <div className="border-t border-gray-100 px-4 py-3 dark:border-neutral-800">
+              {permission === "default" && (
+                <p className="text-[11px] leading-relaxed text-gray-500 dark:text-neutral-400">
+                  Enable browser notifications for alerts when this tab is in the
+                  background.
+                </p>
+              )}
+              {permission === "denied" && (
+                <p className="text-[11px] leading-relaxed text-gray-500 dark:text-neutral-400">
+                  Browser notifications are blocked in your browser settings.
+                </p>
+              )}
+              {permission === "default" && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await requestPermission();
+                  }}
+                  className="mt-2 w-full rounded-xl bg-orange-500 py-2 text-xs font-bold text-white transition hover:bg-orange-600"
+                >
+                  Enable browser notifications
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
