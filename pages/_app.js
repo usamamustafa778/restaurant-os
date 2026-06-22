@@ -5,6 +5,7 @@ import { ThemeProvider } from "../contexts/ThemeContext";
 import { ConfirmDialogProvider } from "../contexts/ConfirmDialogContext";
 import { BranchProvider } from "../contexts/BranchContext";
 import { SocketProvider } from "../contexts/SocketContext";
+import { WhatsAppNotificationProvider } from "../contexts/WhatsAppNotificationContext";
 import { Toaster } from "react-hot-toast";
 
 export default function MyApp({ Component, pageProps }) {
@@ -13,6 +14,7 @@ export default function MyApp({ Component, pageProps }) {
       <ConfirmDialogProvider>
         <BranchProvider>
           <SocketProvider>
+            <WhatsAppNotificationProvider>
             <Component {...pageProps} />
             <Toaster
             position="top-center"
@@ -39,6 +41,7 @@ export default function MyApp({ Component, pageProps }) {
               },
             }}
           />
+            </WhatsAppNotificationProvider>
           </SocketProvider>
         </BranchProvider>
       </ConfirmDialogProvider>

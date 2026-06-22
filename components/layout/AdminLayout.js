@@ -63,11 +63,13 @@ import {
   KeyRound,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
+import WhatsAppNotificationBell from "../whatsapp/WhatsAppNotificationBell";
 import {
   getToken,
   getStoredAuth,
   clearActingAsRestaurant,
   getRestaurantInfo,
+  getWhatsAppUnreadCount,
 } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -593,6 +595,7 @@ export default function AdminLayout({
   // Always initialize with defaults to avoid hydration mismatch
   const [collapsed, setCollapsed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState([]);
+  const [whatsappNeedsHumanCount, setWhatsappNeedsHumanCount] = useState(0);
   const { theme, toggleTheme } = useTheme();
 
   // Load sidebar state from sessionStorage after mount (client-side only)
@@ -623,6 +626,29 @@ export default function AdminLayout({
       router.replace("/kitchen");
     }
   }, [role, router]);
+
+  const whatsappNavRoles = ["restaurant_admin", "admin", "manager", "kitchen_staff"];
+  useEffect(() => {
+    if (!role || role === "super_admin" || !whatsappNavRoles.includes(role)) {
+      setWhatsappNeedsHumanCount(0);
+      return;
+    }
+    let cancelled = false;
+    async function poll() {
+      try {
+        const data = await getWhatsAppUnreadCount();
+        if (!cancelled) setWhatsappNeedsHumanCount(data?.needsHuman || 0);
+      } catch {
+        /* ignore — endpoint may be unavailable */
+      }
+    }
+    poll();
+    const intervalId = setInterval(poll, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [role]);
 
   // Restrict cashier to POS – redirect away from the analytics dashboard
   useEffect(() => {
@@ -1136,7 +1162,12 @@ export default function AdminLayout({
                           className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "" : "group-hover:scale-110"}`}
                         />
                         {(!collapsed || mobileSidebarOpen) && (
-                          <span>{item.label}</span>
+                          <>
+                            <span className="flex-1">{item.label}</span>
+                            {item.path === "/whatsapp" && whatsappNeedsHumanCount > 0 && (
+                              <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-orange-500" />
+                            )}
+                          </>
                         )}
                       </Link>
                     </NavItemWrapper>
@@ -1254,8 +1285,11 @@ export default function AdminLayout({
               </h1>
             </div>
 
-            {/* Right — user avatar (links to profile) */}
-            <div className="ml-auto z-10">
+            {/* Right — notifications + user avatar */}
+            <div className="ml-auto z-10 flex items-center gap-2">
+              {role && whatsappNavRoles.includes(role) && role !== "super_admin" && (
+                <WhatsAppNotificationBell />
+              )}
               <Link
                 href="/profile"
                 className="flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-primary to-secondary text-white text-[10px] font-bold flex-shrink-0 shadow-sm"
@@ -1291,6 +1325,9 @@ export default function AdminLayout({
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
+              {role && whatsappNavRoles.includes(role) && role !== "super_admin" && (
+                <WhatsAppNotificationBell />
+              )}
               {role === "super_admin" && actingAsSlug && (
                 <button
                   type="button"
