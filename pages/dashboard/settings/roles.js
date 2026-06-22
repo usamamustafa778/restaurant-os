@@ -130,6 +130,23 @@ export default function TenantRolesPage() {
     [filteredPermissionGroups, expandedGroups],
   );
 
+  const filteredPermissionKeys = useMemo(() => {
+    const keys = [];
+    for (const group of filteredPermissionGroups) {
+      for (const p of filteredGroupedPerms[group] || []) {
+        keys.push(p.key);
+      }
+    }
+    return keys;
+  }, [filteredPermissionGroups, filteredGroupedPerms]);
+
+  const allFilteredSelected = useMemo(
+    () =>
+      filteredPermissionKeys.length > 0 &&
+      filteredPermissionKeys.every((k) => selectedPermissions.includes(k)),
+    [filteredPermissionKeys, selectedPermissions],
+  );
+
   function openCreateModal() {
     setCreateName("");
     setCreateModalOpen(true);
@@ -463,22 +480,36 @@ export default function TenantRolesPage() {
               </button>
             </div>
 
-            <div className="px-5 py-3 border-b border-gray-200 dark:border-neutral-800 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={permSearch}
-                    onChange={(e) => setPermSearch(e.target.value)}
-                    placeholder="Search permissions…"
-                    className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs"
-                  />
-                </div>
+            <div className="px-5 py-3 border-b border-gray-200 dark:border-neutral-800 shrink-0 space-y-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  value={permSearch}
+                  onChange={(e) => setPermSearch(e.target.value)}
+                  placeholder="Search permissions…"
+                  className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                {canManage && filteredPermissionKeys.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setGroupPermissions(
+                        filteredPermissionKeys,
+                        !allFilteredSelected,
+                      )
+                    }
+                    className="text-xs font-medium text-primary hover:underline whitespace-nowrap"
+                  >
+                    {allFilteredSelected ? "Deselect all" : "Select all"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={toggleExpandAll}
-                  className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap"
+                  className="text-xs font-medium text-primary hover:underline whitespace-nowrap"
                 >
                   {allGroupsExpanded ? "Collapse all" : "Expand all"}
                 </button>
