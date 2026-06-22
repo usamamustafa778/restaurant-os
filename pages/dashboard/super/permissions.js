@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -19,38 +19,11 @@ const SCOPE_TABS = [
   { id: "platform", label: "Platform" },
 ];
 
-const GROUP_OPTIONS = [
-  "Orders",
-  "Accounts",
-  "Inventory",
-  "Staff",
-  "Menu",
-  "Reports",
-  "Customers",
-  "Settings",
-  "Session",
-  "Tables",
-  "Reservations",
-  "WhatsApp",
-  "Branches",
-  "Subscription",
-  "Integrations",
-  "Rider",
-  "Platform Overview",
-  "Restaurants",
-  "Subscriptions",
-  "Billing",
-  "Leads",
-  "Platform Users",
-  "Platform RBAC",
-  "Platform Settings",
-];
-
 const EMPTY_FORM = {
   key: "",
   name: "",
   description: "",
-  group: "Orders",
+  group: "",
   scope: "tenant",
 };
 
@@ -64,6 +37,43 @@ export default function SuperPermissionsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [groupInput, setGroupInput] = useState("");
+  const [groupDropdownOpen, setGroupDropdownOpen] = useState(false);
+  const groupComboboxRef = useRef(null);
+
+  const groups = useMemo(() => {
+    const seen = new Set();
+    permissions.forEach((p) => {
+      if (p.group) seen.add(p.group);
+    });
+    return Array.from(seen).sort();
+  }, [permissions]);
+
+  const filteredGroups = useMemo(
+    () =>
+      groups.filter((g) =>
+        g.toLowerCase().includes(groupInput.toLowerCase()),
+      ),
+    [groups, groupInput],
+  );
+
+  const showCreateOption =
+    groupInput.trim().length > 0 &&
+    !groups.some((g) => g.toLowerCase() === groupInput.trim().toLowerCase());
+
+  useEffect(() => {
+    if (!groupDropdownOpen) return;
+    function handleClickOutside(e) {
+      if (
+        groupComboboxRef.current &&
+        !groupComboboxRef.current.contains(e.target)
+      ) {
+        setGroupDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [groupDropdownOpen]);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -106,6 +116,8 @@ export default function SuperPermissionsPage() {
             ? "tenant"
             : "tenant",
     });
+    setGroupInput("");
+    setGroupDropdownOpen(false);
     setModalOpen(true);
   }
 
@@ -118,23 +130,30 @@ export default function SuperPermissionsPage() {
       group: row.group,
       scope: row.scope,
     });
+    setGroupInput(row.group || "");
+    setGroupDropdownOpen(false);
     setModalOpen(true);
   }
 
   async function handleSave(e) {
     e.preventDefault();
+    const group = groupInput.trim();
+    if (!group) {
+      toast.error("Group is required");
+      return;
+    }
     setSaving(true);
     try {
       if (editing) {
         await updatePermissionForSuperAdmin(editing.id, {
           name: form.name,
           description: form.description,
-          group: form.group,
+          group,
           scope: form.scope,
         });
         toast.success("Permission updated");
       } else {
-        await createPermissionForSuperAdmin(form);
+        await createPermissionForSuperAdmin({ ...form, group });
         toast.success("Permission created");
       }
       setModalOpen(false);
@@ -324,23 +343,52 @@ export default function SuperPermissionsPage() {
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
+                <div ref={groupComboboxRef} className="relative">
                   <label className="block text-xs font-medium mb-1">
                     Group
                   </label>
-                  <select
-                    value={form.group}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, group: e.target.value }))
-                    }
+                  <input
+                    required
+                    value={groupInput}
+                    onChange={(e) => {
+                      setGroupInput(e.target.value);
+                      setGroupDropdownOpen(true);
+                    }}
+                    onFocus={() => setGroupDropdownOpen(true)}
+                    placeholder="Select or create group..."
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm"
-                  >
-                    {GROUP_OPTIONS.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                  />
+                  {groupDropdownOpen && (
+                    <div className="absolute z-10 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 shadow-lg">
+                      {filteredGroups.map((g) => (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => {
+                            setGroupInput(g);
+                            setGroupDropdownOpen(false);
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                        >
+                          {g}
+                        </button>
+                      ))}
+                      {showCreateOption && (
+                        <button
+                          type="button"
+                          onClick={() => setGroupDropdownOpen(false)}
+                          className="w-full px-3 py-2 text-left text-sm font-medium text-primary hover:bg-primary/5 transition-colors border-t border-gray-100 dark:border-neutral-800"
+                        >
+                          + Create group &ldquo;{groupInput.trim()}&rdquo;
+                        </button>
+                      )}
+                      {filteredGroups.length === 0 && !showCreateOption && (
+                        <div className="px-3 py-2 text-sm text-neutral-500">
+                          No groups found
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1">

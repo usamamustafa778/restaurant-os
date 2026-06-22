@@ -522,10 +522,6 @@ export default function POSView({
     getDiscountSettings()
       .then((data) => {
         if (cancelled) return;
-        console.log(
-          "Discount presets loaded:",
-          JSON.stringify(data?.presets || [], null, 2),
-        );
         if (Array.isArray(data?.presets) && data.presets.length > 0) {
           setPosDiscountPresetsCfg(
             data.presets.map((p) => {
@@ -1308,12 +1304,6 @@ export default function POSView({
         data = await getMenu();
       }
 
-      console.log(
-        "menu API response — item count:",
-        (data?.items || []).length,
-        "ids:",
-        (data?.items || []).map((i) => i.id),
-      );
       setMenu(data);
       setPageLoading(false);
     } catch (err) {
@@ -1459,7 +1449,6 @@ export default function POSView({
   // Flatten items with required size groups into individual cards (one per required option)
   const flattenedMenuItems = useMemo(() => {
     if (!flattenVariations) {
-      console.log("flatten OFF, items count:", allItemsForGrid.length);
       return allItemsForGrid;
     }
     const result = [];
