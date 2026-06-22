@@ -4,23 +4,26 @@ import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import DataTable from "../../../components/ui/DataTable";
 import {
-  getPlatformRolesForSuperAdmin,
-  getPlatformRoleForSuperAdmin,
-  getPermissionsGroupedForSuperAdmin,
-  createPlatformRoleForSuperAdmin,
-  updatePlatformRoleForSuperAdmin,
-  deletePlatformRoleForSuperAdmin,
+  getAdminRolesForTenant,
+  getAdminRoleForTenant,
+  getPermissionsGroupedForAdmin,
+  createAdminRoleForTenant,
+  updateAdminRoleForTenant,
+  deleteAdminRoleForTenant,
+  getStoredAuth,
 } from "../../../lib/apiClient";
 import { ChevronDown, ChevronRight, Loader2, Plus, Search, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 
 const TEMPLATE_LABELS = {
-  platform_admin: "Platform admin",
-  account_manager: "Account manager",
-  billing_staff: "Billing staff",
-  support_agent: "Support agent",
-  read_only: "Read only",
+  admin: "Admin",
+  manager: "Manager",
+  product_manager: "Product Manager",
+  cashier: "Cashier",
+  kitchen_staff: "Kitchen Staff",
+  order_taker: "Order Taker",
+  delivery_rider: "Delivery Rider",
 };
 
 function slugify(value) {
@@ -33,12 +36,20 @@ function slugify(value) {
     .slice(0, 50);
 }
 
-export default function SuperRolesPage() {
+function fmtDate(dt) {
+  if (!dt) return "—";
+  return new Date(dt).toLocaleDateString(undefined, { dateStyle: "medium" });
+}
+
+export default function TenantRolesPage() {
   const { confirm } = useConfirmDialog();
+  const auth = getStoredAuth();
+  const currentRole = auth?.user?.role;
+  const canManage = currentRole === "restaurant_admin" || currentRole === "admin";
+
   const [roles, setRoles] = useState([]);
   const [groupedPerms, setGroupedPerms] = useState({});
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -54,12 +65,12 @@ export default function SuperRolesPage() {
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
-      const [rolesData, permGroups] = await Promise.all([
-        getPlatformRolesForSuperAdmin(),
-        getPermissionsGroupedForSuperAdmin({ scope: "platform" }),
+      const [rolesData, permRes] = await Promise.all([
+        getAdminRolesForTenant(),
+        getPermissionsGroupedForAdmin(),
       ]);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
-      setGroupedPerms(permGroups && typeof permGroups === "object" ? permGroups : {});
+      setGroupedPerms(permRes?.groups && typeof permRes.groups === "object" ? permRes.groups : {});
     } catch (err) {
       toast.error(err.message || "Failed to load roles");
       setRoles([]);
@@ -73,17 +84,6 @@ export default function SuperRolesPage() {
   }, [loadAll]);
 
   const permissionGroups = useMemo(() => Object.keys(groupedPerms).sort(), [groupedPerms]);
-
-  const filteredRoles = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return roles;
-    return roles.filter(
-      (r) =>
-        (r.name || "").toLowerCase().includes(q) ||
-        (r.slug || "").toLowerCase().includes(q) ||
-        (r.baseRole || "").toLowerCase().includes(q),
-    );
-  }, [roles, searchQuery]);
 
   const filteredGroupedPerms = useMemo(() => {
     const q = permSearch.trim().toLowerCase();
@@ -141,7 +141,7 @@ export default function SuperRolesPage() {
 
     try {
       setDrawerLoading(true);
-      const fresh = await getPlatformRoleForSuperAdmin(role.id);
+      const fresh = await getAdminRoleForTenant(role.id);
       setDrawerRole(fresh);
       setSelectedPermissions(Array.isArray(fresh.permissions) ? [...fresh.permissions] : []);
     } catch (err) {
@@ -173,10 +173,10 @@ export default function SuperRolesPage() {
 
     setCreating(true);
     try {
-      const created = await createPlatformRoleForSuperAdmin({
+      const created = await createAdminRoleForTenant({
         name,
         slug,
-        baseRole: "platform_admin",
+        baseRole: "cashier",
         permissions: [],
       });
       const roleForList = { ...created, permissions: [] };
@@ -225,7 +225,7 @@ export default function SuperRolesPage() {
     if (!drawerRole?.id) return;
     setDrawerSaving(true);
     try {
-      const updated = await updatePlatformRoleForSuperAdmin(drawerRole.id, {
+      const updated = await updateAdminRoleForTenant(drawerRole.id, {
         permissions: selectedPermissions,
       });
       setRoles((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
@@ -241,12 +241,12 @@ export default function SuperRolesPage() {
   async function handleDelete(role) {
     const ok = await confirm({
       title: "Delete role?",
-      message: `Deactivate "${role.name}"? Users assigned this role will keep the slug until reassigned.`,
+      message: `Deactivate "${role.name}"? Staff assigned this role will keep the slug until reassigned.`,
       confirmLabel: "Delete",
     });
     if (!ok) return;
     try {
-      await deletePlatformRoleForSuperAdmin(role.id);
+      await deleteAdminRoleForTenant(role.id);
       toast.success("Role deleted");
       if (drawerRole?.id === role.id) closePermissionsDrawer();
       loadAll();
@@ -256,31 +256,16 @@ export default function SuperRolesPage() {
   }
 
   return (
-    <AdminLayout
-      title="Roles"
-      subtitle="Platform roles for EatsDesk staff — not scoped to restaurants."
-    >
-      <Card
-        title="Platform roles"
-        description="Create a role, then assign platform permissions from the permissions drawer."
-      >
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search name or slug..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-            />
+    <AdminLayout title="Staff Roles" subtitle="Create custom roles for your team">
+      <Card title="Custom roles" description="Define permissions for roles you assign to staff members.">
+        {canManage && (
+          <div className="flex justify-end mb-4">
+            <Button type="button" onClick={openCreateModal} className="inline-flex items-center gap-1.5">
+              <Plus className="w-4 h-4" />
+              New Role
+            </Button>
           </div>
-          <span className="text-xs text-neutral-500">{filteredRoles.length} role(s)</span>
-          <Button type="button" onClick={openCreateModal} className="inline-flex items-center gap-1.5 ml-auto">
-            <Plus className="w-4 h-4" />
-            New role
-          </Button>
-        </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-16 text-neutral-500">
@@ -289,60 +274,65 @@ export default function SuperRolesPage() {
           </div>
         ) : (
           <DataTable
-            data={filteredRoles}
-            emptyMessage="No platform roles yet. Create one to get started."
+            data={roles}
+            emptyMessage="No custom roles yet. Create your first role to assign to staff."
             columns={[
               {
                 key: "name",
-                header: "Name",
+                header: "Role Name",
                 render: (_, r) => (
-                  <div>
-                    <div className="font-medium text-gray-900 dark:text-white">{r.name}</div>
-                    <code className="text-[10px] text-neutral-500">{r.slug}</code>
-                  </div>
+                  <div className="font-semibold text-gray-900 dark:text-white">{r.name}</div>
                 ),
               },
               {
                 key: "baseRole",
-                header: "Cloned from",
-                render: (_, r) => TEMPLATE_LABELS[r.baseRole] || r.baseRole,
+                header: "Base Template",
+                render: (_, r) => TEMPLATE_LABELS[r.baseRole] || r.baseRole || "—",
               },
               {
                 key: "permissions",
                 header: "Permissions",
-                render: (_, r) => `${(r.permissions || []).length} keys`,
+                render: (_, r) => `${(r.permissions || []).length} permissions`,
               },
               {
-                key: "status",
-                header: "Status",
+                key: "createdAt",
+                header: "Created",
                 render: (_, r) => (
-                  <span
-                    className={`text-xs font-medium ${r.isActive !== false ? "text-emerald-600" : "text-neutral-400"}`}
-                  >
-                    {r.isActive !== false ? "Active" : "Inactive"}
-                  </span>
+                  <span className="text-xs text-neutral-500">{fmtDate(r.createdAt)}</span>
                 ),
               },
               {
                 key: "actions",
-                header: "",
+                header: "Actions",
                 align: "right",
                 render: (_, r) => (
                   <div className="flex gap-2 justify-end">
-                    <button
-                      type="button"
-                      onClick={() => openPermissionsDrawer(r)}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Edit permissions
-                    </button>
-                    {r.isActive !== false && (
+                    {canManage ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openPermissionsDrawer(r)}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          Edit permissions
+                        </button>
+                        {r.isActive !== false && (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(r)}
+                            className="text-xs font-medium text-red-600 hover:underline"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </>
+                    ) : (
                       <button
                         type="button"
-                        onClick={() => handleDelete(r)}
-                        className="text-xs font-medium text-red-600 hover:underline"
+                        onClick={() => openPermissionsDrawer(r)}
+                        className="text-xs font-medium text-neutral-500 hover:underline"
                       >
-                        Delete
+                        View permissions
                       </button>
                     )}
                   </div>
@@ -353,15 +343,11 @@ export default function SuperRolesPage() {
         )}
       </Card>
 
-      {/* Create role modal — name only */}
       {createModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="w-full max-w-md rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 shadow-xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <div>
-                <h3 className="text-sm font-semibold">New platform role</h3>
-                <p className="text-[11px] text-neutral-500 mt-0.5">Platform-wide — no restaurant scope</p>
-              </div>
+              <h3 className="text-sm font-semibold">New Role</h3>
               <button
                 type="button"
                 onClick={closeCreateModal}
@@ -378,16 +364,19 @@ export default function SuperRolesPage() {
                   autoFocus
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
-                  placeholder="e.g. Billing coordinator"
+                  placeholder="Head Cashier"
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm"
                 />
+                <p className="text-[11px] text-neutral-500 mt-2">
+                  e.g. Head Cashier, Senior Rider, Night Manager
+                </p>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
                 <Button type="button" variant="ghost" onClick={closeCreateModal}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={creating}>
-                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create role"}
+                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Role"}
                 </Button>
               </div>
             </form>
@@ -395,7 +384,6 @@ export default function SuperRolesPage() {
         </div>
       )}
 
-      {/* Permissions drawer */}
       {drawerRole && (
         <>
           <button
@@ -407,11 +395,14 @@ export default function SuperRolesPage() {
           <aside
             className="fixed inset-y-0 right-0 z-50 w-full max-w-[420px] bg-white dark:bg-neutral-950 border-l border-gray-200 dark:border-neutral-800 shadow-2xl flex flex-col"
             role="dialog"
-            aria-labelledby="permissions-drawer-title"
+            aria-labelledby="tenant-permissions-drawer-title"
           >
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800 shrink-0">
               <div className="min-w-0">
-                <h3 id="permissions-drawer-title" className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                <h3
+                  id="tenant-permissions-drawer-title"
+                  className="text-sm font-bold text-gray-900 dark:text-white truncate"
+                >
                   {drawerRole.name}
                 </h3>
                 <p className="text-xs text-neutral-500 mt-0.5">Edit permissions</p>
@@ -458,7 +449,7 @@ export default function SuperRolesPage() {
                 <p className="text-xs text-neutral-500 p-5">
                   {permSearch.trim()
                     ? "No permissions match your search."
-                    : "Seed platform permissions to enable the editor."}
+                    : "Seed tenant permissions to enable the editor."}
                 </p>
               ) : (
                 <div className="divide-y divide-gray-100 dark:divide-neutral-800">
@@ -489,25 +480,28 @@ export default function SuperRolesPage() {
                           <span className="text-[11px] text-neutral-500 shrink-0">
                             {selected}/{keys.length}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => setGroupPermissions(keys, !allSelected)}
-                            className="text-[11px] font-medium text-primary hover:underline shrink-0"
-                          >
-                            {allSelected ? "None" : "All"}
-                          </button>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() => setGroupPermissions(keys, !allSelected)}
+                              className="text-[11px] font-medium text-primary hover:underline shrink-0"
+                            >
+                              {allSelected ? "None" : "All"}
+                            </button>
+                          )}
                         </div>
                         {expanded && (
                           <div className="px-5 pb-3 space-y-2">
                             {items.map((p) => (
                               <label
                                 key={p.key}
-                                className="flex items-start gap-2.5 text-xs cursor-pointer"
+                                className={`flex items-start gap-2.5 text-xs ${canManage ? "cursor-pointer" : "cursor-default"}`}
                               >
                                 <input
                                   type="checkbox"
                                   checked={selectedPermissions.includes(p.key)}
                                   onChange={() => togglePermission(p.key)}
+                                  disabled={!canManage}
                                   className="mt-0.5 rounded border-gray-300"
                                 />
                                 <span className="min-w-0">
@@ -537,9 +531,15 @@ export default function SuperRolesPage() {
                 <Button type="button" variant="ghost" onClick={closePermissionsDrawer}>
                   Cancel
                 </Button>
-                <Button type="button" onClick={handleSavePermissions} disabled={drawerSaving || drawerLoading}>
-                  {drawerSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save permissions"}
-                </Button>
+                {canManage && (
+                  <Button
+                    type="button"
+                    onClick={handleSavePermissions}
+                    disabled={drawerSaving || drawerLoading}
+                  >
+                    {drawerSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save permissions"}
+                  </Button>
+                )}
               </div>
             </div>
           </aside>

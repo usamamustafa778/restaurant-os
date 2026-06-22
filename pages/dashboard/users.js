@@ -40,6 +40,15 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Manager", tab: "manager", desc: "Full operational admin access" },
 ];
 
+const SYSTEM_ROLE_DROPDOWN = [
+  { value: "manager", label: "Manager" },
+  { value: "admin", label: "Admin" },
+  { value: "cashier", label: "Cashier" },
+  { value: "kitchen_staff", label: "Kitchen Staff" },
+  { value: "order_taker", label: "Order Taker" },
+  { value: "delivery_rider", label: "Delivery Rider" },
+];
+
 const ROLE_LABELS = {
   restaurant_admin: "Owner",
   admin: "Admin",
@@ -175,9 +184,11 @@ export default function UsersPage() {
   const roleOptions = useMemo(
     () =>
       isManager
-        ? ROLE_OPTIONS.filter((r) => ["product_manager", "cashier", "kitchen_staff", "order_taker", "delivery_rider"].includes(r.value))
-        : ROLE_OPTIONS,
-    [isManager]
+        ? SYSTEM_ROLE_DROPDOWN.filter((r) =>
+            ["cashier", "kitchen_staff", "order_taker", "delivery_rider"].includes(r.value),
+          )
+        : SYSTEM_ROLE_DROPDOWN,
+    [isManager],
   );
 
   useEffect(() => {
@@ -197,7 +208,7 @@ export default function UsersPage() {
   useEffect(() => {
     if (!currentBranch) return;
     getCustomRolesForRestaurant()
-      .then((data) => setCustomRoles(data.roles || []))
+      .then((data) => setCustomRoles(Array.isArray(data) ? data : []))
       .catch(() => setCustomRoles([]));
   }, [currentBranch]);
 
@@ -803,7 +814,7 @@ export default function UsersPage() {
                   {customRoles.length > 0 && (
                     <optgroup label="Custom Roles">
                       {customRoles.map((r) => (
-                        <option key={r._id} value={r.slug}>{r.name}</option>
+                        <option key={r.id || r.slug} value={r.slug}>{r.name}</option>
                       ))}
                     </optgroup>
                   )}

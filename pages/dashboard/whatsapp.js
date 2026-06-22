@@ -163,7 +163,7 @@ export default function WhatsAppDashboardPage() {
   const activeConvRef = useRef(null);
   const livePanelInitRef = useRef(false);
   const { socket } = useSocket() || {};
-  const { showNotification, setConversationClickHandler } =
+  const { setConversationClickHandler, setActiveConversationId, consumePendingOpenConversationId, markAlertRead } =
     useWhatsAppNotifications();
 
   const load = useCallback(async () => {
@@ -271,6 +271,7 @@ export default function WhatsAppDashboardPage() {
 
   const openConversation = useCallback(async (conv) => {
     setActiveConv(conv);
+    markAlertRead(String(conv._id));
     setUnreadCounts((prev) => ({
       ...prev,
       [String(conv._id)]: 0,
@@ -281,7 +282,7 @@ export default function WhatsAppDashboardPage() {
     } catch {
       toast.error("Could not load conversation");
     }
-  }, []);
+  }, [markAlertRead]);
 
   useEffect(() => {
     openConversationRef.current = openConversation;
@@ -293,7 +294,8 @@ export default function WhatsAppDashboardPage() {
 
   useEffect(() => {
     activeConvRef.current = activeConv;
-  }, [activeConv]);
+    setActiveConversationId(activeConv?._id ? String(activeConv._id) : null);
+  }, [activeConv, setActiveConversationId]);
 
   useEffect(() => {
     setConversationClickHandler((conversationId) => {
@@ -301,9 +303,25 @@ export default function WhatsAppDashboardPage() {
       const conv = conversationsRef.current.find(
         (c) => String(c._id) === String(conversationId),
       );
-      if (conv) openConversationRef.current?.(conv);
+      if (conv) {
+        openConversationRef.current?.(conv);
+        return;
+      }
+      loadConversations().then(() => {
+        const loaded = conversationsRef.current.find(
+          (c) => String(c._id) === String(conversationId),
+        );
+        if (loaded) openConversationRef.current?.(loaded);
+      });
     });
   }, [setConversationClickHandler]);
+
+  useEffect(() => {
+    const pendingId = consumePendingOpenConversationId();
+    if (!pendingId || !conversations.length) return;
+    const conv = conversations.find((c) => String(c._id) === pendingId);
+    if (conv) openConversationRef.current?.(conv);
+  }, [conversations, consumePendingOpenConversationId]);
 
   const isLive = state === "live" || state === "live_paused";
 
@@ -501,18 +519,11 @@ export default function WhatsAppDashboardPage() {
             [cid]: (prev[cid] || 0) + 1,
           }));
         }
-        showNotification({
-          title: "New WhatsApp Message",
-          body: content?.slice(0, 80) || "New message received",
-          conversationId: cid,
-          customerPhone,
-          type: "message",
-        });
       }
     };
 
     const onNeedsHuman = (data) => {
-      const { conversationId, customerPhone, lastMessage } = data;
+      const { conversationId } = data;
       const cid = String(conversationId);
 
       setConversations((prev) =>
@@ -524,14 +535,6 @@ export default function WhatsAppDashboardPage() {
       if (String(activeConvRef.current?._id) === cid) {
         setConvDetail((prev) => (prev ? { ...prev, needsHuman: true } : prev));
       }
-
-      showNotification({
-        title: "⚠️ Customer Needs Help",
-        body: lastMessage?.slice(0, 80) || "Customer needs assistance",
-        conversationId: cid,
-        customerPhone,
-        type: "urgent",
-      });
     };
 
     const onTakeover = (data) => {

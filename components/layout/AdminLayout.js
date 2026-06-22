@@ -369,6 +369,12 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin"],
   },
   {
+    path: "/settings/roles",
+    label: "Roles",
+    icon: Users,
+    roles: ["restaurant_admin", "admin", "manager"],
+  },
+  {
     path: "/profile",
     label: "Profile",
     icon: UserCircle2,
