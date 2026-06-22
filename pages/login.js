@@ -22,17 +22,17 @@ import SEO from "../components/SEO";
 import AuthDashboardMockupPanel from "../components/AuthDashboardMockupPanel";
 import toast from "react-hot-toast";
 
-const ALLOWED_ROLES = [
-  "super_admin",
+const SYSTEM_ROLES = [
   "restaurant_admin",
-  "staff",
   "admin",
-  "product_manager",
-  "cashier",
   "manager",
+  "cashier",
   "kitchen_staff",
   "order_taker",
   "delivery_rider",
+  "product_manager",
+  "staff",
+  "super_admin",
 ];
 
 export default function LoginPage() {
@@ -147,7 +147,12 @@ export default function LoginPage() {
   function redirectWithAuth(data) {
     const user = data.user || data;
 
-    if (!user || !ALLOWED_ROLES.includes(user.role)) {
+    const isAllowed =
+      user &&
+      (SYSTEM_ROLES.includes(user.role) ||
+        (user.role && user.role.length > 0));
+
+    if (!isAllowed) {
       setError("Invalid credentials or not an admin/staff user");
       return;
     }
@@ -172,10 +177,15 @@ export default function LoginPage() {
       target = "/rider";
     } else if (user.role === "cashier") {
       target = "/pos";
+    } else if (user.role === "kitchen_staff") {
+      target = "/kitchen";
     } else if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
       target = fromQuery;
     } else if (user.role === "super_admin") {
       target = "/super/overview";
+    } else if (!SYSTEM_ROLES.includes(user.role)) {
+      // Custom role slug — operational template default
+      target = "/pos";
     }
 
     if (typeof window !== "undefined") {

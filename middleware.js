@@ -9,11 +9,24 @@ const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "";
 const FOOD_HUB_SUBDOMAIN =
   (process.env.NEXT_PUBLIC_FOOD_HUB_SUBDOMAIN || "food").toLowerCase();
 
-const ALLOWED_ROLES = [
-  "super_admin", "restaurant_admin", "staff", "admin",
-  "product_manager", "cashier", "manager", "kitchen_staff",
-  "order_taker", "delivery_rider",
+const SYSTEM_ROLES = [
+  "super_admin",
+  "restaurant_admin",
+  "staff",
+  "admin",
+  "product_manager",
+  "cashier",
+  "manager",
+  "kitchen_staff",
+  "order_taker",
+  "delivery_rider",
 ];
+
+function isAllowedDashboardRole(role) {
+  if (!role || typeof role !== "string" || !role.trim()) return false;
+  if (SYSTEM_ROLES.includes(role)) return true;
+  return role.length > 0;
+}
 
 // Dashboard pages that live under pages/dashboard/ and are now served at /<page>
 const DASHBOARD_PAGES = new Set([
@@ -92,7 +105,7 @@ async function checkAuth(request) {
   const token = request.cookies.get("token")?.value;
   if (!token) return null;
   const payload = await verifyJwt(token);
-  if (!payload || !ALLOWED_ROLES.includes(payload.role)) return null;
+  if (!payload || !isAllowedDashboardRole(payload.role)) return null;
   return payload;
 }
 
@@ -225,7 +238,11 @@ export async function middleware(request) {
         }
       }
       const url = request.nextUrl.clone();
-      url.pathname = "/overview";
+      if (!SYSTEM_ROLES.includes(payload.role)) {
+        url.pathname = "/pos";
+      } else {
+        url.pathname = "/overview";
+      }
       return NextResponse.redirect(url);
     }
     return NextResponse.next();
