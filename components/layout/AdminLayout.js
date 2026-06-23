@@ -621,7 +621,12 @@ export default function AdminLayout({
   const [expandedGroups, setExpandedGroups] = useState([]);
   const [whatsappNeedsHumanCount, setWhatsappNeedsHumanCount] = useState(0);
   const { theme, toggleTheme } = useTheme();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, permissions, permissionsLoaded } = usePermissions();
+  console.log("Sidebar permissions state:", {
+    permissionsLoaded,
+    permissionCount: permissions.length,
+    hasPOSAccess: hasPermission("orders.view"),
+  });
 
   // Load sidebar state from sessionStorage after mount (client-side only)
   useEffect(() => {
@@ -791,19 +796,16 @@ export default function AdminLayout({
   // When super_admin is acting as a tenant, show full tenant nav (treat as restaurant_admin)
   const navRole =
     role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
-  const withRole = rawNavItems.filter((item) => {
+  const canSeeNavItem = (item) => {
     if (item.type === "section") return true;
+    if (item.permission) return hasPermission(item.permission);
     if (!item.roles) return true;
     return item.roles.includes(navRole);
-  });
-  const withPermission = withRole.filter((item) => {
-    if (item.type === "section") return true;
-    if (item.permission && !hasPermission(item.permission)) return false;
-    return true;
-  });
-  const navItems = withPermission.filter((item, i) => {
+  };
+  const visibleNavItems = rawNavItems.filter(canSeeNavItem);
+  const navItems = visibleNavItems.filter((item, i) => {
     if (item.type !== "section") return true;
-    const after = withPermission.slice(i + 1);
+    const after = visibleNavItems.slice(i + 1);
     const nextSectionIdx = after.findIndex((x) => x.type === "section");
     const until =
       nextSectionIdx === -1 ? after : after.slice(0, nextSectionIdx);
@@ -947,6 +949,11 @@ export default function AdminLayout({
 
               <nav className="flex-1 p-3 overflow-y-auto">
                 {navItems.map((item, idx) => {
+                  if (item.type !== "section") {
+                    if (item.permission && !hasPermission(item.permission)) {
+                      return null;
+                    }
+                  }
                   // Render section headers
                   if (item.type === "section") {
                     if (collapsed && !mobileSidebarOpen) return null; // Hide section headers when collapsed (or show when mobile sidebar open)

@@ -27,6 +27,7 @@ export function PermissionProvider({ children }) {
 
     getMyPermissions()
       .then((data) => {
+        console.log("Permissions loaded:", data.permissions);
         setPermissions(data.permissions || []);
         setPermissionsLoaded(true);
       })
