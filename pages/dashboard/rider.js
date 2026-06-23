@@ -15,10 +15,12 @@ import {
   getCurrencySymbol,
   getCurrentDaySession,
   getDeals,
+  getRiderPayouts,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { getBusinessDate, getBusinessDayRange } from "../../lib/businessDay";
 import {
   Bike,
   MapPin,
@@ -172,6 +174,58 @@ function lastStatusAtFromHistory(history, status) {
   return last;
 }
 
+function startOfDay(d) {
+  const v = new Date(d);
+  v.setHours(0, 0, 0, 0);
+  return v;
+}
+
+function addDays(d, days) {
+  const v = new Date(d);
+  v.setDate(v.getDate() + days);
+  return v;
+}
+
+function shiftBusinessDateStr(dateStr, deltaDays) {
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + deltaDays);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** Match GET /api/rider/orders range windows (business day for today/yesterday/custom). */
+function getHistoryRangeBounds(range, customFrom, customTo, cutoffHour = 4) {
+  const now = new Date();
+  if (range === "yesterday") {
+    const yStr = shiftBusinessDateStr(getBusinessDate(now, cutoffHour), -1);
+    const { from, to } = getBusinessDayRange(yStr, cutoffHour);
+    return { start: from, end: to };
+  }
+  if (range === "week") {
+    const start = startOfDay(now);
+    const day = start.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - diffToMonday);
+    return { start, end: addDays(start, 7) };
+  }
+  if (range === "month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { start, end };
+  }
+  if (range === "custom" && customFrom && customTo) {
+    const { from } = getBusinessDayRange(customFrom, cutoffHour);
+    const { to } = getBusinessDayRange(customTo, cutoffHour);
+    return { start: from, end: to };
+  }
+  const bizToday = getBusinessDate(now, cutoffHour);
+  const { from, to } = getBusinessDayRange(bizToday, cutoffHour);
+  return { start: from, end: to };
+}
+
 export default function RiderPortalPage() {
   const sym = getCurrencySymbol();
   const { socket } = useSocket() || {};
@@ -206,6 +260,8 @@ export default function RiderPortalPage() {
     yesterday: 0,
     week: 0,
   });
+  const [riderPayouts, setRiderPayouts] = useState([]);
+  const [payoutsLoading, setPayoutsLoading] = useState(false);
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
 
   function toggleOrderDetails(orderKey) {
@@ -324,6 +380,22 @@ export default function RiderPortalPage() {
     }
   }, [computeClearedRevenue]);
 
+  const loadRiderPayouts = useCallback(async () => {
+    if (!riderId) {
+      setRiderPayouts([]);
+      return;
+    }
+    setPayoutsLoading(true);
+    try {
+      const data = await getRiderPayouts({ riderId: String(riderId) });
+      setRiderPayouts(Array.isArray(data?.payouts) ? data.payouts : []);
+    } catch {
+      setRiderPayouts([]);
+    } finally {
+      setPayoutsLoading(false);
+    }
+  }, [riderId]);
+
   useEffect(() => {
     if (tab !== TABS.HISTORY) {
       setOrdersLoading(true);
@@ -410,7 +482,8 @@ export default function RiderPortalPage() {
   useEffect(() => {
     if (tab !== TABS.HISTORY) return;
     loadHistoryBreakdown();
-  }, [tab, loadHistoryBreakdown]);
+    loadRiderPayouts();
+  }, [tab, loadHistoryBreakdown, loadRiderPayouts]);
 
   const loadMenu = useCallback(async () => {
     const seq = ++menuLoadSeqRef.current;
@@ -602,6 +675,49 @@ export default function RiderPortalPage() {
       longest: n ? Math.max(...durations) : null,
     };
   }, [deliveredHistory]);
+
+  const businessDayCutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
+
+  const myEarningsStats = useMemo(() => {
+    const deliveryFeesEarned = deliveredHistory.reduce(
+      (sum, o) => sum + (Number(o.deliveryCharges) || 0),
+      0,
+    );
+    const { start, end } = getHistoryRangeBounds(
+      historyRange,
+      historyCustomFrom,
+      historyCustomTo,
+      businessDayCutoffHour,
+    );
+    const payoutsInPeriod = riderPayouts.filter((p) => {
+      if (!p?.paidAt) return false;
+      const paidAt = new Date(p.paidAt);
+      return paidAt >= start && paidAt < end;
+    });
+    const paidOut = payoutsInPeriod.reduce(
+      (sum, p) => sum + (Number(p.amountPaid) || 0),
+      0,
+    );
+    const pendingPay = Math.max(0, deliveryFeesEarned - paidOut);
+    const lastPayout = [...riderPayouts]
+      .filter((p) => p?.paidAt)
+      .sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))[0];
+    return {
+      deliveryFeesEarned,
+      deliveryCount: deliveredHistory.length,
+      paidOut,
+      pendingPay,
+      payoutsInPeriod: payoutsInPeriod.length,
+      lastPayout,
+    };
+  }, [
+    deliveredHistory,
+    historyRange,
+    historyCustomFrom,
+    historyCustomTo,
+    riderPayouts,
+    businessDayCutoffHour,
+  ]);
 
   const overviewHeaderSubtitle = useMemo(() => {
     if (riderPendingPaymentTotal > 0) {
@@ -1483,6 +1599,67 @@ export default function RiderPortalPage() {
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-xs text-gray-700 dark:text-neutral-200"
                     />
                   </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/10 via-white to-orange-50/80 p-4 shadow-sm dark:border-primary/30 dark:from-primary/15 dark:via-neutral-950 dark:to-neutral-950">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-primary">
+                      My earnings
+                    </p>
+                    <p className="text-2xl font-black tabular-nums leading-tight text-gray-900 dark:text-white mt-1">
+                      Rs. {Math.round(myEarningsStats.deliveryFeesEarned).toLocaleString()}
+                    </p>
+                    <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 leading-snug">
+                      Delivery pay · {historyRangeLabel}
+                      {payoutsLoading ? " · loading payouts…" : ""}
+                    </p>
+                  </div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2 border-t border-primary/10 pt-3">
+                  <div className="min-w-0 rounded-xl bg-white/70 px-2 py-2 dark:bg-neutral-900/60">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Deliveries
+                    </p>
+                    <p className="text-sm font-black tabular-nums text-gray-900 dark:text-white mt-0.5">
+                      {myEarningsStats.deliveryCount}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-xl bg-white/70 px-2 py-2 dark:bg-neutral-900/60">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Paid out
+                    </p>
+                    <p
+                      className={`text-sm font-black tabular-nums mt-0.5 ${
+                        myEarningsStats.paidOut > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-gray-500 dark:text-neutral-400"
+                      }`}
+                    >
+                      Rs. {Math.round(myEarningsStats.paidOut).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-xl bg-white/70 px-2 py-2 dark:bg-neutral-900/60">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Pending
+                    </p>
+                    <p className="text-sm font-black tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
+                      Rs. {Math.round(myEarningsStats.pendingPay).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                {myEarningsStats.lastPayout?.paidAt && (
+                  <p className="text-[9px] text-gray-400 dark:text-neutral-500 mt-3 leading-snug">
+                    Last payout: Rs.{" "}
+                    {Math.round(Number(myEarningsStats.lastPayout.amountPaid) || 0).toLocaleString()}
+                    {myEarningsStats.lastPayout.period?.label
+                      ? ` · ${myEarningsStats.lastPayout.period.label}`
+                      : ""}
+                  </p>
                 )}
               </div>
 

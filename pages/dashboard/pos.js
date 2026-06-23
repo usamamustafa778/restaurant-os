@@ -3254,9 +3254,7 @@ function RiderPickerDropdown({
         ) : isAssigning ? (
           <Loader2 className="w-4 h-4 animate-spin" />
         ) : (
-          <ChevronDown
-            className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`}
-          />
+          <Bike className="w-4 h-4" />
         )}
       </button>
       {open && (
@@ -3670,13 +3668,10 @@ function OrderCard({
         </div>
       )}
 
-      {/* Total + payment status */}
-      <div className="px-3 pb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-black text-gray-900 dark:text-white tabular-nums">
-            {sym} {Math.round(getOrderTotal(order)).toLocaleString()}
-          </span>
-          {status !== "CANCELLED" && (
+      {/* Payment status + actions, then total */}
+      <div className="px-3 pb-2 flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-2">
+          {status !== "CANCELLED" ? (
             <span
               className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                 riderHandInPending
@@ -3699,59 +3694,64 @@ function OrderCard({
                   ? "Paid"
                   : "Unpaid"}
             </span>
+          ) : (
+            <span />
           )}
-        </div>
-        {!isOrderTaker && (
-          <div className="flex items-center gap-0.5">
-            {status !== "CANCELLED" && hasPermission("orders.print") && (
-              <button
-                type="button"
-                onClick={() =>
-                  onPrint(order, paymentStatus === "paid" ? "receipt" : "bill")
-                }
-                className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
-                title="Print"
-              >
-                <Printer className="w-3.5 h-3.5" />
-              </button>
-            )}
-            {status !== "CANCELLED" &&
-              hasPermission("orders.edit") &&
-              (isAdmin ||
-                (paymentStatus === "unpaid" &&
-                  !["DELIVERED", "COMPLETED"].includes(status))) && (
+          {!isOrderTaker && (
+            <div className="flex items-center gap-0.5 ml-auto">
+              {status !== "CANCELLED" && hasPermission("orders.print") && (
                 <button
                   type="button"
-                  onClick={() => onEdit(order)}
+                  onClick={() =>
+                    onPrint(order, paymentStatus === "paid" ? "receipt" : "bill")
+                  }
                   className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
-                  title="Edit"
+                  title="Print"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
+                  <Printer className="w-3.5 h-3.5" />
                 </button>
               )}
-            {canCancelPerm && (
-              <button
-                type="button"
-                disabled={isUpdating}
-                onClick={() => onOpenCancel(order)}
-                className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors disabled:opacity-50"
-                title="Cancel"
-              >
-                <XCircle className="w-3.5 h-3.5" />
-              </button>
-            )}
-            {showEarlyPaymentPerm && (
-              <button
-                type="button"
-                onClick={() => onOpenPayment(order)}
-                className="p-1 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
-                title="Take payment"
-              >
-                <Banknote className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        )}
+              {status !== "CANCELLED" &&
+                hasPermission("orders.edit") &&
+                (isAdmin ||
+                  (paymentStatus === "unpaid" &&
+                    !["DELIVERED", "COMPLETED"].includes(status))) && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(order)}
+                    className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              {canCancelPerm && (
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => onOpenCancel(order)}
+                  className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors disabled:opacity-50"
+                  title="Cancel"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {showEarlyPaymentPerm && (
+                <button
+                  type="button"
+                  onClick={() => onOpenPayment(order)}
+                  className="p-1 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                  title="Take payment"
+                >
+                  <Banknote className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <span className="text-lg font-black text-gray-900 dark:text-white tabular-nums">
+          {sym} {Math.round(getOrderTotal(order)).toLocaleString()}
+        </span>
       </div>
 
       {/* Primary CTA — full width */}

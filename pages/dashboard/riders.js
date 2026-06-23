@@ -12,7 +12,7 @@ import {
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
-import { getBusinessDate, getBusinessDayRange } from "../../lib/businessDay";
+import { getBusinessDate, getBusinessDayRange, formatBusinessDate } from "../../lib/businessDay";
 import {
   Truck,
   Loader2,
@@ -111,6 +111,43 @@ function buildPeriodLabel(preset, customFrom, customTo) {
   return PRESETS.find((p) => p.id === preset)?.label || "";
 }
 
+function filterPayoutsForRider(payoutList, riderId, riderName) {
+  return payoutList.filter((p) =>
+    riderId
+      ? String(p.rider) === riderId
+      : String(p.riderName || "").trim() === String(riderName || "").trim(),
+  );
+}
+
+function getLatestPayout(payoutList) {
+  if (!payoutList.length) return null;
+  return [...payoutList].sort(
+    (a, b) => new Date(b.paidAt || 0) - new Date(a.paidAt || 0),
+  )[0];
+}
+
+function getTodayPayoutForRider(payoutList, businessDateStr, cutoffHour) {
+  const { from, to } = getBusinessDayRange(businessDateStr, cutoffHour);
+  return (
+    [...payoutList]
+      .filter((p) => {
+        if (!p?.paidAt) return false;
+        const t = new Date(p.paidAt);
+        return t >= from && t < to;
+      })
+      .sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))[0] || null
+  );
+}
+
+/** Same inclusive/exclusive window as dateFilteredOrders (createdAt). */
+function isTimestampInActiveRange(ts, from, to) {
+  if (!ts) return false;
+  const t = new Date(ts);
+  if (from && t < from) return false;
+  if (to && t > to) return false;
+  return true;
+}
+
 function isDelivery(o) {
   return String(o.type || "").toLowerCase() === "delivery";
 }
@@ -176,6 +213,7 @@ export default function RidersPage() {
   const [allOrders, setAllOrders] = useState([]);
   const [staffRiders, setStaffRiders] = useState([]);
   const [payouts, setPayouts] = useState([]);
+  const [recentPayouts, setRecentPayouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -265,6 +303,22 @@ export default function RidersPage() {
     }
   }, []);
 
+  const loadRecentPayouts = useCallback(async () => {
+    try {
+      const fromStr = shiftBusinessDateStr(businessDateStr, -90);
+      const { from } = getBusinessDayRange(fromStr, cutoffHour);
+      const { to } = getBusinessDayRange(businessDateStr, cutoffHour);
+      const data = await getRiderPayouts({
+        from: from.toISOString(),
+        to: to.toISOString(),
+        status: "paid",
+      });
+      setRecentPayouts(Array.isArray(data?.payouts) ? data.payouts : []);
+    } catch {
+      setRecentPayouts([]);
+    }
+  }, [businessDateStr, cutoffHour]);
+
   const loadStaffRiders = useCallback(async () => {
     try {
       const list = await getRiders();
@@ -303,6 +357,7 @@ export default function RidersPage() {
           loadOrders(q),
           loadStaffRiders(),
           q?.from && q?.to ? loadPayouts(q.from, q.to) : Promise.resolve(),
+          loadRecentPayouts(),
         ]);
         if (!q?.from || !q?.to) setPayouts([]);
         setLastUpdated(new Date());
@@ -316,6 +371,7 @@ export default function RidersPage() {
       cutoffHour,
       loadOrders,
       loadPayouts,
+      loadRecentPayouts,
       loadStaffRiders,
       resolveRidersDateRange,
     ],
@@ -464,6 +520,7 @@ export default function RidersPage() {
   }, [deliveryOrders]);
 
   const mergedRiders = useMemo(() => {
+    const { from: rangeFrom, to: rangeTo } = activeDateRange;
     const byKey = new Map();
     const addBucket = (key, riderId, riderName, phone) => {
       if (!byKey.has(key)) {
@@ -532,15 +589,27 @@ export default function RidersPage() {
       if (assigned === 0) status = "off";
       else if (out > 0) status = "active";
       else status = "idle";
-      const riderPayouts = payouts.filter((p) =>
-        b.riderId
-          ? String(p.rider) === b.riderId
-          : String(p.riderName || "").trim() === b.riderName.trim(),
+      const riderPayouts = filterPayoutsForRider(
+        payouts,
+        b.riderId,
+        b.riderName,
       );
-      const lastPayout = riderPayouts.sort(
-        (a, b) => new Date(b.paidAt || 0) - new Date(a.paidAt || 0),
-      )[0];
-      const paidThisMonth = riderPayouts.reduce(
+      const payoutsInPeriod = riderPayouts.filter((p) =>
+        isTimestampInActiveRange(p.paidAt, rangeFrom, rangeTo),
+      );
+      const periodPayout = getLatestPayout(payoutsInPeriod);
+      const riderRecentPayouts = filterPayoutsForRider(
+        recentPayouts,
+        b.riderId,
+        b.riderName,
+      );
+      const lastPayoutOverall = getLatestPayout(riderRecentPayouts);
+      const todayPayout = getTodayPayoutForRider(
+        riderRecentPayouts,
+        businessDateStr,
+        cutoffHour,
+      );
+      const paidThisMonth = payoutsInPeriod.reduce(
         (s, p) => s + Math.round(Number(p.amountPaid) || 0),
         0,
       );
@@ -558,7 +627,9 @@ export default function RidersPage() {
         codOwed,
         perf,
         status,
-        lastPayout,
+        periodPayout,
+        lastPayoutOverall,
+        todayPayout,
         paidThisMonth,
       };
     });
@@ -569,7 +640,15 @@ export default function RidersPage() {
       return b.delivered - a.delivered;
     });
     return list;
-  }, [deliveryOrders, staffRiders, payouts]);
+  }, [
+    deliveryOrders,
+    staffRiders,
+    payouts,
+    recentPayouts,
+    activeDateRange,
+    businessDateStr,
+    cutoffHour,
+  ]);
 
   const sidebarRider = useMemo(
     () =>
@@ -641,6 +720,7 @@ export default function RidersPage() {
       toast.success("Payout recorded");
       setPayoutModalOpen(false);
       await loadPayouts(fromIso, toIso);
+      await loadRecentPayouts();
       if (modalPostCpv && amt > 0) {
         router.push(
           buildCashPaymentHref({
@@ -769,7 +849,7 @@ export default function RidersPage() {
   <div class="stat"><div class="stat-label">Del Fees</div><div class="stat-val primary">${rs(rider.delFeesEarned)}</div></div>
   <div class="stat"><div class="stat-label">Order Value</div><div class="stat-val">${rs(rider.orderValue)}</div></div>
   <div class="stat"><div class="stat-label">COD Owed</div><div class="stat-val" style="color:${rider.codOwed > 0 ? "#d97706" : "#059669"}">${rider.codOwed > 0 ? rs(rider.codOwed) : "All clear"}</div></div>
-  <div class="stat"><div class="stat-label">Payout Status</div><div class="stat-val" style="font-size:12px">${rider.lastPayout ? "Paid " + rs(rider.lastPayout.amountPaid) : "Unpaid · " + rs(rider.delFeesEarned)}</div></div>
+  <div class="stat"><div class="stat-label">Payout Status</div><div class="stat-val" style="font-size:12px">${rider.periodPayout ? "Paid " + rs(rider.periodPayout.amountPaid) : rider.codOwed > 0 ? rs(rider.codOwed) + " to collect" : "—"}</div></div>
 </div>
 <table>
   <thead><tr>
@@ -1097,8 +1177,14 @@ export default function RidersPage() {
                           <th className="px-3 py-3 font-bold text-right">
                             COD owed
                           </th>
-                          <th className="px-3 py-3 font-bold text-center hidden lg:table-cell">
+                          <th
+                            className="px-3 py-3 font-bold text-center hidden lg:table-cell"
+                            title="Kitchen · Ready · Out for delivery"
+                          >
                             Pipeline
+                            <span className="block text-[9px] font-semibold normal-case tracking-normal text-gray-400 dark:text-neutral-500 mt-0.5">
+                              K · R · O
+                            </span>
                           </th>
                           <th className="px-3 py-3 font-bold hidden xl:table-cell">
                             Payout
@@ -1187,17 +1273,23 @@ export default function RidersPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-3 py-3 align-middle text-center text-xs text-gray-600 dark:text-neutral-400 hidden lg:table-cell tabular-nums whitespace-nowrap">
-                              {r.kitchen}/{r.ready}/{r.out}
+                            <td className="px-3 py-3 align-middle text-center text-[11px] text-gray-600 dark:text-neutral-400 hidden lg:table-cell tabular-nums whitespace-nowrap">
+                              <span title="Kitchen · Ready · Out for delivery">
+                                K·{r.kitchen} R·{r.ready} O·{r.out}
+                              </span>
                             </td>
                             <td className="px-3 py-3 align-middle hidden xl:table-cell max-w-[140px]">
-                              {r.lastPayout ? (
+                              {r.periodPayout ? (
                                 <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate block">
-                                  Paid {fmtRs(r.lastPayout.amountPaid)}
+                                  Paid {fmtRs(r.periodPayout.amountPaid)}
+                                </span>
+                              ) : r.codOwed > 0 ? (
+                                <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 truncate block">
+                                  {fmtRs(r.codOwed)} to collect
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-gray-500 dark:text-neutral-400 truncate block">
-                                  Unpaid · {fmtRs(r.delFeesEarned)}
+                                <span className="text-[11px] text-gray-400 dark:text-neutral-500">
+                                  —
                                 </span>
                               )}
                             </td>
@@ -1374,24 +1466,50 @@ export default function RidersPage() {
                       <p className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">
                         Payout status
                       </p>
-                      {sidebarRider.lastPayout ? (
+                      {sidebarRider.todayPayout ? (
                         <p className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                          Paid {fmtRs(sidebarRider.lastPayout.amountPaid)} at{" "}
-                          {sidebarRider.lastPayout.paidAt
+                          Paid {fmtRs(sidebarRider.todayPayout.amountPaid)} at{" "}
+                          {sidebarRider.todayPayout.paidAt
                             ? new Date(
-                                sidebarRider.lastPayout.paidAt,
+                                sidebarRider.todayPayout.paidAt,
                               ).toLocaleTimeString(undefined, {
                                 hour: "numeric",
                                 minute: "2-digit",
                               })
                             : "—"}{" "}
-                          ✓
+                          today ✓
                         </p>
                       ) : (
-                        <p className="text-xs text-gray-700 dark:text-neutral-300">
-                          {fmtRs(sidebarRider.delFeesEarned)} earned — not paid
-                          yet
+                        <p className="font-bold text-amber-700 dark:text-amber-300 text-xs">
+                          Not paid today
                         </p>
+                      )}
+                      {sidebarRider.lastPayoutOverall &&
+                        !sidebarRider.todayPayout && (
+                          <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-1 leading-snug">
+                            Last payout:{" "}
+                            {fmtRs(sidebarRider.lastPayoutOverall.amountPaid)} ·{" "}
+                            {sidebarRider.lastPayoutOverall.paidAt
+                              ? formatBusinessDate(
+                                  getBusinessDate(
+                                    sidebarRider.lastPayoutOverall.paidAt,
+                                    cutoffHour,
+                                  ),
+                                )
+                              : "—"}
+                          </p>
+                        )}
+                      {sidebarRider.codOwed > 0 && (
+                        <div className="mt-2 pt-2 border-t border-gray-200/80 dark:border-neutral-700/80">
+                          <p className="font-bold text-amber-600 dark:text-amber-400 text-xs">
+                            {fmtRs(sidebarRider.codOwed)} pending submission
+                          </p>
+                          <p className="text-[11px] text-gray-500 dark:text-neutral-400 mt-0.5">
+                            {sidebarRider.codList.length} delivered order
+                            {sidebarRider.codList.length !== 1 ? "s" : ""} not
+                            handed in
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
