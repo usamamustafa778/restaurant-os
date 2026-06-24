@@ -13,6 +13,7 @@ import {
   restoreRestaurantForSuperAdmin,
   permanentlyDeleteRestaurantForSuperAdmin,
   verifyRestaurantOwnerEmailsForSuperAdmin,
+  approveRestaurantForSuperAdmin,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 import {
@@ -24,6 +25,7 @@ import {
   RefreshCw,
   Eye,
   MailCheck,
+  CheckCircle2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -79,6 +81,12 @@ const SUBSCRIPTION_PILL = {
   SUSPENDED: "badge-danger",
 };
 
+const APPROVE_PLANS = [
+  { key: "starter", label: "Starter", price: "Rs 150/day" },
+  { key: "growth", label: "Growth", price: "Rs 350/day (incl. accounting)" },
+  { key: "pro", label: "Pro", price: "Rs 550/day (enterprise)" },
+];
+
 const ENGAGEMENT_STYLES = {
   /** Soft pills on white table — matches platform health column reference */
   active:
@@ -129,6 +137,10 @@ export default function SuperRestaurantsPage() {
   const [creating, setCreating] = useState(false);
   const [listRefreshing, setListRefreshing] = useState(false);
   const [verifyingEmailId, setVerifyingEmailId] = useState(null);
+  const [approveTarget, setApproveTarget] = useState(null);
+  const [approvePlan, setApprovePlan] = useState("starter");
+  const [approveTrialDays, setApproveTrialDays] = useState(30);
+  const [approveLoading, setApproveLoading] = useState(false);
   const { confirm } = useConfirmDialog();
 
   function handleOpenCreate() {
@@ -243,6 +255,40 @@ export default function SuperRestaurantsPage() {
     }
   }
 
+  async function handleApproveRestaurant(e) {
+    e.preventDefault();
+    if (!approveTarget) return;
+    const days = Number(approveTrialDays);
+    if (!Number.isFinite(days) || days < 1) {
+      toast.error("Trial duration must be at least 1 day");
+      return;
+    }
+    try {
+      setApproveLoading(true);
+      await approveRestaurantForSuperAdmin(approveTarget.id, {
+        plan: approvePlan,
+        trialDays: days,
+      });
+      toast.success(
+        `"${approveTarget.website?.name || "Restaurant"}" approved and activated.`,
+      );
+      setApproveTarget(null);
+      setApprovePlan("starter");
+      setApproveTrialDays(30);
+      loadRestaurants();
+    } catch (err) {
+      toast.error(err.message || "Failed to approve restaurant");
+    } finally {
+      setApproveLoading(false);
+    }
+  }
+
+  function openApproveModal(restaurant) {
+    setApproveTarget(restaurant);
+    setApprovePlan("starter");
+    setApproveTrialDays(30);
+  }
+
   useEffect(() => {
     loadRestaurants();
     loadDeleted();
@@ -255,8 +301,13 @@ export default function SuperRestaurantsPage() {
   const filtered = restaurants.filter((r) => {
     const subStatus = r.subscription?.status || "";
     const egKey = r.engagement?.key || "";
+    const isPending = r.approvalStatus === "pending";
 
-    if (filterStatus !== "all" && subStatus !== filterStatus) return false;
+    if (filterStatus === "pending_approval") {
+      if (!isPending) return false;
+    } else if (filterStatus !== "all" && subStatus !== filterStatus) {
+      return false;
+    }
     if (filterHealth !== "all" && egKey !== filterHealth) return false;
 
     if (!searchQuery.trim()) return true;
@@ -288,6 +339,18 @@ export default function SuperRestaurantsPage() {
   });
 
   const sorted = [...filtered].sort((a, b) => {
+    const aPending = a.approvalStatus === "pending" ? 1 : 0;
+    const bPending = b.approvalStatus === "pending" ? 1 : 0;
+    if (aPending !== bPending) return bPending - aPending;
+
+    const lastA = a.activity?.lastOrderAt
+      ? new Date(a.activity.lastOrderAt).getTime()
+      : 0;
+    const lastB = b.activity?.lastOrderAt
+      ? new Date(b.activity.lastOrderAt).getTime()
+      : 0;
+    if (lastA !== lastB) return lastB - lastA;
+
     const revA = a.activity?.revenueLast30Days ?? 0;
     const revB = b.activity?.revenueLast30Days ?? 0;
     const mult = sortSales === "asc" ? 1 : -1;
@@ -314,6 +377,7 @@ export default function SuperRestaurantsPage() {
             className="box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
           >
             <option value="all">All statuses</option>
+            <option value="pending_approval">Pending approval</option>
             <option value="TRIAL">Trial</option>
             <option value="ACTIVE">Active</option>
             <option value="SUSPENDED">Suspended</option>
@@ -566,6 +630,7 @@ export default function SuperRestaurantsPage() {
               header: "Status",
               cellClassName: "whitespace-normal",
               render: (_, r) => {
+                const isPending = r.approvalStatus === "pending";
                 const sub = r.subscription || {};
                 const statusLabel = String(sub.status || "TRIAL").toUpperCase();
                 const badgeClass =
@@ -578,12 +643,18 @@ export default function SuperRestaurantsPage() {
                 const warn = isExpiringWithinDays(trialEnd);
                 return (
                   <div className="flex flex-col gap-1 min-w-0">
-                    <span
-                      className={`badge w-fit text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}
-                    >
-                      {statusLabel}
-                    </span>
-                    {endLabel ? (
+                    {isPending ? (
+                      <span className="badge w-fit text-[10px] font-semibold uppercase tracking-wide bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50">
+                        Pending approval
+                      </span>
+                    ) : (
+                      <span
+                        className={`badge w-fit text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}
+                      >
+                        {statusLabel}
+                      </span>
+                    )}
+                    {!isPending && endLabel ? (
                       <span
                         className={`text-[11px] ${
                           warn
@@ -642,6 +713,7 @@ export default function SuperRestaurantsPage() {
               cellClassName: "whitespace-nowrap",
               render: (_, r) => {
                 const website = r.website || {};
+                const isPending = r.approvalStatus === "pending";
                 return (
                   <div className="inline-flex min-h-[1.25rem] flex-nowrap items-center gap-2 justify-start shrink-0">
                     <button
@@ -655,39 +727,53 @@ export default function SuperRestaurantsPage() {
                       <Eye className="w-3.5 h-3.5" />
                       View
                     </button>
-                    <button
-                      type="button"
-                      disabled={!website.subdomain}
-                      onClick={() => {
-                        const slug = website.subdomain || null;
-                        if (slug) {
-                          setActingAsRestaurant(slug);
-                          window.open("/overview", "_blank");
-                        }
-                      }}
-                      className="px-2 py-0.5 rounded-md border border-primary/30 text-[11px] font-semibold text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed"
-                      title="Open this restaurant's dashboard in a new tab"
-                    >
-                      Login
-                    </button>
-                    {r.ownerAccount && r.ownerAccount.allVerified === false ? (
+                    {isPending ? (
                       <button
                         type="button"
-                        disabled={verifyingEmailId === r.id}
-                        onClick={() => handleVerifyOwnerEmail(r)}
-                        className="px-2 py-0.5 rounded-md border border-amber-300 bg-amber-50 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
-                        title="Verify owner email without OTP"
+                        onClick={() => openApproveModal(r)}
+                        className="px-2 py-0.5 rounded-md border border-emerald-300 bg-emerald-50 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200 inline-flex items-center gap-1"
+                        title="Approve and activate restaurant"
                       >
-                        {verifyingEmailId === r.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <MailCheck className="w-3.5 h-3.5 inline-block mr-0.5" />
-                            Verify
-                          </>
-                        )}
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Approve
                       </button>
-                    ) : null}
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={!website.subdomain}
+                          onClick={() => {
+                            const slug = website.subdomain || null;
+                            if (slug) {
+                              setActingAsRestaurant(slug);
+                              window.open("/overview", "_blank");
+                            }
+                          }}
+                          className="px-2 py-0.5 rounded-md border border-primary/30 text-[11px] font-semibold text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Open this restaurant's dashboard in a new tab"
+                        >
+                          Login
+                        </button>
+                        {r.ownerAccount && r.ownerAccount.allVerified === false ? (
+                          <button
+                            type="button"
+                            disabled={verifyingEmailId === r.id}
+                            onClick={() => handleVerifyOwnerEmail(r)}
+                            className="px-2 py-0.5 rounded-md border border-amber-300 bg-amber-50 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
+                            title="Verify owner email without OTP"
+                          >
+                            {verifyingEmailId === r.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <MailCheck className="w-3.5 h-3.5 inline-block mr-0.5" />
+                                Verify
+                              </>
+                            )}
+                          </button>
+                        ) : null}
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(r)}
@@ -995,6 +1081,126 @@ export default function SuperRestaurantsPage() {
                   )}
                 </Button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Approve restaurant modal */}
+        {approveTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 dark:bg-black/60">
+            <div className="bg-white dark:bg-neutral-900 rounded-xl border-2 border-gray-200 dark:border-neutral-700 shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-700">
+                <h3 className="font-bold text-gray-900 dark:text-white">
+                  Approve Restaurant
+                </h3>
+                <button
+                  type="button"
+                  disabled={approveLoading}
+                  onClick={() => {
+                    if (approveLoading) return;
+                    setApproveTarget(null);
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <form onSubmit={handleApproveRestaurant}>
+                <div className="px-5 py-4 space-y-4">
+                  <div className="rounded-lg bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 px-3 py-2.5 text-xs space-y-1">
+                    <p>
+                      <span className="text-neutral-500">Restaurant:</span>{" "}
+                      <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                        {approveTarget.website?.name || "Untitled"}
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-neutral-500">Owner:</span>{" "}
+                      <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                        {approveTarget.ownerAccount?.displayName || "—"}
+                      </span>
+                    </p>
+                    <p>
+                      <span className="text-neutral-500">Signed up:</span>{" "}
+                      <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                        {approveTarget.createdAt
+                          ? new Date(approveTarget.createdAt).toLocaleString()
+                          : "—"}
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-2">
+                      Select Plan
+                    </p>
+                    <div className="space-y-2">
+                      {APPROVE_PLANS.map((p) => (
+                        <label
+                          key={p.key}
+                          className={`flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer text-xs ${
+                            approvePlan === p.key
+                              ? "border-primary bg-primary/5"
+                              : "border-neutral-200 dark:border-neutral-700"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="approvePlan"
+                            value={p.key}
+                            checked={approvePlan === p.key}
+                            onChange={() => setApprovePlan(p.key)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                              {p.label}
+                            </span>{" "}
+                            <span className="text-neutral-500">{p.price}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Trial Duration (days)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      required
+                      value={approveTrialDays}
+                      onChange={(e) => setApproveTrialDays(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-700">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={approveLoading}
+                    onClick={() => setApproveTarget(null)}
+                    className="px-4"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={approveLoading}
+                    className="px-4"
+                  >
+                    {approveLoading ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Approving…
+                      </span>
+                    ) : (
+                      "Approve & Activate"
+                    )}
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
         )}

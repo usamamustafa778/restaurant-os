@@ -41,6 +41,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pendingNotice, setPendingNotice] = useState("");
   const [checkingStoredAuth, setCheckingStoredAuth] = useState(true);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [verifyEmailAddress, setVerifyEmailAddress] = useState("");
@@ -219,11 +220,20 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setPendingNotice("");
 
     try {
       const data = await login(email, password);
       redirectWithAuth(data);
     } catch (err) {
+      if (err.code === "ACCOUNT_PENDING") {
+        setPendingNotice(
+          "Your account is under review 🕐\nOur team will reach out to you shortly to get you set up.\nQuestions? Email us at support@eatsdesk.com",
+        );
+        setError("");
+        setLoading(false);
+        return;
+      }
       const msg = err.message || "Login failed";
       if (
         msg === "EMAIL_NOT_VERIFIED" ||
@@ -362,6 +372,12 @@ export default function LoginPage() {
                     <p className="auth-card-lead">
                       Sign in to your dashboard to continue
                     </p>
+
+                    {pendingNotice && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100 whitespace-pre-line">
+                        {pendingNotice}
+                      </div>
+                    )}
 
                     {error && <div className="auth-error">{error}</div>}
 

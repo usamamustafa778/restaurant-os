@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { useRouter } from "next/router";
 import Link from "next/link";
-import { registerRestaurant, verifyEmail } from "../lib/apiClient";
-import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { registerRestaurant } from "../lib/apiClient";
+import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, Trash2, CheckCircle2 } from "lucide-react";
 import SEO from "../components/SEO";
 import AuthDashboardMockupPanel from "../components/AuthDashboardMockupPanel";
 
@@ -73,12 +72,7 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showVerifyModal, setShowVerifyModal] = useState(false);
-  const [verifyEmailAddress, setVerifyEmailAddress] = useState("");
-  const [verifyCode, setVerifyCode] = useState("");
-  const [verifyLoading, setVerifyLoading] = useState(false);
-  const [verifyError, setVerifyError] = useState("");
-  const router = useRouter();
+  const [signupSuccess, setSignupSuccess] = useState(null);
 
   // --- Subdomain validation ---
   function validateSubdomain(value) {
@@ -161,56 +155,67 @@ export default function SignupPage() {
       };
 
       const data = await registerRestaurant(payload);
-      const user = data.user;
-
-      // Show inline verification modal (OTP already sent by backend)
-      setVerifyEmailAddress(user.email);
-      setVerifyCode("");
-      setVerifyError("");
-      setShowVerifyModal(true);
+      setSignupSuccess({
+        restaurantName:
+          data.restaurant?.name || restaurantName.trim(),
+      });
+      setLoading(false);
     } catch (err) {
       setError(err.message || "Registration failed");
       setLoading(false);
     }
   }
 
-  async function handleVerifySubmit(e) {
-    e.preventDefault();
-    setVerifyLoading(true);
-    setVerifyError("");
-    try {
-      const data = await verifyEmail({
-        email: verifyEmailAddress.trim(),
-        otp: verifyCode.trim(),
-      });
-
-      // Store auth data with tenantSlug (same pattern as login)
-      const user = data.user || {};
-      let restaurantSlug = user.restaurantSlug || null;
-      if (!restaurantSlug && data.token) {
-        try {
-          const payload = JSON.parse(atob(data.token.split(".")[1]));
-          restaurantSlug = payload.tenantSlug || null;
-        } catch {
-          /* ignore */
-        }
-      }
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(
-          "restaurantos_auth",
-          JSON.stringify({
-            user: { ...user, tenantSlug: restaurantSlug },
-            token: data.token || null,
-            refreshToken: data.refreshToken || null,
-            tenantSlug: restaurantSlug,
-          }),
-        );
-      }
-      router.push("/overview");
-    } catch (err) {
-      setVerifyError(err.message || "Verification failed");
-      setVerifyLoading(false);
-    }
+  if (signupSuccess) {
+    return (
+      <>
+        <SEO
+          title="Signup Received - Eats Desk Restaurant Management System"
+          description="Your Eats Desk signup request has been received."
+        />
+        <div className="auth-page">
+          <div className="auth-page-bg" aria-hidden />
+          <div className="auth-page-inner">
+            <div className="auth-page-grid">
+              <div className="auth-page-form-col mx-auto max-w-lg w-full">
+                <div className="auth-card text-center">
+                  <div className="flex justify-center mb-4">
+                    <CheckCircle2 className="w-16 h-16 text-emerald-500" />
+                  </div>
+                  <h1 className="auth-card-title">You&apos;re on your way! 🎉</h1>
+                  <p className="auth-card-lead text-left mt-4 space-y-3">
+                    <span className="block">
+                      Thanks for signing up with EatsDesk,{" "}
+                      <strong>{signupSuccess.restaurantName}</strong>.
+                    </span>
+                    <span className="block">
+                      We&apos;ve received your request and our team is reviewing it.
+                      We&apos;ll reach out within 24 hours to get your restaurant set up
+                      and running.
+                    </span>
+                    <span className="block">
+                      In the meantime, feel free to reach us at:{" "}
+                      <a
+                        href="mailto:support@eatsdesk.com"
+                        className="text-primary font-semibold hover:underline"
+                      >
+                        support@eatsdesk.com
+                      </a>
+                    </span>
+                  </p>
+                  <a
+                    href="https://eatsdesk.com"
+                    className="auth-btn-primary inline-flex mt-6 w-full justify-center"
+                  >
+                    Back to home
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
   }
 
   return (
@@ -500,62 +505,6 @@ export default function SignupPage() {
           </div>
         </div>
       </div>
-
-      {showVerifyModal && (
-        <div className="auth-modal-overlay">
-          <div className="auth-modal">
-            <h2>Verify your email</h2>
-            <p>
-              We&apos;ve sent a 6‑digit code to{" "}
-              <span style={{ color: "var(--white)", fontWeight: 600 }}>
-                {verifyEmailAddress}
-              </span>
-              . Enter it below to activate your account.
-            </p>
-            <form onSubmit={handleVerifySubmit} className="space-y-3">
-              <div>
-                <label className="auth-label">Verification code</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  required
-                  maxLength={6}
-                  value={verifyCode}
-                  onChange={(e) =>
-                    setVerifyCode(e.target.value.replace(/[^0-9]/g, ""))
-                  }
-                  className="auth-input tracking-[0.35em] text-center"
-                  placeholder="••••••"
-                />
-              </div>
-              {verifyError && (
-                <p className="auth-error-text">{verifyError}</p>
-              )}
-              <div className="auth-modal-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowVerifyModal(false);
-                    setVerifyCode("");
-                    setVerifyError("");
-                  }}
-                  className="auth-btn-ghost"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={verifyLoading}
-                  className="auth-btn-primary"
-                >
-                  {verifyLoading ? "Verifying..." : "Verify & continue"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 }
