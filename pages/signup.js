@@ -175,41 +175,34 @@ export default function SignupPage() {
         />
         <div className="auth-page">
           <div className="auth-page-bg" aria-hidden />
-          <div className="auth-page-inner">
-            <div className="auth-page-grid">
-              <div className="auth-page-form-col mx-auto max-w-lg w-full">
-                <div className="auth-card text-center">
-                  <div className="flex justify-center mb-4">
-                    <CheckCircle2 className="w-16 h-16 text-emerald-500" />
-                  </div>
-                  <h1 className="auth-card-title">You&apos;re on your way! 🎉</h1>
-                  <p className="auth-card-lead text-left mt-4 space-y-3">
-                    <span className="block">
-                      Thanks for signing up with EatsDesk,{" "}
-                      <strong>{signupSuccess.restaurantName}</strong>.
-                    </span>
-                    <span className="block">
-                      We&apos;ve received your request and our team is reviewing it.
-                      We&apos;ll reach out within 24 hours to get your restaurant set up
-                      and running.
-                    </span>
-                    <span className="block">
-                      In the meantime, feel free to reach us at:{" "}
-                      <a
-                        href="mailto:support@eatsdesk.com"
-                        className="text-primary font-semibold hover:underline"
-                      >
-                        support@eatsdesk.com
-                      </a>
-                    </span>
-                  </p>
-                  <a
-                    href="https://eatsdesk.com"
-                    className="auth-btn-primary inline-flex mt-6 w-full justify-center"
-                  >
-                    Back to home
-                  </a>
+          <div className="auth-page-inner auth-page-inner--success">
+            <div className="auth-success-card">
+              <div className="auth-card text-center">
+                <div className="flex justify-center mb-4">
+                  <CheckCircle2 className="w-16 h-16 text-emerald-500" />
                 </div>
+                <h1 className="auth-card-title">You&apos;re on your way! 🎉</h1>
+                <div className="auth-success-body">
+                  <p>
+                    Thanks for signing up with EatsDesk,{" "}
+                    <strong>{signupSuccess.restaurantName}</strong>.
+                  </p>
+                  <p>
+                    We&apos;ve received your request and our team is reviewing it.
+                    We&apos;ll reach out within 24 hours to get your restaurant set up
+                    and running.
+                  </p>
+                  <p>
+                    In the meantime, feel free to reach us at:{" "}
+                    <a href="mailto:support@eatsdesk.com">support@eatsdesk.com</a>
+                  </p>
+                </div>
+                <a
+                  href="https://eatsdesk.com"
+                  className="auth-btn-primary inline-flex mt-6 w-full justify-center"
+                >
+                  Back to home
+                </a>
               </div>
             </div>
           </div>
