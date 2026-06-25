@@ -14,6 +14,7 @@ import {
 import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import {
   ShoppingCart,
   Plus,
@@ -93,6 +94,13 @@ function isOrderLocked(order) {
   return paid && delivered;
 }
 
+function isServedUnpaidOrder(order) {
+  if (!order) return false;
+  const status = String(order?.status || "").toUpperCase();
+  if (!["READY", "DELIVERED", "COMPLETED"].includes(status)) return false;
+  return getPaymentStatus(order) === "unpaid";
+}
+
 export default function OrderTakerPage() {
   const { currentBranch, branches, setCurrentBranch, loading: branchLoading } = useBranch() || {};
   const { socket } = useSocket() || {};
@@ -100,6 +108,8 @@ export default function OrderTakerPage() {
     theme: "light",
     toggleTheme: () => {},
   };
+  const { hasPermission } = usePermissions();
+  const canEditAfterServed = hasPermission("orders.edit_after_served");
 
   const [activeTab, setActiveTab] = useState(TABS.HOME);
   const [step, setStep] = useState(STEPS.TABLE);
@@ -122,6 +132,11 @@ export default function OrderTakerPage() {
   const dealsLoadSeqRef = useRef(0);
   const cartBadge = cart.reduce((sum, i) => sum + i.quantity, 0);
 
+  const canModifyServedOrderItems = useCallback(
+    (order) => !isServedUnpaidOrder(order) || canEditAfterServed,
+    [canEditAfterServed],
+  );
+
   // Active orders state
   const [activeOrders, setActiveOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -137,6 +152,9 @@ export default function OrderTakerPage() {
   const [otCustomerName, setOtCustomerName] = useState("");
   const [otCustomerPhone, setOtCustomerPhone] = useState("");
   const [otTableName, setOtTableName] = useState("");
+
+  const appendCanModifyItems =
+    !appendTargetOrder || canModifyServedOrderItems(appendTargetOrder);
 
   useEffect(() => {
     const auth = getStoredAuth();
@@ -292,6 +310,10 @@ export default function OrderTakerPage() {
   );
 
   function addToCart(item, qty = 1) {
+    if (appendTargetOrder && !appendCanModifyItems) {
+      toast.error("You don't have permission to edit this order.");
+      return;
+    }
     if (!item.isDeal && (item.inventorySufficient === false || item.inventorySufficient === "false")) {
       toast.error(`${item.name} is out of stock`);
       return;
@@ -329,6 +351,10 @@ export default function OrderTakerPage() {
   function confirmModifierSelection() {
     const item = modifierPickerItem;
     if (!item) return;
+    if (appendTargetOrder && !appendCanModifyItems) {
+      toast.error("You don't have permission to edit this order.");
+      return;
+    }
     const qty = Math.max(1, Math.floor(Number(item._pendingQty)) || 1);
 
     const selectionFingerprint = Object.entries(modifierSelections)
@@ -403,6 +429,10 @@ export default function OrderTakerPage() {
   }
 
   function updateQty(cartKey, delta) {
+    if (appendTargetOrder && !appendCanModifyItems) {
+      toast.error("You don't have permission to edit this order.");
+      return;
+    }
     setCart((prev) =>
       prev
         .map((c) =>
@@ -590,6 +620,7 @@ export default function OrderTakerPage() {
       0,
     );
     const canAppend = canAppendOrder(order);
+    const canAddItems = canAppend && canModifyServedOrderItems(order);
     const orderStatus = String(order.status || "").toUpperCase();
     const appendProminent =
       orderStatus === "READY" ||
@@ -685,7 +716,7 @@ export default function OrderTakerPage() {
           </div>
 
           <div className="flex gap-2 mb-1">
-            {canAppend && (
+            {canAddItems && (
               <button
                 type="button"
                 onClick={() => startAppendItems(order)}
@@ -703,7 +734,7 @@ export default function OrderTakerPage() {
             <button
               type="button"
               onClick={() => toggleOrderDetails(orderKey)}
-              className={`${canAppend ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+              className={`${canAddItems ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
                 isExpanded
                   ? "bg-primary/10 border-primary/30 text-primary"
                   : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
@@ -784,6 +815,10 @@ export default function OrderTakerPage() {
 
   function startAppendItems(order) {
     if (!order || !orderCanAppend(order)) return;
+    if (!canModifyServedOrderItems(order)) {
+      toast.error("You don't have permission to edit this order.");
+      return;
+    }
     setAppendEditDetailsOnly(false);
     setAppendTargetOrder(order);
     setCart([]);
@@ -822,6 +857,10 @@ export default function OrderTakerPage() {
   async function handleAppendOrUpdateOrder() {
     if (!appendTargetOrder) return;
     const hadNewItems = cart.length > 0;
+    if (hadNewItems && !canModifyServedOrderItems(appendTargetOrder)) {
+      toast.error("You don't have permission to edit this order.");
+      return;
+    }
     const targetOrderId = appendTargetOrder._id || appendTargetOrder.id;
     setPlacing(true);
     setAppendingOrderId(targetOrderId);
@@ -1840,10 +1879,10 @@ export default function OrderTakerPage() {
                             >
                               <button
                                 type="button"
-                                onClick={() => !outOfStock && addToCart(item)}
-                                disabled={outOfStock}
+                                onClick={() => !outOfStock && appendCanModifyItems && addToCart(item)}
+                                disabled={outOfStock || (appendTargetOrder && !appendCanModifyItems)}
                                 className="w-full text-left disabled:cursor-not-allowed"
-                                aria-disabled={outOfStock}
+                                aria-disabled={outOfStock || (appendTargetOrder && !appendCanModifyItems)}
                               >
                                 <div className="relative w-full aspect-[4/3] md:aspect-square bg-gray-100 dark:bg-neutral-900 overflow-hidden">
                                   <div
@@ -1897,7 +1936,7 @@ export default function OrderTakerPage() {
                                 </div>
                               </button>
 
-                              {qty > 0 && !outOfStock && (
+                              {qty > 0 && !outOfStock && appendCanModifyItems && (
                                 <div className="absolute top-2 md:top-1.5 right-2 md:right-1.5 flex items-center gap-0.5 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm rounded-xl md:rounded-lg shadow-lg border border-gray-200/50 dark:border-neutral-700/50 px-1 py-0.5">
                                   <button
                                     type="button"
@@ -1925,7 +1964,7 @@ export default function OrderTakerPage() {
                                 </div>
                               )}
 
-                              {qty === 0 && !outOfStock && (
+                              {qty === 0 && !outOfStock && appendCanModifyItems && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -2118,25 +2157,29 @@ export default function OrderTakerPage() {
                                 </p>
                               </div>
                               <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
-                                <button
-                                  onClick={() => updateQty(item._cartKey || item.id, -1)}
-                                  className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
-                                >
-                                  {item.quantity === 1 ? (
-                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                  ) : (
-                                    <Minus className="w-3.5 h-3.5 text-gray-500" />
-                                  )}
-                                </button>
-                                <span className="w-7 text-center text-sm font-black">
-                                  {item.quantity}
-                                </span>
-                                <button
-                                  onClick={() => updateQty(item._cartKey || item.id, 1)}
-                                  className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
-                                >
-                                  <Plus className="w-3.5 h-3.5 text-primary" />
-                                </button>
+                                {(!appendTargetOrder || appendCanModifyItems) && (
+                                  <>
+                                    <button
+                                      onClick={() => updateQty(item._cartKey || item.id, -1)}
+                                      className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                                    >
+                                      {item.quantity === 1 ? (
+                                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                      ) : (
+                                        <Minus className="w-3.5 h-3.5 text-gray-500" />
+                                      )}
+                                    </button>
+                                    <span className="w-7 text-center text-sm font-black">
+                                      {item.quantity}
+                                    </span>
+                                    <button
+                                      onClick={() => updateQty(item._cartKey || item.id, 1)}
+                                      className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                                    >
+                                      <Plus className="w-3.5 h-3.5 text-primary" />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -2242,13 +2285,15 @@ export default function OrderTakerPage() {
                 </div>
               </div>
               <div className="flex gap-2.5">
-                <button
-                  onClick={() => setStep(STEPS.MENU)}
-                  className="flex-1 py-3.5 rounded-2xl bg-gray-100 dark:bg-neutral-900 font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5 text-gray-700 dark:text-neutral-300"
-                >
-                  <Plus className="w-4 h-4" />
-                  {appendTargetOrder ? "Menu" : "Add"}
-                </button>
+                {(!appendTargetOrder || appendCanModifyItems) && (
+                  <button
+                    onClick={() => setStep(STEPS.MENU)}
+                    className="flex-1 py-3.5 rounded-2xl bg-gray-100 dark:bg-neutral-900 font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5 text-gray-700 dark:text-neutral-300"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {appendTargetOrder ? "Menu" : "Add"}
+                  </button>
+                )}
                 <button
                   onClick={appendTargetOrder ? handleAppendOrUpdateOrder : handlePlaceOrder}
                   disabled={
