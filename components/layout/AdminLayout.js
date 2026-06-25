@@ -171,7 +171,7 @@ const tenantNav = [
     label: "AI Receptionist",
     icon: MessageCircle,
     roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
-    permission: "whatsapp.view",
+    permission: "whatsapp.conversations.view",
   },
   {
     path: "/tables",

@@ -642,7 +642,7 @@ export default function WhatsAppDashboardPage() {
           : "Conversations, orders & settings"
       }
     >
-      <PermissionGate permission="whatsapp.view">
+      <PermissionGate permission="whatsapp.conversations.view">
       {loading ? (
         <div className="mx-auto flex max-w-lg flex-col items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white py-20 dark:border-neutral-800 dark:bg-neutral-950">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
