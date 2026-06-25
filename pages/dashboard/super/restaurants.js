@@ -6,19 +6,15 @@ import DataTable from "../../../components/ui/DataTable";
 import {
   getSuperRestaurantActivitySummary,
   getRestaurantsForSuperAdmin,
-  getDeletedRestaurantsForSuperAdmin,
   createRestaurantForSuperAdmin,
   setActingAsRestaurant,
-  deleteRestaurantForSuperAdmin,
-  restoreRestaurantForSuperAdmin,
-  permanentlyDeleteRestaurantForSuperAdmin,
   verifyRestaurantOwnerEmailsForSuperAdmin,
   approveRestaurantForSuperAdmin,
+  updateRestaurantSubscription,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 import {
   Search,
-  Trash2,
   X,
   Loader2,
   Plus,
@@ -26,6 +22,7 @@ import {
   Eye,
   MailCheck,
   CheckCircle2,
+  Ban,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -117,12 +114,7 @@ function slugifyForSubdomain(name) {
 export default function SuperRestaurantsPage() {
   const router = useRouter();
   const [restaurants, setRestaurants] = useState([]);
-  const [deletedRestaurants, setDeletedRestaurants] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteConfirmName, setDeleteConfirmName] = useState("");
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deletedDropdownOpen, setDeletedDropdownOpen] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createForm, setCreateForm] = useState({
     subdomain: "",
@@ -141,6 +133,7 @@ export default function SuperRestaurantsPage() {
   const [approvePlan, setApprovePlan] = useState("starter");
   const [approveTrialDays, setApproveTrialDays] = useState(30);
   const [approveLoading, setApproveLoading] = useState(false);
+  const [statusUpdatingId, setStatusUpdatingId] = useState(null);
   const { confirm } = useConfirmDialog();
 
   function handleOpenCreate() {
@@ -188,7 +181,6 @@ export default function SuperRestaurantsPage() {
       toast.success("Restaurant created. Owner can log in and set up branches.");
       setShowCreateForm(false);
       loadRestaurants();
-      loadDeleted();
     } catch (err) {
       setCreateError(err.message || "Failed to create restaurant");
     } finally {
@@ -205,22 +197,11 @@ export default function SuperRestaurantsPage() {
       setRestaurants(list ?? []);
     }
   }
-  function loadDeleted() {
-    getDeletedRestaurantsForSuperAdmin()
-      .then(setDeletedRestaurants)
-      .catch(() => setDeletedRestaurants([]));
-  }
-
   async function handleRefreshList() {
     if (listRefreshing) return;
     setListRefreshing(true);
     try {
-      await Promise.all([
-        loadRestaurants(),
-        getDeletedRestaurantsForSuperAdmin()
-          .then(setDeletedRestaurants)
-          .catch(() => setDeletedRestaurants([])),
-      ]);
+      await loadRestaurants();
     } finally {
       setListRefreshing(false);
     }
@@ -289,9 +270,56 @@ export default function SuperRestaurantsPage() {
     setApproveTrialDays(30);
   }
 
+  async function handleSuspendToggle(restaurant) {
+    const status = String(restaurant.subscription?.status || "TRIAL").toUpperCase();
+    const nextStatus = status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED";
+    const name = restaurant.website?.name || "Restaurant";
+
+    let payload;
+    if (nextStatus === "ACTIVE") {
+      const durationMonths = await confirm({
+        title: "Activate subscription",
+        message: "Choose how long the subscription should stay active.",
+        confirmLabel: "Activate",
+        options: [
+          { label: "1 month", value: 1 },
+          { label: "3 months", value: 3 },
+          { label: "6 months", value: 6 },
+          { label: "12 months", value: 12 },
+        ],
+        defaultValue: 3,
+      });
+      if (!durationMonths) return;
+      payload = { status: nextStatus, durationMonths };
+    } else {
+      const ok = await confirm({
+        title: "Suspend restaurant",
+        message:
+          `Suspend "${name}"? All dashboard and public website access will be blocked until reactivated.`,
+        confirmLabel: "Suspend",
+      });
+      if (!ok) return;
+      payload = { status: nextStatus };
+    }
+
+    try {
+      setStatusUpdatingId(restaurant.id);
+      await updateRestaurantSubscription(restaurant.id, payload);
+      toast.success(
+        nextStatus === "SUSPENDED"
+          ? `"${name}" suspended.`
+          : `"${name}" reactivated.`,
+      );
+      loadRestaurants();
+    } catch (err) {
+      toast.error(err.message || "Failed to update subscription");
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  }
+
   useEffect(() => {
     loadRestaurants();
-    loadDeleted();
   }, []);
 
   const [filterStatus, setFilterStatus] = useState("all");
@@ -430,138 +458,6 @@ export default function SuperRestaurantsPage() {
             <Plus className="w-3.5 h-3.5" />
             Create restaurant
           </Button>
-          {deletedRestaurants.length > 0 && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setDeletedDropdownOpen((prev) => !prev)}
-                className="box-border inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50/60 px-3 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
-              >
-                Recently deleted
-                <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-amber-700 text-[10px] text-white">
-                  {deletedRestaurants.length}
-                </span>
-              </button>
-              {deletedDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-80 rounded-xl bg-white dark:bg-neutral-950 border border-amber-200 dark:border-amber-700 shadow-lg z-20">
-                  <div className="px-3 py-2 border-b border-amber-100 dark:border-amber-800 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-200">
-                      Restore restaurants (48h)
-                    </span>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto py-1">
-                    {deletedRestaurants.map((r) => (
-                      <div
-                        key={r.id}
-                        className="px-3 py-2 text-xs flex items-center justify-between gap-2 hover:bg-amber-50 dark:hover:bg-amber-900/30"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-amber-900 dark:text-amber-100 truncate">
-                            {r.website?.name || "Untitled"}
-                          </p>
-                          <p className="text-[10px] text-amber-700 dark:text-amber-300 font-mono truncate">
-                            {r.website?.subdomain || "—"}
-                          </p>
-                          {r.deletedAt && (
-                            <p className="text-[10px] text-amber-600 dark:text-amber-300/80 mt-0.5">
-                              {(() => {
-                                const deletedAt = new Date(r.deletedAt);
-                                const totalMs = 48 * 60 * 60 * 1000;
-                                const elapsed =
-                                  Date.now() - deletedAt.getTime();
-                                const remaining = Math.max(
-                                  0,
-                                  totalMs - elapsed,
-                                );
-                                const hrs = Math.floor(
-                                  remaining / (60 * 60 * 1000),
-                                );
-                                const mins = Math.floor(
-                                  (remaining % (60 * 60 * 1000)) / (60 * 1000),
-                                );
-                                if (remaining <= 0)
-                                  return "Restore window expired";
-                                if (hrs === 0) return `${mins} min remaining`;
-                                return `${hrs}h ${mins}m remaining`;
-                              })()}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded-md bg-emerald-600 text-[10px] text-white font-semibold hover:bg-emerald-700"
-                            onClick={async () => {
-                              const name = r.website?.name || "Restaurant";
-                              const toastId = toast.loading(
-                                `Restoring "${name}"...`,
-                              );
-                              try {
-                                await restoreRestaurantForSuperAdmin(r.id);
-                                loadRestaurants();
-                                loadDeleted();
-                                setDeletedDropdownOpen(false);
-                                toast.success(`"${name}" restored.`, {
-                                  id: toastId,
-                                });
-                              } catch (err) {
-                                toast.error(
-                                  err.message || "Failed to restore",
-                                  { id: toastId },
-                                );
-                              }
-                            }}
-                          >
-                            Restore
-                          </button>
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded-md border border-red-300 bg-red-50 text-[10px] text-red-700 font-semibold hover:bg-red-100 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200"
-                            onClick={async () => {
-                              const name = r.website?.name || "Restaurant";
-                              const ok = await confirm({
-                                title: "Permanently delete restaurant",
-                                message:
-                                  `This will permanently delete "${name}" and cannot be undone. ` +
-                                  "This action will remove the restaurant from the platform.",
-                                confirmLabel: "Delete permanently",
-                              });
-                              if (!ok) return;
-                              const toastId = toast.loading(
-                                `Deleting "${name}" permanently...`,
-                              );
-                              try {
-                                await permanentlyDeleteRestaurantForSuperAdmin(
-                                  r.id,
-                                );
-                                loadRestaurants();
-                                loadDeleted();
-                                toast.success(
-                                  `"${name}" deleted permanently.`,
-                                  {
-                                    id: toastId,
-                                  },
-                                );
-                              } catch (err) {
-                                toast.error(
-                                  err.message || "Failed to delete permanently",
-                                  {
-                                    id: toastId,
-                                  },
-                                );
-                              }
-                            }}
-                          >
-                            Delete forever
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
         <DataTable
           variant="card"
@@ -714,6 +610,8 @@ export default function SuperRestaurantsPage() {
               render: (_, r) => {
                 const website = r.website || {};
                 const isPending = r.approvalStatus === "pending";
+                const status = String(r.subscription?.status || "TRIAL").toUpperCase();
+                const isSuspended = status === "SUSPENDED";
                 return (
                   <div className="inline-flex min-h-[1.25rem] flex-nowrap items-center gap-2 justify-start shrink-0">
                     <button
@@ -772,17 +670,32 @@ export default function SuperRestaurantsPage() {
                             )}
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          disabled={statusUpdatingId === r.id}
+                          onClick={() => handleSuspendToggle(r)}
+                          className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold inline-flex items-center gap-1 disabled:opacity-50 ${
+                            isSuspended
+                              ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
+                              : "border-red-300 bg-red-50 text-red-800 hover:bg-red-100 dark:border-red-700 dark:bg-red-950/30 dark:text-red-200"
+                          }`}
+                          title={
+                            isSuspended
+                              ? "Reactivate restaurant"
+                              : "Suspend restaurant"
+                          }
+                        >
+                          {statusUpdatingId === r.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Ban className="w-3.5 h-3.5" />
+                              {isSuspended ? "Activate" : "Suspend"}
+                            </>
+                          )}
+                        </button>
                       </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(r)}
-                      className="p-1 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                      title="Soft-delete (recoverable within 48 hours)"
-                      aria-label="Delete restaurant"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 );
               },
@@ -852,10 +765,9 @@ export default function SuperRestaurantsPage() {
                     <span className="text-neutral-400 dark:text-neutral-500 font-mono">.eatsdesk.app</span>
                   </p>
                   {(() => {
-                    const existing = [
-                      ...restaurants.map((r) => r.website?.subdomain),
-                      ...deletedRestaurants.map((r) => r.website?.subdomain),
-                    ].filter(Boolean);
+                    const existing = restaurants
+                      .map((r) => r.website?.subdomain)
+                      .filter(Boolean);
                     const taken = createForm.subdomain && existing.includes(createForm.subdomain);
                     return taken ? (
                       <p className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">
@@ -978,109 +890,6 @@ export default function SuperRestaurantsPage() {
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
-        )}
-
-        {/* Delete restaurant confirmation modal */}
-        {deleteTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 dark:bg-black/60">
-            <div className="bg-white dark:bg-neutral-900 rounded-xl border-2 border-gray-200 dark:border-neutral-700 shadow-2xl w-full max-w-md">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-700">
-                <h3 className="font-bold text-gray-900 dark:text-white">
-                  Delete restaurant
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDeleteTarget(null);
-                    setDeleteConfirmName("");
-                  }}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="px-5 py-4 space-y-3">
-                <p className="text-xs text-gray-600 dark:text-neutral-400">
-                  This will <span className="font-semibold">soft delete</span>{" "}
-                  the restaurant{" "}
-                  <span className="font-semibold">
-                    &quot;{deleteTarget.website?.name || "Untitled"}&quot;
-                  </span>
-                  . It can be recovered within{" "}
-                  <span className="font-semibold">48 hours</span> from
-                  &quot;Recently deleted&quot;. To confirm, type the restaurant
-                  name exactly.
-                </p>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-700 dark:text-neutral-300 mb-1">
-                    Type{" "}
-                    <span className="font-mono">
-                      {deleteTarget.website?.name || "Untitled"}
-                    </span>{" "}
-                    to confirm
-                  </label>
-                  <input
-                    type="text"
-                    value={deleteConfirmName}
-                    onChange={(e) => setDeleteConfirmName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-                    placeholder={deleteTarget.website?.name || "Untitled"}
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-700">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setDeleteTarget(null);
-                    setDeleteConfirmName("");
-                  }}
-                  className="px-4"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  className="px-4 bg-red-600 hover:bg-red-700 text-white"
-                  disabled={
-                    deleteLoading ||
-                    deleteConfirmName.trim() !==
-                      (deleteTarget.website?.name || "Untitled").trim()
-                  }
-                  onClick={async () => {
-                    setDeleteLoading(true);
-                    const name = deleteTarget.website?.name || "Restaurant";
-                    const toastId = toast.loading(`Deleting "${name}"...`);
-                    try {
-                      await deleteRestaurantForSuperAdmin(deleteTarget.id);
-                      loadRestaurants();
-                      loadDeleted();
-                      setDeleteTarget(null);
-                      setDeleteConfirmName("");
-                      toast.success(
-                        `"${name}" deleted. Recover within 48h from Recently deleted.`,
-                        { id: toastId },
-                      );
-                    } catch (err) {
-                      toast.error(
-                        err.message || "Failed to delete restaurant",
-                        { id: toastId },
-                      );
-                    } finally {
-                      setDeleteLoading(false);
-                    }
-                  }}
-                >
-                  {deleteLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    "Delete restaurant"
-                  )}
-                </Button>
-              </div>
             </div>
           </div>
         )}

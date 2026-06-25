@@ -5,11 +5,13 @@ const PermissionContext = createContext({
   permissions: [],
   hasPermission: () => true,
   permissionsLoaded: false,
+  roleName: "",
 });
 
 export function PermissionProvider({ children }) {
   const [permissions, setPermissions] = useState([]);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [roleName, setRoleName] = useState("");
 
   useEffect(() => {
     const auth = getStoredAuth();
@@ -21,18 +23,20 @@ export function PermissionProvider({ children }) {
     const PRIVILEGED = ["super_admin"];
     if (PRIVILEGED.includes(auth.user?.role)) {
       setPermissions(["*"]);
+      setRoleName("Super Admin");
       setPermissionsLoaded(true);
       return;
     }
 
     getMyPermissions()
       .then((data) => {
-        console.log("Permissions loaded:", data.permissions);
         setPermissions(data.permissions || []);
+        setRoleName(data.roleName || "");
         setPermissionsLoaded(true);
       })
       .catch(() => {
         setPermissions([]);
+        setRoleName("");
         setPermissionsLoaded(true);
       });
   }, []);
@@ -45,7 +49,7 @@ export function PermissionProvider({ children }) {
 
   return (
     <PermissionContext.Provider
-      value={{ permissions, hasPermission, permissionsLoaded }}
+      value={{ permissions, hasPermission, permissionsLoaded, roleName }}
     >
       {children}
     </PermissionContext.Provider>

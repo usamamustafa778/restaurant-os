@@ -3416,6 +3416,19 @@ function OrderCard({
   const showEarlyPaymentPerm =
     showEarlyPayment && hasPermission("orders.collect_payment");
   const canCancelPerm = canCancel && hasPermission("orders.cancel");
+  const isServedUnpaid =
+    paymentStatus === "unpaid" &&
+    ["READY", "DELIVERED", "COMPLETED"].includes(status);
+  const canEditAfterServedPerm =
+    isAdmin || hasPermission("orders.edit_after_served");
+  const canShowEditButton =
+    status !== "CANCELLED" &&
+    hasPermission("orders.edit") &&
+    (isServedUnpaid
+      ? canEditAfterServedPerm
+      : isAdmin ||
+        (paymentStatus === "unpaid" &&
+          !["DELIVERED", "COMPLETED"].includes(status)));
 
   const hasCTA =
     !isOrderTaker &&
@@ -3711,11 +3724,7 @@ function OrderCard({
                   <Printer className="w-3.5 h-3.5" />
                 </button>
               )}
-              {status !== "CANCELLED" &&
-                hasPermission("orders.edit") &&
-                (isAdmin ||
-                  (paymentStatus === "unpaid" &&
-                    !["DELIVERED", "COMPLETED"].includes(status))) && (
+              {canShowEditButton && (
                   <button
                     type="button"
                     onClick={() => onEdit(order)}

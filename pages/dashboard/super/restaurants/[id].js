@@ -8,7 +8,6 @@ import GenerateInvoiceModal from "../../../../components/super/GenerateInvoiceMo
 import MarkPaidModal from "../../../../components/super/MarkPaidModal";
 import { viewInvoicePDF } from "../../../../components/super/InvoicePDF";
 import {
-  deleteRestaurantForSuperAdmin,
   deleteSuperInvoice,
   getSuperInvoice,
   getSuperInvoices,
@@ -304,8 +303,6 @@ export default function SuperRestaurantDetailPage() {
   const [activationStart, setActivationStart] = useState("");
   const [activationEnd, setActivationEnd] = useState("");
   const [activationSaving, setActivationSaving] = useState(false);
-  const [deleteConfirmName, setDeleteConfirmName] = useState("");
-  const [deleteSaving, setDeleteSaving] = useState(false);
 
   const [settingsForm, setSettingsForm] = useState({
     name: "",
@@ -731,22 +728,6 @@ export default function SuperRestaurantDetailPage() {
       setPasswordError(err.message || "Failed to reset password");
     } finally {
       setPasswordSaving(false);
-    }
-  }
-
-  async function handlePermanentDelete() {
-    if (!restaurant?.id) return;
-    const name = website.name || "Restaurant";
-    if (deleteConfirmName.trim() !== name.trim()) return;
-    try {
-      setDeleteSaving(true);
-      await deleteRestaurantForSuperAdmin(restaurant.id);
-      toast.success(`"${name}" deleted.`);
-      router.push("/super/restaurants");
-    } catch (err) {
-      toast.error(err.message || "Failed to delete");
-    } finally {
-      setDeleteSaving(false);
     }
   }
 
@@ -1685,36 +1666,6 @@ export default function SuperRestaurantDetailPage() {
                     ) : (
                       "Suspend Restaurant"
                     )}
-                  </Button>
-                </div>
-                <div className="pt-2 border-t border-red-200 dark:border-red-900/40 space-y-3">
-                  <div>
-                    <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                      Delete restaurant
-                    </p>
-                    <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
-                      Soft delete — recoverable within 48 hours. Type{" "}
-                      <strong>{website.name || "Restaurant"}</strong> to confirm.
-                    </p>
-                  </div>
-                  <input
-                    type="text"
-                    value={deleteConfirmName}
-                    onChange={(e) => setDeleteConfirmName(e.target.value)}
-                    className={`${FORM_INPUT} border-red-200 dark:border-red-900/50 focus:ring-red-500 focus:border-red-500`}
-                    placeholder={website.name || "Restaurant"}
-                  />
-                  <Button
-                    type="button"
-                    disabled={
-                      deleteSaving ||
-                      deleteConfirmName.trim() !==
-                        (website.name || "Restaurant").trim()
-                    }
-                    onClick={handlePermanentDelete}
-                    className="!h-9 text-xs bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    {deleteSaving ? "Deleting…" : "Delete Restaurant"}
                   </Button>
                 </div>
               </div>

@@ -76,6 +76,30 @@ import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
 import { getTenantRoute } from "../../lib/routes";
 
+function humanizeRoleSlug(slug) {
+  if (!slug) return "Staff";
+  return slug
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function getRoleLabelFromSlug(role) {
+  const labels = {
+    super_admin: "Super Admin",
+    restaurant_admin: "Owner",
+    admin: "Admin",
+    product_manager: "Product Manager",
+    cashier: "Cashier",
+    manager: "Manager",
+    kitchen_staff: "Kitchen Staff",
+    order_taker: "Order Taker",
+    delivery_rider: "Delivery Rider",
+    staff: "Staff",
+  };
+  return labels[role] || humanizeRoleSlug(role);
+}
+
 function getNavPath(asPath, pathname) {
   const raw = (asPath || pathname || "").split("#")[0];
   const base = raw.split("?")[0];
@@ -621,12 +645,7 @@ export default function AdminLayout({
   const [expandedGroups, setExpandedGroups] = useState([]);
   const [whatsappNeedsHumanCount, setWhatsappNeedsHumanCount] = useState(0);
   const { theme, toggleTheme } = useTheme();
-  const { hasPermission, permissions, permissionsLoaded } = usePermissions();
-  console.log("Sidebar permissions state:", {
-    permissionsLoaded,
-    permissionCount: permissions.length,
-    hasPOSAccess: hasPermission("orders.view"),
-  });
+  const { hasPermission, permissionsLoaded, roleName } = usePermissions();
 
   // Load sidebar state from sessionStorage after mount (client-side only)
   useEffect(() => {
@@ -811,26 +830,7 @@ export default function AdminLayout({
       nextSectionIdx === -1 ? after : after.slice(0, nextSectionIdx);
     return until.some((x) => x.path || x.href);
   });
-  const roleLabel =
-    role === "super_admin"
-      ? "Super Admin"
-      : role === "restaurant_admin"
-        ? "Restaurant Admin"
-        : role === "admin"
-          ? "Admin"
-          : role === "product_manager"
-            ? "Product Manager"
-            : role === "cashier"
-              ? "Cashier"
-              : role === "manager"
-                ? "Manager"
-                : role === "kitchen_staff"
-                  ? "Kitchen Staff"
-                  : role === "order_taker"
-                    ? "Order Taker"
-                    : role === "delivery_rider"
-                      ? "Delivery Rider"
-                      : "Staff";
+  const roleLabel = getRoleLabelFromSlug(role);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -1540,7 +1540,7 @@ export default function AdminLayout({
                         {userName}
                       </span>
                       <span className="text-xs text-gray-500 dark:text-neutral-400 leading-tight font-medium">
-                        {roleLabel}
+                        {roleName || roleLabel}
                       </span>
                     </div>
                     <ChevronDown
