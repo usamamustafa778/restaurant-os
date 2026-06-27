@@ -451,6 +451,12 @@ const superNav = [
     permission: "platform.overview.view",
   },
   {
+    href: "/super/team",
+    label: "Team",
+    icon: UserCog,
+    permission: "platform.staff.view",
+  },
+  {
     href: "/super/restaurants",
     label: "Restaurants",
     icon: Factory,
@@ -470,9 +476,9 @@ const superNav = [
   },
   {
     href: "/super/users",
-    label: "Users",
+    label: "Tenant Users",
     icon: Users,
-    permission: "platform.staff.view",
+    permission: "platform.restaurants.view",
   },
   {
     href: "/super/roles",
@@ -853,6 +859,8 @@ export default function AdminLayout({
     return until.some((x) => x.path || x.href);
   });
   const roleLabel = getRoleLabelFromSlug(role);
+  const profileHref =
+    role === "super_admin" && !actingAsSlug ? "/super/profile" : "/profile";
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -1234,7 +1242,7 @@ export default function AdminLayout({
                   Account
                 </p>
                 <Link
-                  href="/profile"
+                  href={profileHref}
                   onClick={() => setMobileSidebarOpen(false)}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all"
                 >
@@ -1345,7 +1353,7 @@ export default function AdminLayout({
                 whatsappNavRoles.includes(role) &&
                 role !== "super_admin" && <WhatsAppNotificationBell />}
               <Link
-                href="/profile"
+                href={profileHref}
                 className="flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-primary to-secondary text-white text-[10px] font-bold flex-shrink-0 shadow-sm"
                 title={userName}
               >
@@ -1586,7 +1594,7 @@ export default function AdminLayout({
                         </div>
                         <div className="p-2 space-y-1">
                           <Link
-                            href="/profile"
+                            href={profileHref}
                             onClick={() => setUserMenuOpen(false)}
                             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-all"
                           >
