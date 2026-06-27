@@ -305,6 +305,8 @@ export default function POSView({
   const [deliveryLocationId, setDeliveryLocationId] = useState("");
   const [deliveryZoneQuery, setDeliveryZoneQuery] = useState("");
   const [deliveryZoneOpen, setDeliveryZoneOpen] = useState(false);
+  const [customerModalZoneQuery, setCustomerModalZoneQuery] = useState("");
+  const [customerModalZoneOpen, setCustomerModalZoneOpen] = useState(false);
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [onlineProvider, setOnlineProvider] = useState(null);
@@ -995,6 +997,8 @@ export default function POSView({
     setCustomerAddForm({ name: "", phone: "", address: "", notes: "" });
     setQuickCustomerName("");
     setAddingQuickCustomer(false);
+    setCustomerModalZoneQuery("");
+    setCustomerModalZoneOpen(false);
     loadCustomersForModal();
   }
 
@@ -1002,7 +1006,20 @@ export default function POSView({
     setShowCustomerModal(false);
     setCustomerModalError("");
     setEditingCustomerId(null);
+    setCustomerModalZoneQuery("");
+    setCustomerModalZoneOpen(false);
     pendingDeliveryCheckoutRef.current = false;
+  }
+
+  function pickDeliveryZone(zoneId, { modal = false } = {}) {
+    setDeliveryLocationId(zoneId ? String(zoneId) : "");
+    if (modal) {
+      setCustomerModalZoneQuery("");
+      setCustomerModalZoneOpen(false);
+    } else {
+      setDeliveryZoneQuery("");
+      setDeliveryZoneOpen(false);
+    }
   }
 
   function selectCustomerForOrder(customer) {
@@ -1985,10 +2002,19 @@ export default function POSView({
   const totalDiscount = dealDiscount + manualDiscount;
   const total = Math.max(0, subtotal - totalDiscount);
   const selectedDeliveryZone = deliveryZones.find(
-    (z) => z.id === deliveryLocationId,
+    (z) => String(z.id) === String(deliveryLocationId),
   );
   const filteredDeliveryZones = deliveryZones.filter((z) => {
     const q = deliveryZoneQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      String(z.name || "")
+        .toLowerCase()
+        .includes(q) || String(Number(z.fee || 0)).includes(q)
+    );
+  });
+  const filteredModalDeliveryZones = deliveryZones.filter((z) => {
+    const q = customerModalZoneQuery.trim().toLowerCase();
     if (!q) return true;
     return (
       String(z.name || "")
@@ -3877,10 +3903,9 @@ export default function POSView({
                         <div className="absolute z-30 bottom-full mb-1 w-full max-h-72 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg">
                           <button
                             type="button"
-                            onClick={() => {
-                              setDeliveryLocationId("");
-                              setDeliveryZoneQuery("");
-                              setDeliveryZoneOpen(false);
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              pickDeliveryZone("");
                             }}
                             className="w-full px-3 py-2 text-left text-xs text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800"
                           >
@@ -3890,10 +3915,9 @@ export default function POSView({
                             <button
                               key={z.id}
                               type="button"
-                              onClick={() => {
-                                setDeliveryLocationId(z.id);
-                                setDeliveryZoneQuery("");
-                                setDeliveryZoneOpen(false);
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                pickDeliveryZone(z.id);
                               }}
                               className="w-full px-3 py-2 text-left text-xs text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-neutral-800"
                             >
@@ -5420,8 +5444,8 @@ export default function POSView({
 
       {/* Select / Add Customer Modal (search by phone, quick add if not found) */}
       {showCustomerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-neutral-900/80 p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-neutral-900/80 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col my-4">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                 Select Customer
@@ -5435,7 +5459,7 @@ export default function POSView({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 p-4 overflow-visible">
               {customerModalError && (
                 <p className="mb-3 text-sm text-red-600 dark:text-red-400">
                   {customerModalError}
@@ -5683,7 +5707,7 @@ export default function POSView({
                           </div>
                           {orderType === "DELIVERY" &&
                             deliveryZones.length > 0 && (
-                              <div>
+                              <div className="relative overflow-visible">
                                 <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
                                   Delivery area *
                                 </label>
@@ -5691,59 +5715,65 @@ export default function POSView({
                                   <input
                                     type="text"
                                     value={
-                                      deliveryZoneOpen
-                                        ? deliveryZoneQuery
+                                      customerModalZoneOpen
+                                        ? customerModalZoneQuery
                                         : selectedDeliveryZoneLabel
                                     }
                                     onFocus={() => {
-                                      setDeliveryZoneOpen(true);
-                                      setDeliveryZoneQuery("");
+                                      setCustomerModalZoneOpen(true);
+                                      setCustomerModalZoneQuery("");
                                     }}
                                     onBlur={() =>
                                       setTimeout(
-                                        () => setDeliveryZoneOpen(false),
-                                        120,
+                                        () => setCustomerModalZoneOpen(false),
+                                        150,
                                       )
                                     }
                                     onChange={(e) => {
-                                      setDeliveryZoneQuery(e.target.value);
-                                      setDeliveryZoneOpen(true);
+                                      setCustomerModalZoneQuery(e.target.value);
+                                      setCustomerModalZoneOpen(true);
                                     }}
                                     placeholder="Area"
                                     className="w-full px-3 pr-8 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
                                   />
                                   <ChevronDown
-                                    className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${deliveryZoneOpen ? "rotate-180" : ""}`}
+                                    className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${customerModalZoneOpen ? "rotate-180" : ""}`}
                                   />
-                                  {deliveryZoneOpen && (
-                                    <div className="absolute z-40 bottom-full mb-1 w-full max-h-52 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg">
+                                  {customerModalZoneOpen && (
+                                    <div className="absolute z-50 top-full mt-1 w-full max-h-52 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg">
                                       <button
                                         type="button"
-                                        onClick={() => {
-                                          setDeliveryLocationId("");
-                                          setDeliveryZoneQuery("");
-                                          setDeliveryZoneOpen(false);
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          pickDeliveryZone("", { modal: true });
                                         }}
                                         className="w-full px-3 py-2 text-left text-sm text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800"
                                       >
                                         — Select delivery area —
                                       </button>
-                                      {filteredDeliveryZones.map((z) => (
+                                      {filteredModalDeliveryZones.map((z) => (
                                         <button
                                           key={z.id}
                                           type="button"
-                                          onClick={() => {
-                                            setDeliveryLocationId(z.id);
-                                            setDeliveryZoneQuery("");
-                                            setDeliveryZoneOpen(false);
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            pickDeliveryZone(z.id, {
+                                              modal: true,
+                                            });
                                           }}
-                                          className="w-full px-3 py-2 text-left text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-neutral-800"
+                                          className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-neutral-800 ${
+                                            String(z.id) ===
+                                            String(deliveryLocationId)
+                                              ? "bg-primary/10 text-primary font-semibold"
+                                              : "text-gray-900 dark:text-white"
+                                          }`}
                                         >
                                           {z.name} — Rs{" "}
                                           {Number(z.fee || 0).toFixed(2)}
                                         </button>
                                       ))}
-                                      {filteredDeliveryZones.length === 0 && (
+                                      {filteredModalDeliveryZones.length ===
+                                        0 && (
                                         <div className="px-3 py-2 text-sm text-gray-500 dark:text-neutral-400">
                                           No matching area
                                         </div>
