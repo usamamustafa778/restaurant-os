@@ -20,14 +20,6 @@ export function PermissionProvider({ children }) {
       return;
     }
 
-    const PRIVILEGED = ["super_admin"];
-    if (PRIVILEGED.includes(auth.user?.role)) {
-      setPermissions(["*"]);
-      setRoleName("Super Admin");
-      setPermissionsLoaded(true);
-      return;
-    }
-
     getMyPermissions()
       .then((data) => {
         setPermissions(data.permissions || []);
