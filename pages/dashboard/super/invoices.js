@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import DataTable from "../../../components/ui/DataTable";
 import MarkPaidModal from "../../../components/super/MarkPaidModal";
 import { viewInvoicePDF } from "../../../components/super/InvoicePDF";
@@ -63,6 +65,7 @@ function formatDate(d) {
 }
 
 export default function SuperInvoicesPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.invoices.view");
   const now = new Date();
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState([]);
@@ -104,14 +107,16 @@ export default function SuperInvoicesPage() {
   }, [restaurantFilter, statusFilter, monthFilter, yearFilter, search, page]);
 
   useEffect(() => {
+    if (!hasAccess) return;
     getRestaurantsForSuperAdmin()
       .then((list) => setRestaurants(Array.isArray(list) ? list : []))
       .catch(() => setRestaurants([]));
-  }, []);
+  }, [hasAccess]);
 
   useEffect(() => {
+    if (!hasAccess) return;
     loadInvoices();
-  }, [loadInvoices]);
+  }, [loadInvoices, hasAccess]);
 
   const stats = useMemo(() => {
     const paid = invoices.filter((i) => i.status === "PAID");
@@ -205,6 +210,7 @@ export default function SuperInvoicesPage() {
 
   return (
     <AdminLayout title="Invoices">
+      <SuperPageGate permission="platform.invoices.view">
       <div className="space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div>
@@ -507,6 +513,7 @@ export default function SuperInvoicesPage() {
           }}
         />
       )}
+      </SuperPageGate>
     </AdminLayout>
   );
 }

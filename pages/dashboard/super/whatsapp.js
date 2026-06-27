@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import {
   getSuperWhatsappStats,
   getSuperWhatsappRequests,
@@ -8,7 +10,6 @@ import {
   patchSuperWhatsappPause,
   patchSuperWhatsappConfig,
   getSuperWhatsappConversations,
-  getStoredAuth,
 } from "../../../lib/apiClient";
 import {
   Loader2,
@@ -68,6 +69,7 @@ function resolveAbsoluteWebhookUrl(apiWebhookUrl) {
 }
 
 export default function SuperWhatsappPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.whatsapp.view");
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [pending, setPending] = useState([]);
@@ -113,13 +115,9 @@ export default function SuperWhatsappPage() {
   }, []);
 
   useEffect(() => {
-    const auth = getStoredAuth();
-    if (auth?.user?.role !== "super_admin") {
-      if (typeof window !== "undefined") window.location.href = "/overview";
-      return;
-    }
+    if (!hasAccess) return;
     load();
-  }, [load]);
+  }, [load, hasAccess]);
 
   async function copyText(key, text) {
     try {
@@ -238,6 +236,7 @@ export default function SuperWhatsappPage() {
 
   return (
     <AdminLayout title="WhatsApp (Platform)">
+      <SuperPageGate permission="platform.whatsapp.view">
       <div className="px-4 py-6 md:px-6 lg:px-8">
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -766,6 +765,7 @@ export default function SuperWhatsappPage() {
           </div>
         </div>
       )}
+      </SuperPageGate>
     </AdminLayout>
   );
 }

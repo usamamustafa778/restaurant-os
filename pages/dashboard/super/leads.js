@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import Card from "../../../components/ui/Card";
 import DataTable from "../../../components/ui/DataTable";
 import { getLeadsForSuperAdmin } from "../../../lib/apiClient";
@@ -7,6 +9,7 @@ import { Search, FileDown } from "lucide-react";
 import toast from "react-hot-toast";
 
 export default function SuperLeadsPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.leads.view");
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -54,6 +57,7 @@ export default function SuperLeadsPage() {
     : leads;
 
   useEffect(() => {
+    if (!hasAccess) return;
     getLeadsForSuperAdmin()
       .then(setLeads)
       .catch((err) => {
@@ -61,10 +65,11 @@ export default function SuperLeadsPage() {
         setLeads([]);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [hasAccess]);
 
   return (
     <AdminLayout title="Leads">
+      <SuperPageGate permission="platform.leads.view">
       <div className="flex flex-col min-h-[calc(100vh-14rem)]">
         <Card
           title="Contact form submissions"
@@ -148,6 +153,7 @@ export default function SuperLeadsPage() {
           />
         </Card>
       </div>
+      </SuperPageGate>
     </AdminLayout>
   );
 }

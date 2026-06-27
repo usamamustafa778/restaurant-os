@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AdminLayout from "../../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../../hooks/usePlatformPermissionGate";
 import DataTable from "../../../../components/ui/DataTable";
 import Button from "../../../../components/ui/Button";
 import GenerateInvoiceModal from "../../../../components/super/GenerateInvoiceModal";
@@ -268,6 +270,9 @@ function InvoiceStatusPill({ status }) {
 }
 
 export default function SuperRestaurantDetailPage() {
+  const { hasAccess, permissionsLoaded } = usePlatformPermissionGate(
+    "platform.restaurants.view",
+  );
   const router = useRouter();
   const { id } = router.query;
   const { confirm } = useConfirmDialog();
@@ -372,12 +377,14 @@ export default function SuperRestaurantDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    if (!hasAccess) return;
     loadDetail();
-  }, [loadDetail]);
+  }, [loadDetail, hasAccess]);
 
   useEffect(() => {
+    if (!hasAccess) return;
     if (activeTab === "invoices" && id) loadInvoices();
-  }, [activeTab, id, loadInvoices]);
+  }, [activeTab, id, loadInvoices, hasAccess]);
 
   const restaurant = detail?.restaurant;
   const owner = detail?.owner;
@@ -771,6 +778,14 @@ export default function SuperRestaurantDetailPage() {
     } finally {
       setInvoiceActionId(null);
     }
+  }
+
+  if (!permissionsLoaded || !hasAccess) {
+    return (
+      <AdminLayout title="Restaurant">
+        <SuperPageGate permission="platform.restaurants.view" />
+      </AdminLayout>
+    );
   }
 
   if (loading) {

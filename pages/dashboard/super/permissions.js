@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import DataTable from "../../../components/ui/DataTable";
@@ -28,6 +30,7 @@ const EMPTY_FORM = {
 };
 
 export default function SuperPermissionsPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.permissions.manage");
   const { confirm } = useConfirmDialog();
   const [scopeFilter, setScopeFilter] = useState("");
   const [permissions, setPermissions] = useState([]);
@@ -91,8 +94,9 @@ export default function SuperPermissionsPage() {
   }, [scopeFilter]);
 
   useEffect(() => {
+    if (!hasAccess) return;
     loadPermissions();
-  }, [loadPermissions]);
+  }, [loadPermissions, hasAccess]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -186,6 +190,7 @@ export default function SuperPermissionsPage() {
       title="Permissions"
       subtitle="Global permission catalog — tenant and platform keys. Rarely edited."
     >
+      <SuperPageGate permission="platform.permissions.manage">
       <div className="flex flex-wrap items-center gap-3 mb-4 justify-between">
         <div className="flex rounded-lg border border-gray-200 dark:border-neutral-700 p-0.5 bg-white dark:bg-neutral-900">
           {SCOPE_TABS.map((tab) => (
@@ -429,6 +434,7 @@ export default function SuperPermissionsPage() {
           </div>
         </div>
       )}
+      </SuperPageGate>
     </AdminLayout>
   );
 }

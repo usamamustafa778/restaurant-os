@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import DataTable from "../../../components/ui/DataTable";
@@ -34,6 +36,7 @@ function slugify(value) {
 }
 
 export default function SuperRolesPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.roles.manage");
   const { confirm } = useConfirmDialog();
   const [roles, setRoles] = useState([]);
   const [groupedPerms, setGroupedPerms] = useState({});
@@ -69,8 +72,9 @@ export default function SuperRolesPage() {
   }, []);
 
   useEffect(() => {
+    if (!hasAccess) return;
     loadAll();
-  }, [loadAll]);
+  }, [loadAll, hasAccess]);
 
   const permissionGroups = useMemo(() => Object.keys(groupedPerms).sort(), [groupedPerms]);
 
@@ -277,6 +281,7 @@ export default function SuperRolesPage() {
       title="Roles"
       subtitle="Platform roles for EatsDesk staff — not scoped to restaurants."
     >
+      <SuperPageGate permission="platform.roles.manage">
       <Card
         title="Platform roles"
         description="Create a role, then assign platform permissions from the permissions drawer."
@@ -576,6 +581,7 @@ export default function SuperRolesPage() {
           </aside>
         </>
       )}
+      </SuperPageGate>
     </AdminLayout>
   );
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import Button from "../../../components/ui/Button";
 import DataTable from "../../../components/ui/DataTable";
 import {
@@ -112,6 +114,7 @@ function slugifyForSubdomain(name) {
 }
 
 export default function SuperRestaurantsPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.restaurants.view");
   const router = useRouter();
   const [restaurants, setRestaurants] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -319,8 +322,9 @@ export default function SuperRestaurantsPage() {
   }
 
   useEffect(() => {
+    if (!hasAccess) return;
     loadRestaurants();
-  }, []);
+  }, [hasAccess]);
 
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterHealth, setFilterHealth] = useState("all");
@@ -387,6 +391,7 @@ export default function SuperRestaurantsPage() {
 
   return (
     <AdminLayout title="Restaurants & Subscriptions">
+      <SuperPageGate permission="platform.restaurants.view">
       <div className="flex flex-col">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="relative flex flex-1 min-w-[200px] max-w-sm items-center">
@@ -1014,6 +1019,7 @@ export default function SuperRestaurantsPage() {
           </div>
         )}
       </div>
+      </SuperPageGate>
     </AdminLayout>
   );
 }

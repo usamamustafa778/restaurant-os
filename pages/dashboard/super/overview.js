@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import Card from "../../../components/ui/Card";
 import DataTable from "../../../components/ui/DataTable";
 import { getSuperRestaurantActivitySummary } from "../../../lib/apiClient";
@@ -113,6 +115,7 @@ function formatShortDate(iso) {
 }
 
 export default function SuperOverviewPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.overview.view");
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -134,8 +137,9 @@ export default function SuperOverviewPage() {
   }
 
   useEffect(() => {
+    if (!hasAccess) return;
     load();
-  }, []);
+  }, [hasAccess]);
 
   const sortedRows = useMemo(() => {
     const rows = data?.restaurants ? [...data.restaurants] : [];
@@ -273,6 +277,7 @@ export default function SuperOverviewPage() {
 
   return (
     <AdminLayout title="Platform Overview">
+      <SuperPageGate permission="platform.overview.view">
       {loading && !data ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
@@ -600,6 +605,7 @@ export default function SuperOverviewPage() {
         </Card>
       </div>
       )}
+      </SuperPageGate>
     </AdminLayout>
   );
 }

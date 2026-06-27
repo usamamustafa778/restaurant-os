@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import {
   getSuperSubscriptionRequests,
   approveSubscriptionRequest,
@@ -78,6 +80,7 @@ function SubStatusBadge({ status, readonly }) {
 }
 
 export default function SuperSubscriptionsPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.subscriptions.view");
   const [tab, setTab] = useState("requests"); // requests | history | payment_methods
   const [requests, setRequests] = useState([]);
   const [statusFilter, setStatusFilter] = useState("pending");
@@ -162,10 +165,11 @@ export default function SuperSubscriptionsPage() {
   }, []);
 
   useEffect(() => {
+    if (!hasAccess) return;
     if (tab === "requests") loadRequests();
     else if (tab === "history") loadHistory();
     else if (tab === "payment_methods") loadPaymentMethods();
-  }, [tab, loadRequests, loadHistory, loadPaymentMethods]);
+  }, [tab, loadRequests, loadHistory, loadPaymentMethods, hasAccess]);
 
   const handleApprove = async (id) => {
     const ok = await confirm({
@@ -275,6 +279,7 @@ export default function SuperSubscriptionsPage() {
 
   return (
     <AdminLayout>
+      <SuperPageGate permission="platform.subscriptions.view">
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -772,6 +777,7 @@ export default function SuperSubscriptionsPage() {
           </div>
         )}
       </div>
+      </SuperPageGate>
     </AdminLayout>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminLayout from "../../../components/layout/AdminLayout";
+import SuperPageGate from "../../../components/super/SuperPageGate";
+import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import DataTable from "../../../components/ui/DataTable";
@@ -27,6 +29,7 @@ const ROLE_LABELS = {
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS);
 
 export default function SuperUsersPage() {
+  const { hasAccess } = usePlatformPermissionGate("platform.staff.view");
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -96,8 +99,9 @@ export default function SuperUsersPage() {
     : users;
 
   useEffect(() => {
+    if (!hasAccess) return;
     loadUsers();
-  }, []);
+  }, [hasAccess]);
 
   async function loadUsers() {
     try {
@@ -149,6 +153,7 @@ export default function SuperUsersPage() {
 
   return (
     <AdminLayout title="Users">
+      <SuperPageGate permission="platform.staff.view">
       <div className="flex flex-col flex-1 min-h-0">
         <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -388,6 +393,7 @@ export default function SuperUsersPage() {
           </div>
         </div>
       )}
+      </SuperPageGate>
     </AdminLayout>
   );
 }
