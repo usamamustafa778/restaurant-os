@@ -1,4 +1,12 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   getMenu,
   getBranchMenu,
@@ -87,6 +95,15 @@ function isBranchRequiredError(msg) {
     msg.toLowerCase().includes("branchid") &&
     msg.toLowerCase().includes("required")
   );
+}
+
+function customerInitials(name, phone) {
+  const src = (name || phone || "?").trim();
+  const parts = src.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return src.slice(0, 2).toUpperCase();
 }
 
 function isOrderUnpaidForEdit(order) {
@@ -264,9 +281,12 @@ export default function POSView({
   const { socket } = useSocket() || {};
   const { hasPermission } = usePermissions();
   const currentUser = getStoredAuth()?.user;
-  const isAdminRole = ["restaurant_admin", "admin", "super_admin", "manager"].includes(
-    currentUser?.role,
-  );
+  const isAdminRole = [
+    "restaurant_admin",
+    "admin",
+    "super_admin",
+    "manager",
+  ].includes(currentUser?.role);
   const canEditAfterServed =
     isAdminRole || hasPermission("orders.edit_after_served");
   const [menu, setMenu] = useState({ categories: [], items: [] });
@@ -307,6 +327,10 @@ export default function POSView({
   const [deliveryZoneOpen, setDeliveryZoneOpen] = useState(false);
   const [customerModalZoneQuery, setCustomerModalZoneQuery] = useState("");
   const [customerModalZoneOpen, setCustomerModalZoneOpen] = useState(false);
+  const [customerModalZoneDropPos, setCustomerModalZoneDropPos] =
+    useState(null);
+  const customerModalZoneInputRef = useRef(null);
+  const customerSearchInputRef = useRef(null);
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [onlineProvider, setOnlineProvider] = useState(null);
@@ -999,6 +1023,7 @@ export default function POSView({
     setAddingQuickCustomer(false);
     setCustomerModalZoneQuery("");
     setCustomerModalZoneOpen(false);
+    setCustomerModalZoneDropPos(null);
     loadCustomersForModal();
   }
 
@@ -1008,14 +1033,48 @@ export default function POSView({
     setEditingCustomerId(null);
     setCustomerModalZoneQuery("");
     setCustomerModalZoneOpen(false);
+    setCustomerModalZoneDropPos(null);
     pendingDeliveryCheckoutRef.current = false;
   }
+
+  const updateCustomerModalZoneDropPos = useCallback(() => {
+    const el = customerModalZoneInputRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCustomerModalZoneDropPos({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!customerModalZoneOpen) return;
+    updateCustomerModalZoneDropPos();
+    window.addEventListener("resize", updateCustomerModalZoneDropPos);
+    window.addEventListener("scroll", updateCustomerModalZoneDropPos, true);
+    return () => {
+      window.removeEventListener("resize", updateCustomerModalZoneDropPos);
+      window.removeEventListener(
+        "scroll",
+        updateCustomerModalZoneDropPos,
+        true,
+      );
+    };
+  }, [customerModalZoneOpen, updateCustomerModalZoneDropPos]);
+
+  useEffect(() => {
+    if (!showCustomerModal) return;
+    const t = setTimeout(() => customerSearchInputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [showCustomerModal]);
 
   function pickDeliveryZone(zoneId, { modal = false } = {}) {
     setDeliveryLocationId(zoneId ? String(zoneId) : "");
     if (modal) {
       setCustomerModalZoneQuery("");
       setCustomerModalZoneOpen(false);
+      setCustomerModalZoneDropPos(null);
     } else {
       setDeliveryZoneQuery("");
       setDeliveryZoneOpen(false);
@@ -3500,15 +3559,17 @@ export default function POSView({
                 Items Cart
               </h3>
               <div className="flex items-center gap-3 flex-shrink-0">
-                {cart.length > 0 && isPrivilegedEditor && canModifyServedOrderItems && (
-                  <button
-                    type="button"
-                    onClick={clearAllCartItems}
-                    className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
-                  >
-                    Clear all
-                  </button>
-                )}
+                {cart.length > 0 &&
+                  isPrivilegedEditor &&
+                  canModifyServedOrderItems && (
+                    <button
+                      type="button"
+                      onClick={clearAllCartItems}
+                      className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
+                    >
+                      Clear all
+                    </button>
+                  )}
                 <span className="text-xs text-gray-500 dark:text-neutral-400 whitespace-nowrap">
                   Total:{" "}
                   <span className="font-bold text-gray-900 dark:text-white">
@@ -3945,47 +4006,46 @@ export default function POSView({
               )}
 
               {/* Place Order / Update Order Button */}
-              {editingOrderId ? (
-                hasPermission("orders.edit") && canModifyServedOrderItems && (
-                <button
-                  onClick={handleUpdateOrder}
-                  disabled={loading || cart.length === 0}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-500 text-white font-semibold text-sm hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Updating...
-                    </>
-                  ) : (
-                    <>
-                      <Receipt className="w-4 h-4" />
-                      Update order
-                    </>
+              {editingOrderId
+                ? hasPermission("orders.edit") &&
+                  canModifyServedOrderItems && (
+                    <button
+                      onClick={handleUpdateOrder}
+                      disabled={loading || cart.length === 0}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-500 text-white font-semibold text-sm hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <Receipt className="w-4 h-4" />
+                          Update order
+                        </>
+                      )}
+                    </button>
+                  )
+                : hasPermission("orders.create") && (
+                    <button
+                      onClick={handleCheckout}
+                      disabled={loading}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <Receipt className="w-4 h-4" />
+                          Place an Order
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
-                )
-              ) : (
-                hasPermission("orders.create") && (
-                <button
-                  onClick={handleCheckout}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Receipt className="w-4 h-4" />
-                      Place an Order
-                    </>
-                  )}
-                </button>
-                )
-              )}
 
               {/* Add Customer + Print + Discount + Take Payment */}
               <div className="flex gap-1.5 mt-2 items-center">
@@ -4009,42 +4069,44 @@ export default function POSView({
                   </button>
                 )}
                 {hasPermission("orders.print") && (
-                <button
-                  type="button"
-                  onClick={printMenuBill}
-                  disabled={printingMenu || cart.length === 0}
-                  title={printingMenu ? "Printing…" : "Print bill"}
-                  aria-label={printingMenu ? "Printing" : "Print bill"}
-                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-                >
-                  <Printer className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={printMenuBill}
+                    disabled={printingMenu || cart.length === 0}
+                    title={printingMenu ? "Printing…" : "Print bill"}
+                    aria-label={printingMenu ? "Printing" : "Print bill"}
+                    className="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                  >
+                    <Printer className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
+                  </button>
                 )}
                 {hasPermission("orders.apply_discount") && (
-                <button
-                  type="button"
-                  onClick={openDiscountModal}
-                  disabled={cart.length === 0 || maxManualDiscountAllowed <= 0}
-                  className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 ${
-                    manualDiscountPercentClamped > 0
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-300"
-                  }`}
-                >
-                  <Percent className="w-4 h-4" />
-                  <span className="text-xs font-medium">Discount</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={openDiscountModal}
+                    disabled={
+                      cart.length === 0 || maxManualDiscountAllowed <= 0
+                    }
+                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 ${
+                      manualDiscountPercentClamped > 0
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-300"
+                    }`}
+                  >
+                    <Percent className="w-4 h-4" />
+                    <span className="text-xs font-medium">Discount</span>
+                  </button>
                 )}
                 {hasPermission("orders.collect_payment") && (
-                <button
-                  type="button"
-                  onClick={() => openTakePaymentModal("CASH")}
-                  disabled={cart.length === 0}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-xs font-medium text-gray-700 dark:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Receipt className="w-4 h-4" />
-                  Take Payment
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openTakePaymentModal("CASH")}
+                    disabled={cart.length === 0}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 text-xs font-medium text-gray-700 dark:text-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Receipt className="w-4 h-4" />
+                    Take Payment
+                  </button>
                 )}
               </div>
 
@@ -5444,53 +5506,108 @@ export default function POSView({
 
       {/* Select / Add Customer Modal (search by phone, quick add if not found) */}
       {showCustomerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-neutral-900/80 p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col my-4">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                Select Customer
-              </h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-neutral-900/80 p-4">
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/50">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <User className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                    Select Customer
+                  </h2>
+                  <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
+                    {orderType === "DELIVERY"
+                      ? "Required for delivery orders"
+                      : "Search by phone or add new"}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={closeCustomerModal}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-200/60 hover:text-gray-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors"
+                aria-label="Close"
               >
-                <span className="text-2xl">×</span>
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="flex-1 p-4 overflow-visible">
-              {customerModalError && (
-                <p className="mb-3 text-sm text-red-600 dark:text-red-400">
-                  {customerModalError}
-                </p>
-              )}
-
-              <>
+            <div className="px-4 pt-4 pb-3 border-b border-gray-100 dark:border-neutral-800">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-neutral-500" />
                 <input
-                  type="text"
-                  placeholder="Phone"
+                  ref={customerSearchInputRef}
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="off"
+                  placeholder="Search phone number…"
                   value={customerSearch}
                   onChange={(e) => {
                     setCustomerSearch(e.target.value);
                     setCustomerModalError("");
                   }}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white mb-3"
+                  className="w-full rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 py-2.5 pl-9 pr-4 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                 />
-                {customerModalLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  </div>
-                ) : (
-                  <>
-                    {(() => {
-                      const term = customerSearch.trim();
-                      const filtered = customersList.filter((c) =>
-                        !term ? true : (c.phone || "").includes(term),
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
+              {customerModalError && (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                  {customerModalError}
+                </div>
+              )}
+              {customerModalLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : (
+                <>
+                  {(() => {
+                    const term = customerSearch.trim();
+                    if (!term) {
+                      return customersList.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800">
+                            <Users className="h-6 w-6 text-gray-400 dark:text-neutral-500" />
+                          </div>
+                          <p className="text-sm font-medium text-gray-700 dark:text-neutral-300">
+                            No customers yet
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400 max-w-[240px]">
+                            Enter a phone number above to add your first
+                            customer.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                            <Search className="h-5 w-5 text-primary" />
+                          </div>
+                          <p className="text-sm font-medium text-gray-700 dark:text-neutral-300">
+                            Search by phone
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400 max-w-[260px]">
+                            Type a phone number to find an existing customer or
+                            create a new one.
+                          </p>
+                        </div>
                       );
-                      if (filtered.length > 0) {
-                        return (
-                          <ul className="space-y-1">
+                    }
+
+                    const filtered = customersList.filter((c) =>
+                      (c.phone || "").includes(term),
+                    );
+                    if (filtered.length > 0) {
+                      return (
+                        <div>
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                            {filtered.length} result
+                            {filtered.length !== 1 ? "s" : ""}
+                          </p>
+                          <ul className="space-y-2 max-h-[50vh] overflow-y-auto pr-0.5">
                             {filtered.map((c) => (
                               <li key={c.id}>
                                 {editingCustomerId === c.id ? (
@@ -5591,7 +5708,7 @@ export default function POSView({
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className="group relative flex items-center px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800/50">
+                                  <div className="group relative flex items-stretch gap-1 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-primary/40 hover:shadow-sm dark:hover:border-primary/30 transition-all">
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -5623,23 +5740,29 @@ export default function POSView({
                                         }
                                         selectCustomerForOrder(c);
                                       }}
-                                      className="flex-1 text-left text-sm"
+                                      className="flex flex-1 items-start gap-3 p-3 text-left min-w-0"
                                     >
-                                      <div>
-                                        <span className="font-medium text-gray-900 dark:text-white">
-                                          {c.name}
-                                        </span>
+                                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+                                        {customerInitials(c.name, c.phone)}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                                          {c.name || "Unnamed"}
+                                        </p>
                                         {c.phone && (
-                                          <span className="text-gray-500 dark:text-neutral-400 ml-2">
+                                          <p className="mt-0.5 text-xs tabular-nums text-gray-500 dark:text-neutral-400">
                                             {c.phone}
-                                          </span>
+                                          </p>
+                                        )}
+                                        {c.address && (
+                                          <p className="mt-1 flex items-start gap-1 text-xs text-gray-400 dark:text-neutral-500">
+                                            <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                                            <span className="line-clamp-2">
+                                              {c.address}
+                                            </span>
+                                          </p>
                                         )}
                                       </div>
-                                      {c.address && (
-                                        <p className="text-xs text-gray-400 dark:text-neutral-500 truncate mt-0.5">
-                                          {c.address}
-                                        </p>
-                                      )}
                                     </button>
                                     <button
                                       type="button"
@@ -5651,48 +5774,50 @@ export default function POSView({
                                           address: c.address || "",
                                         });
                                       }}
-                                      className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-gray-400 hover:text-primary transition-all flex-shrink-0"
+                                      className="self-center mr-2 rounded-lg p-2 text-gray-400 opacity-70 hover:bg-gray-100 hover:text-primary hover:opacity-100 dark:hover:bg-neutral-800 transition-all sm:opacity-0 sm:group-hover:opacity-100"
                                       title="Edit customer"
                                     >
-                                      <Edit3 className="w-3.5 h-3.5" />
+                                      <Edit3 className="h-4 w-4" />
                                     </button>
                                   </div>
                                 )}
                               </li>
                             ))}
                           </ul>
-                        );
-                      }
+                        </div>
+                      );
+                    }
 
-                      if (!term) {
-                        return customersList.length === 0 ? (
-                          <p className="text-sm text-gray-500 dark:text-neutral-400 py-4">
-                            No customers yet. Start by adding a new customer.
-                          </p>
-                        ) : (
-                          <p className="text-sm text-gray-500 dark:text-neutral-400 py-4">
-                            Type a phone number to search or add.
-                          </p>
-                        );
-                      }
-
-                      // No match for this phone – quick add
-                      return (
-                        <div className="space-y-3">
-                          <p className="text-sm text-gray-500 dark:text-neutral-400">
-                            No customer found for this phone. Add a new
-                            customer.
-                          </p>
+                    // No match for this phone – quick add
+                    return (
+                      <div className="rounded-xl border border-dashed border-primary/30 bg-primary/[0.04] dark:bg-primary/10 p-4 space-y-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                            <UserPlus className="h-4 w-4" />
+                          </div>
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                              New customer
+                            </p>
+                            <p className="mt-0.5 text-xs text-gray-500 dark:text-neutral-400">
+                              No match for{" "}
+                              <span className="font-mono font-medium text-gray-700 dark:text-neutral-300">
+                                {term}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
                               Phone
                             </label>
-                            <div className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm text-gray-900 dark:text-white">
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-mono tabular-nums text-gray-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white">
                               {term}
                             </div>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
                               Name *
                             </label>
                             <input
@@ -5701,102 +5826,150 @@ export default function POSView({
                               onChange={(e) =>
                                 setQuickCustomerName(e.target.value)
                               }
-                              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-                              placeholder="Name"
+                              className="w-full rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                              placeholder="Customer name"
                             />
                           </div>
                           {orderType === "DELIVERY" &&
                             deliveryZones.length > 0 && (
-                              <div className="relative overflow-visible">
-                                <label className="block text-xs font-medium text-gray-700 dark:text-neutral-300 mb-1">
+                              <div className="sm:col-span-2">
+                                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
                                   Delivery area *
                                 </label>
-                                <div className="relative">
-                                  <input
-                                    type="text"
-                                    value={
-                                      customerModalZoneOpen
-                                        ? customerModalZoneQuery
-                                        : selectedDeliveryZoneLabel
-                                    }
-                                    onFocus={() => {
-                                      setCustomerModalZoneOpen(true);
+                                <button
+                                  ref={customerModalZoneInputRef}
+                                  type="button"
+                                  onClick={() => {
+                                    const next = !customerModalZoneOpen;
+                                    setCustomerModalZoneOpen(next);
+                                    if (next) {
                                       setCustomerModalZoneQuery("");
-                                    }}
-                                    onBlur={() =>
-                                      setTimeout(
-                                        () => setCustomerModalZoneOpen(false),
-                                        150,
-                                      )
+                                      requestAnimationFrame(
+                                        updateCustomerModalZoneDropPos,
+                                      );
+                                    } else {
+                                      setCustomerModalZoneDropPos(null);
                                     }
-                                    onChange={(e) => {
-                                      setCustomerModalZoneQuery(e.target.value);
-                                      setCustomerModalZoneOpen(true);
-                                    }}
-                                    placeholder="Area"
-                                    className="w-full px-3 pr-8 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                                  }}
+                                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                                    deliveryLocationId
+                                      ? "border-primary/30 bg-primary/5 dark:border-primary/25 dark:bg-primary/10"
+                                      : "border-gray-200 bg-white hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-600"
+                                  }`}
+                                >
+                                  <MapPin
+                                    className={`h-4 w-4 shrink-0 ${deliveryLocationId ? "text-primary" : "text-gray-400"}`}
                                   />
+                                  <span
+                                    className={`min-w-0 flex-1 truncate text-sm ${deliveryLocationId ? "font-medium text-gray-900 dark:text-white" : "text-gray-400 dark:text-neutral-500"}`}
+                                  >
+                                    {selectedDeliveryZoneLabel ||
+                                      "Select delivery area"}
+                                  </span>
                                   <ChevronDown
-                                    className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${customerModalZoneOpen ? "rotate-180" : ""}`}
+                                    className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${customerModalZoneOpen ? "rotate-180" : ""}`}
                                   />
-                                  {customerModalZoneOpen && (
-                                    <div className="absolute z-50 top-full mt-1 w-full max-h-52 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg">
-                                      <button
-                                        type="button"
-                                        onMouseDown={(e) => {
-                                          e.preventDefault();
-                                          pickDeliveryZone("", { modal: true });
-                                        }}
-                                        className="w-full px-3 py-2 text-left text-sm text-gray-500 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                                      >
-                                        — Select delivery area —
-                                      </button>
-                                      {filteredModalDeliveryZones.map((z) => (
+                                </button>
+                                {customerModalZoneOpen &&
+                                  customerModalZoneDropPos &&
+                                  typeof document !== "undefined" &&
+                                  createPortal(
+                                    <div
+                                      style={{
+                                        position: "fixed",
+                                        top: customerModalZoneDropPos.top,
+                                        left: customerModalZoneDropPos.left,
+                                        width: customerModalZoneDropPos.width,
+                                        zIndex: 10060,
+                                      }}
+                                      className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+                                    >
+                                      <div className="border-b border-gray-100 p-2 dark:border-neutral-800">
+                                        <input
+                                          type="text"
+                                          autoFocus
+                                          value={customerModalZoneQuery}
+                                          onChange={(e) => {
+                                            setCustomerModalZoneQuery(
+                                              e.target.value,
+                                            );
+                                          }}
+                                          placeholder="Search area…"
+                                          className="w-full rounded-lg border-0 bg-gray-100 px-3 py-2 text-sm outline-none dark:bg-neutral-800 dark:text-white"
+                                        />
+                                      </div>
+                                      <div className="max-h-48 overflow-y-auto">
                                         <button
-                                          key={z.id}
                                           type="button"
                                           onMouseDown={(e) => {
                                             e.preventDefault();
-                                            pickDeliveryZone(z.id, {
+                                            pickDeliveryZone("", {
                                               modal: true,
                                             });
                                           }}
-                                          className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-neutral-800 ${
-                                            String(z.id) ===
-                                            String(deliveryLocationId)
-                                              ? "bg-primary/10 text-primary font-semibold"
-                                              : "text-gray-900 dark:text-white"
-                                          }`}
+                                          className="w-full px-3 py-2.5 text-left text-sm text-gray-500 hover:bg-gray-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
                                         >
-                                          {z.name} — Rs{" "}
-                                          {Number(z.fee || 0).toFixed(2)}
+                                          Clear selection
                                         </button>
-                                      ))}
-                                      {filteredModalDeliveryZones.length ===
-                                        0 && (
-                                        <div className="px-3 py-2 text-sm text-gray-500 dark:text-neutral-400">
-                                          No matching area
-                                        </div>
-                                      )}
-                                    </div>
+                                        {filteredModalDeliveryZones.map((z) => (
+                                          <button
+                                            key={z.id}
+                                            type="button"
+                                            onMouseDown={(e) => {
+                                              e.preventDefault();
+                                              pickDeliveryZone(z.id, {
+                                                modal: true,
+                                              });
+                                            }}
+                                            className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-neutral-800 ${
+                                              String(z.id) ===
+                                              String(deliveryLocationId)
+                                                ? "bg-primary/10 font-semibold text-primary"
+                                                : "text-gray-900 dark:text-white"
+                                            }`}
+                                          >
+                                            <span>{z.name}</span>
+                                            <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-neutral-400">
+                                              Rs {Number(z.fee || 0).toFixed(2)}
+                                            </span>
+                                          </button>
+                                        ))}
+                                        {filteredModalDeliveryZones.length ===
+                                          0 && (
+                                          <div className="px-3 py-3 text-center text-sm text-gray-500 dark:text-neutral-400">
+                                            No matching area
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>,
+                                    document.body,
                                   )}
-                                </div>
                               </div>
                             )}
-                          <button
-                            type="button"
-                            onClick={handleQuickAddCustomer}
-                            disabled={addingQuickCustomer}
-                            className="w-full px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50"
-                          >
-                            {addingQuickCustomer ? "Adding…" : "Add Customer"}
-                          </button>
                         </div>
-                      );
-                    })()}
-                  </>
-                )}
-              </>
+                        <button
+                          type="button"
+                          onClick={handleQuickAddCustomer}
+                          disabled={addingQuickCustomer}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {addingQuickCustomer ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Adding…
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus className="h-4 w-4" />
+                              Add Customer
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -6411,112 +6584,114 @@ export default function POSView({
             <div className="px-6 pb-6 pt-4 space-y-3 bg-white dark:bg-neutral-950">
               <div className="grid grid-cols-3 gap-2.5">
                 {hasPermission("orders.edit") && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const id = orderConfirmation.orderId;
-                    const openEditOrder = () => {
-                      setOrderConfirmation(null);
-                      if (!id) return;
-                      setEditingOrderId(id);
-                      getOrder(id)
-                        .then((order) => {
-                          setEditingOrder(order);
-                          const items = order.items || [];
-                          const menuItems = menu.items || [];
-                          const cartItems = items.map((it) => {
-                            const menuItemId = it.menuItemId || null;
-                            let itemId = menuItemId;
-                            let price = it.unitPrice ?? 0;
-                            let imageUrl = "";
-                            if (!itemId) {
-                              const byName = menuItems.find(
-                                (m) =>
-                                  (m.name || "").toLowerCase() ===
-                                  (it.name || "").toLowerCase(),
-                              );
-                              if (byName) {
-                                itemId = byName.id;
-                                price =
-                                  byName.finalPrice ?? byName.price ?? price;
-                                imageUrl = byName.imageUrl || "";
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = orderConfirmation.orderId;
+                      const openEditOrder = () => {
+                        setOrderConfirmation(null);
+                        if (!id) return;
+                        setEditingOrderId(id);
+                        getOrder(id)
+                          .then((order) => {
+                            setEditingOrder(order);
+                            const items = order.items || [];
+                            const menuItems = menu.items || [];
+                            const cartItems = items.map((it) => {
+                              const menuItemId = it.menuItemId || null;
+                              let itemId = menuItemId;
+                              let price = it.unitPrice ?? 0;
+                              let imageUrl = "";
+                              if (!itemId) {
+                                const byName = menuItems.find(
+                                  (m) =>
+                                    (m.name || "").toLowerCase() ===
+                                    (it.name || "").toLowerCase(),
+                                );
+                                if (byName) {
+                                  itemId = byName.id;
+                                  price =
+                                    byName.finalPrice ?? byName.price ?? price;
+                                  imageUrl = byName.imageUrl || "";
+                                } else {
+                                  itemId = `edit-${it.name}-${Math.random().toString(36).slice(2)}`;
+                                }
                               } else {
-                                itemId = `edit-${it.name}-${Math.random().toString(36).slice(2)}`;
+                                const mi = menuItems.find(
+                                  (m) => (m.id || m._id) === itemId,
+                                );
+                                if (mi) {
+                                  imageUrl = mi.imageUrl || "";
+                                  price = mi.finalPrice ?? mi.price ?? price;
+                                }
                               }
-                            } else {
-                              const mi = menuItems.find(
-                                (m) => (m.id || m._id) === itemId,
+                              return {
+                                id: itemId,
+                                name: it.name,
+                                price,
+                                quantity: it.qty ?? 1,
+                                imageUrl,
+                              };
+                            });
+                            setCart(cartItems);
+                            setOriginalOrderItems(
+                              cartItems.map((i) => ({
+                                cartKey: i._cartKey || i.id,
+                                menuItemId: i.id,
+                                quantity: i.quantity,
+                              })),
+                            );
+                            setCustomerName(order.customerName || "");
+                            setCustomerPhone(order.customerPhone || "");
+                            setCustomerAddress(order.deliveryAddress || "");
+                            setOrderType(
+                              order.orderType === "TAKEAWAY" ||
+                                order.type === "takeaway"
+                                ? "TAKEAWAY"
+                                : order.orderType === "DELIVERY" ||
+                                    order.type === "delivery"
+                                  ? "DELIVERY"
+                                  : "DINE_IN",
+                            );
+                            setDeliveryLocationId(
+                              resolveDeliveryLocationIdFromOrder(
+                                order,
+                                mapBranchDeliveryZones(currentBranch),
+                              ),
+                            );
+                            setEditSessionDeliveryCharges(
+                              Math.max(0, Number(order.deliveryCharges) || 0),
+                            );
+                            setTableName(order.tableName || "");
+                            const mp2 = Number(order.posManualDiscountPercent);
+                            if (Number.isFinite(mp2) && mp2 > 0) {
+                              setManualDiscountPercent(
+                                Math.min(100, Math.max(0, mp2)),
                               );
-                              if (mi) {
-                                imageUrl = mi.imageUrl || "";
-                                price = mi.finalPrice ?? mi.price ?? price;
-                              }
+                              setDiscountReason(
+                                String(order.posDiscountReason || "").trim(),
+                              );
+                              setDiscountPresetLabel(
+                                String(
+                                  order.posDiscountPresetLabel || "",
+                                ).trim(),
+                              );
+                            } else {
+                              setManualDiscountPercent(0);
+                              setDiscountReason("");
+                              setDiscountPresetLabel("");
                             }
-                            return {
-                              id: itemId,
-                              name: it.name,
-                              price,
-                              quantity: it.qty ?? 1,
-                              imageUrl,
-                            };
-                          });
-                          setCart(cartItems);
-                          setOriginalOrderItems(
-                            cartItems.map((i) => ({
-                              cartKey: i._cartKey || i.id,
-                              menuItemId: i.id,
-                              quantity: i.quantity,
-                            })),
-                          );
-                          setCustomerName(order.customerName || "");
-                          setCustomerPhone(order.customerPhone || "");
-                          setCustomerAddress(order.deliveryAddress || "");
-                          setOrderType(
-                            order.orderType === "TAKEAWAY" ||
-                              order.type === "takeaway"
-                              ? "TAKEAWAY"
-                              : order.orderType === "DELIVERY" ||
-                                  order.type === "delivery"
-                                ? "DELIVERY"
-                                : "DINE_IN",
-                          );
-                          setDeliveryLocationId(
-                            resolveDeliveryLocationIdFromOrder(
-                              order,
-                              mapBranchDeliveryZones(currentBranch),
-                            ),
-                          );
-                          setEditSessionDeliveryCharges(
-                            Math.max(0, Number(order.deliveryCharges) || 0),
-                          );
-                          setTableName(order.tableName || "");
-                          const mp2 = Number(order.posManualDiscountPercent);
-                          if (Number.isFinite(mp2) && mp2 > 0) {
-                            setManualDiscountPercent(
-                              Math.min(100, Math.max(0, mp2)),
-                            );
-                            setDiscountReason(
-                              String(order.posDiscountReason || "").trim(),
-                            );
-                            setDiscountPresetLabel(
-                              String(order.posDiscountPresetLabel || "").trim(),
-                            );
-                          } else {
-                            setManualDiscountPercent(0);
-                            setDiscountReason("");
-                            setDiscountPresetLabel("");
-                          }
-                          setManagerDiscountPin("");
-                        })
-                        .catch(() => {});
-                    };
-                    handleNavigateAwayFromEdit(openEditOrder);
-                  }}
-                  className="h-10 rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  Edit
-                </button>
+                            setManagerDiscountPin("");
+                          })
+                          .catch(() => {});
+                      };
+                      handleNavigateAwayFromEdit(openEditOrder);
+                    }}
+                    className="h-10 rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    Edit
+                  </button>
                 )}
                 <button
                   type="button"
