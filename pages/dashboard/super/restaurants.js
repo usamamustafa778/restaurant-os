@@ -9,12 +9,13 @@ import {
   getSuperRestaurantActivitySummary,
   getRestaurantsForSuperAdmin,
   createRestaurantForSuperAdmin,
-  setActingAsRestaurant,
+  impersonateRestaurantAsSuperAdmin,
   verifyRestaurantOwnerEmailsForSuperAdmin,
   approveRestaurantForSuperAdmin,
   updateRestaurantSubscription,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
+import { usePermissions } from "../../../contexts/PermissionContext";
 import {
   Search,
   X,
@@ -115,6 +116,8 @@ function slugifyForSubdomain(name) {
 
 export default function SuperRestaurantsPage() {
   const { hasAccess } = usePlatformPermissionGate("platform.restaurants.view");
+  const { hasPermission } = usePermissions();
+  const canImpersonate = hasPermission("platform.impersonate");
   const router = useRouter();
   const [restaurants, setRestaurants] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -644,16 +647,26 @@ export default function SuperRestaurantsPage() {
                       <>
                         <button
                           type="button"
-                          disabled={!website.subdomain}
-                          onClick={() => {
+                          disabled={!website.subdomain || !canImpersonate}
+                          onClick={async () => {
                             const slug = website.subdomain || null;
-                            if (slug) {
-                              setActingAsRestaurant(slug);
+                            if (!slug) return;
+                            try {
+                              await impersonateRestaurantAsSuperAdmin({
+                                restaurantId: r.id,
+                                subdomain: slug,
+                              });
                               window.open("/overview", "_blank");
+                            } catch (err) {
+                              toast.error(err.message || "Could not start impersonation");
                             }
                           }}
                           className="px-2 py-0.5 rounded-md border border-primary/30 text-[11px] font-semibold text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Open this restaurant's dashboard in a new tab"
+                          title={
+                            canImpersonate
+                              ? "Open this restaurant's dashboard in a new tab"
+                              : "You don't have permission to impersonate tenants"
+                          }
                         >
                           Login
                         </button>

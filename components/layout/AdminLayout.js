@@ -61,13 +61,14 @@ import {
   Sparkles,
   Bot,
   KeyRound,
+  ScrollText,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
 import WhatsAppNotificationBell from "../whatsapp/WhatsAppNotificationBell";
 import {
   getToken,
   getStoredAuth,
-  clearActingAsRestaurant,
+  endImpersonationAsSuperAdmin,
   getRestaurantInfo,
   getWhatsAppUnreadCount,
 } from "../../lib/apiClient";
@@ -509,6 +510,12 @@ const superNav = [
     label: "System Settings",
     icon: Settings2,
     permission: "platform.settings.manage",
+  },
+  {
+    href: "/super/audit",
+    label: "Audit Log",
+    icon: ScrollText,
+    permission: "platform.audit.view",
   },
 ];
 
@@ -1295,8 +1302,8 @@ export default function AdminLayout({
               {!backHref && role === "super_admin" && actingAsSlug && (
                 <button
                   type="button"
-                  onClick={() => {
-                    clearActingAsRestaurant();
+                  onClick={async () => {
+                    await endImpersonationAsSuperAdmin({ subdomain: actingAsSlug });
                     setActingAsSlug(null);
                     window.location.href = "/super/overview";
                   }}
@@ -1390,8 +1397,8 @@ export default function AdminLayout({
               {role === "super_admin" && actingAsSlug && (
                 <button
                   type="button"
-                  onClick={() => {
-                    clearActingAsRestaurant();
+                  onClick={async () => {
+                    await endImpersonationAsSuperAdmin({ subdomain: actingAsSlug });
                     setActingAsSlug(null);
                     window.location.href = "/super/overview";
                   }}

@@ -65,6 +65,10 @@ export default function SuperUsersPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [emailFilter, setEmailFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [restaurantFilter, setRestaurantFilter] = useState("");
   const [actionId, setActionId] = useState(null);
 
   const [viewUser, setViewUser] = useState(null);
@@ -90,23 +94,69 @@ export default function SuperUsersPage() {
     loadUsers();
   }, [hasAccess]);
 
+  const roleOptions = useMemo(() => {
+    const roles = [...new Set(users.map((u) => u.role).filter(Boolean))];
+    return roles.sort((a, b) =>
+      (ROLE_LABELS[a] || a).localeCompare(ROLE_LABELS[b] || b),
+    );
+  }, [users]);
+
+  const restaurantOptions = useMemo(() => {
+    const map = new Map();
+    for (const u of users) {
+      if (!u.restaurantId) continue;
+      const id = String(u.restaurantId);
+      if (!map.has(id)) {
+        map.set(
+          id,
+          u.restaurantName || u.restaurantSubdomain || "Unknown restaurant",
+        );
+      }
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [users]);
+
+  const hasActiveFilters =
+    statusFilter !== "all" ||
+    emailFilter !== "all" ||
+    roleFilter !== "" ||
+    restaurantFilter !== "" ||
+    searchQuery.trim() !== "";
+
   const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) return users;
     const q = searchQuery.trim().toLowerCase();
     return users.filter((u) => {
+      if (statusFilter === "active" && u.isActive === false) return false;
+      if (statusFilter === "inactive" && u.isActive !== false) return false;
+      if (emailFilter === "verified" && !u.emailVerified) return false;
+      if (emailFilter === "unverified" && u.emailVerified) return false;
+      if (roleFilter && u.role !== roleFilter) return false;
+      if (restaurantFilter && String(u.restaurantId) !== restaurantFilter) {
+        return false;
+      }
+      if (!q) return true;
       const name = (u.name || "").toLowerCase();
       const email = (u.email || "").toLowerCase();
+      const phone = (u.phone || "").toLowerCase();
       const role = (ROLE_LABELS[u.role] || u.role || "").toLowerCase();
       const restaurant = (u.restaurantName || u.restaurantSubdomain || "")
         .toLowerCase();
       return (
         name.includes(q) ||
         email.includes(q) ||
+        phone.includes(q) ||
         role.includes(q) ||
         restaurant.includes(q)
       );
     });
-  }, [users, searchQuery]);
+  }, [
+    users,
+    searchQuery,
+    statusFilter,
+    emailFilter,
+    roleFilter,
+    restaurantFilter,
+  ]);
 
   function escapeCsvCell(value) {
     if (value == null || value === "") return "";
@@ -226,21 +276,100 @@ export default function SuperUsersPage() {
     >
       <SuperPageGate permission="platform.restaurants.view">
         <div className="flex flex-col flex-1 min-h-0">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {[
+              { value: "all", label: "All" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ].map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setStatusFilter(f.value)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  statusFilter === f.value
+                    ? "bg-primary text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            <span className="w-px h-5 bg-gray-200 dark:bg-neutral-700 mx-1 hidden sm:block" />
+            {[
+              { value: "all", label: "Any email" },
+              { value: "verified", label: "Verified" },
+              { value: "unverified", label: "Unverified" },
+            ].map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setEmailFilter(f.value)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  emailFilter === f.value
+                    ? "bg-primary text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
               <input
                 type="text"
-                placeholder="Search by name, email, role or restaurant..."
+                placeholder="Search name, email, phone, role, restaurant..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
               />
             </div>
-            {searchQuery && (
-              <span className="text-xs text-neutral-500">
-                {filteredUsers.length} of {users.length}
-              </span>
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white min-w-[140px]"
+            >
+              <option value="">All roles</option>
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {ROLE_LABELS[role] || role}
+                </option>
+              ))}
+            </select>
+            <select
+              value={restaurantFilter}
+              onChange={(e) => setRestaurantFilter(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white min-w-[160px] max-w-[220px]"
+            >
+              <option value="">All restaurants</option>
+              {restaurantOptions.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {hasActiveFilters && (
+              <>
+                <span className="text-xs text-neutral-500">
+                  {filteredUsers.length} of {users.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setStatusFilter("all");
+                    setEmailFilter("all");
+                    setRoleFilter("");
+                    setRestaurantFilter("");
+                  }}
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  Clear filters
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -271,7 +400,11 @@ export default function SuperUsersPage() {
             showSno
             data={filteredUsers}
             loading={loading}
-            emptyMessage="No tenant users found."
+            emptyMessage={
+              hasActiveFilters
+                ? "No users match your search or filters."
+                : "No tenant users found."
+            }
             columns={[
               {
                 key: "name",

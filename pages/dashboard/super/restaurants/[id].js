@@ -16,13 +16,14 @@ import {
   getSuperRestaurantDetail,
   sendSuperInvoiceEmail,
   sendSuperRestaurantWelcomeEmail,
-  setActingAsRestaurant,
+  impersonateRestaurantAsSuperAdmin,
   updateRestaurantForSuperAdmin,
   updateRestaurantSubscription,
   verifyRestaurantOwnerEmailsForSuperAdmin,
   resetRestaurantOwnerPasswordForSuperAdmin,
 } from "../../../../lib/apiClient";
 import { useConfirmDialog } from "../../../../contexts/ConfirmDialogContext";
+import { usePermissions } from "../../../../contexts/PermissionContext";
 import {
   ArrowLeft,
   Calendar,
@@ -273,6 +274,8 @@ export default function SuperRestaurantDetailPage() {
   const { hasAccess, permissionsLoaded } = usePlatformPermissionGate(
     "platform.restaurants.view",
   );
+  const { hasPermission } = usePermissions();
+  const canImpersonate = hasPermission("platform.impersonate");
   const router = useRouter();
   const { id } = router.query;
   const { confirm } = useConfirmDialog();
@@ -475,8 +478,15 @@ export default function SuperRestaurantDetailPage() {
 
   async function handleLoginAsAdmin() {
     if (!subdomain) return;
-    setActingAsRestaurant(subdomain);
-    window.open("/overview", "_blank");
+    try {
+      await impersonateRestaurantAsSuperAdmin({
+        restaurantId: restaurant?.id || id,
+        subdomain,
+      });
+      window.open("/overview", "_blank");
+    } catch (err) {
+      toast.error(err.message || "Could not start impersonation");
+    }
   }
 
   async function handleSubscriptionStatus(nextStatus) {
@@ -902,8 +912,13 @@ export default function SuperRestaurantDetailPage() {
                 <Button
                   type="button"
                   onClick={handleLoginAsAdmin}
-                  disabled={!subdomain}
+                  disabled={!subdomain || !canImpersonate}
                   className="!h-9 text-xs"
+                  title={
+                    canImpersonate
+                      ? undefined
+                      : "You don't have permission to impersonate tenants"
+                  }
                 >
                   Login as Admin
                 </Button>

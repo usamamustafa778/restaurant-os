@@ -13,6 +13,8 @@ export default function DataTable({
   tableClassName = "",
   /** Appended to each default data row tr (ignored when renderRow returns a row). */
   getRowClassName,
+  /** Called when a data row is clicked (ignored when renderRow returns a row). */
+  onRowClick,
   /** Return a custom tr for this row, or null/undefined for normal column cells (e.g. colspan rows). */
   renderRow,
 }) {
@@ -105,10 +107,24 @@ export default function DataTable({
                 return cloneElement(custom, { key: k });
               }
               const extraRowCls = getRowClassName?.(row, rowIndex) || "";
+              const clickable = typeof onRowClick === "function";
               return (
                 <tr
                   key={resolveRowId(row, rowIndex)}
-                  className={`bg-white dark:bg-neutral-950 hover:bg-gray-50/90 dark:hover:bg-neutral-900/40 transition-colors whitespace-nowrap ${extraRowCls}`.trim()}
+                  className={`bg-white dark:bg-neutral-950 hover:bg-gray-50/90 dark:hover:bg-neutral-900/40 transition-colors whitespace-nowrap ${extraRowCls} ${clickable ? "cursor-pointer" : ""}`.trim()}
+                  onClick={clickable ? () => onRowClick(row, rowIndex) : undefined}
+                  onKeyDown={
+                    clickable
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowClick(row, rowIndex);
+                          }
+                        }
+                      : undefined
+                  }
+                  role={clickable ? "button" : undefined}
+                  tabIndex={clickable ? 0 : undefined}
                 >
                   {allColumns.map((col) => {
                     const value = row[col.key];
