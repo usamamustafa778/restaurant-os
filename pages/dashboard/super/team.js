@@ -7,6 +7,7 @@ import DataTable from "../../../components/ui/DataTable";
 import {
   createPlatformTeamMember,
   getPlatformTeamMembers,
+  getPlatformRolesForSuperAdmin,
   getStoredAuth,
   resetPlatformTeamMemberPassword,
   updatePlatformTeamMember,
@@ -22,40 +23,15 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-const PLATFORM_ROLE_OPTIONS = [
-  {
-    value: "owner",
-    label: "Owner",
-    description: "Full access to all platform areas",
-  },
-  {
-    value: "operations_manager",
-    label: "Operations Manager",
-    description: "Restaurants, subscriptions, invoices, WhatsApp, and leads",
-  },
-  {
-    value: "cro",
-    label: "CRO",
-    description: "Subscriptions, invoices, payments, and commercial pipeline",
-  },
-  {
-    value: "sales",
-    label: "Sales",
-    description: "Overview, restaurants, and leads pipeline",
-  },
-  {
-    value: "support",
-    label: "Support",
-    description: "Overview, restaurants, and WhatsApp support",
-  },
-];
+function roleLabel(platformRole, roleNameBySlug = {}) {
+  if (!platformRole || platformRole === "owner") return "Owner";
+  return roleNameBySlug[platformRole] || platformRole;
+}
 
-const ROLE_LABELS = Object.fromEntries(
-  PLATFORM_ROLE_OPTIONS.map((o) => [o.value, o.label]),
-);
-
-function roleLabel(platformRole) {
-  return ROLE_LABELS[platformRole] || platformRole || "Owner";
+function defaultPlatformRole(roles, isPlatformOwner) {
+  const firstCustom = roles.find((r) => r.isActive !== false);
+  if (firstCustom?.slug) return firstCustom.slug;
+  return isPlatformOwner ? "owner" : "";
 }
 
 function initials(name, email) {
@@ -94,10 +70,12 @@ function formatDateTime(iso) {
 
 export default function SuperTeamPage() {
   const { hasAccess } = usePlatformPermissionGate("platform.staff.view");
-  const { hasPermission } = usePermissions();
+  const { hasPermission, permissions } = usePermissions();
   const canManage = hasPermission("platform.staff.manage");
+  const isPlatformOwner = permissions.includes("*");
 
   const [members, setMembers] = useState([]);
+  const [platformRoles, setPlatformRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -107,7 +85,7 @@ export default function SuperTeamPage() {
     name: "",
     email: "",
     password: "",
-    platformRole: "sales",
+    platformRole: "",
   });
   const [addSaving, setAddSaving] = useState(false);
   const [promoteCandidate, setPromoteCandidate] = useState(null);
@@ -117,7 +95,7 @@ export default function SuperTeamPage() {
     name: "",
     email: "",
     phone: "",
-    platformRole: "sales",
+    platformRole: "",
     isActive: true,
   });
   const [editSaving, setEditSaving] = useState(false);
@@ -134,11 +112,16 @@ export default function SuperTeamPage() {
   async function loadTeam() {
     try {
       setLoading(true);
-      const data = await getPlatformTeamMembers();
+      const [data, roles] = await Promise.all([
+        getPlatformTeamMembers(),
+        getPlatformRolesForSuperAdmin(),
+      ]);
       setMembers(Array.isArray(data) ? data : []);
+      setPlatformRoles(Array.isArray(roles) ? roles : []);
     } catch (err) {
       toast.error(err.message || "Failed to load team");
       setMembers([]);
+      setPlatformRoles([]);
     } finally {
       setLoading(false);
     }
@@ -149,23 +132,49 @@ export default function SuperTeamPage() {
     loadTeam();
   }, [hasAccess]);
 
+  const roleNameBySlug = useMemo(() => {
+    const map = { owner: "Owner" };
+    for (const role of platformRoles) {
+      if (role.slug) map[role.slug] = role.name || role.slug;
+    }
+    return map;
+  }, [platformRoles]);
+
+  const roleOptions = useMemo(() => {
+    const opts = platformRoles
+      .filter((r) => r.isActive !== false)
+      .map((r) => ({
+        value: r.slug,
+        label: r.name || r.slug,
+        description: r.description || "",
+      }));
+    if (isPlatformOwner) {
+      opts.unshift({
+        value: "owner",
+        label: "Owner",
+        description: "Full access to all platform areas",
+      });
+    }
+    return opts;
+  }, [platformRoles, isPlatformOwner]);
+
   const filteredMembers = useMemo(() => {
     if (!searchQuery.trim()) return members;
     const q = searchQuery.trim().toLowerCase();
     return members.filter((m) => {
       const name = (m.name || "").toLowerCase();
       const email = (m.email || "").toLowerCase();
-      const role = roleLabel(m.platformRole).toLowerCase();
+      const role = roleLabel(m.platformRole, roleNameBySlug).toLowerCase();
       return name.includes(q) || email.includes(q) || role.includes(q);
     });
-  }, [members, searchQuery]);
+  }, [members, searchQuery, roleNameBySlug]);
 
   function openAddModal() {
     setAddForm({
       name: "",
       email: "",
       password: generateTempPassword(),
-      platformRole: "sales",
+      platformRole: defaultPlatformRole(platformRoles, isPlatformOwner),
     });
     setPromoteCandidate(null);
     setShowAddModal(true);
@@ -361,7 +370,7 @@ export default function SuperTeamPage() {
                 render: (_, m) => (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                     <Shield className="w-3 h-3" />
-                    {roleLabel(m.platformRole)}
+                    {roleLabel(m.platformRole, roleNameBySlug)}
                   </span>
                 ),
               },
@@ -525,29 +534,38 @@ export default function SuperTeamPage() {
                   </div>
                 </Field>
                 <Field label="Platform role" required>
-                  <select
-                    value={addForm.platformRole}
-                    onChange={(e) =>
-                      setAddForm((f) => ({
-                        ...f,
-                        platformRole: e.target.value,
-                      }))
-                    }
-                    className={inputClass}
-                  >
-                    {PLATFORM_ROLE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
-                    {
-                      PLATFORM_ROLE_OPTIONS.find(
-                        (o) => o.value === addForm.platformRole,
-                      )?.description
-                    }
-                  </p>
+                  {roleOptions.length === 0 ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      No custom roles yet. Create one under Roles, then assign it here.
+                    </p>
+                  ) : (
+                    <>
+                      <select
+                        required
+                        value={addForm.platformRole}
+                        onChange={(e) =>
+                          setAddForm((f) => ({
+                            ...f,
+                            platformRole: e.target.value,
+                          }))
+                        }
+                        className={inputClass}
+                      >
+                        {roleOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                        {
+                          roleOptions.find(
+                            (o) => o.value === addForm.platformRole,
+                          )?.description
+                        }
+                      </p>
+                    </>
+                  )}
                 </Field>
                 <ModalActions
                   onCancel={() => {
@@ -558,6 +576,7 @@ export default function SuperTeamPage() {
                   submitLabel={
                     promoteCandidate ? "Convert to platform staff" : "Add member"
                   }
+                  submitDisabled={roleOptions.length === 0}
                 />
               </form>
             </div>
@@ -625,7 +644,7 @@ export default function SuperTeamPage() {
                     }
                     className={`${inputClass} disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
-                    {PLATFORM_ROLE_OPTIONS.map((opt) => (
+                    {roleOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>
                         {opt.label}
                       </option>
@@ -731,7 +750,7 @@ function Field({ label, required, hint, children }) {
   );
 }
 
-function ModalActions({ onCancel, saving, submitLabel }) {
+function ModalActions({ onCancel, saving, submitLabel, submitDisabled = false }) {
   return (
     <div className="flex gap-2 pt-2">
       <button
@@ -744,7 +763,7 @@ function ModalActions({ onCancel, saving, submitLabel }) {
       </button>
       <button
         type="submit"
-        disabled={saving}
+        disabled={saving || submitDisabled}
         className="flex-1 px-3 py-2.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50"
       >
         {saving ? (

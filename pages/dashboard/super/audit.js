@@ -47,13 +47,10 @@ const ACTION_OPTIONS = [
   { value: "lead.delete", label: "Lead delete" },
 ];
 
-const ROLE_LABELS = {
-  owner: "Owner",
-  operations_manager: "Ops Manager",
-  cro: "CRO",
-  sales: "Sales",
-  support: "Support",
-};
+function roleLabel(role) {
+  if (!role || role === "owner") return "Owner";
+  return String(role).replace(/_/g, " ");
+}
 
 function formatTimestamp(iso) {
   if (!iso) return "—";
@@ -83,10 +80,6 @@ function actionBadgeClass(action, outcome) {
     return "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300";
   }
   return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300";
-}
-
-function roleLabel(role) {
-  return ROLE_LABELS[role] || role || "Owner";
 }
 
 function MetadataBlock({ metadata }) {

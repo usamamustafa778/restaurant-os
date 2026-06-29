@@ -22,21 +22,10 @@ import {
   EyeOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
-
-const PLATFORM_ROLE_LABELS = {
-  owner: "Owner",
-  operations_manager: "Operations Manager",
-  cro: "CRO",
-  sales: "Sales",
-  support: "Support",
-};
-
-function getPlatformRoleLabel(platformRole) {
-  if (!platformRole || platformRole === "owner") return "Owner";
-  return PLATFORM_ROLE_LABELS[platformRole] || platformRole;
-}
+import { usePermissions } from "../../../contexts/PermissionContext";
 
 export default function SuperProfilePage() {
+  const { roleName } = usePermissions();
   const [profile, setProfile] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
 
@@ -247,7 +236,7 @@ export default function SuperProfilePage() {
               </p>
               <span className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
                 <Shield className="w-3.5 h-3.5" />
-                {getPlatformRoleLabel(profile?.platformRole)}
+                {roleName || "Owner"}
               </span>
               <p className="mt-2 text-[11px] text-neutral-500 dark:text-neutral-400">
                 Platform role is assigned by an owner on the Team page.
