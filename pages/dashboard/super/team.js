@@ -110,6 +110,7 @@ export default function SuperTeamPage() {
     platformRole: "sales",
   });
   const [addSaving, setAddSaving] = useState(false);
+  const [promoteCandidate, setPromoteCandidate] = useState(null);
 
   const [editMember, setEditMember] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -166,6 +167,7 @@ export default function SuperTeamPage() {
       password: generateTempPassword(),
       platformRole: "sales",
     });
+    setPromoteCandidate(null);
     setShowAddModal(true);
   }
 
@@ -183,7 +185,7 @@ export default function SuperTeamPage() {
   const editingSelf =
     editMember && currentUserId && editMember.id === currentUserId;
 
-  async function handleAdd(e) {
+  async function handleAdd(e, { promoteExisting = false } = {}) {
     e.preventDefault();
     if (!canManage) return;
     try {
@@ -193,11 +195,22 @@ export default function SuperTeamPage() {
         email: addForm.email.trim(),
         password: addForm.password,
         platformRole: addForm.platformRole,
+        ...(promoteExisting ? { promoteExisting: true } : {}),
       });
-      toast.success("Team member added");
+      toast.success(
+        promoteExisting ? "User converted to platform staff" : "Team member added",
+      );
       setShowAddModal(false);
+      setPromoteCandidate(null);
       setMembers((prev) => [created, ...prev]);
     } catch (err) {
+      if (err.details?.code === "EXISTING_TENANT_USER") {
+        setPromoteCandidate(err.details.existingUser || null);
+        toast.error(
+          "This email belongs to a restaurant user. You can convert them below.",
+        );
+        return;
+      }
       toast.error(err.message || "Failed to add team member");
     } finally {
       setAddSaving(false);
@@ -442,7 +455,26 @@ export default function SuperTeamPage() {
                 Creates a platform staff account. Share the temporary password
                 securely — they can change it on their profile page.
               </p>
-              <form onSubmit={handleAdd} className="space-y-3">
+              <form
+                onSubmit={(e) =>
+                  handleAdd(e, { promoteExisting: Boolean(promoteCandidate) })
+                }
+                className="space-y-3"
+              >
+                {promoteCandidate && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+                    <p className="font-semibold">Restaurant account found</p>
+                    <p className="mt-1 text-amber-800 dark:text-amber-300">
+                      {promoteCandidate.name || promoteCandidate.email} is registered as{" "}
+                      <span className="font-medium">{promoteCandidate.role}</span>
+                      {promoteCandidate.restaurantName
+                        ? ` at ${promoteCandidate.restaurantName}`
+                        : ""}
+                      . Converting will remove their restaurant access and grant platform staff
+                      access instead.
+                    </p>
+                  </div>
+                )}
                 <Field label="Name" required>
                   <input
                     required
@@ -459,9 +491,10 @@ export default function SuperTeamPage() {
                     type="email"
                     required
                     value={addForm.email}
-                    onChange={(e) =>
-                      setAddForm((f) => ({ ...f, email: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setAddForm((f) => ({ ...f, email: e.target.value }));
+                      setPromoteCandidate(null);
+                    }}
                     className={inputClass}
                     placeholder="colleague@eatsdesk.com"
                   />
@@ -517,9 +550,14 @@ export default function SuperTeamPage() {
                   </p>
                 </Field>
                 <ModalActions
-                  onCancel={() => setShowAddModal(false)}
+                  onCancel={() => {
+                    setShowAddModal(false);
+                    setPromoteCandidate(null);
+                  }}
                   saving={addSaving}
-                  submitLabel="Add member"
+                  submitLabel={
+                    promoteCandidate ? "Convert to platform staff" : "Add member"
+                  }
                 />
               </form>
             </div>
