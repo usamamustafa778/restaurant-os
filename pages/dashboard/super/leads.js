@@ -10,6 +10,7 @@ import {
   createLeadForSuperAdmin,
   deleteLeadForSuperAdmin,
   getLeadsForSuperAdmin,
+  getLeadStatsForSuperAdmin,
   getPlatformTeamMembers,
   getRestaurantsForSuperAdmin,
   getStoredAuth,
@@ -17,26 +18,43 @@ import {
 } from "../../../lib/apiClient";
 import { usePermissions } from "../../../contexts/PermissionContext";
 import {
+  AlertTriangle,
+  Banknote,
+  Building2,
+  Calendar,
   CheckCircle2,
+  Clock,
+  KanbanSquare,
   Loader2,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Phone,
   Plus,
   Search,
+  Table2,
   Trash2,
+  TrendingUp,
+  Trophy,
+  UserPlus,
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-const STATUS_FILTERS = [
-  { value: "", label: "All" },
-  { value: "new", label: "New" },
-  { value: "contacted", label: "Contacted" },
-  { value: "demo", label: "Demo" },
-  { value: "negotiating", label: "Negotiating" },
-  { value: "won", label: "Won" },
-  { value: "lost", label: "Lost" },
+const CURRENCY = "Rs";
+
+const STAGES = [
+  { key: "new", label: "New", dot: "bg-gray-400" },
+  { key: "contacted", label: "Contacted", dot: "bg-blue-500" },
+  { key: "demo", label: "Demo", dot: "bg-amber-500" },
+  { key: "negotiating", label: "Negotiating", dot: "bg-orange-500" },
+  { key: "won", label: "Won", dot: "bg-emerald-500" },
+  { key: "lost", label: "Lost", dot: "bg-red-500" },
 ];
 
-const PIPELINE_STAGES = ["new", "contacted", "demo", "negotiating", "won", "lost"];
+const PIPELINE_STAGES = STAGES.map((s) => s.key);
+
+const STATUS_FILTERS = [{ value: "", label: "All" }, ...STAGES.map((s) => ({ value: s.key, label: s.label }))];
 
 const SOURCE_OPTIONS = [
   { value: "manual", label: "Manual" },
@@ -47,9 +65,7 @@ const SOURCE_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
-const SOURCE_LABELS = Object.fromEntries(
-  SOURCE_OPTIONS.map((o) => [o.value, o.label]),
-);
+const SOURCE_LABELS = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value, o.label]));
 
 const STATUS_BADGE = {
   new: "bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300",
@@ -60,9 +76,24 @@ const STATUS_BADGE = {
   lost: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
 };
 
+const ACTIVITY_META = {
+  created: { label: "Created", icon: Plus },
+  note: { label: "Note", icon: MessageSquare },
+  stage_change: { label: "Stage", icon: TrendingUp },
+  assignment: { label: "Assignment", icon: UserPlus },
+  convert: { label: "Converted", icon: CheckCircle2 },
+  follow_up: { label: "Follow-up", icon: Calendar },
+  value_change: { label: "Value", icon: Banknote },
+};
+
 function formatLabel(status) {
   if (!status) return "—";
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function formatMoney(n) {
+  const v = Number(n || 0);
+  return `${CURRENCY} ${v.toLocaleString()}`;
 }
 
 function formatDateTime(iso) {
@@ -80,18 +111,50 @@ function formatDateTime(iso) {
   }
 }
 
+function formatDate(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function toDateInput(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const off = d.getTimezoneOffset();
+    return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
+}
+
 function displayRestaurantName(lead) {
   return (lead.restaurantName || lead.name || "—").trim() || "—";
 }
 
+function leadInitials(lead) {
+  const src = (lead.restaurantName || lead.name || "?").trim();
+  const parts = src.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return src.slice(0, 2).toUpperCase();
+}
+
+function isOverdue(lead) {
+  if (!lead.nextFollowUpAt) return false;
+  if (lead.status === "won" || lead.status === "lost") return false;
+  return new Date(lead.nextFollowUpAt).getTime() <= Date.now();
+}
+
 function activitySummary(entry) {
   if (!entry) return "—";
-  if (entry.type === "stage_change") {
-    return entry.body || `Stage: ${entry.toStatus}`;
-  }
-  if (entry.type === "assignment") return entry.body;
-  if (entry.type === "convert") return entry.body;
-  if (entry.type === "created") return entry.body || "Lead created";
+  if (entry.type === "stage_change") return entry.body || `Stage: ${entry.toStatus}`;
   return entry.body || entry.type;
 }
 
@@ -103,13 +166,17 @@ export default function SuperLeadsPage() {
   const canConvert = hasPermission("platform.leads.convert");
   const canDelete = hasPermission("platform.leads.delete");
 
+  const [viewMode, setViewMode] = useState("board");
   const [leads, setLeads] = useState([]);
   const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const [searchInput, setSearchInput] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const [teamMembers, setTeamMembers] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(null);
 
@@ -117,6 +184,12 @@ export default function SuperLeadsPage() {
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [stageSaving, setStageSaving] = useState(false);
+  const [valueDraft, setValueDraft] = useState("");
+  const [followUpDraft, setFollowUpDraft] = useState("");
+  const [detailSaving, setDetailSaving] = useState(false);
+
+  const [draggingLead, setDraggingLead] = useState(null);
+  const [dragOverStage, setDragOverStage] = useState(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -126,6 +199,8 @@ export default function SuperLeadsPage() {
     email: "",
     city: "",
     source: "manual",
+    value: "",
+    nextFollowUpAt: "",
     note: "",
     assignedTo: "",
   });
@@ -144,16 +219,31 @@ export default function SuperLeadsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
 
-  const [reassignSaving, setReassignSaving] = useState(false);
+  const scopeParams = useMemo(
+    () => ({
+      assignedTo: canViewAll && assigneeFilter ? assigneeFilter : undefined,
+      source: sourceFilter || undefined,
+      search: searchApplied.trim() || undefined,
+    }),
+    [canViewAll, assigneeFilter, sourceFilter, searchApplied],
+  );
+
+  const loadStats = useCallback(async () => {
+    try {
+      const data = await getLeadStatsForSuperAdmin(scopeParams);
+      setStats(data);
+    } catch {
+      setStats(null);
+    }
+  }, [scopeParams]);
 
   const loadLeads = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getLeadsForSuperAdmin({
-        status: statusFilter || undefined,
-        assignedTo: canViewAll && assigneeFilter ? assigneeFilter : undefined,
-        search: searchApplied.trim() || undefined,
-        limit: 100,
+        ...scopeParams,
+        status: viewMode === "table" && statusFilter ? statusFilter : undefined,
+        limit: 200,
       });
       setLeads(data?.leads ?? []);
       setTotal(data?.total ?? 0);
@@ -164,14 +254,19 @@ export default function SuperLeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, assigneeFilter, searchApplied, canViewAll]);
+  }, [scopeParams, viewMode, statusFilter]);
 
   useEffect(() => {
     if (!hasAccess) return;
     const auth = getStoredAuth();
     setCurrentUserId(auth?.user?.id || null);
+  }, [hasAccess]);
+
+  useEffect(() => {
+    if (!hasAccess) return;
     loadLeads();
-  }, [hasAccess, loadLeads]);
+    loadStats();
+  }, [hasAccess, loadLeads, loadStats]);
 
   useEffect(() => {
     if (!hasAccess || !canViewAll) return;
@@ -185,19 +280,15 @@ export default function SuperLeadsPage() {
 
   useEffect(() => {
     if (!showAddModal) return;
-    setAddForm((f) => ({
-      ...f,
-      assignedTo: f.assignedTo || currentUserId || "",
-    }));
+    setAddForm((f) => ({ ...f, assignedTo: f.assignedTo || currentUserId || "" }));
   }, [showAddModal, currentUserId]);
 
-  const assigneeOptions = useMemo(() => {
-    const opts = [{ value: "unassigned", label: "Unassigned" }];
-    for (const m of teamMembers) {
-      opts.push({ value: m.id, label: m.name || m.email });
-    }
-    return opts;
-  }, [teamMembers]);
+  useEffect(() => {
+    if (!selectedLead) return;
+    setValueDraft(selectedLead.value ? String(selectedLead.value) : "");
+    setFollowUpDraft(toDateInput(selectedLead.nextFollowUpAt));
+    setNoteText("");
+  }, [selectedLead]);
 
   const filteredRestaurants = useMemo(() => {
     const q = restaurantSearch.trim().toLowerCase();
@@ -210,6 +301,14 @@ export default function SuperLeadsPage() {
       })
       .slice(0, 20);
   }, [restaurants, restaurantSearch]);
+
+  const board = useMemo(() => {
+    const map = Object.fromEntries(PIPELINE_STAGES.map((s) => [s, []]));
+    for (const lead of leads) {
+      (map[lead.status] || map.new).push(lead);
+    }
+    return map;
+  }, [leads]);
 
   function upsertLead(updated) {
     if (!updated?.id) return;
@@ -238,11 +337,11 @@ export default function SuperLeadsPage() {
         email: addForm.email.trim(),
         city: addForm.city.trim(),
         source: addForm.source,
+        value: addForm.value ? Number(addForm.value) : 0,
+        nextFollowUpAt: addForm.nextFollowUpAt || null,
         note: addForm.note.trim() || undefined,
       };
-      if (canViewAll && addForm.assignedTo) {
-        payload.assignedTo = addForm.assignedTo;
-      }
+      if (canViewAll && addForm.assignedTo) payload.assignedTo = addForm.assignedTo;
       const data = await createLeadForSuperAdmin(payload);
       toast.success("Lead created");
       setShowAddModal(false);
@@ -253,6 +352,8 @@ export default function SuperLeadsPage() {
         email: "",
         city: "",
         source: "manual",
+        value: "",
+        nextFollowUpAt: "",
         note: "",
         assignedTo: currentUserId || "",
       });
@@ -262,6 +363,7 @@ export default function SuperLeadsPage() {
       } else {
         loadLeads();
       }
+      loadStats();
     } catch (err) {
       toast.error(err.message || "Failed to create lead");
     } finally {
@@ -270,7 +372,7 @@ export default function SuperLeadsPage() {
   }
 
   async function applyStatusChange(lead, nextStatus, reason = "") {
-    if (!canManage || lead.status === nextStatus) return;
+    if (!canManage || !lead || lead.status === nextStatus) return;
     if (nextStatus === "lost" && !reason && !lostPrompt) {
       setLostPrompt(lead);
       setLostReason(lead.lostReason || "");
@@ -282,9 +384,10 @@ export default function SuperLeadsPage() {
       if (nextStatus === "lost") body.lostReason = reason;
       const data = await updateLeadForSuperAdmin(lead.id, body);
       upsertLead(data.lead);
-      toast.success(`Status updated to ${formatLabel(nextStatus)}`);
+      toast.success(`Moved to ${formatLabel(nextStatus)}`);
       setLostPrompt(null);
       setLostReason("");
+      loadStats();
     } catch (err) {
       toast.error(err.message || "Failed to update status");
     } finally {
@@ -298,6 +401,30 @@ export default function SuperLeadsPage() {
     if (!lostPrompt) return;
     setLostSaving(true);
     await applyStatusChange(lostPrompt, "lost", lostReason.trim());
+  }
+
+  async function handleSaveDetail() {
+    if (!selectedLead || !canManage) return;
+    const nextValue = valueDraft ? Number(valueDraft) : 0;
+    const body = {};
+    if (nextValue !== (selectedLead.value || 0)) body.value = nextValue;
+    const currentFollow = toDateInput(selectedLead.nextFollowUpAt);
+    if (followUpDraft !== currentFollow) body.nextFollowUpAt = followUpDraft || null;
+    if (Object.keys(body).length === 0) {
+      toast("Nothing to update");
+      return;
+    }
+    setDetailSaving(true);
+    try {
+      const data = await updateLeadForSuperAdmin(selectedLead.id, body);
+      upsertLead(data.lead);
+      toast.success("Lead updated");
+      loadStats();
+    } catch (err) {
+      toast.error(err.message || "Failed to update lead");
+    } finally {
+      setDetailSaving(false);
+    }
   }
 
   async function handleAddNote(e) {
@@ -318,18 +445,13 @@ export default function SuperLeadsPage() {
 
   async function handleReassign(assigneeId) {
     if (!selectedLead || !canViewAll) return;
-    setReassignSaving(true);
     try {
       const value = assigneeId === "unassigned" ? null : assigneeId;
-      const data = await updateLeadForSuperAdmin(selectedLead.id, {
-        assignedTo: value,
-      });
+      const data = await updateLeadForSuperAdmin(selectedLead.id, { assignedTo: value });
       upsertLead(data.lead);
       toast.success("Lead reassigned");
     } catch (err) {
       toast.error(err.message || "Failed to reassign");
-    } finally {
-      setReassignSaving(false);
     }
   }
 
@@ -356,6 +478,7 @@ export default function SuperLeadsPage() {
       upsertLead(data.lead);
       setShowConvert(false);
       toast.success("Restaurant linked");
+      loadStats();
     } catch (err) {
       toast.error(err.message || "Failed to link restaurant");
     } finally {
@@ -373,6 +496,7 @@ export default function SuperLeadsPage() {
       if (selectedLead?.id === deleteConfirm.id) setSelectedLead(null);
       setDeleteConfirm(null);
       toast.success("Lead deleted");
+      loadStats();
     } catch (err) {
       toast.error(err.message || "Failed to delete lead");
     } finally {
@@ -380,21 +504,82 @@ export default function SuperLeadsPage() {
     }
   }
 
-  const columns = [
+  function handleDrop(stage) {
+    const lead = draggingLead;
+    setDraggingLead(null);
+    setDragOverStage(null);
+    if (lead && lead.status !== stage) applyStatusChange(lead, stage);
+  }
+
+  const metrics = useMemo(() => {
+    if (!stats) return null;
+    return [
+      {
+        label: "Open pipeline",
+        value: String(stats.openCount ?? 0),
+        sub: formatMoney(stats.openValue),
+        icon: TrendingUp,
+        accent: "text-primary",
+        bg: "bg-primary/10",
+      },
+      {
+        label: "Won this month",
+        value: String(stats.wonThisMonth?.count ?? 0),
+        sub: formatMoney(stats.wonThisMonth?.value),
+        icon: Trophy,
+        accent: "text-emerald-600 dark:text-emerald-400",
+        bg: "bg-emerald-100 dark:bg-emerald-950/40",
+      },
+      {
+        label: "Win rate",
+        value: `${stats.winRate ?? 0}%`,
+        sub: `${stats.wonCount ?? 0} won · ${stats.lostCount ?? 0} lost`,
+        icon: CheckCircle2,
+        accent: "text-blue-600 dark:text-blue-400",
+        bg: "bg-blue-100 dark:bg-blue-950/40",
+      },
+      {
+        label: "Overdue follow-ups",
+        value: String(stats.overdueFollowUps ?? 0),
+        sub: stats.overdueFollowUps > 0 ? "Needs attention" : "All caught up",
+        icon: AlertTriangle,
+        accent:
+          stats.overdueFollowUps > 0
+            ? "text-red-600 dark:text-red-400"
+            : "text-gray-500 dark:text-neutral-400",
+        bg:
+          stats.overdueFollowUps > 0
+            ? "bg-red-100 dark:bg-red-950/40"
+            : "bg-gray-100 dark:bg-neutral-800",
+      },
+    ];
+  }, [stats]);
+
+  const tableColumns = [
     {
       key: "restaurantName",
       header: "Restaurant",
       render: (_, lead) => (
-        <span className="font-medium text-gray-900 dark:text-white">
-          {displayRestaurantName(lead)}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+            {leadInitials(lead)}
+          </span>
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900 dark:text-white truncate">
+              {displayRestaurantName(lead)}
+            </p>
+            {lead.name && lead.restaurantName && (
+              <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{lead.name}</p>
+            )}
+          </div>
+        </div>
       ),
     },
     {
       key: "phone",
       header: "Phone",
       render: (_, lead) => lead.phone || "—",
-      cellClassName: "text-gray-700 dark:text-neutral-300",
+      cellClassName: "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
     },
     {
       key: "status",
@@ -407,39 +592,178 @@ export default function SuperLeadsPage() {
         </span>
       ),
     },
+    {
+      key: "value",
+      header: "Value",
+      render: (_, lead) =>
+        lead.value ? (
+          <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+            {formatMoney(lead.value)}
+          </span>
+        ) : (
+          <span className="text-gray-400">—</span>
+        ),
+      cellClassName: "whitespace-nowrap",
+    },
     ...(canViewAll
       ? [
           {
             key: "assignedTo",
             header: "Assigned to",
-            render: (_, lead) => lead.assignedToName || (lead.assignedTo ? "—" : "Unassigned"),
+            render: (_, lead) => lead.assignedToName || "Unassigned",
             cellClassName: "text-gray-600 dark:text-neutral-400",
           },
         ]
       : []),
     {
+      key: "nextFollowUpAt",
+      header: "Follow-up",
+      render: (_, lead) =>
+        lead.nextFollowUpAt ? (
+          <span
+            className={`inline-flex items-center gap-1 text-xs font-medium ${
+              isOverdue(lead) ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-neutral-300"
+            }`}
+          >
+            {isOverdue(lead) ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+            {formatDate(lead.nextFollowUpAt)}
+          </span>
+        ) : (
+          <span className="text-gray-400">—</span>
+        ),
+      cellClassName: "whitespace-nowrap",
+    },
+    {
       key: "source",
       header: "Source",
       render: (_, lead) => SOURCE_LABELS[lead.source] || formatLabel(lead.source),
-      cellClassName: "text-gray-600 dark:text-neutral-400 capitalize",
-    },
-    {
-      key: "lastActivityAt",
-      header: "Last activity",
-      render: (_, lead) => formatDateTime(lead.lastActivityAt),
-      cellClassName: "text-gray-500 dark:text-neutral-400 whitespace-nowrap",
+      cellClassName: "text-gray-600 dark:text-neutral-400",
     },
   ];
 
   return (
     <AdminLayout
-      title="Leads"
-      subtitle="Sales pipeline — track prospects from first contact through onboarding."
+      title="Leads CRM"
+      subtitle="Track prospects from first contact through onboarding."
     >
       <SuperPageGate permission="platform.leads.view">
         <div className="flex flex-col flex-1 min-h-0">
+          {/* Metrics */}
+          {metrics && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 flex-shrink-0">
+              {metrics.map((m) => {
+                const Icon = m.icon;
+                return (
+                  <div
+                    key={m.label}
+                    className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3.5 flex items-start gap-3"
+                  >
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${m.bg}`}>
+                      <Icon className={`h-4 w-4 ${m.accent}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-neutral-500 truncate">
+                        {m.label}
+                      </p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
+                        {m.value}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{m.sub}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 p-0.5 bg-gray-50 dark:bg-neutral-900">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("board")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    viewMode === "board"
+                      ? "bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm"
+                      : "text-gray-500 dark:text-neutral-400"
+                  }`}
+                >
+                  <KanbanSquare className="w-4 h-4" />
+                  Board
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("table")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    viewMode === "table"
+                      ? "bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm"
+                      : "text-gray-500 dark:text-neutral-400"
+                  }`}
+                >
+                  <Table2 className="w-4 h-4" />
+                  Table
+                </button>
+              </div>
+            </div>
+
             <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px] max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="Search name, phone, email..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") setSearchApplied(searchInput);
+                  }}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+              >
+                <option value="">All sources</option>
+                {SOURCE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {canViewAll && (
+                <select
+                  value={assigneeFilter}
+                  onChange={(e) => setAssigneeFilter(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="">All assignees</option>
+                  <option value="unassigned">Unassigned</option>
+                  {teamMembers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name || m.email}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Lead
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Table-only status filter */}
+          {viewMode === "table" && (
+            <div className="flex flex-wrap items-center gap-2 mb-4 flex-shrink-0">
               {STATUS_FILTERS.map((f) => (
                 <button
                   key={f.value || "all"}
@@ -454,59 +778,148 @@ export default function SuperLeadsPage() {
                   {f.label}
                 </button>
               ))}
+              <span className="ml-auto text-xs text-neutral-500">
+                {leads.length} of {total}
+              </span>
             </div>
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => setShowAddModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add Lead
-              </button>
-            )}
-          </div>
+          )}
 
-          <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
-              <input
-                type="text"
-                placeholder="Search restaurant, name, phone, email..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") setSearchApplied(searchInput);
-                }}
-                className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
+          {/* Content */}
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
-            {canViewAll && (
-              <select
-                value={assigneeFilter}
-                onChange={(e) => setAssigneeFilter(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white"
-              >
-                <option value="">All assignees</option>
-                <option value="unassigned">Unassigned</option>
-                {teamMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name || m.email}
-                  </option>
-                ))}
-              </select>
-            )}
-            <span className="text-xs text-neutral-500">{leads.length} of {total}</span>
-          </div>
+          ) : viewMode === "board" ? (
+            <div className="flex-1 min-h-0 overflow-x-auto pb-2">
+              <div className="flex gap-3 h-full min-h-[300px]">
+                {STAGES.map((stage) => {
+                  const items = board[stage.key] || [];
+                  const colValue = items.reduce((s, l) => s + (l.value || 0), 0);
+                  return (
+                    <div
+                      key={stage.key}
+                      onDragOver={(e) => {
+                        if (!draggingLead) return;
+                        e.preventDefault();
+                        setDragOverStage(stage.key);
+                      }}
+                      onDragLeave={() => setDragOverStage((s) => (s === stage.key ? null : s))}
+                      onDrop={() => handleDrop(stage.key)}
+                      className={`flex w-72 shrink-0 flex-col rounded-xl border bg-gray-50/60 dark:bg-neutral-900/40 ${
+                        dragOverStage === stage.key
+                          ? "border-primary ring-2 ring-primary/30"
+                          : "border-gray-200 dark:border-neutral-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`h-2 w-2 rounded-full ${stage.dot}`} />
+                          <span className="text-xs font-bold text-gray-700 dark:text-neutral-200">
+                            {stage.label}
+                          </span>
+                          <span className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500">
+                            {items.length}
+                          </span>
+                        </div>
+                        {colValue > 0 && (
+                          <span className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 tabular-nums">
+                            {formatMoney(colValue)}
+                          </span>
+                        )}
+                      </div>
 
-          <DataTable
-            showSno
-            data={leads}
-            loading={loading}
-            emptyMessage="No leads yet. Add a lead or wait for website submissions."
-            onRowClick={(lead) => setSelectedLead(lead)}
-            columns={columns}
-          />
+                      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[120px]">
+                        {items.length === 0 ? (
+                          <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-gray-200 dark:border-neutral-800 text-xs text-gray-400">
+                            {canManage ? "Drop here" : "Empty"}
+                          </div>
+                        ) : (
+                          items.map((lead) => {
+                            const overdue = isOverdue(lead);
+                            return (
+                              <button
+                                key={lead.id}
+                                type="button"
+                                draggable={canManage}
+                                onDragStart={() => setDraggingLead(lead)}
+                                onDragEnd={() => {
+                                  setDraggingLead(null);
+                                  setDragOverStage(null);
+                                }}
+                                onClick={() => setSelectedLead(lead)}
+                                className={`group w-full text-left rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 shadow-sm hover:border-primary/40 hover:shadow transition-all ${
+                                  canManage ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+                                } ${draggingLead?.id === lead.id ? "opacity-50" : ""}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                                    {displayRestaurantName(lead)}
+                                  </p>
+                                  {lead.value ? (
+                                    <span className="shrink-0 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                      {formatMoney(lead.value)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {lead.name && lead.restaurantName && (
+                                  <p className="mt-0.5 text-xs text-gray-500 dark:text-neutral-400 truncate">
+                                    {lead.name}
+                                  </p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-neutral-400">
+                                  {lead.phone && (
+                                    <span className="inline-flex items-center gap-1 truncate">
+                                      <Phone className="w-3 h-3 shrink-0" />
+                                      {lead.phone}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                  <span className="inline-flex items-center rounded-full bg-gray-100 dark:bg-neutral-800 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:text-neutral-300">
+                                    {SOURCE_LABELS[lead.source] || formatLabel(lead.source)}
+                                  </span>
+                                  {lead.nextFollowUpAt && (
+                                    <span
+                                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                        overdue
+                                          ? "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
+                                          : "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                      }`}
+                                    >
+                                      {overdue ? (
+                                        <AlertTriangle className="w-3 h-3" />
+                                      ) : (
+                                        <Clock className="w-3 h-3" />
+                                      )}
+                                      {formatDate(lead.nextFollowUpAt)}
+                                    </span>
+                                  )}
+                                </div>
+                                {canViewAll && (
+                                  <p className="mt-2 text-[10px] text-gray-400 dark:text-neutral-500 truncate">
+                                    {lead.assignedToName || "Unassigned"}
+                                  </p>
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <DataTable
+              showSno
+              data={leads}
+              loading={loading}
+              emptyMessage="No leads yet. Add a lead or wait for website submissions."
+              onRowClick={(lead) => setSelectedLead(lead)}
+              columns={tableColumns}
+            />
+          )}
         </div>
 
         {/* Detail drawer */}
@@ -523,14 +936,21 @@ export default function SuperLeadsPage() {
               role="dialog"
               aria-label="Lead details"
             >
-              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                    Lead
-                  </p>
-                  <p className="font-bold text-gray-900 dark:text-white">
-                    {displayRestaurantName(selectedLead)}
-                  </p>
+              <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+                    {leadInitials(selectedLead)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-bold text-gray-900 dark:text-white truncate">
+                      {displayRestaurantName(selectedLead)}
+                    </p>
+                    <span
+                      className={`mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${STATUS_BADGE[selectedLead.status] || STATUS_BADGE.new}`}
+                    >
+                      {formatLabel(selectedLead.status)}
+                    </span>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -542,31 +962,121 @@ export default function SuperLeadsPage() {
                 </button>
               </div>
 
+              {/* Quick contact actions */}
+              <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                <a
+                  href={selectedLead.phone ? `tel:${selectedLead.phone}` : undefined}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                    selectedLead.phone
+                      ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+                      : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
+                  }`}
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  Call
+                </a>
+                <a
+                  href={selectedLead.phone ? `https://wa.me/${selectedLead.phone.replace(/[^0-9]/g, "")}` : undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                    selectedLead.phone
+                      ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+                      : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  WhatsApp
+                </a>
+                <a
+                  href={selectedLead.email ? `mailto:${selectedLead.email}` : undefined}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                    selectedLead.email
+                      ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+                      : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
+                  }`}
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  Email
+                </a>
+              </div>
+
               <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                {/* Contact info */}
                 <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900/80 space-y-2">
-                  {selectedLead.restaurantName && (
-                    <p><span className="text-gray-500">Restaurant:</span> {selectedLead.restaurantName}</p>
-                  )}
                   {selectedLead.name && (
-                    <p><span className="text-gray-500">Contact:</span> {selectedLead.name}</p>
-                  )}
-                  <p><span className="text-gray-500">Phone:</span> {selectedLead.phone || "—"}</p>
-                  <p><span className="text-gray-500">Email:</span> {selectedLead.email || "—"}</p>
-                  {selectedLead.city && (
-                    <p><span className="text-gray-500">City:</span> {selectedLead.city}</p>
-                  )}
-                  <p><span className="text-gray-500">Source:</span> {SOURCE_LABELS[selectedLead.source] || formatLabel(selectedLead.source)}</p>
-                  {canViewAll && (
-                    <p>
-                      <span className="text-gray-500">Assigned to:</span>{" "}
-                      {selectedLead.assignedToName || "Unassigned"}
+                    <p className="flex items-center gap-2">
+                      <UserPlus className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-gray-800 dark:text-neutral-200">{selectedLead.name}</span>
                     </p>
                   )}
+                  <p className="flex items-center gap-2">
+                    <Phone className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-gray-800 dark:text-neutral-200">{selectedLead.phone || "—"}</span>
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <Mail className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-gray-800 dark:text-neutral-200">{selectedLead.email || "—"}</span>
+                  </p>
+                  {selectedLead.city && (
+                    <p className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-gray-800 dark:text-neutral-200">{selectedLead.city}</span>
+                    </p>
+                  )}
+                  <p className="flex items-center gap-2">
+                    <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-gray-500">Source:</span>
+                    <span className="text-gray-800 dark:text-neutral-200">
+                      {SOURCE_LABELS[selectedLead.source] || formatLabel(selectedLead.source)}
+                    </span>
+                  </p>
                 </div>
 
+                {/* Value + follow-up */}
+                {canManage && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                        Est. value ({CURRENCY})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={valueDraft}
+                        onChange={(e) => setValueDraft(e.target.value)}
+                        placeholder="0"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                        Next follow-up
+                      </label>
+                      <input
+                        type="date"
+                        value={followUpDraft}
+                        onChange={(e) => setFollowUpDraft(e.target.value)}
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveDetail}
+                        disabled={detailSaving}
+                        className="w-full py-2 rounded-lg border border-primary/30 bg-primary/5 text-primary text-xs font-semibold hover:bg-primary/10 disabled:opacity-50"
+                      >
+                        {detailSaving ? "Saving..." : "Save value & follow-up"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Status */}
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500 mb-2">
-                    Status
+                    Stage
                   </p>
                   {canManage ? (
                     <div className="flex flex-wrap gap-2">
@@ -600,6 +1110,7 @@ export default function SuperLeadsPage() {
                   )}
                 </div>
 
+                {/* Won → onboard */}
                 {selectedLead.status === "won" && (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/30">
                     <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
@@ -628,14 +1139,14 @@ export default function SuperLeadsPage() {
                   </div>
                 )}
 
+                {/* Reassign */}
                 {canViewAll && canManage && (
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                      Reassign
+                      Assigned to
                     </label>
                     <select
                       value={selectedLead.assignedTo || "unassigned"}
-                      disabled={reassignSaving}
                       onChange={(e) => handleReassign(e.target.value)}
                       className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
                     >
@@ -649,35 +1160,46 @@ export default function SuperLeadsPage() {
                   </div>
                 )}
 
+                {/* Activity timeline */}
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500 mb-2">
                     Activity
                   </p>
-                  <ul className="space-y-2 max-h-64 overflow-y-auto">
+                  <ul className="space-y-2 max-h-72 overflow-y-auto">
                     {(selectedLead.activity || []).length === 0 ? (
                       <li className="text-sm text-gray-500">No activity yet.</li>
                     ) : (
-                      selectedLead.activity.map((entry) => (
-                        <li
-                          key={entry.id || `${entry.type}-${entry.createdAt}`}
-                          className="rounded-lg border border-gray-100 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900"
-                        >
-                          <div className="flex justify-between gap-2 text-xs text-gray-400">
-                            <span className="font-medium capitalize">{entry.type.replace("_", " ")}</span>
-                            <span>{formatDateTime(entry.createdAt)}</span>
-                          </div>
-                          <p className="mt-1 text-gray-800 dark:text-neutral-200">
-                            {activitySummary(entry)}
-                          </p>
-                          {entry.authorName && (
-                            <p className="mt-1 text-[10px] text-gray-400">— {entry.authorName}</p>
-                          )}
-                        </li>
-                      ))
+                      selectedLead.activity.map((entry) => {
+                        const meta = ACTIVITY_META[entry.type] || { label: entry.type, icon: MessageSquare };
+                        const Icon = meta.icon;
+                        return (
+                          <li
+                            key={entry.id || `${entry.type}-${entry.createdAt}`}
+                            className="flex gap-2.5 rounded-lg border border-gray-100 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+                          >
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
+                              <Icon className="w-3.5 h-3.5" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex justify-between gap-2 text-xs text-gray-400">
+                                <span className="font-medium">{meta.label}</span>
+                                <span>{formatDateTime(entry.createdAt)}</span>
+                              </div>
+                              <p className="mt-0.5 text-gray-800 dark:text-neutral-200 break-words">
+                                {activitySummary(entry)}
+                              </p>
+                              {entry.authorName && (
+                                <p className="mt-1 text-[10px] text-gray-400">— {entry.authorName}</p>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })
                     )}
                   </ul>
                 </div>
 
+                {/* Add note */}
                 {canManage && (
                   <form onSubmit={handleAddNote} className="space-y-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
@@ -724,7 +1246,7 @@ export default function SuperLeadsPage() {
               aria-label="Close modal"
               onClick={() => setShowAddModal(false)}
             />
-            <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6">
+            <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6 max-h-[90vh] overflow-y-auto">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Add lead</h2>
               <form onSubmit={handleAddLead} className="space-y-3">
                 <input
@@ -763,13 +1285,31 @@ export default function SuperLeadsPage() {
                   onChange={(e) => setAddForm((f) => ({ ...f, city: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
                 />
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder={`Est. value (${CURRENCY})`}
+                    value={addForm.value}
+                    onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                  />
+                  <input
+                    type="date"
+                    value={addForm.nextFollowUpAt}
+                    onChange={(e) => setAddForm((f) => ({ ...f, nextFollowUpAt: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                  />
+                </div>
                 <select
                   value={addForm.source}
                   onChange={(e) => setAddForm((f) => ({ ...f, source: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
                 >
                   {SOURCE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
                   ))}
                 </select>
                 {canViewAll && (
