@@ -517,6 +517,12 @@ const superNav = [
     icon: ScrollText,
     permission: "platform.audit.view",
   },
+  {
+    href: "/super/profile",
+    label: "Profile",
+    icon: UserCircle2,
+    roles: ["super_admin"],
+  },
 ];
 
 /**
@@ -845,8 +851,14 @@ export default function AdminLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rawNavItems =
-    role === "super_admin" && !actingAsSlug ? superNav : tenantNav;
+  const cleanPath =
+    (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
+  const normalizedPath = cleanPath.replace(/^\/dashboard/, "");
+  const isSuperPath = !actingAsSlug && normalizedPath.startsWith("/super");
+  const isSuperDashboard =
+    isSuperPath || Boolean(role === "super_admin" && !actingAsSlug);
+
+  const rawNavItems = isSuperDashboard ? superNav : tenantNav;
   // When super_admin is acting as a tenant, show full tenant nav (treat as restaurant_admin)
   const navRole =
     role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
@@ -866,8 +878,7 @@ export default function AdminLayout({
     return until.some((x) => x.path || x.href);
   });
   const roleLabel = getRoleLabelFromSlug(role);
-  const profileHref =
-    role === "super_admin" && !actingAsSlug ? "/super/profile" : "/profile";
+  const profileHref = isSuperDashboard ? "/super/profile" : "/profile";
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -878,8 +889,6 @@ export default function AdminLayout({
     window.location.href = "/login";
   }
 
-  const cleanPath =
-    (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
   const hideSidebarForKitchenStaff =
     role === "kitchen_staff" && cleanPath === "/kitchen";
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";
@@ -922,7 +931,7 @@ export default function AdminLayout({
               <div className="px-4 py-3 border-b-2 border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="relative flex-shrink-0">
-                    {restaurantLogoUrl && role !== "super_admin" ? (
+                    {restaurantLogoUrl && !isSuperDashboard ? (
                       <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 shadow-md bg-white dark:bg-neutral-900">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -931,7 +940,7 @@ export default function AdminLayout({
                           className="h-full w-full object-cover"
                         />
                       </div>
-                    ) : restaurantName && role !== "super_admin" ? (
+                    ) : restaurantName && !isSuperDashboard ? (
                       <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary via-primary to-secondary flex items-center justify-center text-white font-bold text-base shadow-lg shadow-primary/30">
                         {restaurantName.slice(0, 2).toUpperCase()}
                       </div>
@@ -950,12 +959,12 @@ export default function AdminLayout({
                   {(!collapsed || mobileSidebarOpen) && (
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-lg tracking-tight text-gray-900 dark:text-white truncate">
-                        {restaurantName && role !== "super_admin"
+                        {restaurantName && !isSuperDashboard
                           ? restaurantName
                           : "Eats Desk"}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-neutral-400 truncate font-medium">
-                        {role === "super_admin" && !actingAsSlug
+                        {isSuperDashboard
                           ? "Platform Console"
                           : "Restaurant OS"}
                       </div>
@@ -986,10 +995,8 @@ export default function AdminLayout({
 
               <nav className="flex-1 p-3 overflow-y-auto">
                 {navItems.map((item, idx) => {
-                  if (item.type !== "section") {
-                    if (item.permission && !hasPermission(item.permission)) {
-                      return null;
-                    }
+                  if (item.type !== "section" && !canSeeNavItem(item)) {
+                    return null;
                   }
                   // Render section headers
                   if (item.type === "section") {
@@ -1011,7 +1018,7 @@ export default function AdminLayout({
 
                   const basePath = item.path || "";
                   const href =
-                    role === "super_admin" && !actingAsSlug
+                    isSuperDashboard
                       ? item.href
                       : getTenantRoute(
                           router.asPath || router.pathname,
@@ -1315,7 +1322,7 @@ export default function AdminLayout({
               )}
               {!backHref && !(role === "super_admin" && actingAsSlug) && (
                 <>
-                  {restaurantLogoUrl && role !== "super_admin" ? (
+                  {restaurantLogoUrl && !isSuperDashboard ? (
                     <div className="h-7 w-7 rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 flex-shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -1324,7 +1331,7 @@ export default function AdminLayout({
                         className="h-full w-full object-cover"
                       />
                     </div>
-                  ) : restaurantName && role !== "super_admin" ? (
+                  ) : restaurantName && !isSuperDashboard ? (
                     <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-[10px] font-bold shadow-sm shadow-primary/20 flex-shrink-0">
                       {restaurantName.slice(0, 2).toUpperCase()}
                     </div>
@@ -1339,7 +1346,7 @@ export default function AdminLayout({
                     </div>
                   )}
                   <span className="text-xs font-bold text-gray-900 dark:text-white leading-tight truncate max-w-[80px]">
-                    {restaurantName && role !== "super_admin"
+                    {restaurantName && !isSuperDashboard
                       ? restaurantName
                       : "Eats Desk"}
                   </span>
@@ -1387,7 +1394,7 @@ export default function AdminLayout({
                 <p className="text-xs text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
                   {subtitle != null
                     ? subtitle
-                    : role === "super_admin" && !actingAsSlug
+                    : isSuperDashboard
                       ? "Manage restaurants, subscriptions and platform configuration"
                       : "Manage your restaurant operations"}
                 </p>

@@ -62,7 +62,16 @@ export default function SuperRolesPage() {
         getPermissionsGroupedForSuperAdmin({ scope: "platform" }),
       ]);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
-      setGroupedPerms(permGroups && typeof permGroups === "object" ? permGroups : {});
+      const platformOnly = {};
+      if (permGroups && typeof permGroups === "object") {
+        for (const [group, items] of Object.entries(permGroups)) {
+          const filtered = (items || []).filter((p) =>
+            String(p.key || "").startsWith("platform."),
+          );
+          if (filtered.length) platformOnly[group] = filtered;
+        }
+      }
+      setGroupedPerms(platformOnly);
     } catch (err) {
       toast.error(err.message || "Failed to load roles");
       setRoles([]);
