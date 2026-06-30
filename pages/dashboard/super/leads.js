@@ -37,6 +37,7 @@ import {
   TrendingUp,
   Trophy,
   UserPlus,
+  Eye,
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -139,6 +140,12 @@ function displayRestaurantName(lead) {
   return (lead.restaurantName || lead.name || "—").trim() || "—";
 }
 
+function displayAddedBy(lead) {
+  const name = (lead?.createdByName || "").trim();
+  if (name) return name;
+  return "System";
+}
+
 function leadInitials(lead) {
   const src = (lead.restaurantName || lead.name || "?").trim();
   const parts = src.split(/\s+/).filter(Boolean);
@@ -166,7 +173,7 @@ export default function SuperLeadsPage() {
   const canConvert = hasPermission("platform.leads.convert");
   const canDelete = hasPermission("platform.leads.delete");
 
-  const [viewMode, setViewMode] = useState("board");
+  const [viewMode, setViewMode] = useState("table");
   const [leads, setLeads] = useState([]);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState(null);
@@ -555,91 +562,165 @@ export default function SuperLeadsPage() {
     ];
   }, [stats]);
 
-  const tableColumns = [
-    {
-      key: "restaurantName",
-      header: "Restaurant",
-      render: (_, lead) => (
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-            {leadInitials(lead)}
-          </span>
-          <div className="min-w-0">
-            <p className="font-medium text-gray-900 dark:text-white truncate">
-              {displayRestaurantName(lead)}
-            </p>
-            {lead.name && lead.restaurantName && (
-              <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{lead.name}</p>
-            )}
+  const showEmailColumn = useMemo(
+    () => leads.some((l) => (l.email || "").trim()),
+    [leads],
+  );
+  const showCityColumn = useMemo(
+    () => leads.some((l) => (l.city || "").trim()),
+    [leads],
+  );
+
+  const tableColumns = useMemo(() => {
+    const cols = [
+      {
+        key: "restaurantName",
+        header: "Restaurant",
+        render: (_, lead) => (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+              {leadInitials(lead)}
+            </span>
+            <div className="min-w-0">
+              <p className="font-medium text-gray-900 dark:text-white truncate">
+                {displayRestaurantName(lead)}
+              </p>
+              {lead.name && lead.restaurantName && (
+                <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{lead.name}</p>
+              )}
+            </div>
           </div>
-        </div>
-      ),
-    },
-    {
-      key: "phone",
-      header: "Phone",
-      render: (_, lead) => lead.phone || "—",
-      cellClassName: "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (_, lead) => (
-        <span
-          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${STATUS_BADGE[lead.status] || STATUS_BADGE.new}`}
-        >
-          {formatLabel(lead.status)}
-        </span>
-      ),
-    },
-    {
-      key: "value",
-      header: "Value",
-      render: (_, lead) =>
-        lead.value ? (
-          <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-            {formatMoney(lead.value)}
-          </span>
-        ) : (
-          <span className="text-gray-400">—</span>
         ),
-      cellClassName: "whitespace-nowrap",
-    },
-    ...(canViewAll
-      ? [
-          {
-            key: "assignedTo",
-            header: "Assigned to",
-            render: (_, lead) => lead.assignedToName || "Unassigned",
-            cellClassName: "text-gray-600 dark:text-neutral-400",
-          },
-        ]
-      : []),
-    {
-      key: "nextFollowUpAt",
-      header: "Follow-up",
-      render: (_, lead) =>
-        lead.nextFollowUpAt ? (
+      },
+      {
+        key: "phone",
+        header: "Phone",
+        render: (_, lead) => lead.phone || "—",
+        cellClassName: "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
+      },
+      {
+        key: "status",
+        header: "Status",
+        render: (_, lead) => (
           <span
-            className={`inline-flex items-center gap-1 text-xs font-medium ${
-              isOverdue(lead) ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-neutral-300"
-            }`}
+            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${STATUS_BADGE[lead.status] || STATUS_BADGE.new}`}
           >
-            {isOverdue(lead) ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-            {formatDate(lead.nextFollowUpAt)}
+            {formatLabel(lead.status)}
           </span>
-        ) : (
-          <span className="text-gray-400">—</span>
         ),
+      },
+      {
+        key: "value",
+        header: "Value",
+        render: (_, lead) =>
+          lead.value ? (
+            <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+              {formatMoney(lead.value)}
+            </span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          ),
+        cellClassName: "whitespace-nowrap",
+      },
+      {
+        key: "createdByName",
+        header: "Added by",
+        render: (_, lead) => (
+          <span className="text-xs text-gray-500 dark:text-neutral-400 italic">
+            {displayAddedBy(lead)}
+          </span>
+        ),
+        cellClassName: "whitespace-nowrap",
+      },
+    ];
+
+    if (canViewAll) {
+      cols.push({
+        key: "assignedTo",
+        header: "Assigned to",
+        render: (_, lead) => lead.assignedToName || "Unassigned",
+        cellClassName: "text-gray-600 dark:text-neutral-400",
+      });
+    }
+
+    cols.push(
+      {
+        key: "nextFollowUpAt",
+        header: "Follow-up",
+        render: (_, lead) =>
+          lead.nextFollowUpAt ? (
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-medium ${
+                isOverdue(lead) ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-neutral-300"
+              }`}
+            >
+              {isOverdue(lead) ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+              {formatDate(lead.nextFollowUpAt)}
+            </span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          ),
+        cellClassName: "whitespace-nowrap",
+      },
+      {
+        key: "source",
+        header: "Source",
+        render: (_, lead) => SOURCE_LABELS[lead.source] || formatLabel(lead.source),
+        cellClassName: "text-gray-600 dark:text-neutral-400",
+      },
+    );
+
+    if (showEmailColumn) {
+      cols.push({
+        key: "email",
+        header: "Email",
+        render: (_, lead) =>
+          (lead.email || "").trim() ? (
+            <span className="text-gray-700 dark:text-neutral-300 truncate max-w-[180px] inline-block">
+              {lead.email}
+            </span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          ),
+        cellClassName: "max-w-[200px]",
+      });
+    }
+
+    if (showCityColumn) {
+      cols.push({
+        key: "city",
+        header: "City",
+        render: (_, lead) =>
+          (lead.city || "").trim() ? (
+            <span className="text-gray-700 dark:text-neutral-300">{lead.city}</span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          ),
+        cellClassName: "whitespace-nowrap",
+      });
+    }
+
+    cols.push({
+      key: "actions",
+      header: "Actions",
+      render: (_, lead) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedLead(lead);
+          }}
+          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/5 dark:border-neutral-700 dark:hover:bg-primary/10"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          View
+        </button>
+      ),
       cellClassName: "whitespace-nowrap",
-    },
-    {
-      key: "source",
-      header: "Source",
-      render: (_, lead) => SOURCE_LABELS[lead.source] || formatLabel(lead.source),
-      cellClassName: "text-gray-600 dark:text-neutral-400",
-    },
-  ];
+    });
+
+    return cols;
+  }, [canViewAll, showEmailColumn, showCityColumn]);
 
   return (
     <AdminLayout
@@ -960,6 +1041,32 @@ export default function SuperLeadsPage() {
                 >
                   <X className="h-5 w-5" />
                 </button>
+              </div>
+
+              <div className="border-b border-gray-100 px-4 py-2.5 text-xs text-gray-600 dark:border-neutral-800 dark:text-neutral-400 space-y-1">
+                <p>
+                  Added by{" "}
+                  <span className="font-medium text-gray-800 dark:text-neutral-200">
+                    {displayAddedBy(selectedLead)}
+                  </span>
+                  {selectedLead.createdAt ? (
+                    <>
+                      {" "}
+                      on{" "}
+                      <span className="font-medium text-gray-800 dark:text-neutral-200">
+                        {formatDate(selectedLead.createdAt)}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+                {canViewAll && (
+                  <p>
+                    Assigned to{" "}
+                    <span className="font-medium text-gray-800 dark:text-neutral-200">
+                      {selectedLead.assignedToName || "Unassigned"}
+                    </span>
+                  </p>
+                )}
               </div>
 
               {/* Quick contact actions */}
