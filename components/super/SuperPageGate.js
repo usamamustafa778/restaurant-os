@@ -10,8 +10,11 @@ import {
 /** Blocks super page content until permissions load; redirects when access is denied. */
 export default function SuperPageGate({ permission, children }) {
   const router = useRouter();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, hasViewOrManage } = usePermissions();
   const { permissionsLoaded, hasAccess } = usePlatformPermissionGate(permission);
+
+  const canAccessNavItem = (perm) =>
+    perm.endsWith(".view") ? hasViewOrManage(perm) : hasPermission(perm);
 
   if (!permissionsLoaded) {
     return (
@@ -22,7 +25,7 @@ export default function SuperPageGate({ permission, children }) {
   }
 
   if (!hasAccess) {
-    const fallback = getFirstSuperAdminPath(hasPermission);
+    const fallback = getFirstSuperAdminPath(canAccessNavItem);
     const current = normalizeSuperPath(router.pathname);
     if (current !== fallback) {
       return (

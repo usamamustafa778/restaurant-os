@@ -485,13 +485,13 @@ const superNav = [
     href: "/super/roles",
     label: "Roles",
     icon: ShieldCheck,
-    permission: "platform.roles.manage",
+    permission: "platform.roles.view",
   },
   {
     href: "/super/permissions",
     label: "Permissions",
     icon: KeyRound,
-    permission: "platform.permissions.manage",
+    permission: "platform.permissions.view",
   },
   {
     href: "/super/leads",
@@ -509,7 +509,7 @@ const superNav = [
     href: "/super/settings",
     label: "System Settings",
     icon: Settings2,
-    permission: "platform.settings.manage",
+    permission: "platform.settings.view",
   },
   {
     href: "/super/audit",
@@ -686,7 +686,7 @@ export default function AdminLayout({
   const [expandedGroups, setExpandedGroups] = useState([]);
   const [whatsappNeedsHumanCount, setWhatsappNeedsHumanCount] = useState(0);
   const { theme, toggleTheme } = useTheme();
-  const { hasPermission, permissionsLoaded, roleName } = usePermissions();
+  const { hasPermission, hasViewOrManage, permissionsLoaded, roleName } = usePermissions();
 
   // Load sidebar state from sessionStorage after mount (client-side only)
   useEffect(() => {
@@ -864,7 +864,11 @@ export default function AdminLayout({
     role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
   const canSeeNavItem = (item) => {
     if (item.type === "section") return true;
-    if (item.permission) return hasPermission(item.permission);
+    if (item.permission) {
+      return item.permission.endsWith(".view")
+        ? hasViewOrManage(item.permission)
+        : hasPermission(item.permission);
+    }
     if (!item.roles) return true;
     return item.roles.includes(navRole);
   };

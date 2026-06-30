@@ -15,6 +15,7 @@ import {
 } from "../../../lib/apiClient";
 import { ChevronDown, ChevronRight, Loader2, Plus, Search, X } from "lucide-react";
 import toast from "react-hot-toast";
+import { usePermissions } from "../../../contexts/PermissionContext";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
 
 const TEMPLATE_LABELS = {
@@ -36,7 +37,9 @@ function slugify(value) {
 }
 
 export default function SuperRolesPage() {
-  const { hasAccess } = usePlatformPermissionGate("platform.roles.manage");
+  const { hasAccess } = usePlatformPermissionGate("platform.roles.view");
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission("platform.roles.manage");
   const { confirm } = useConfirmDialog();
   const [roles, setRoles] = useState([]);
   const [groupedPerms, setGroupedPerms] = useState({});
@@ -290,10 +293,14 @@ export default function SuperRolesPage() {
       title="Roles"
       subtitle="Platform roles for EatsDesk staff — not scoped to restaurants."
     >
-      <SuperPageGate permission="platform.roles.manage">
+      <SuperPageGate permission="platform.roles.view">
       <Card
         title="Platform roles"
-        description="Create a role, then assign platform permissions from the permissions drawer."
+        description={
+          canManage
+            ? "Create a role, then assign platform permissions from the permissions drawer."
+            : "View platform roles and their permission sets (read-only)."
+        }
       >
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -307,10 +314,12 @@ export default function SuperRolesPage() {
             />
           </div>
           <span className="text-xs text-neutral-500">{filteredRoles.length} role(s)</span>
-          <Button type="button" onClick={openCreateModal} className="inline-flex items-center gap-1.5 ml-auto">
-            <Plus className="w-4 h-4" />
-            New role
-          </Button>
+          {canManage && (
+            <Button type="button" onClick={openCreateModal} className="inline-flex items-center gap-1.5 ml-auto">
+              <Plus className="w-4 h-4" />
+              New role
+            </Button>
+          )}
         </div>
 
         {loading ? (
@@ -365,9 +374,9 @@ export default function SuperRolesPage() {
                       onClick={() => openPermissionsDrawer(r)}
                       className="text-xs font-medium text-primary hover:underline"
                     >
-                      Edit permissions
+                      {canManage ? "Edit permissions" : "View permissions"}
                     </button>
-                    {r.isActive !== false && (
+                    {canManage && r.isActive !== false && (
                       <button
                         type="button"
                         onClick={() => handleDelete(r)}
@@ -445,7 +454,9 @@ export default function SuperRolesPage() {
                 <h3 id="permissions-drawer-title" className="text-sm font-bold text-gray-900 dark:text-white truncate">
                   {drawerRole.name}
                 </h3>
-                <p className="text-xs text-neutral-500 mt-0.5">Edit permissions</p>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {canManage ? "Edit permissions" : "View permissions (read-only)"}
+                </p>
               </div>
               <button
                 type="button"
@@ -469,7 +480,7 @@ export default function SuperRolesPage() {
                 />
               </div>
               <div className="flex items-center justify-end gap-3">
-                {filteredPermissionKeys.length > 0 && (
+                {canManage && filteredPermissionKeys.length > 0 && (
                   <button
                     type="button"
                     onClick={() =>
@@ -534,26 +545,29 @@ export default function SuperRolesPage() {
                           <span className="text-[11px] text-neutral-500 shrink-0">
                             {selected}/{keys.length}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => setGroupPermissions(keys, !allSelected)}
-                            className="text-[11px] font-medium text-primary hover:underline shrink-0"
-                          >
-                            {allSelected ? "None" : "All"}
-                          </button>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() => setGroupPermissions(keys, !allSelected)}
+                              className="text-[11px] font-medium text-primary hover:underline shrink-0"
+                            >
+                              {allSelected ? "None" : "All"}
+                            </button>
+                          )}
                         </div>
                         {expanded && (
                           <div className="px-5 pb-3 space-y-2">
                             {items.map((p) => (
                               <label
                                 key={p.key}
-                                className="flex items-start gap-2.5 text-xs cursor-pointer"
+                                className={`flex items-start gap-2.5 text-xs ${canManage ? "cursor-pointer" : "cursor-default opacity-90"}`}
                               >
                                 <input
                                   type="checkbox"
                                   checked={selectedPermissions.includes(p.key)}
                                   onChange={() => togglePermission(p.key)}
-                                  className="mt-0.5 rounded border-gray-300"
+                                  disabled={!canManage}
+                                  className="mt-0.5 rounded border-gray-300 disabled:opacity-60"
                                 />
                                 <span className="min-w-0">
                                   <span className="font-medium text-gray-900 dark:text-white">
@@ -580,11 +594,13 @@ export default function SuperRolesPage() {
               </span>
               <div className="flex gap-2">
                 <Button type="button" variant="ghost" onClick={closePermissionsDrawer}>
-                  Cancel
+                  {canManage ? "Cancel" : "Close"}
                 </Button>
-                <Button type="button" onClick={handleSavePermissions} disabled={drawerSaving || drawerLoading}>
-                  {drawerSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save permissions"}
-                </Button>
+                {canManage && (
+                  <Button type="button" onClick={handleSavePermissions} disabled={drawerSaving || drawerLoading}>
+                    {drawerSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save permissions"}
+                  </Button>
+                )}
               </div>
             </div>
           </aside>

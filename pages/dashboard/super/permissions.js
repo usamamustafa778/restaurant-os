@@ -14,6 +14,7 @@ import {
 import { Loader2, Plus, Search, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
+import { usePermissions } from "../../../contexts/PermissionContext";
 
 const SCOPE_TABS = [
   { id: "", label: "All" },
@@ -30,7 +31,9 @@ const EMPTY_FORM = {
 };
 
 export default function SuperPermissionsPage() {
-  const { hasAccess } = usePlatformPermissionGate("platform.permissions.manage");
+  const { hasAccess } = usePlatformPermissionGate("platform.permissions.view");
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission("platform.permissions.manage");
   const { confirm } = useConfirmDialog();
   const [scopeFilter, setScopeFilter] = useState("");
   const [permissions, setPermissions] = useState([]);
@@ -190,7 +193,7 @@ export default function SuperPermissionsPage() {
       title="Permissions"
       subtitle="Global permission catalog — tenant and platform keys. Rarely edited."
     >
-      <SuperPageGate permission="platform.permissions.manage">
+      <SuperPageGate permission="platform.permissions.view">
       <div className="flex flex-wrap items-center gap-3 mb-4 justify-between">
         <div className="flex rounded-lg border border-gray-200 dark:border-neutral-700 p-0.5 bg-white dark:bg-neutral-900">
           {SCOPE_TABS.map((tab) => (
@@ -221,14 +224,16 @@ export default function SuperPermissionsPage() {
         <span className="text-xs text-neutral-500">
           {filtered.length} permission(s)
         </span>
-        <Button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex items-center gap-1.5 py-2.5"
-        >
-          <Plus className="w-4 h-4" />
-          Add permission
-        </Button>
+        {canManage && (
+          <Button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex items-center gap-1.5 py-2.5"
+          >
+            <Plus className="w-4 h-4" />
+            Add permission
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -269,24 +274,25 @@ export default function SuperPermissionsPage() {
             {
               key: "actions",
               header: "",
-              render: (_, r) => (
-                <div className="flex gap-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(r)}
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeactivate(r)}
-                    className="text-xs font-medium text-red-600 hover:underline"
-                  >
-                    Deactivate
-                  </button>
-                </div>
-              ),
+              render: (_, r) =>
+                canManage ? (
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(r)}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeactivate(r)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      Deactivate
+                    </button>
+                  </div>
+                ) : null,
             },
           ]}
           data={filtered}

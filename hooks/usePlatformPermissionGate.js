@@ -12,20 +12,26 @@ import {
  */
 export function usePlatformPermissionGate(permissionKey) {
   const router = useRouter();
-  const { hasPermission, permissionsLoaded } = usePermissions();
+  const { hasPermission, hasViewOrManage, permissionsLoaded } = usePermissions();
 
-  const hasAccess = permissionsLoaded && hasPermission(permissionKey);
+  const allowsAccess = permissionKey.endsWith(".view")
+    ? hasViewOrManage(permissionKey)
+    : hasPermission(permissionKey);
+  const hasAccess = permissionsLoaded && allowsAccess;
+
+  const canAccessNavItem = (perm) =>
+    perm.endsWith(".view") ? hasViewOrManage(perm) : hasPermission(perm);
 
   useEffect(() => {
-    if (!permissionsLoaded || hasPermission(permissionKey)) return;
+    if (!permissionsLoaded || allowsAccess) return;
 
-    const fallback = getFirstSuperAdminPath(hasPermission);
+    const fallback = getFirstSuperAdminPath(canAccessNavItem);
     const current = normalizeSuperPath(router.pathname);
 
     if (current !== fallback) {
       router.replace(fallback);
     }
-  }, [permissionsLoaded, permissionKey, hasPermission, router]);
+  }, [permissionsLoaded, permissionKey, allowsAccess, hasPermission, hasViewOrManage, router]);
 
   return { permissionsLoaded, hasAccess };
 }
