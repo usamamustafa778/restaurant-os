@@ -777,6 +777,13 @@ export default function BusinessSettingsPage() {
         updateWebsiteSettings(websiteSettings),
         updateRestaurantSettings({
           currencyCode: restaurantSettings?.currencyCode || null,
+          taxEnabled: restaurantSettings?.taxEnabled === true,
+          taxRate: Number.isFinite(Number(restaurantSettings?.taxRate))
+            ? Math.max(0, Math.min(100, Number(restaurantSettings.taxRate)))
+            : 0,
+          taxLabel:
+            String(restaurantSettings?.taxLabel || "").trim() || "Tax",
+          taxDelivery: restaurantSettings?.taxDelivery === true,
         }),
       ]);
       const updated = updatedWebsite;
@@ -1389,6 +1396,84 @@ export default function BusinessSettingsPage() {
                               ))}
                             </select>
                           </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100 dark:border-neutral-800" />
+
+                      {/* ── Tax ── */}
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">
+                          Tax
+                        </p>
+                        <div className="space-y-3">
+                          <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={restaurantSettings?.taxEnabled === true}
+                              onChange={(e) =>
+                                setRestaurantSettings((p) => ({
+                                  ...(p || {}),
+                                  taxEnabled: e.target.checked,
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                            Enable tax
+                          </label>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1.5">
+                              <label className={labelCls}>Rate (%)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                step="0.01"
+                                value={Number(restaurantSettings?.taxRate || 0)}
+                                onChange={(e) =>
+                                  setRestaurantSettings((p) => ({
+                                    ...(p || {}),
+                                    taxRate: e.target.value,
+                                  }))
+                                }
+                                disabled={restaurantSettings?.taxEnabled !== true}
+                                className={inp}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className={labelCls}>Tax label</label>
+                              <input
+                                type="text"
+                                value={restaurantSettings?.taxLabel || "Tax"}
+                                onChange={(e) =>
+                                  setRestaurantSettings((p) => ({
+                                    ...(p || {}),
+                                    taxLabel: e.target.value,
+                                  }))
+                                }
+                                placeholder="GST, VAT, Sales Tax"
+                                disabled={restaurantSettings?.taxEnabled !== true}
+                                className={inp}
+                              />
+                            </div>
+                          </div>
+
+                          <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={restaurantSettings?.taxDelivery === true}
+                              onChange={(e) =>
+                                setRestaurantSettings((p) => ({
+                                  ...(p || {}),
+                                  taxDelivery: e.target.checked,
+                                }))
+                              }
+                              disabled={restaurantSettings?.taxEnabled !== true}
+                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                            Also tax delivery charges
+                          </label>
                         </div>
                       </div>
 

@@ -276,7 +276,7 @@ export default function SuperUsersPage() {
     >
       <SuperPageGate permission="platform.restaurants.view">
         <div className="flex flex-col flex-1 min-h-0">
-          <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-4 flex-shrink-0 overflow-x-auto pb-1">
             {[
               { value: "all", label: "All" },
               { value: "active", label: "Active" },
@@ -286,7 +286,7 @@ export default function SuperUsersPage() {
                 key={f.value}
                 type="button"
                 onClick={() => setStatusFilter(f.value)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                   statusFilter === f.value
                     ? "bg-primary text-white"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
@@ -295,7 +295,7 @@ export default function SuperUsersPage() {
                 {f.label}
               </button>
             ))}
-            <span className="w-px h-5 bg-gray-200 dark:bg-neutral-700 mx-1 hidden sm:block" />
+            <span className="w-px h-5 bg-gray-200 dark:bg-neutral-700 shrink-0" />
             {[
               { value: "all", label: "Any email" },
               { value: "verified", label: "Verified" },
@@ -305,7 +305,7 @@ export default function SuperUsersPage() {
                 key={f.value}
                 type="button"
                 onClick={() => setEmailFilter(f.value)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                   emailFilter === f.value
                     ? "bg-primary text-white"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
@@ -314,14 +314,12 @@ export default function SuperUsersPage() {
                 {f.label}
               </button>
             ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <span className="w-px h-5 bg-gray-200 dark:bg-neutral-700 shrink-0" />
+            <div className="relative shrink-0 w-[220px] min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
               <input
                 type="text"
-                placeholder="Search name, email, phone, role, restaurant..."
+                placeholder="Search name, email, phone..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
@@ -330,7 +328,7 @@ export default function SuperUsersPage() {
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white min-w-[140px]"
+              className="shrink-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white min-w-[130px]"
             >
               <option value="">All roles</option>
               {roleOptions.map((role) => (
@@ -342,7 +340,7 @@ export default function SuperUsersPage() {
             <select
               value={restaurantFilter}
               onChange={(e) => setRestaurantFilter(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white min-w-[160px] max-w-[220px]"
+              className="shrink-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white min-w-[140px] max-w-[200px]"
             >
               <option value="">All restaurants</option>
               {restaurantOptions.map(([id, label]) => (
@@ -353,7 +351,7 @@ export default function SuperUsersPage() {
             </select>
             {hasActiveFilters && (
               <>
-                <span className="text-xs text-neutral-500">
+                <span className="shrink-0 text-xs text-neutral-500 whitespace-nowrap">
                   {filteredUsers.length} of {users.length}
                 </span>
                 <button
@@ -365,7 +363,7 @@ export default function SuperUsersPage() {
                     setRoleFilter("");
                     setRestaurantFilter("");
                   }}
-                  className="text-xs font-semibold text-primary hover:underline"
+                  className="shrink-0 text-xs font-semibold text-primary hover:underline whitespace-nowrap"
                 >
                   Clear filters
                 </button>
@@ -374,7 +372,7 @@ export default function SuperUsersPage() {
             <button
               type="button"
               onClick={loadUsers}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh
@@ -389,7 +387,7 @@ export default function SuperUsersPage() {
                 downloadUsersExcel(filteredUsers);
                 toast.success(`Exported ${filteredUsers.length} user(s)`);
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors whitespace-nowrap"
             >
               <FileDown className="w-4 h-4" />
               Download Excel
@@ -465,14 +463,15 @@ export default function SuperUsersPage() {
                 key: "actions",
                 header: "Actions",
                 align: "right",
+                cellClassName: "whitespace-nowrap",
                 render: (_, u) => (
-                  <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                  <div className="inline-flex flex-nowrap items-center justify-end gap-1">
                     <button
                       type="button"
                       onClick={() => setViewUser(u)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 whitespace-nowrap"
                     >
-                      <Eye className="w-3 h-3" />
+                      <Eye className="w-3 h-3 shrink-0" />
                       View
                     </button>
                     {canEdit && (
@@ -484,7 +483,7 @@ export default function SuperUsersPage() {
                             setResetTarget(u);
                             setResetPassword(generateTempPassword());
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-[11px] font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 whitespace-nowrap"
                         >
                           Reset password
                         </button>
@@ -493,9 +492,9 @@ export default function SuperUsersPage() {
                             type="button"
                             disabled={actionId === u.id}
                             onClick={() => handleVerifyEmail(u)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-[11px] font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-[11px] font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50 whitespace-nowrap"
                           >
-                            <MailCheck className="w-3 h-3" />
+                            <MailCheck className="w-3 h-3 shrink-0" />
                             Verify email
                           </button>
                         )}
@@ -503,7 +502,7 @@ export default function SuperUsersPage() {
                           type="button"
                           disabled={actionId === u.id}
                           onClick={() => toggleActive(u)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold disabled:opacity-50 ${
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap ${
                             u.isActive !== false
                               ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400"
                               : "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300"

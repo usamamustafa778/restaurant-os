@@ -12,6 +12,7 @@ import {
   impersonateRestaurantAsSuperAdmin,
   verifyRestaurantOwnerEmailsForSuperAdmin,
   approveRestaurantForSuperAdmin,
+  rejectRestaurantForSuperAdmin,
   updateRestaurantSubscription,
 } from "../../../lib/apiClient";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
@@ -26,6 +27,7 @@ import {
   MailCheck,
   CheckCircle2,
   Ban,
+  XCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -118,6 +120,7 @@ export default function SuperRestaurantsPage() {
   const { hasAccess } = usePlatformPermissionGate("platform.restaurants.view");
   const { hasPermission } = usePermissions();
   const canImpersonate = hasPermission("platform.impersonate");
+  const canApprove = hasPermission("platform.restaurants.approve");
   const router = useRouter();
   const [restaurants, setRestaurants] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -139,6 +142,9 @@ export default function SuperRestaurantsPage() {
   const [approvePlan, setApprovePlan] = useState("starter");
   const [approveTrialDays, setApproveTrialDays] = useState(30);
   const [approveLoading, setApproveLoading] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectLoading, setRejectLoading] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState(null);
   const { confirm } = useConfirmDialog();
 
@@ -276,6 +282,32 @@ export default function SuperRestaurantsPage() {
     setApproveTrialDays(30);
   }
 
+  function openRejectModal(restaurant) {
+    setRejectTarget(restaurant);
+    setRejectReason("");
+  }
+
+  async function handleRejectRestaurant(e) {
+    e.preventDefault();
+    if (!rejectTarget) return;
+    try {
+      setRejectLoading(true);
+      await rejectRestaurantForSuperAdmin(rejectTarget.id, {
+        reason: rejectReason.trim(),
+      });
+      toast.success(
+        `"${rejectTarget.website?.name || "Restaurant"}" rejected.`,
+      );
+      setRejectTarget(null);
+      setRejectReason("");
+      loadRestaurants();
+    } catch (err) {
+      toast.error(err.message || "Failed to reject restaurant");
+    } finally {
+      setRejectLoading(false);
+    }
+  }
+
   async function handleSuspendToggle(restaurant) {
     const status = String(restaurant.subscription?.status || "TRIAL").toUpperCase();
     const nextStatus = status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED";
@@ -337,9 +369,12 @@ export default function SuperRestaurantsPage() {
     const subStatus = r.subscription?.status || "";
     const egKey = r.engagement?.key || "";
     const isPending = r.approvalStatus === "pending";
+    const isRejected = r.approvalStatus === "rejected";
 
     if (filterStatus === "pending_approval") {
       if (!isPending) return false;
+    } else if (filterStatus === "rejected") {
+      if (!isRejected) return false;
     } else if (filterStatus !== "all" && subStatus !== filterStatus) {
       return false;
     }
@@ -414,6 +449,7 @@ export default function SuperRestaurantsPage() {
           >
             <option value="all">All statuses</option>
             <option value="pending_approval">Pending approval</option>
+            <option value="rejected">Rejected</option>
             <option value="TRIAL">Trial</option>
             <option value="ACTIVE">Active</option>
             <option value="SUSPENDED">Suspended</option>
@@ -535,6 +571,7 @@ export default function SuperRestaurantsPage() {
               cellClassName: "whitespace-normal",
               render: (_, r) => {
                 const isPending = r.approvalStatus === "pending";
+                const isRejected = r.approvalStatus === "rejected";
                 const sub = r.subscription || {};
                 const statusLabel = String(sub.status || "TRIAL").toUpperCase();
                 const badgeClass =
@@ -551,6 +588,10 @@ export default function SuperRestaurantsPage() {
                       <span className="badge w-fit text-[10px] font-semibold uppercase tracking-wide bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50">
                         Pending approval
                       </span>
+                    ) : isRejected ? (
+                      <span className="badge w-fit text-[10px] font-semibold uppercase tracking-wide bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-700/50">
+                        Rejected
+                      </span>
                     ) : (
                       <span
                         className={`badge w-fit text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}
@@ -558,7 +599,7 @@ export default function SuperRestaurantsPage() {
                         {statusLabel}
                       </span>
                     )}
-                    {!isPending && endLabel ? (
+                    {!isPending && !isRejected && endLabel ? (
                       <span
                         className={`text-[11px] ${
                           warn
@@ -618,6 +659,7 @@ export default function SuperRestaurantsPage() {
               render: (_, r) => {
                 const website = r.website || {};
                 const isPending = r.approvalStatus === "pending";
+                const isRejected = r.approvalStatus === "rejected";
                 const status = String(r.subscription?.status || "TRIAL").toUpperCase();
                 const isSuspended = status === "SUSPENDED";
                 return (
@@ -633,17 +675,28 @@ export default function SuperRestaurantsPage() {
                       <Eye className="w-3.5 h-3.5" />
                       View
                     </button>
-                    {isPending ? (
-                      <button
-                        type="button"
-                        onClick={() => openApproveModal(r)}
-                        className="px-2 py-0.5 rounded-md border border-emerald-300 bg-emerald-50 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200 inline-flex items-center gap-1"
-                        title="Approve and activate restaurant"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Approve
-                      </button>
-                    ) : (
+                    {isPending && canApprove ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openApproveModal(r)}
+                          className="px-2 py-0.5 rounded-md border border-emerald-300 bg-emerald-50 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200 inline-flex items-center gap-1"
+                          title="Approve and activate restaurant"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openRejectModal(r)}
+                          className="px-2 py-0.5 rounded-md border border-red-300 bg-red-50 text-[11px] font-semibold text-red-800 hover:bg-red-100 dark:border-red-700 dark:bg-red-950/30 dark:text-red-200 inline-flex items-center gap-1"
+                          title="Reject signup request"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          Reject
+                        </button>
+                      </>
+                    ) : !isPending && !isRejected ? (
                       <>
                         <button
                           type="button"
@@ -713,7 +766,7 @@ export default function SuperRestaurantsPage() {
                           )}
                         </button>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 );
               },
@@ -1024,6 +1077,78 @@ export default function SuperRestaurantsPage() {
                       </span>
                     ) : (
                       "Approve & Activate"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Reject restaurant modal */}
+        {rejectTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 dark:bg-black/60">
+            <div className="bg-white dark:bg-neutral-900 rounded-xl border-2 border-gray-200 dark:border-neutral-700 shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-700">
+                <h3 className="font-bold text-gray-900 dark:text-white">
+                  Reject signup request
+                </h3>
+                <button
+                  type="button"
+                  disabled={rejectLoading}
+                  onClick={() => {
+                    if (rejectLoading) return;
+                    setRejectTarget(null);
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-neutral-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <form onSubmit={handleRejectRestaurant}>
+                <div className="px-5 py-4 space-y-4">
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    Reject{" "}
+                    <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                      {rejectTarget.website?.name || "this restaurant"}
+                    </span>
+                    ? The owner will be notified by email and will not be able to log in.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Reason (optional)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      placeholder="Brief note included in the rejection email…"
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-700">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={rejectLoading}
+                    onClick={() => setRejectTarget(null)}
+                    className="px-4"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={rejectLoading}
+                    className="px-4 !bg-red-600 hover:!bg-red-700"
+                  >
+                    {rejectLoading ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Rejecting…
+                      </span>
+                    ) : (
+                      "Reject request"
                     )}
                   </Button>
                 </div>

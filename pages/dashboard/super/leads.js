@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import SuperPageGate from "../../../components/super/SuperPageGate";
@@ -8,6 +8,7 @@ import {
   addLeadNoteForSuperAdmin,
   convertLeadForSuperAdmin,
   createLeadForSuperAdmin,
+  importLeadsForSuperAdmin,
   deleteLeadForSuperAdmin,
   getLeadsForSuperAdmin,
   getLeadStatsForSuperAdmin,
@@ -39,6 +40,9 @@ import {
   UserPlus,
   Eye,
   X,
+  Upload,
+  FileDown,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -165,6 +169,164 @@ function activitySummary(entry) {
   return entry.body || entry.type;
 }
 
+function parseCSVLine(line) {
+  const out = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQ = !inQ;
+      continue;
+    }
+    if (!inQ && c === ",") {
+      out.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  out.push(cur.trim());
+  return out.map((s) => s.replace(/^"|"$/g, "").replace(/""/g, '"'));
+}
+
+function normalizeCsvHeader(h) {
+  return String(h || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+const CSV_HEADER_MAP = {
+  restaurant: "restaurantName",
+  restaurant_name: "restaurantName",
+  restaurantname: "restaurantName",
+  name: "name",
+  contact: "name",
+  contact_name: "name",
+  owner: "name",
+  owner_name: "name",
+  phone: "phone",
+  mobile: "phone",
+  phone_number: "phone",
+  email: "email",
+  city: "city",
+  source: "source",
+  value: "value",
+  deal_value: "value",
+  follow_up: "nextFollowUpAt",
+  followup: "nextFollowUpAt",
+  next_follow_up: "nextFollowUpAt",
+  note: "note",
+  notes: "note",
+  status: "status",
+  assigned_to: "assignedToEmail",
+  assignee: "assignedToEmail",
+  assigned_to_email: "assignedToEmail",
+};
+
+function parseLeadsCsv(text) {
+  const raw = String(text || "").replace(/^\uFEFF/, "");
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) {
+    return { error: "CSV must include a header row and at least one data row.", rows: [] };
+  }
+
+  const headerCells = parseCSVLine(lines[0]).map(normalizeCsvHeader);
+  const phoneIdx = headerCells.findIndex((h) => CSV_HEADER_MAP[h] === "phone");
+  if (phoneIdx === -1) {
+    return {
+      error: 'CSV must include a "phone" column.',
+      rows: [],
+    };
+  }
+
+  const rows = [];
+  const rowErrors = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCSVLine(lines[i]);
+    if (cells.every((c) => !String(c).trim())) continue;
+
+    const row = {};
+    headerCells.forEach((h, idx) => {
+      const key = CSV_HEADER_MAP[h];
+      if (!key) return;
+      const val = cells[idx] != null ? String(cells[idx]).trim() : "";
+      if (val) row[key] = val;
+    });
+
+    if (!row.phone) {
+      rowErrors.push({ row: i + 1, message: "Missing phone" });
+      continue;
+    }
+
+    if (row.source) {
+      const src = row.source.toLowerCase().replace(/\s+/g, "_");
+      row.source = SOURCE_OPTIONS.some((o) => o.value === src) ? src : "manual";
+    } else {
+      row.source = "manual";
+    }
+
+    if (row.status) {
+      row.status = row.status.toLowerCase();
+      if (!PIPELINE_STAGES.includes(row.status)) {
+        row.status = "new";
+      }
+    }
+
+    if (row.value != null && row.value !== "") {
+      const n = Number(String(row.value).replace(/,/g, ""));
+      row.value = Number.isFinite(n) && n >= 0 ? n : 0;
+    }
+
+    rows.push(row);
+  }
+
+  if (rows.length === 0 && rowErrors.length === 0) {
+    return { error: "No valid lead rows found in CSV.", rows: [] };
+  }
+
+  return { rows, rowErrors };
+}
+
+function downloadLeadsImportTemplate() {
+  const header = [
+    "restaurant_name",
+    "name",
+    "phone",
+    "email",
+    "city",
+    "source",
+    "value",
+    "follow_up",
+    "note",
+    "status",
+    "assigned_to",
+  ];
+  const example = [
+    "Shawarma House",
+    "Ali Khan",
+    "03001234567",
+    "ali@example.com",
+    "Lahore",
+    "manual",
+    "15000",
+    "2026-07-15",
+    "Met at expo",
+    "new",
+    "",
+  ];
+  const blob = new Blob(["\uFEFF" + `${header.join(",")}\n${example.join(",")}\n`], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "leads-import-template.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export default function SuperLeadsPage() {
   const { hasAccess } = usePlatformPermissionGate("platform.leads.view");
   const { hasPermission } = usePermissions();
@@ -225,6 +387,12 @@ export default function SuperLeadsPage() {
 
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
+
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef(null);
 
   const scopeParams = useMemo(
     () => ({
@@ -375,6 +543,62 @@ export default function SuperLeadsPage() {
       toast.error(err.message || "Failed to create lead");
     } finally {
       setAddSaving(false);
+    }
+  }
+
+  function closeImportModal() {
+    if (importing) return;
+    setShowImportModal(false);
+    setImportPreview(null);
+    setImportFile(null);
+    if (importFileRef.current) importFileRef.current.value = "";
+  }
+
+  function handleImportFileSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFile(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseLeadsCsv(String(reader.result || ""));
+      setImportPreview(parsed);
+    };
+    reader.onerror = () => {
+      toast.error("Could not read CSV file");
+      setImportPreview({ error: "Could not read file.", rows: [] });
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleImportLeads() {
+    if (!importPreview?.rows?.length) {
+      toast.error(importPreview?.error || "No rows to import");
+      return;
+    }
+    setImporting(true);
+    try {
+      const data = await importLeadsForSuperAdmin(importPreview.rows);
+      const created = data?.createdCount ?? data?.created?.length ?? 0;
+      const failed = data?.failedCount ?? data?.failed?.length ?? 0;
+      if (created > 0) {
+        toast.success(`Imported ${created} lead${created === 1 ? "" : "s"}`);
+        loadLeads();
+        loadStats();
+      }
+      if (failed > 0) {
+        toast.error(`${failed} row${failed === 1 ? "" : "s"} failed to import`);
+        setImportPreview((prev) => ({
+          ...prev,
+          importFailed: data?.failed || [],
+        }));
+        if (created > 0) closeImportModal();
+        return;
+      }
+      closeImportModal();
+    } catch (err) {
+      toast.error(err.message || "Import failed");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -830,14 +1054,28 @@ export default function SuperLeadsPage() {
                 </select>
               )}
               {canManage && (
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Lead
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowImportModal(true);
+                      setImportPreview(null);
+                      setImportFile(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Import CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Lead
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1456,6 +1694,166 @@ export default function SuperLeadsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Import CSV modal */}
+        {showImportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/50"
+              aria-label="Close modal"
+              onClick={closeImportModal}
+            />
+            <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Import leads (CSV)
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeImportModal}
+                  disabled={importing}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 disabled:opacity-40"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {importing && (
+                <div className="px-5 pt-3">
+                  <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Importing… please wait.
+                  </div>
+                </div>
+              )}
+              <div className={`p-5 space-y-4 overflow-y-auto text-sm ${importing ? "opacity-60 pointer-events-none" : ""}`}>
+                <p className="text-gray-600 dark:text-neutral-400 text-xs leading-relaxed">
+                  Required column: <code className="bg-gray-100 dark:bg-neutral-800 px-1 rounded">phone</code>.
+                  Optional: restaurant_name, name, email, city, source, value, follow_up, note, status
+                  {canViewAll ? ", assigned_to (team member email)" : ""}.
+                  Leads are assigned to you{canViewAll ? " unless assigned_to is set" : ""}.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadLeadsImportTemplate}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    Download template
+                  </button>
+                  <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border-2 border-primary text-primary text-xs font-semibold cursor-pointer hover:bg-primary/10">
+                    <Upload className="w-3.5 h-3.5" />
+                    Choose CSV file
+                    <input
+                      ref={importFileRef}
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="hidden"
+                      disabled={importing}
+                      onChange={handleImportFileSelected}
+                    />
+                  </label>
+                </div>
+                {importFile && (
+                  <div className="rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900/80 px-3 py-2.5 flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-600 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Attached file</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{importFile.name}</p>
+                    </div>
+                  </div>
+                )}
+                {importPreview?.error && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{importPreview.error}</p>
+                )}
+                {importPreview?.rowErrors?.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 max-h-28 overflow-y-auto">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1">Skipped rows</p>
+                    <ul className="text-[11px] text-amber-900 dark:text-amber-100 space-y-0.5">
+                      {importPreview.rowErrors.map((e, idx) => (
+                        <li key={idx}>Line {e.row}: {e.message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {importPreview?.importFailed?.length > 0 && (
+                  <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 p-3 max-h-28 overflow-y-auto">
+                    <p className="text-xs font-semibold text-red-800 dark:text-red-200 mb-1">Server rejected rows</p>
+                    <ul className="text-[11px] text-red-900 dark:text-red-100 space-y-0.5">
+                      {importPreview.importFailed.map((e, idx) => (
+                        <li key={idx}>
+                          Row {e.row}{e.phone ? ` (${e.phone})` : ""}: {e.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {importPreview?.rows?.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                      Ready to import: {importPreview.rows.length} lead{importPreview.rows.length !== 1 ? "s" : ""}
+                    </p>
+                    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-700">
+                      <table className="min-w-full text-[11px]">
+                        <thead className="bg-gray-50 dark:bg-neutral-900">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">Restaurant</th>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">Phone</th>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">City</th>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importPreview.rows.slice(0, 5).map((row, idx) => (
+                            <tr key={idx} className="border-t border-gray-100 dark:border-neutral-800">
+                              <td className="px-2 py-1.5">{row.restaurantName || "—"}</td>
+                              <td className="px-2 py-1.5 font-mono">{row.phone}</td>
+                              <td className="px-2 py-1.5">{row.city || "—"}</td>
+                              <td className="px-2 py-1.5">{row.status || "new"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {importPreview.rows.length > 5 && (
+                        <p className="px-2 py-1.5 text-[10px] text-gray-400 border-t border-gray-100 dark:border-neutral-800">
+                          + {importPreview.rows.length - 5} more row{importPreview.rows.length - 5 !== 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-800">
+                <button
+                  type="button"
+                  onClick={closeImportModal}
+                  disabled={importing}
+                  className="px-4 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-semibold disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleImportLeads}
+                  disabled={importing || !importPreview?.rows?.length}
+                  className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Importing…
+                    </>
+                  ) : (
+                    `Import ${importPreview?.rows?.length || 0} lead${importPreview?.rows?.length === 1 ? "" : "s"}`
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}
