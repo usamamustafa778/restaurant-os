@@ -232,6 +232,10 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
     subtotal,
     discountAmount,
     deliveryCharges,
+    taxRate,
+    taxAmount,
+    taxLabel,
+    taxableAmount,
   } = ctx;
   const auth = getStoredAuth();
   const foodTotal =
@@ -240,6 +244,19 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
       : Math.max(0, (Number(subtotal) || 0) - (Number(discountAmount) || 0));
   const del =
     orderType === "DELIVERY" ? Math.max(0, Number(deliveryCharges) || 0) : 0;
+  const resolvedTaxAmount =
+    result.taxAmount != null && !Number.isNaN(Number(result.taxAmount))
+      ? Number(result.taxAmount)
+      : Math.max(0, Number(taxAmount) || 0);
+  const resolvedTaxRate =
+    result.taxRate != null && !Number.isNaN(Number(result.taxRate))
+      ? Number(result.taxRate)
+      : Math.max(0, Number(taxRate) || 0);
+  const resolvedTaxLabel = String(result.taxLabel || taxLabel || "").trim();
+  const resolvedTaxableAmount =
+    result.taxableAmount != null && !Number.isNaN(Number(result.taxableAmount))
+      ? Number(result.taxableAmount)
+      : Math.max(0, Number(taxableAmount) || 0);
   const type =
     orderType === "DINE_IN"
       ? "dine-in"
@@ -247,9 +264,11 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
         ? "takeaway"
         : "delivery";
   const due =
-    result.amountDue != null && !Number.isNaN(Number(result.amountDue))
-      ? Number(result.amountDue)
-      : foodTotal + del;
+    result.grandTotal != null && !Number.isNaN(Number(result.grandTotal))
+      ? Number(result.grandTotal)
+      : result.amountDue != null && !Number.isNaN(Number(result.amountDue))
+        ? Number(result.amountDue)
+        : foodTotal + resolvedTaxAmount + del;
   return {
     id: result.orderNumber || String(orderId || ""),
     _id: String(result.id || result._id || orderId || ""),
@@ -260,6 +279,10 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
     items,
     subtotal,
     discountAmount: discountAmount || 0,
+    taxRate: resolvedTaxRate,
+    taxAmount: resolvedTaxAmount,
+    taxLabel: resolvedTaxLabel,
+    taxableAmount: resolvedTaxableAmount,
     deliveryCharges: del,
     total: foodTotal,
     grandTotal: due,
@@ -516,6 +539,11 @@ export default function POSView({
   const [restaurantBillFooter, setRestaurantBillFooter] = useState(
     "Thank you for your order!",
   );
+  const [restaurantShowTaxOnBill, setRestaurantShowTaxOnBill] = useState(false);
+  const [restaurantTaxEnabled, setRestaurantTaxEnabled] = useState(false);
+  const [restaurantTaxRate, setRestaurantTaxRate] = useState(0);
+  const [restaurantTaxLabel, setRestaurantTaxLabel] = useState("Tax");
+  const [restaurantTaxDelivery, setRestaurantTaxDelivery] = useState(false);
 
   // Client-only clock — avoids SSR/hydration mismatch for any date rendered in JSX
   const [now, setNow] = useState(null);
@@ -569,6 +597,7 @@ export default function POSView({
         setRestaurantBillFooter(
           data?.billFooterMessage || "Thank you for your order!",
         );
+        setRestaurantShowTaxOnBill(data?.showTaxOnBill === true);
         setPosDiscountPresetsCfg(
           Array.isArray(data?.posDiscountPresets) &&
             data.posDiscountPresets.length
@@ -576,6 +605,16 @@ export default function POSView({
             : null,
         );
         setPosDiscountPinConfigured(Boolean(data?.posDiscountPinConfigured));
+        setRestaurantTaxEnabled(data?.taxEnabled === true);
+        setRestaurantTaxRate(
+          Number.isFinite(Number(data?.taxRate))
+            ? Math.max(0, Number(data.taxRate))
+            : 0,
+        );
+        setRestaurantTaxLabel(
+          String(data?.taxLabel || "Tax").trim() || "Tax",
+        );
+        setRestaurantTaxDelivery(data?.taxDelivery === true);
       })
       .catch(() => {
         // Ignore logo load errors; printing will just fall back to text
@@ -2090,7 +2129,26 @@ export default function POSView({
       : selectedDeliveryZone
         ? Math.round(selectedDeliveryZone.fee * 100) / 100
         : Math.max(0, Number(editSessionDeliveryCharges) || 0);
-  const amountDue = Math.round((total + deliveryFee) * 100) / 100;
+  const parsedTaxRate = Number(restaurantTaxRate);
+  const normalizedTaxRate = Number.isFinite(parsedTaxRate)
+    ? Math.max(0, parsedTaxRate)
+    : 0;
+  const taxEnabledForOrder = restaurantTaxEnabled && normalizedTaxRate > 0;
+  const taxableAmount = taxEnabledForOrder
+    ? Math.round(
+        (total + (restaurantTaxDelivery ? deliveryFee : 0)) * 100,
+      ) / 100
+    : 0;
+  const taxAmount = taxEnabledForOrder
+    ? Math.round((taxableAmount * normalizedTaxRate) / 100 * 100) / 100
+    : 0;
+  const taxLabel = String(restaurantTaxLabel || "Tax").trim() || "Tax";
+  const taxRateForDisplay = taxEnabledForOrder ? normalizedTaxRate : 0;
+  const taxRateText = Number.isInteger(taxRateForDisplay)
+    ? String(taxRateForDisplay)
+    : taxRateForDisplay.toFixed(2).replace(/\.?0+$/, "");
+  const taxLineLabel = `${taxLabel} (${taxRateText}%)`;
+  const amountDue = Math.round((total + taxAmount + deliveryFee) * 100) / 100;
   const deliveryZonesActive =
     orderType === "DELIVERY" && deliveryZones.length > 0;
 
@@ -2350,6 +2408,10 @@ export default function POSView({
           deliveryAddress: cAddress,
           subtotal,
           discountAmount: totalDiscount,
+          taxRate: taxEnabledForOrder ? normalizedTaxRate : 0,
+          taxAmount,
+          taxLabel,
+          taxableAmount,
           deliveryCharges: deliveryFee,
         });
       }
@@ -2484,6 +2546,11 @@ export default function POSView({
       posDiscountReasonOptions,
       subtotal,
       total,
+      taxRate: taxEnabledForOrder ? normalizedTaxRate : 0,
+      taxAmount,
+      taxLabel,
+      taxableAmount,
+      grandTotal: amountDue,
       items: cart.map((it) => ({
         name: it.name,
         qty: it.quantity,
@@ -2509,6 +2576,7 @@ export default function POSView({
       orderTakerName: waiterFromOrder || auth?.user?.name || "",
       logoHeightPx: restaurantLogoHeight,
       footerMessage: restaurantBillFooter,
+      showTaxOnBill: restaurantShowTaxOnBill,
     });
   }
 
@@ -3901,10 +3969,10 @@ export default function POSView({
                 )}
                 <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
                   <span className="text-gray-600 dark:text-neutral-400">
-                    Tax (0%)
+                    {taxLineLabel}
                   </span>
                   <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
-                    Rs 0
+                    Rs {taxAmount.toFixed(2)}
                   </span>
                 </div>
                 {orderType === "DELIVERY" && deliveryFee > 0 && (
@@ -4652,10 +4720,10 @@ export default function POSView({
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600 dark:text-neutral-400">
-                        Tax (0%)
+                        {taxLineLabel}
                       </span>
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        $0
+                        ${taxAmount.toFixed(2)}
                       </span>
                     </div>
                     {totalDiscount > 0 && (
@@ -4833,10 +4901,10 @@ export default function POSView({
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600 dark:text-neutral-400">
-                    Tax (0%)
+                    {taxLineLabel}
                   </span>
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    $0
+                    ${taxAmount.toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">

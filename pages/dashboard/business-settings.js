@@ -70,24 +70,30 @@ const DEMO_ORDER = {
   tableName: "Table 1 (4 persons)",
   orderTakerName: "John Doe",
   discountAmount: 0,
-  subtotal: 100,
-  total: 100,
+  subtotal: 150,
+  total: 150,
+  taxRate: 5,
+  taxAmount: 7.5,
+  taxLabel: "Tax",
+  taxableAmount: 150,
+  grandTotal: 157.5,
   items: [
     { name: "Crispy Roll Paratha", unitPrice: 50, qty: 2, lineTotal: 100 },
     { name: "Garlic Sauce", unitPrice: 50, qty: 1, lineTotal: 50 },
   ],
 };
 
-function BillPreviewPane({ logoUrl, logoHeightPx, footerMessage }) {
+function BillPreviewPane({ logoUrl, logoHeightPx, footerMessage, showTaxOnBill }) {
   const html = useMemo(
     () =>
       buildBillHtml(DEMO_ORDER, {
         logoUrl: logoUrl || "",
         logoHeightPx: logoHeightPx || 100,
         footerMessage: footerMessage || "Thank you for your order!",
+        showTaxOnBill: showTaxOnBill === true,
         mode: "bill",
       }),
-    [logoUrl, logoHeightPx, footerMessage],
+    [logoUrl, logoHeightPx, footerMessage, showTaxOnBill],
   );
   return (
     <div className="hidden lg:flex flex-col w-72 flex-shrink-0">
@@ -1006,6 +1012,7 @@ export default function BusinessSettingsPage() {
         restaurantLogoUrl: restaurantLogoUrl || "",
         restaurantLogoHeightPx: logoHeight,
         billFooterMessage,
+        showTaxOnBill: restaurantSettings?.showTaxOnBill === true,
       });
       setRestaurantSettings(updated);
       setLogoHeight(updated?.restaurantLogoHeightPx || logoHeight);
@@ -2446,6 +2453,22 @@ export default function BusinessSettingsPage() {
                         </p>
                       </div>
 
+                      <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-neutral-300">
+                        <input
+                          type="checkbox"
+                          checked={restaurantSettings?.showTaxOnBill === true}
+                          onChange={(e) => {
+                            setRestaurantSettings((p) => ({
+                              ...(p || {}),
+                              showTaxOnBill: e.target.checked,
+                            }));
+                            setLogoDirty(true);
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        Show tax on customer bill/receipt
+                      </label>
+
                       <button
                         type="button"
                         disabled={logoSaving || !logoDirty}
@@ -2470,6 +2493,7 @@ export default function BusinessSettingsPage() {
                 logoUrl={restaurantSettings?.restaurantLogoUrl}
                 logoHeightPx={logoHeight}
                 footerMessage={billFooterMessage}
+                showTaxOnBill={restaurantSettings?.showTaxOnBill === true}
               />
             </div>
           )}

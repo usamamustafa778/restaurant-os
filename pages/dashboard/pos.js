@@ -541,6 +541,7 @@ export default function OrdersPage() {
   const [restaurantBillFooter, setRestaurantBillFooter] = useState(
     "Thank you for your order!",
   );
+  const [restaurantShowTaxOnBill, setRestaurantShowTaxOnBill] = useState(false);
 
   // ── Data loading ────────────────────────────────────────────────────────
 
@@ -592,6 +593,7 @@ export default function OrdersPage() {
         setRestaurantBillFooter(
           data?.billFooterMessage || "Thank you for your order!",
         );
+        setRestaurantShowTaxOnBill(data?.showTaxOnBill === true);
       })
       .catch(() => {
         if (!cancelled) setRestaurantLogoUrl("");
@@ -901,6 +903,7 @@ export default function OrdersPage() {
       branchAddress: currentBranch?.address || "",
       logoHeightPx: restaurantLogoHeight,
       footerMessage: restaurantBillFooter,
+      showTaxOnBill: restaurantShowTaxOnBill,
     });
   }
 

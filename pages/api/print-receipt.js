@@ -93,7 +93,14 @@ function buildEscPos(o) {
 
   const isDelivery = String(o.type || "").toLowerCase().includes("delivery");
   const deliveryCharges = isDelivery ? Number(o.deliveryCharges || 0) : 0;
-  const grandTotal = Number(o.total || 0) + deliveryCharges;
+  const taxAmount = Number(o.taxAmount || 0) || 0;
+  const taxRate = Number(o.taxRate || 0) || 0;
+  const taxLabel = String(o.taxLabel || "Tax").trim() || "Tax";
+  const showTaxOnBill = o.showTaxOnBill === true;
+  const grandTotal =
+    o.grandTotal != null && !Number.isNaN(Number(o.grandTotal))
+      ? Number(o.grandTotal)
+      : Number(o.total || 0) + taxAmount + deliveryCharges;
 
   ln(DASH_LINE);
   ln(pad("Total Items:", String(totalItems)));
@@ -114,6 +121,9 @@ function buildEscPos(o) {
   }
   if (!(dealDisc > 0) && !(manualDisc > 0) && Number(o.discount || 0) > 0) {
     ln(pad("Discount:", "- " + Number(o.discount).toFixed(2)));
+  }
+  if (showTaxOnBill && taxAmount > 0) {
+    ln(pad(`${taxLabel} (${taxRate}%)`, taxAmount.toFixed(2)));
   }
   if (deliveryCharges > 0)
     ln(pad("Delivery Charges:", deliveryCharges.toFixed(2)));
