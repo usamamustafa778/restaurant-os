@@ -121,6 +121,7 @@ function formatCutoff(h) {
 
 const SECTIONS = [
   { id: "branding", label: "General", icon: Palette },
+  { id: "tax", label: "Tax", icon: BadgeDollarSign },
   { id: "branches", label: "Branches", icon: Building2 },
   { id: "bill", label: "Bill Settings", icon: FileText },
   { id: "discounts", label: "Discounts", icon: Percent },
@@ -322,6 +323,7 @@ export default function BusinessSettingsPage() {
   const [websiteSettings, setWebsiteSettings] = useState(null);
   const [websiteLoading, setWebsiteLoading] = useState(true);
   const [websiteSaving, setWebsiteSaving] = useState(false);
+  const [taxSaving, setTaxSaving] = useState(false);
   const [websiteLogoTab, setWebsiteLogoTab] = useState("link");
   const [websiteBannerTab, setWebsiteBannerTab] = useState("link");
   const [uploadingWebsiteLogo, setUploadingWebsiteLogo] = useState(false);
@@ -777,13 +779,6 @@ export default function BusinessSettingsPage() {
         updateWebsiteSettings(websiteSettings),
         updateRestaurantSettings({
           currencyCode: restaurantSettings?.currencyCode || null,
-          taxEnabled: restaurantSettings?.taxEnabled === true,
-          taxRate: Number.isFinite(Number(restaurantSettings?.taxRate))
-            ? Math.max(0, Math.min(100, Number(restaurantSettings.taxRate)))
-            : 0,
-          taxLabel:
-            String(restaurantSettings?.taxLabel || "").trim() || "Tax",
-          taxDelivery: restaurantSettings?.taxDelivery === true,
         }),
       ]);
       const updated = updatedWebsite;
@@ -801,6 +796,29 @@ export default function BusinessSettingsPage() {
   }
   const onWebsiteChange = (f) => (e) =>
     setWebsiteSettings((p) => ({ ...p, [f]: e.target.value }));
+
+  async function handleTaxSave(e) {
+    e.preventDefault();
+    if (!restaurantSettings) return;
+    setTaxSaving(true);
+    const toastId = toast.loading("Saving tax settings...");
+    try {
+      const updated = await updateRestaurantSettings({
+        taxEnabled: restaurantSettings?.taxEnabled === true,
+        taxRate: Number.isFinite(Number(restaurantSettings?.taxRate))
+          ? Math.max(0, Math.min(100, Number(restaurantSettings.taxRate)))
+          : 0,
+        taxLabel: String(restaurantSettings?.taxLabel || "").trim() || "Tax",
+        taxDelivery: restaurantSettings?.taxDelivery === true,
+      });
+      setRestaurantSettings((prev) => ({ ...(prev || {}), ...(updated || {}) }));
+      toast.success("Tax settings saved!", { id: toastId });
+    } catch (err) {
+      toast.error(err.message || "Failed to save tax settings", { id: toastId });
+    } finally {
+      setTaxSaving(false);
+    }
+  }
 
   async function handleWebsiteLogoUpload(e) {
     const file = e.target.files?.[0];
@@ -1399,84 +1417,6 @@ export default function BusinessSettingsPage() {
                         </div>
                       </div>
 
-                      <div className="border-t border-gray-100 dark:border-neutral-800" />
-
-                      {/* ── Tax ── */}
-                      <div>
-                        <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-widest mb-3">
-                          Tax
-                        </p>
-                        <div className="space-y-3">
-                          <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-neutral-300">
-                            <input
-                              type="checkbox"
-                              checked={restaurantSettings?.taxEnabled === true}
-                              onChange={(e) =>
-                                setRestaurantSettings((p) => ({
-                                  ...(p || {}),
-                                  taxEnabled: e.target.checked,
-                                }))
-                              }
-                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            />
-                            Enable tax
-                          </label>
-
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5">
-                              <label className={labelCls}>Rate (%)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step="0.01"
-                                value={Number(restaurantSettings?.taxRate || 0)}
-                                onChange={(e) =>
-                                  setRestaurantSettings((p) => ({
-                                    ...(p || {}),
-                                    taxRate: e.target.value,
-                                  }))
-                                }
-                                disabled={restaurantSettings?.taxEnabled !== true}
-                                className={inp}
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className={labelCls}>Tax label</label>
-                              <input
-                                type="text"
-                                value={restaurantSettings?.taxLabel || "Tax"}
-                                onChange={(e) =>
-                                  setRestaurantSettings((p) => ({
-                                    ...(p || {}),
-                                    taxLabel: e.target.value,
-                                  }))
-                                }
-                                placeholder="GST, VAT, Sales Tax"
-                                disabled={restaurantSettings?.taxEnabled !== true}
-                                className={inp}
-                              />
-                            </div>
-                          </div>
-
-                          <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-neutral-300">
-                            <input
-                              type="checkbox"
-                              checked={restaurantSettings?.taxDelivery === true}
-                              onChange={(e) =>
-                                setRestaurantSettings((p) => ({
-                                  ...(p || {}),
-                                  taxDelivery: e.target.checked,
-                                }))
-                              }
-                              disabled={restaurantSettings?.taxEnabled !== true}
-                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                            />
-                            Also tax delivery charges
-                          </label>
-                        </div>
-                      </div>
-
                       <button
                         type="submit"
                         disabled={websiteSaving}
@@ -1533,6 +1473,113 @@ export default function BusinessSettingsPage() {
                       </div>
                     </div>
                   </div>
+                </form>
+              )}
+            </SectionCard>
+          )}
+
+          {/* ════ TAX ════ */}
+          {activeSection === "tax" && (
+            <SectionCard
+              id="tax"
+              icon={BadgeDollarSign}
+              title="Tax"
+              subtitle="Configure GST / VAT / Sales Tax for all orders"
+            >
+              {logoLoading ? (
+                <div className="flex items-center justify-center gap-2 py-8">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm text-gray-500 dark:text-neutral-400">
+                    Loading tax settings...
+                  </span>
+                </div>
+              ) : (
+                <form onSubmit={handleTaxSave} className="space-y-4 max-w-2xl">
+                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={restaurantSettings?.taxEnabled === true}
+                      onChange={(e) =>
+                        setRestaurantSettings((p) => ({
+                          ...(p || {}),
+                          taxEnabled: e.target.checked,
+                        }))
+                      }
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    Enable tax
+                  </label>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className={labelCls}>Rate (%)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={restaurantSettings?.taxRate ?? 0}
+                        onChange={(e) =>
+                          setRestaurantSettings((p) => ({
+                            ...(p || {}),
+                            taxRate: e.target.value,
+                          }))
+                        }
+                        disabled={restaurantSettings?.taxEnabled !== true}
+                        className={inp}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className={labelCls}>Tax label</label>
+                      <input
+                        type="text"
+                        value={restaurantSettings?.taxLabel || "Tax"}
+                        onChange={(e) =>
+                          setRestaurantSettings((p) => ({
+                            ...(p || {}),
+                            taxLabel: e.target.value,
+                          }))
+                        }
+                        placeholder="GST, VAT, Sales Tax"
+                        disabled={restaurantSettings?.taxEnabled !== true}
+                        className={inp}
+                      />
+                    </div>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={restaurantSettings?.taxDelivery === true}
+                      onChange={(e) =>
+                        setRestaurantSettings((p) => ({
+                          ...(p || {}),
+                          taxDelivery: e.target.checked,
+                        }))
+                      }
+                      disabled={restaurantSettings?.taxEnabled !== true}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    Also tax delivery charges
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={taxSaving}
+                    className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold disabled:opacity-60"
+                  >
+                    {taxSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving…
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Save Tax Settings
+                      </>
+                    )}
+                  </button>
                 </form>
               )}
             </SectionCard>
