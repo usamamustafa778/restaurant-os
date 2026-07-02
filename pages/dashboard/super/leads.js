@@ -202,6 +202,13 @@ function primaryLeadEmail(lead) {
   );
 }
 
+function leadFieldEmail(lead, target) {
+  if (!lead || !target) return "";
+  if (target === "restaurant") return (lead.restaurantEmail || "").trim();
+  if (target === "owner") return (lead.ownerEmail || "").trim();
+  return "";
+}
+
 function isOverdue(lead) {
   if (!lead.nextFollowUpAt) return false;
   if (lead.status === "won" || lead.status === "lost") return false;
@@ -425,6 +432,158 @@ function FieldRow({ label, children }) {
   );
 }
 
+function EmailSendButton({ active, onClick, disabled = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`shrink-0 rounded-md p-1 transition-colors ${
+        active
+          ? "bg-primary/10 text-primary"
+          : "text-gray-400 hover:bg-gray-100 hover:text-primary dark:hover:bg-neutral-800"
+      } disabled:pointer-events-none disabled:opacity-40`}
+      aria-label="Send email"
+      title="Send email"
+    >
+      <Send className="w-3.5 h-3.5" />
+    </button>
+  );
+}
+
+function LeadEmailComposer({
+  to,
+  recipientLabel,
+  replyToEmail,
+  subject,
+  body,
+  sending,
+  onSubjectChange,
+  onBodyChange,
+  onCancel,
+  onSubmit,
+}) {
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="col-span-2 overflow-hidden rounded-xl border border-primary/20 bg-white shadow-sm dark:border-primary/25 dark:bg-neutral-900"
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gradient-to-r from-primary/[0.06] to-transparent px-3 py-2.5 dark:border-neutral-800">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Mail className="w-4 h-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+              Compose email
+            </p>
+            <p className="truncate text-xs text-gray-500 dark:text-neutral-400">
+              {recipientLabel}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+          aria-label="Close composer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="space-y-3 px-3 py-3">
+        <div className="space-y-1.5 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2.5 text-xs dark:border-neutral-800 dark:bg-neutral-800/50">
+          <div className="flex gap-2">
+            <span className="w-12 shrink-0 font-medium text-gray-500 dark:text-neutral-400">
+              To
+            </span>
+            <span className="min-w-0 truncate font-medium text-gray-900 dark:text-neutral-100">
+              {to}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <span className="w-12 shrink-0 font-medium text-gray-500 dark:text-neutral-400">
+              From
+            </span>
+            <span className="min-w-0 truncate text-gray-700 dark:text-neutral-300">
+              Eats Desk
+            </span>
+          </div>
+          {replyToEmail ? (
+            <div className="flex gap-2">
+              <span className="w-12 shrink-0 font-medium text-gray-500 dark:text-neutral-400">
+                Reply
+              </span>
+              <span className="min-w-0 truncate text-gray-700 dark:text-neutral-300">
+                {replyToEmail}
+              </span>
+            </div>
+          ) : null}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-neutral-400">
+            Subject
+          </label>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => onSubjectChange(e.target.value)}
+            placeholder="Email subject"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-neutral-400">
+            Message
+          </label>
+          <textarea
+            value={body}
+            onChange={(e) => onBodyChange(e.target.value)}
+            rows={5}
+            placeholder="Write your message..."
+            className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm leading-relaxed focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-neutral-800">
+          <p className="text-[11px] text-gray-500 dark:text-neutral-500">
+            Replies go to your inbox, not noreply.
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={sending || !subject.trim() || !body.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-3.5 w-3.5" />
+                  Send email
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 function InlineEditField({
   value,
   onSave,
@@ -640,11 +799,12 @@ export default function SuperLeadsPage() {
   const [sourceFilter, setSourceFilter] = useState("");
   const [teamMembers, setTeamMembers] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
 
   const [selectedLead, setSelectedLead] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
-  const [emailComposerOpen, setEmailComposerOpen] = useState(false);
+  const [emailComposerTarget, setEmailComposerTarget] = useState(null);
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [emailSending, setEmailSending] = useState(false);
@@ -734,6 +894,7 @@ export default function SuperLeadsPage() {
     if (!hasAccess) return;
     const auth = getStoredAuth();
     setCurrentUserId(auth?.user?.id || null);
+    setCurrentUserEmail(auth?.user?.email || "");
   }, [hasAccess]);
 
   useEffect(() => {
@@ -764,7 +925,7 @@ export default function SuperLeadsPage() {
     // Only reset on switching to a different lead, not on every field
     // auto-save (which also produces a new selectedLead reference).
     setNoteText("");
-    setEmailComposerOpen(false);
+    setEmailComposerTarget(null);
     setEmailSubject("");
     setEmailBody("");
   }, [selectedLead?.id]);
@@ -1056,25 +1217,66 @@ export default function SuperLeadsPage() {
     }
   }
 
+  function closeEmailComposer() {
+    setEmailComposerTarget(null);
+    setEmailSubject("");
+    setEmailBody("");
+  }
+
+  function toggleEmailComposer(target) {
+    if (emailComposerTarget === target) {
+      closeEmailComposer();
+      return;
+    }
+    setEmailSubject("");
+    setEmailBody("");
+    setEmailComposerTarget(target);
+  }
+
   async function handleSendEmail(e) {
     e.preventDefault();
-    if (!selectedLead || !emailSubject.trim() || !emailBody.trim()) return;
+    if (!selectedLead || !emailComposerTarget) return;
+    const to = leadFieldEmail(selectedLead, emailComposerTarget);
+    if (!to || !emailSubject.trim() || !emailBody.trim()) return;
     setEmailSending(true);
     try {
       const data = await sendLeadEmailForSuperAdmin(selectedLead.id, {
         subject: emailSubject.trim(),
         body: emailBody.trim(),
+        to,
       });
       upsertLead(data.lead);
-      setEmailComposerOpen(false);
-      setEmailSubject("");
-      setEmailBody("");
+      closeEmailComposer();
       toast.success(`Email sent to ${data.to}`);
     } catch (err) {
       toast.error(err.message || "Failed to send email");
     } finally {
       setEmailSending(false);
     }
+  }
+
+  function renderEmailComposer(target) {
+    if (!canManage || emailComposerTarget !== target || !selectedLead) return null;
+    const to = leadFieldEmail(selectedLead, target);
+    if (!to) return null;
+    const recipientLabel =
+      target === "owner"
+        ? `Owner · ${to}`
+        : `Restaurant · ${to}`;
+    return (
+      <LeadEmailComposer
+        to={to}
+        recipientLabel={recipientLabel}
+        replyToEmail={currentUserEmail}
+        subject={emailSubject}
+        body={emailBody}
+        sending={emailSending}
+        onSubjectChange={setEmailSubject}
+        onBodyChange={setEmailBody}
+        onCancel={closeEmailComposer}
+        onSubmit={handleSendEmail}
+      />
+    );
   }
 
   async function handleReassign(assigneeId) {
@@ -1864,80 +2066,17 @@ export default function SuperLeadsPage() {
                           emptyLabel="Add email"
                           onSave={saveRestaurantEmail}
                           actions={
-                            canManage && selectedLeadEmail ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEmailComposerOpen((open) => !open)
-                                }
-                                className="shrink-0 text-gray-400 hover:text-primary"
-                                aria-label="Send email"
-                                title="Send email"
-                              >
-                                <Send className="w-3.5 h-3.5" />
-                              </button>
+                            canManage &&
+                            leadFieldEmail(selectedLead, "restaurant") ? (
+                              <EmailSendButton
+                                active={emailComposerTarget === "restaurant"}
+                                onClick={() => toggleEmailComposer("restaurant")}
+                              />
                             ) : null
                           }
                         />
                       </FieldRow>
-                      {emailComposerOpen && canManage && selectedLeadEmail && (
-                        <form
-                          onSubmit={handleSendEmail}
-                          className="col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2 dark:border-neutral-700 dark:bg-neutral-900/50"
-                        >
-                          <p className="text-xs text-gray-500 dark:text-neutral-400">
-                            To: {selectedLeadEmail}
-                          </p>
-                          <input
-                            type="text"
-                            value={emailSubject}
-                            onChange={(e) => setEmailSubject(e.target.value)}
-                            placeholder="Subject"
-                            className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                          />
-                          <textarea
-                            value={emailBody}
-                            onChange={(e) => setEmailBody(e.target.value)}
-                            rows={4}
-                            placeholder="Write your message..."
-                            className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                          />
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEmailComposerOpen(false);
-                                setEmailSubject("");
-                                setEmailBody("");
-                              }}
-                              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="submit"
-                              disabled={
-                                emailSending ||
-                                !emailSubject.trim() ||
-                                !emailBody.trim()
-                              }
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-50"
-                            >
-                              {emailSending ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  Sending...
-                                </>
-                              ) : (
-                                <>
-                                  <Send className="w-3.5 h-3.5" />
-                                  Send
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </form>
-                      )}
+                      {renderEmailComposer("restaurant")}
                       <FieldRow label="City">
                         <InlineEditField
                           value={selectedLead.city || ""}
@@ -1993,9 +2132,19 @@ export default function SuperLeadsPage() {
                               placeholder="Owner email"
                               emptyLabel="Add email"
                               onSave={saveOwnerEmail}
+                              actions={
+                                canManage &&
+                                leadFieldEmail(selectedLead, "owner") ? (
+                                  <EmailSendButton
+                                    active={emailComposerTarget === "owner"}
+                                    onClick={() => toggleEmailComposer("owner")}
+                                  />
+                                ) : null
+                              }
                             />
                           </FieldRow>
                         </div>
+                        {renderEmailComposer("owner")}
                         <label className="col-span-2 inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-neutral-300">
                           <input
                             type="checkbox"
