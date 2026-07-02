@@ -530,6 +530,33 @@ const superNav = [
  * - Regular items: shows a simple tooltip on hover.
  * - Items with `dropdownItems`: shows a sub-dropdown with heading + styled child items.
  */
+function SidebarNavSkeleton({ collapsed }) {
+  return (
+    <div
+      className="space-y-1 animate-pulse"
+      aria-busy="true"
+      aria-label="Loading navigation"
+    >
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={i}
+          className={`flex items-center gap-3 px-3 py-2 ${
+            collapsed ? "justify-center" : ""
+          }`}
+        >
+          <div className="h-4 w-4 shrink-0 rounded bg-gray-200 dark:bg-neutral-800" />
+          {!collapsed && (
+            <div
+              className="h-3.5 flex-1 rounded bg-gray-200 dark:bg-neutral-800"
+              style={{ maxWidth: `${50 + (i % 4) * 12}%` }}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function NavItemWrapper({
   collapsed,
   label,
@@ -997,8 +1024,16 @@ export default function AdminLayout({
                 />
               </button>
 
-              <nav className="flex-1 p-3 overflow-y-auto">
-                {navItems.map((item, idx) => {
+              <nav
+                className="flex-1 p-3 overflow-y-auto"
+                aria-label="Main navigation"
+              >
+                {!permissionsLoaded ? (
+                  <SidebarNavSkeleton
+                    collapsed={collapsed && !mobileSidebarOpen}
+                  />
+                ) : (
+                  navItems.map((item, idx) => {
                   if (item.type !== "section" && !canSeeNavItem(item)) {
                     return null;
                   }
@@ -1252,7 +1287,8 @@ export default function AdminLayout({
                       </Link>
                     </NavItemWrapper>
                   );
-                })}
+                })
+                )}
               </nav>
               {/* Mobile: Account section at bottom of sidebar */}
               <div className="md:hidden flex-shrink-0 p-3 border-t-2 border-gray-100 dark:border-neutral-800 space-y-1">
