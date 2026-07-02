@@ -383,6 +383,7 @@ function FilterSelect({ value, onChange, active, children, small }) {
 
 const DEFAULT_REPORT = {
   totalRevenue: 0,
+  totalTax: 0,
 
   totalOrders: 0,
 
@@ -2030,6 +2031,9 @@ export default function HistoryPage() {
     : report.totalOrders
       ? Math.round(report.totalRevenue / report.totalOrders)
       : 0;
+  const totalTaxForOverview = Math.round(
+    Number(report.totalTax ?? report.taxAmount ?? 0) || 0,
+  );
 
   // All active filters applied — used by both the table UI and CSV/print export
 
@@ -2464,6 +2468,8 @@ export default function HistoryPage() {
 
         ["Total Revenue", fmtRs(revenueBreakdown.grandTotal)],
 
+        ["Total Tax", fmtRs(totalTaxForOverview)],
+
         ["Sales (items)", fmtRs(revenueBreakdown.salesAmount)],
 
         ["Delivery Fees", fmtRs(revenueBreakdown.deliveryFees)],
@@ -2610,6 +2616,8 @@ export default function HistoryPage() {
 
       <div class="kpi"><div class="kpi-label">Total revenue</div><div class="kpi-value">${fmtRs(revenueBreakdown.grandTotal)}</div></div>
 
+      <div class="kpi"><div class="kpi-label">Total tax</div><div class="kpi-value">${fmtRs(totalTaxForOverview)}</div></div>
+
       <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">${revenueBreakdown.orderCount}</div></div>
 
       <div class="kpi"><div class="kpi-label">Avg Ticket</div><div class="kpi-value">${fmtRs(avgTicket)}</div></div>
@@ -2719,11 +2727,11 @@ export default function HistoryPage() {
     if (loading) {
       return (
         <div className="space-y-4 max-w-7xl mx-auto">
-          <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, i) => (
+          <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={`overview-kpi-sk-${i}`}
-                className={`rounded-xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 sm:p-5 ${i === 4 ? "col-span-2 sm:col-span-1" : ""}`}
+                className="rounded-xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 sm:p-5"
               >
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
@@ -2762,7 +2770,7 @@ export default function HistoryPage() {
           Completed & paid orders
         </p>
 
-        <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
           <KpiCard
             label="Sales (items)"
             value={fmtRs(revenueBreakdown.salesAmount)}
@@ -2791,6 +2799,15 @@ export default function HistoryPage() {
           />
 
           <KpiCard
+            label="Total tax"
+            value={fmtRs(totalTaxForOverview)}
+            sub="Sum of tax on orders"
+            icon={Percent}
+            gradient="from-indigo-500 to-indigo-600"
+            shadow="shadow-indigo-500/30"
+          />
+
+          <KpiCard
             label="Total orders"
             value={revenueBreakdown.orderCount.toLocaleString()}
             sub="Completed & paid orders"
@@ -2799,18 +2816,14 @@ export default function HistoryPage() {
             shadow="shadow-amber-500/30"
           />
 
-          {/* Avg ticket: full-row on mobile so no orphan card */}
-
-          <div className="col-span-2 sm:col-span-1">
-            <KpiCard
-              label="Avg. ticket"
-              value={fmtRs(avgTicket)}
-              sub="revenue per order"
-              icon={TrendingUp}
-              gradient="from-emerald-500 to-emerald-600"
-              shadow="shadow-emerald-500/30"
-            />
-          </div>
+          <KpiCard
+            label="Avg. ticket"
+            value={fmtRs(avgTicket)}
+            sub="revenue per order"
+            icon={TrendingUp}
+            gradient="from-emerald-500 to-emerald-600"
+            shadow="shadow-emerald-500/30"
+          />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">

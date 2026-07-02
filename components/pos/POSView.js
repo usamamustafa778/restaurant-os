@@ -3967,14 +3967,16 @@ export default function POSView({
                     </div>
                   </div>
                 )}
-                <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
-                  <span className="text-gray-600 dark:text-neutral-400">
-                    {taxLineLabel}
-                  </span>
-                  <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
-                    Rs {taxAmount.toFixed(2)}
-                  </span>
-                </div>
+                {taxEnabledForOrder && (
+                  <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
+                    <span className="text-gray-600 dark:text-neutral-400">
+                      {taxLineLabel}
+                    </span>
+                    <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
+                      Rs {taxAmount.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 {orderType === "DELIVERY" && deliveryFee > 0 && (
                   <div className="flex justify-between items-baseline gap-2 text-xs py-0.5">
                     <span className="text-gray-600 dark:text-neutral-400">
@@ -4718,14 +4720,16 @@ export default function POSView({
                         ${subtotal.toFixed(2)}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600 dark:text-neutral-400">
-                        {taxLineLabel}
-                      </span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        ${taxAmount.toFixed(2)}
-                      </span>
-                    </div>
+                    {taxEnabledForOrder && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600 dark:text-neutral-400">
+                          {taxLineLabel}
+                        </span>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                          ${taxAmount.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
                     {totalDiscount > 0 && (
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600 dark:text-neutral-400">
@@ -4899,14 +4903,16 @@ export default function POSView({
                     ${subtotal.toFixed(2)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 dark:text-neutral-400">
-                    {taxLineLabel}
-                  </span>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    ${taxAmount.toFixed(2)}
-                  </span>
-                </div>
+                {taxEnabledForOrder && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600 dark:text-neutral-400">
+                      {taxLineLabel}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                      ${taxAmount.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600 dark:text-neutral-400">
                     Service Charge
