@@ -28,8 +28,6 @@ import {
   Clock,
   KanbanSquare,
   Loader2,
-  Mail,
-  MapPin,
   MessageSquare,
   Phone,
   Plus,
@@ -39,6 +37,8 @@ import {
   TrendingUp,
   Trophy,
   UserPlus,
+  ChevronDown,
+  Pencil,
   Eye,
   X,
   Upload,
@@ -61,7 +61,10 @@ const STAGES = [
 
 const PIPELINE_STAGES = STAGES.map((s) => s.key);
 
-const STATUS_FILTERS = [{ value: "", label: "All" }, ...STAGES.map((s) => ({ value: s.key, label: s.label }))];
+const STATUS_FILTERS = [
+  { value: "", label: "All" },
+  ...STAGES.map((s) => ({ value: s.key, label: s.label })),
+];
 
 const SOURCE_OPTIONS = [
   { value: "manual", label: "Manual" },
@@ -72,16 +75,30 @@ const SOURCE_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
-const SOURCE_LABELS = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value, o.label]));
+const SOURCE_LABELS = Object.fromEntries(
+  SOURCE_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 const STATUS_BADGE = {
-  prospect: "bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300",
+  prospect:
+    "bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300",
   new: "bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300",
   contacted: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300",
   demo: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
-  negotiating: "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300",
+  negotiating:
+    "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300",
   won: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
   lost: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+};
+
+const STAGE_SELECT_BORDER = {
+  prospect: "border-slate-300 dark:border-slate-700",
+  new: "border-gray-300 dark:border-neutral-700",
+  contacted: "border-blue-300 dark:border-blue-800",
+  demo: "border-amber-300 dark:border-amber-800",
+  negotiating: "border-orange-300 dark:border-orange-800",
+  won: "border-emerald-300 dark:border-emerald-800",
+  lost: "border-red-200 dark:border-red-900",
 };
 
 const ACTIVITY_META = {
@@ -153,6 +170,11 @@ function displayAddedBy(lead) {
   return "System";
 }
 
+function isLeadAssignee(lead, userId) {
+  if (!lead?.assignedTo || !userId) return false;
+  return String(lead.assignedTo) === String(userId);
+}
+
 function leadInitials(lead) {
   const src = (lead.restaurantName || lead.name || "?").trim();
   const parts = src.split(/\s+/).filter(Boolean);
@@ -184,7 +206,8 @@ function isOverdue(lead) {
 
 function activitySummary(entry) {
   if (!entry) return "—";
-  if (entry.type === "stage_change") return entry.body || `Stage: ${entry.toStatus}`;
+  if (entry.type === "stage_change")
+    return entry.body || `Stage: ${entry.toStatus}`;
   return entry.body || entry.type;
 }
 
@@ -260,7 +283,10 @@ function parseLeadsCsv(text) {
   const raw = String(text || "").replace(/^\uFEFF/, "");
   const lines = raw.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) {
-    return { error: "CSV must include a header row and at least one data row.", rows: [] };
+    return {
+      error: "CSV must include a header row and at least one data row.",
+      rows: [],
+    };
   }
 
   const headerCells = parseCSVLine(lines[0]).map(normalizeCsvHeader);
@@ -369,14 +395,221 @@ function downloadLeadsImportTemplate() {
     "prospect",
     "",
   ];
-  const blob = new Blob(["\uFEFF" + `${header.join(",")}\n${example.join(",")}\n`], {
-    type: "text/csv;charset=utf-8;",
-  });
+  const blob = new Blob(
+    ["\uFEFF" + `${header.join(",")}\n${example.join(",")}\n`],
+    {
+      type: "text/csv;charset=utf-8;",
+    },
+  );
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "leads-import-template.csv";
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function FieldRow({ label, children }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-500 dark:text-neutral-400 mb-0.5">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function InlineEditField({
+  value,
+  onSave,
+  type = "text",
+  placeholder = "",
+  editable = true,
+  emptyLabel = "—",
+  actions = null,
+  inputClassName,
+  valueClassName = "text-sm text-gray-900 dark:text-neutral-100",
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef(null);
+  const skipBlurRef = useRef(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(value ?? "");
+  }, [value, editing]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      if (typeof inputRef.current.select === "function") {
+        inputRef.current.select();
+      }
+    }
+  }, [editing]);
+
+  async function commit() {
+    if (skipBlurRef.current) {
+      skipBlurRef.current = false;
+      return;
+    }
+    const next = String(draft ?? "").trim();
+    const current = String(value ?? "").trim();
+    if (next === current) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch (err) {
+      setDraft(value ?? "");
+      toast.error(err?.message || "Failed to save");
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.blur();
+    } else if (e.key === "Escape") {
+      skipBlurRef.current = true;
+      setDraft(value ?? "");
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type={type}
+        min={type === "number" ? 0 : undefined}
+        value={draft}
+        disabled={saving}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        className={
+          inputClassName ||
+          "h-9 w-full px-2.5 rounded-lg border border-primary/50 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="group flex items-center gap-1.5 min-w-0">
+      {editable ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className={`truncate text-left ${value ? valueClassName : "text-gray-400 dark:text-neutral-500"}`}
+        >
+          {value || emptyLabel}
+        </button>
+      ) : (
+        <span
+          className={`truncate ${value ? valueClassName : "text-gray-400 dark:text-neutral-500"}`}
+        >
+          {value || emptyLabel}
+        </span>
+      )}
+      {actions}
+      {editable && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label="Edit"
+          className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-gray-400 hover:text-primary"
+        >
+          <Pencil className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function StageControl({ lead, editable, onChange, saving }) {
+  const badgeClass = STATUS_BADGE[lead.status] || STATUS_BADGE.new;
+  const borderClass =
+    STAGE_SELECT_BORDER[lead.status] || STAGE_SELECT_BORDER.new;
+
+  if (!editable) {
+    return (
+      <span
+        className={`shrink-0 inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${badgeClass}`}
+      >
+        {formatLabel(lead.status)}
+      </span>
+    );
+  }
+
+  return (
+    <div className="relative shrink-0 inline-flex">
+      <select
+        disabled={saving}
+        value={lead.status}
+        onChange={(e) => onChange(e.target.value)}
+        className={`cursor-pointer appearance-none rounded-full border pl-2 pr-6 py-0.5 text-[11px] font-semibold capitalize focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 ${badgeClass} ${borderClass}`}
+      >
+        {PIPELINE_STAGES.map((s) => (
+          <option
+            key={s}
+            value={s}
+            className="bg-white text-gray-900 dark:bg-neutral-900 dark:text-neutral-100"
+          >
+            {formatLabel(s)}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 opacity-70" />
+    </div>
+  );
+}
+
+function AssignedToControl({ lead, teamMembers, editable, onChange }) {
+  const [saving, setSaving] = useState(false);
+
+  if (!editable) {
+    return (
+      <span className="shrink-0 inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300">
+        {lead.assignedToName || "Unassigned"}
+      </span>
+    );
+  }
+
+  return (
+    <div className="relative shrink-0 inline-flex max-w-[160px]">
+      <select
+        disabled={saving}
+        value={lead.assignedTo || "unassigned"}
+        onChange={async (e) => {
+          setSaving(true);
+          try {
+            await onChange(e.target.value);
+          } finally {
+            setSaving(false);
+          }
+        }}
+        className="max-w-full cursor-pointer truncate appearance-none rounded-full border border-gray-200 bg-gray-100 pl-2 pr-6 py-0.5 text-[11px] font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+      >
+        <option value="unassigned">Unassigned</option>
+        {teamMembers.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name || m.email}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 opacity-70" />
+    </div>
+  );
 }
 
 export default function SuperLeadsPage() {
@@ -406,24 +639,6 @@ export default function SuperLeadsPage() {
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [stageSaving, setStageSaving] = useState(false);
-  const [valueDraft, setValueDraft] = useState("");
-  const [followUpDraft, setFollowUpDraft] = useState("");
-  const [detailDraft, setDetailDraft] = useState({
-    restaurantName: "",
-    restaurantPhone: "",
-    restaurantEmail: "",
-    googleMapsUrl: "",
-    googleMapsPlaceId: "",
-    ownerName: "",
-    ownerPhone: "",
-    ownerEmail: "",
-    name: "",
-    phone: "",
-    email: "",
-    city: "",
-    optedIn: false,
-  });
-  const [detailSaving, setDetailSaving] = useState(false);
 
   const [draggingLead, setDraggingLead] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
@@ -438,9 +653,6 @@ export default function SuperLeadsPage() {
     ownerName: "",
     ownerPhone: "",
     ownerEmail: "",
-    name: "",
-    phone: "",
-    email: "",
     optedIn: false,
     status: "new",
     city: "",
@@ -524,7 +736,7 @@ export default function SuperLeadsPage() {
     if (!hasAccess || !canViewAll) return;
     getPlatformTeamMembers()
       .then((data) => {
-        const list = Array.isArray(data) ? data : data?.members ?? [];
+        const list = Array.isArray(data) ? data : (data?.members ?? []);
         setTeamMembers(list);
       })
       .catch(() => setTeamMembers([]));
@@ -532,30 +744,17 @@ export default function SuperLeadsPage() {
 
   useEffect(() => {
     if (!showAddModal) return;
-    setAddForm((f) => ({ ...f, assignedTo: f.assignedTo || currentUserId || "" }));
+    setAddForm((f) => ({
+      ...f,
+      assignedTo: f.assignedTo || currentUserId || "",
+    }));
   }, [showAddModal, currentUserId]);
 
   useEffect(() => {
-    if (!selectedLead) return;
-    setValueDraft(selectedLead.value ? String(selectedLead.value) : "");
-    setFollowUpDraft(toDateInput(selectedLead.nextFollowUpAt));
-    setDetailDraft({
-      restaurantName: selectedLead.restaurantName || "",
-      restaurantPhone: selectedLead.restaurantPhone || "",
-      restaurantEmail: selectedLead.restaurantEmail || "",
-      googleMapsUrl: selectedLead.googleMapsUrl || "",
-      googleMapsPlaceId: selectedLead.googleMapsPlaceId || "",
-      ownerName: selectedLead.ownerName || "",
-      ownerPhone: selectedLead.ownerPhone || "",
-      ownerEmail: selectedLead.ownerEmail || "",
-      name: selectedLead.name || "",
-      phone: selectedLead.phone || "",
-      email: selectedLead.email || "",
-      city: selectedLead.city || "",
-      optedIn: selectedLead.optedIn === true,
-    });
+    // Only reset on switching to a different lead, not on every field
+    // auto-save (which also produces a new selectedLead reference).
     setNoteText("");
-  }, [selectedLead]);
+  }, [selectedLead?.id]);
 
   const filteredRestaurants = useMemo(() => {
     const q = restaurantSearch.trim().toLowerCase();
@@ -591,11 +790,11 @@ export default function SuperLeadsPage() {
 
   async function handleAddLead(e) {
     e.preventDefault();
+    const primaryName = (addForm.ownerName || addForm.restaurantName).trim();
     const resolvedPhone = (
-      addForm.phone ||
-      addForm.restaurantPhone ||
-      addForm.ownerPhone
+      addForm.restaurantPhone || addForm.ownerPhone
     ).trim();
+    const primaryEmail = (addForm.restaurantEmail || addForm.ownerEmail).trim();
     if (!resolvedPhone) {
       toast.error("Phone is required");
       return;
@@ -612,9 +811,10 @@ export default function SuperLeadsPage() {
         ownerPhone: addForm.ownerPhone.trim(),
         ownerEmail: addForm.ownerEmail.trim(),
         optedIn: addForm.optedIn === true,
-        name: addForm.name.trim(),
+        // Legacy fields are auto-derived from structured inputs.
+        name: primaryName,
         phone: resolvedPhone,
-        email: addForm.email.trim(),
+        email: primaryEmail,
         status: addForm.status,
         city: addForm.city.trim(),
         source: addForm.source,
@@ -622,7 +822,8 @@ export default function SuperLeadsPage() {
         nextFollowUpAt: addForm.nextFollowUpAt || null,
         note: addForm.note.trim() || undefined,
       };
-      if (canViewAll && addForm.assignedTo) payload.assignedTo = addForm.assignedTo;
+      if (canViewAll && addForm.assignedTo)
+        payload.assignedTo = addForm.assignedTo;
       const data = await createLeadForSuperAdmin(payload);
       toast.success("Lead created");
       setShowAddModal(false);
@@ -635,9 +836,6 @@ export default function SuperLeadsPage() {
         ownerName: "",
         ownerPhone: "",
         ownerEmail: "",
-        name: "",
-        phone: "",
-        email: "",
         optedIn: false,
         status: "new",
         city: "",
@@ -749,57 +947,80 @@ export default function SuperLeadsPage() {
     await applyStatusChange(lostPrompt, "lost", lostReason.trim());
   }
 
-  async function handleSaveDetail() {
-    if (!selectedLead || !canManage) return;
-    const nextValue = valueDraft ? Number(valueDraft) : 0;
-    const body = {};
-    const scalarFields = [
-      "restaurantName",
-      "restaurantPhone",
-      "restaurantEmail",
-      "googleMapsUrl",
-      "googleMapsPlaceId",
-      "ownerName",
-      "ownerPhone",
-      "ownerEmail",
-      "name",
-      "phone",
-      "email",
-      "city",
-    ];
+  // Generic PATCH used by every inline-edit field in the drawer. Each
+  // field auto-saves itself on blur; failures throw so the field can
+  // revert its displayed value and surface a toast.
+  async function patchLead(body) {
+    if (!selectedLead) throw new Error("No lead selected");
+    const data = await updateLeadForSuperAdmin(selectedLead.id, body);
+    upsertLead(data.lead);
+    loadStats();
+    return data.lead;
+  }
 
-    for (const field of scalarFields) {
-      const currentRaw = selectedLead[field] ?? "";
-      const nextRaw = detailDraft[field] ?? "";
-      const normalize =
-        field === "email" || field === "ownerEmail" || field === "restaurantEmail"
-          ? (v) => String(v || "").trim().toLowerCase()
-          : (v) => String(v || "").trim();
-      const current = normalize(currentRaw);
-      const next = normalize(nextRaw);
-      if (field === "phone" && !next) continue;
-      if (next !== current) body[field] = next;
-    }
-    if (detailDraft.optedIn !== (selectedLead.optedIn === true)) {
-      body.optedIn = detailDraft.optedIn === true;
-    }
-    if (nextValue !== (selectedLead.value || 0)) body.value = nextValue;
-    const currentFollow = toDateInput(selectedLead.nextFollowUpAt);
-    if (followUpDraft !== currentFollow) body.nextFollowUpAt = followUpDraft || null;
-    if (Object.keys(body).length === 0) {
-      toast("Nothing to update");
-      return;
-    }
-    setDetailSaving(true);
+  async function saveRestaurantName(next) {
+    await patchLead({
+      restaurantName: next,
+      name: (selectedLead.ownerName || next).trim(),
+    });
+  }
+
+  async function saveOwnerName(next) {
+    await patchLead({
+      ownerName: next,
+      name: (next || selectedLead.restaurantName).trim(),
+    });
+  }
+
+  async function saveRestaurantPhone(next) {
+    const resolved = (next || selectedLead.ownerPhone || "").trim();
+    if (!resolved) throw new Error("Phone is required");
+    await patchLead({ restaurantPhone: next, phone: resolved });
+  }
+
+  async function saveOwnerPhone(next) {
+    const resolved = (selectedLead.restaurantPhone || next || "").trim();
+    if (!resolved) throw new Error("Phone is required");
+    await patchLead({ ownerPhone: next, phone: resolved });
+  }
+
+  async function saveRestaurantEmail(next) {
+    const resolved = (next || selectedLead.ownerEmail || "")
+      .trim()
+      .toLowerCase();
+    await patchLead({ restaurantEmail: next, email: resolved });
+  }
+
+  async function saveOwnerEmail(next) {
+    const resolved = (selectedLead.restaurantEmail || next || "")
+      .trim()
+      .toLowerCase();
+    await patchLead({ ownerEmail: next, email: resolved });
+  }
+
+  async function saveCity(next) {
+    await patchLead({ city: next });
+  }
+
+  async function saveGoogleMapsUrl(next) {
+    await patchLead({ googleMapsUrl: next });
+  }
+
+  async function saveValue(next) {
+    const n = next ? Number(next) : 0;
+    if (Number.isNaN(n) || n < 0) throw new Error("Enter a valid amount");
+    await patchLead({ value: n });
+  }
+
+  async function saveFollowUp(next) {
+    await patchLead({ nextFollowUpAt: next || null });
+  }
+
+  async function saveOptedIn(checked) {
     try {
-      const data = await updateLeadForSuperAdmin(selectedLead.id, body);
-      upsertLead(data.lead);
-      toast.success("Lead updated");
-      loadStats();
+      await patchLead({ optedIn: checked });
     } catch (err) {
-      toast.error(err.message || "Failed to update lead");
-    } finally {
-      setDetailSaving(false);
+      toast.error(err.message || "Failed to update opt-in");
     }
   }
 
@@ -808,7 +1029,10 @@ export default function SuperLeadsPage() {
     if (!selectedLead || !noteText.trim()) return;
     setNoteSaving(true);
     try {
-      const data = await addLeadNoteForSuperAdmin(selectedLead.id, noteText.trim());
+      const data = await addLeadNoteForSuperAdmin(
+        selectedLead.id,
+        noteText.trim(),
+      );
       upsertLead(data.lead);
       setNoteText("");
       toast.success("Note added");
@@ -823,7 +1047,9 @@ export default function SuperLeadsPage() {
     if (!selectedLead || !canViewAll) return;
     try {
       const value = assigneeId === "unassigned" ? null : assigneeId;
-      const data = await updateLeadForSuperAdmin(selectedLead.id, { assignedTo: value });
+      const data = await updateLeadForSuperAdmin(selectedLead.id, {
+        assignedTo: value,
+      });
       upsertLead(data.lead);
       toast.success("Lead reassigned");
     } catch (err) {
@@ -837,7 +1063,7 @@ export default function SuperLeadsPage() {
     setConvertLoading(true);
     try {
       const data = await getRestaurantsForSuperAdmin();
-      setRestaurants(Array.isArray(data) ? data : data?.restaurants ?? []);
+      setRestaurants(Array.isArray(data) ? data : (data?.restaurants ?? []));
     } catch {
       toast.error("Failed to load restaurants");
       setRestaurants([]);
@@ -850,7 +1076,10 @@ export default function SuperLeadsPage() {
     if (!selectedLead) return;
     setConvertSaving(true);
     try {
-      const data = await convertLeadForSuperAdmin(selectedLead.id, restaurantId);
+      const data = await convertLeadForSuperAdmin(
+        selectedLead.id,
+        restaurantId,
+      );
       upsertLead(data.lead);
       setShowConvert(false);
       toast.success("Restaurant linked");
@@ -869,7 +1098,8 @@ export default function SuperLeadsPage() {
       leadId: lead.id,
       restaurantName: lead.restaurantName || "",
       restaurantPhone: lead.restaurantPhone || lead.phone || "",
-      restaurantEmail: lead.restaurantEmail || lead.ownerEmail || lead.email || "",
+      restaurantEmail:
+        lead.restaurantEmail || lead.ownerEmail || lead.email || "",
       ownerName: lead.ownerName || lead.name || "",
       ownerPhone: lead.ownerPhone || lead.phone || "",
       ownerEmail: lead.ownerEmail || lead.restaurantEmail || lead.email || "",
@@ -962,7 +1192,6 @@ export default function SuperLeadsPage() {
     [leads],
   );
   const selectedQuickPhone = selectedLead ? primaryLeadPhone(selectedLead) : "";
-  const selectedQuickEmail = selectedLead ? primaryLeadEmail(selectedLead) : "";
 
   const tableColumns = useMemo(() => {
     const cols = [
@@ -979,7 +1208,9 @@ export default function SuperLeadsPage() {
                 {displayRestaurantName(lead)}
               </p>
               {lead.name && lead.restaurantName && (
-                <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{lead.name}</p>
+                <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">
+                  {lead.name}
+                </p>
               )}
             </div>
           </div>
@@ -1044,10 +1275,16 @@ export default function SuperLeadsPage() {
           lead.nextFollowUpAt ? (
             <span
               className={`inline-flex items-center gap-1 text-xs font-medium ${
-                isOverdue(lead) ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-neutral-300"
+                isOverdue(lead)
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-gray-600 dark:text-neutral-300"
               }`}
             >
-              {isOverdue(lead) ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+              {isOverdue(lead) ? (
+                <AlertTriangle className="w-3 h-3" />
+              ) : (
+                <Clock className="w-3 h-3" />
+              )}
               {formatDate(lead.nextFollowUpAt)}
             </span>
           ) : (
@@ -1058,7 +1295,8 @@ export default function SuperLeadsPage() {
       {
         key: "source",
         header: "Source",
-        render: (_, lead) => SOURCE_LABELS[lead.source] || formatLabel(lead.source),
+        render: (_, lead) =>
+          SOURCE_LABELS[lead.source] || formatLabel(lead.source),
         cellClassName: "text-gray-600 dark:text-neutral-400",
       },
     );
@@ -1085,7 +1323,9 @@ export default function SuperLeadsPage() {
         header: "City",
         render: (_, lead) =>
           (lead.city || "").trim() ? (
-            <span className="text-gray-700 dark:text-neutral-300">{lead.city}</span>
+            <span className="text-gray-700 dark:text-neutral-300">
+              {lead.city}
+            </span>
           ) : (
             <span className="text-gray-400">—</span>
           ),
@@ -1132,7 +1372,9 @@ export default function SuperLeadsPage() {
                     key={m.label}
                     className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3.5 flex items-start gap-3"
                   >
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${m.bg}`}>
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${m.bg}`}
+                    >
                       <Icon className={`h-4 w-4 ${m.accent}`} />
                     </div>
                     <div className="min-w-0">
@@ -1142,7 +1384,9 @@ export default function SuperLeadsPage() {
                       <p className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
                         {m.value}
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">{m.sub}</p>
+                      <p className="text-xs text-gray-500 dark:text-neutral-400 truncate">
+                        {m.sub}
+                      </p>
                     </div>
                   </div>
                 );
@@ -1282,7 +1526,10 @@ export default function SuperLeadsPage() {
               <div className="flex gap-3 h-full min-h-[300px]">
                 {STAGES.map((stage) => {
                   const items = board[stage.key] || [];
-                  const colValue = items.reduce((s, l) => s + (l.value || 0), 0);
+                  const colValue = items.reduce(
+                    (s, l) => s + (l.value || 0),
+                    0,
+                  );
                   return (
                     <div
                       key={stage.key}
@@ -1291,7 +1538,9 @@ export default function SuperLeadsPage() {
                         e.preventDefault();
                         setDragOverStage(stage.key);
                       }}
-                      onDragLeave={() => setDragOverStage((s) => (s === stage.key ? null : s))}
+                      onDragLeave={() =>
+                        setDragOverStage((s) => (s === stage.key ? null : s))
+                      }
                       onDrop={() => handleDrop(stage.key)}
                       className={`flex w-72 shrink-0 flex-col rounded-xl border bg-gray-50/60 dark:bg-neutral-900/40 ${
                         dragOverStage === stage.key
@@ -1301,7 +1550,9 @@ export default function SuperLeadsPage() {
                     >
                       <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className={`h-2 w-2 rounded-full ${stage.dot}`} />
+                          <span
+                            className={`h-2 w-2 rounded-full ${stage.dot}`}
+                          />
                           <span className="text-xs font-bold text-gray-700 dark:text-neutral-200">
                             {stage.label}
                           </span>
@@ -1336,7 +1587,9 @@ export default function SuperLeadsPage() {
                                 }}
                                 onClick={() => setSelectedLead(lead)}
                                 className={`group w-full text-left rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 shadow-sm hover:border-primary/40 hover:shadow transition-all ${
-                                  canManage ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+                                  canManage
+                                    ? "cursor-grab active:cursor-grabbing"
+                                    : "cursor-pointer"
                                 } ${draggingLead?.id === lead.id ? "opacity-50" : ""}`}
                               >
                                 <div className="flex items-start justify-between gap-2">
@@ -1364,7 +1617,8 @@ export default function SuperLeadsPage() {
                                 </div>
                                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                   <span className="inline-flex items-center rounded-full bg-gray-100 dark:bg-neutral-800 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:text-neutral-300">
-                                    {SOURCE_LABELS[lead.source] || formatLabel(lead.source)}
+                                    {SOURCE_LABELS[lead.source] ||
+                                      formatLabel(lead.source)}
                                   </span>
                                   {lead.nextFollowUpAt && (
                                     <span
@@ -1424,499 +1678,371 @@ export default function SuperLeadsPage() {
               role="dialog"
               aria-label="Lead details"
             >
-              <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
-                    {leadInitials(selectedLead)}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-bold text-gray-900 dark:text-white truncate">
-                      {displayRestaurantName(selectedLead)}
-                    </p>
-                    <span
-                      className={`mt-0.5 inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${STATUS_BADGE[selectedLead.status] || STATUS_BADGE.new}`}
-                    >
-                      {formatLabel(selectedLead.status)}
+              {/* Sticky header */}
+              <div className="shrink-0 border-b border-gray-100 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+                <div className="flex items-start justify-between gap-3 px-4 py-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+                      {leadInitials(selectedLead)}
                     </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedLead(null)}
-                  className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
-                  aria-label="Close drawer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="border-b border-gray-100 px-4 py-2.5 text-xs text-gray-600 dark:border-neutral-800 dark:text-neutral-400 space-y-1">
-                <p>
-                  Added by{" "}
-                  <span className="font-medium text-gray-800 dark:text-neutral-200">
-                    {displayAddedBy(selectedLead)}
-                  </span>
-                  {selectedLead.createdAt ? (
-                    <>
-                      {" "}
-                      on{" "}
-                      <span className="font-medium text-gray-800 dark:text-neutral-200">
-                        {formatDate(selectedLead.createdAt)}
-                      </span>
-                    </>
-                  ) : null}
-                </p>
-                {canViewAll && (
-                  <p>
-                    Assigned to{" "}
-                    <span className="font-medium text-gray-800 dark:text-neutral-200">
-                      {selectedLead.assignedToName || "Unassigned"}
-                    </span>
-                  </p>
-                )}
-              </div>
-
-              {/* Quick contact actions */}
-              <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
-                <a
-                  href={selectedQuickPhone ? `tel:${selectedQuickPhone}` : undefined}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                    selectedQuickPhone
-                      ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
-                      : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
-                  }`}
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  Call
-                </a>
-                <a
-                  href={selectedQuickPhone ? `https://wa.me/${selectedQuickPhone.replace(/[^0-9]/g, "")}` : undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                    selectedQuickPhone
-                      ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
-                      : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
-                  }`}
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  WhatsApp
-                </a>
-                <a
-                  href={selectedQuickEmail ? `mailto:${selectedQuickEmail}` : undefined}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                    selectedQuickEmail
-                      ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
-                      : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
-                  }`}
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  Email
-                </a>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 space-y-5">
-                {/* Contact info */}
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/80">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                      Restaurant
-                    </p>
-                    {canManage ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={detailDraft.restaurantName}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, restaurantName: e.target.value }))
-                          }
-                          placeholder="Restaurant name"
-                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="tel"
-                          value={detailDraft.restaurantPhone}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, restaurantPhone: e.target.value }))
-                          }
-                          placeholder="Restaurant phone"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="email"
-                          value={detailDraft.restaurantEmail}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, restaurantEmail: e.target.value }))
-                          }
-                          placeholder="Restaurant email"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="text"
-                          value={detailDraft.city}
-                          onChange={(e) => setDetailDraft((d) => ({ ...d, city: e.target.value }))}
-                          placeholder="City"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="text"
-                          value={detailDraft.googleMapsPlaceId}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, googleMapsPlaceId: e.target.value }))
-                          }
-                          placeholder="Google Place ID"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="url"
-                          value={detailDraft.googleMapsUrl}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, googleMapsUrl: e.target.value }))
-                          }
-                          placeholder="Google Maps URL"
-                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5 text-sm">
-                        <p className="flex items-center gap-2">
-                          <Building2 className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-gray-800 dark:text-neutral-200">
-                            {selectedLead.restaurantName || "—"}
-                          </span>
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-gray-800 dark:text-neutral-200">
-                            {selectedLead.restaurantPhone || "—"}
-                          </span>
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Mail className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-gray-800 dark:text-neutral-200">
-                            {selectedLead.restaurantEmail || "—"}
-                          </span>
-                        </p>
-                        {selectedLead.city ? (
-                          <p className="flex items-center gap-2">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-800 dark:text-neutral-200">{selectedLead.city}</span>
-                          </p>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/80">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                      Owner
-                    </p>
-                    {canManage ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={detailDraft.ownerName}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, ownerName: e.target.value }))
-                          }
-                          placeholder="Owner name"
-                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="tel"
-                          value={detailDraft.ownerPhone}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, ownerPhone: e.target.value }))
-                          }
-                          placeholder="Owner phone"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="email"
-                          value={detailDraft.ownerEmail}
-                          onChange={(e) =>
-                            setDetailDraft((d) => ({ ...d, ownerEmail: e.target.value }))
-                          }
-                          placeholder="Owner email"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="text"
-                          value={detailDraft.name}
-                          onChange={(e) => setDetailDraft((d) => ({ ...d, name: e.target.value }))}
-                          placeholder="Primary contact name"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="tel"
-                          value={detailDraft.phone}
-                          onChange={(e) => setDetailDraft((d) => ({ ...d, phone: e.target.value }))}
-                          placeholder="Primary contact phone"
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <input
-                          type="email"
-                          value={detailDraft.email}
-                          onChange={(e) => setDetailDraft((d) => ({ ...d, email: e.target.value }))}
-                          placeholder="Primary contact email"
-                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                        <label className="col-span-2 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
-                          <input
-                            type="checkbox"
-                            checked={detailDraft.optedIn}
-                            onChange={(e) =>
-                              setDetailDraft((d) => ({ ...d, optedIn: e.target.checked }))
-                            }
-                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                          />
-                          Contact has marketing opt-in consent
-                        </label>
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5 text-sm">
-                        <p className="flex items-center gap-2">
-                          <UserPlus className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-gray-800 dark:text-neutral-200">
-                            {selectedLead.ownerName || selectedLead.name || "—"}
-                          </span>
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-gray-800 dark:text-neutral-200">
-                            {selectedLead.ownerPhone || selectedLead.phone || "—"}
-                          </span>
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Mail className="w-3.5 h-3.5 text-gray-400" />
-                          <span className="text-gray-800 dark:text-neutral-200">
-                            {selectedLead.ownerEmail || selectedLead.email || "—"}
-                          </span>
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-neutral-400">
-                          Opt-in: {selectedLead.optedIn ? "Yes" : "No"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <p className="flex items-center gap-2 text-sm text-gray-700 dark:text-neutral-300">
-                    <Building2 className="w-3.5 h-3.5 text-gray-400" />
-                    <span className="text-gray-500">Source:</span>
-                    <span>
-                      {SOURCE_LABELS[selectedLead.source] || formatLabel(selectedLead.source)}
-                    </span>
-                  </p>
-                </div>
-
-                {/* Value + follow-up */}
-                {canManage && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                        Est. value ({CURRENCY})
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={valueDraft}
-                        onChange={(e) => setValueDraft(e.target.value)}
-                        placeholder="0"
-                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                        Next follow-up
-                      </label>
-                      <input
-                        type="date"
-                        value={followUpDraft}
-                        onChange={(e) => setFollowUpDraft(e.target.value)}
-                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <button
-                        type="button"
-                        onClick={handleSaveDetail}
-                        disabled={detailSaving}
-                        className="w-full py-2 rounded-lg border border-primary/30 bg-primary/5 text-primary text-xs font-semibold hover:bg-primary/10 disabled:opacity-50"
-                      >
-                        {detailSaving ? "Saving..." : "Save lead details"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Status */}
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500 mb-2">
-                    Stage
-                  </p>
-                  {canManage ? (
-                    <div className="flex flex-wrap gap-2">
-                      {PIPELINE_STAGES.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          disabled={stageSaving}
-                          onClick={() => applyStatusChange(selectedLead, s)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-colors disabled:opacity-50 ${
-                            selectedLead.status === s
-                              ? STATUS_BADGE[s]
-                              : "border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-900"
-                          }`}
-                        >
-                          {formatLabel(s)}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <span
-                      className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${STATUS_BADGE[selectedLead.status] || STATUS_BADGE.new}`}
-                    >
-                      {formatLabel(selectedLead.status)}
-                    </span>
-                  )}
-                  {selectedLead.status === "lost" && selectedLead.lostReason && (
-                    <p className="mt-2 text-xs text-red-600 dark:text-red-400">
-                      Lost reason: {selectedLead.lostReason}
-                    </p>
-                  )}
-                </div>
-
-                {/* Restaurant conversion */}
-                {canConvert && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/30">
-                    <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Restaurant conversion
-                    </p>
-                    {selectedLead.convertedRestaurant ? (
-                      <p className="mt-1 text-sm text-emerald-900 dark:text-emerald-200">
-                        Linked:{" "}
-                        <Link
-                          href={`/super/restaurants/${selectedLead.convertedRestaurant}`}
-                          className="underline font-medium"
-                        >
-                          {selectedLead.convertedRestaurantName || "Restaurant"}
-                        </Link>
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900 dark:text-white truncate">
+                        {displayRestaurantName(selectedLead)}
                       </p>
+                      <p className="mt-0.5 text-xs text-gray-500 dark:text-neutral-400 truncate">
+                        Added by{" "}
+                        <span className="font-medium text-gray-700 dark:text-neutral-300">
+                          {displayAddedBy(selectedLead)}
+                        </span>
+                        {selectedLead.createdAt ? (
+                          <>
+                            {" "}
+                            on{" "}
+                            <span className="font-medium text-gray-700 dark:text-neutral-300">
+                              {formatDateTime(selectedLead.createdAt)}
+                            </span>
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLead(null)}
+                    className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    aria-label="Close drawer"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 px-4 pb-2.5 overflow-x-auto">
+                  {canConvert &&
+                    (selectedLead.convertedRestaurant ? (
+                      <Link
+                        href={`/super/restaurants/${selectedLead.convertedRestaurant}`}
+                        className="shrink-0 inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        {selectedLead.convertedRestaurantName || "Linked"}
+                      </Link>
                     ) : (
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <>
                         <button
                           type="button"
-                          onClick={() => handleCreateRestaurantFromLead(selectedLead)}
-                          className="rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200"
+                          onClick={() =>
+                            handleCreateRestaurantFromLead(selectedLead)
+                          }
+                          className="shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
                         >
-                          Create restaurant from this lead
+                          Create restaurant
                         </button>
                         <button
                           type="button"
                           onClick={openConvertModal}
-                          className="rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200"
+                          className="shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
                         >
-                          Link existing restaurant
+                          Link existing
                         </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Reassign */}
-                {canViewAll && canManage && (
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                      Assigned to
-                    </label>
-                    <select
-                      value={selectedLead.assignedTo || "unassigned"}
-                      onChange={(e) => handleReassign(e.target.value)}
-                      className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    >
-                      <option value="unassigned">Unassigned</option>
-                      {teamMembers.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name || m.email}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Activity timeline */}
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500 mb-2">
-                    Activity
-                  </p>
-                  <ul className="space-y-2 max-h-72 overflow-y-auto">
-                    {(selectedLead.activity || []).length === 0 ? (
-                      <li className="text-sm text-gray-500">No activity yet.</li>
-                    ) : (
-                      selectedLead.activity.map((entry) => {
-                        const meta = ACTIVITY_META[entry.type] || { label: entry.type, icon: MessageSquare };
-                        const Icon = meta.icon;
-                        return (
-                          <li
-                            key={entry.id || `${entry.type}-${entry.createdAt}`}
-                            className="flex gap-2.5 rounded-lg border border-gray-100 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900"
-                          >
-                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
-                              <Icon className="w-3.5 h-3.5" />
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex justify-between gap-2 text-xs text-gray-400">
-                                <span className="font-medium">{meta.label}</span>
-                                <span>{formatDateTime(entry.createdAt)}</span>
-                              </div>
-                              <p className="mt-0.5 text-gray-800 dark:text-neutral-200 break-words">
-                                {activitySummary(entry)}
-                              </p>
-                              {entry.authorName && (
-                                <p className="mt-1 text-[10px] text-gray-400">— {entry.authorName}</p>
-                              )}
-                            </div>
-                          </li>
-                        );
-                      })
-                    )}
-                  </ul>
-                </div>
-
-                {/* Add note */}
-                {canManage && (
-                  <form onSubmit={handleAddNote} className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                      Add note
-                    </label>
-                    <textarea
-                      value={noteText}
-                      onChange={(e) => setNoteText(e.target.value)}
-                      rows={3}
-                      placeholder="Log a call, meeting, or follow-up..."
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm resize-none"
+                      </>
+                    ))}
+                  <StageControl
+                    lead={selectedLead}
+                    editable={canManage}
+                    saving={stageSaving}
+                    onChange={(next) => applyStatusChange(selectedLead, next)}
+                  />
+                  {canViewAll && (
+                    <AssignedToControl
+                      lead={selectedLead}
+                      teamMembers={teamMembers}
+                      editable={canManage}
+                      onChange={handleReassign}
                     />
-                    <button
-                      type="submit"
-                      disabled={noteSaving || !noteText.trim()}
-                      className="px-3 py-2 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-50"
-                    >
-                      {noteSaving ? "Saving..." : "Add note"}
-                    </button>
-                  </form>
+                  )}
+                </div>
+                {selectedLead.status === "lost" && selectedLead.lostReason && (
+                  <p className="px-4 pb-2.5 text-xs text-red-600 dark:text-red-400">
+                    Lost reason: {selectedLead.lostReason}
+                  </p>
                 )}
+              </div>
 
-                {canDelete && (
-                  <button
-                    type="button"
-                    onClick={() => setDeleteConfirm(selectedLead)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700 dark:text-red-400"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Delete lead
-                  </button>
-                )}
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-4 space-y-4">
+                  {/* Contact */}
+                  <section className="rounded-xl border border-gray-200 bg-white p-3 space-y-3 dark:border-neutral-800 dark:bg-neutral-900/30">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                      Restaurant
+                    </p>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="col-span-2">
+                        <FieldRow label="Name">
+                          <InlineEditField
+                            value={selectedLead.restaurantName || ""}
+                            editable={canManage}
+                            placeholder="Restaurant name"
+                            emptyLabel="Add restaurant name"
+                            onSave={saveRestaurantName}
+                          />
+                        </FieldRow>
+                      </div>
+                      <FieldRow label="Phone">
+                        <InlineEditField
+                          value={selectedLead.restaurantPhone || ""}
+                          type="tel"
+                          editable={canManage}
+                          placeholder="Restaurant phone"
+                          emptyLabel="Add phone"
+                          onSave={saveRestaurantPhone}
+                          actions={
+                            selectedQuickPhone ? (
+                              <>
+                                <a
+                                  href={`tel:${selectedQuickPhone}`}
+                                  className="shrink-0 text-gray-400 hover:text-primary"
+                                  aria-label="Call"
+                                >
+                                  <Phone className="w-3.5 h-3.5" />
+                                </a>
+                                <a
+                                  href={`https://wa.me/${selectedQuickPhone.replace(/[^0-9]/g, "")}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="shrink-0 text-gray-400 hover:text-primary"
+                                  aria-label="WhatsApp"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                </a>
+                              </>
+                            ) : null
+                          }
+                        />
+                      </FieldRow>
+                      <FieldRow label="Email">
+                        <InlineEditField
+                          value={selectedLead.restaurantEmail || ""}
+                          type="email"
+                          editable={canManage}
+                          placeholder="Restaurant email"
+                          emptyLabel="Add email"
+                          onSave={saveRestaurantEmail}
+                        />
+                      </FieldRow>
+                      <FieldRow label="City">
+                        <InlineEditField
+                          value={selectedLead.city || ""}
+                          editable={canManage}
+                          placeholder="City"
+                          emptyLabel="Add city"
+                          onSave={saveCity}
+                        />
+                      </FieldRow>
+                      <FieldRow label="Google Maps URL">
+                        <InlineEditField
+                          value={selectedLead.googleMapsUrl || ""}
+                          type="url"
+                          editable={canManage}
+                          placeholder="Google Maps URL"
+                          emptyLabel="Add link"
+                          onSave={saveGoogleMapsUrl}
+                        />
+                      </FieldRow>
+                    </div>
+
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-900/40">
+                      <p className="text-xs font-medium text-gray-700 dark:text-neutral-300 flex items-center gap-1.5 mb-2.5">
+                        <UserPlus className="w-3.5 h-3.5 text-gray-400" />
+                        Owner (optional)
+                      </p>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <FieldRow label="Name">
+                          <InlineEditField
+                            value={selectedLead.ownerName || ""}
+                            editable={canManage}
+                            placeholder="Owner name"
+                            emptyLabel="Add owner name"
+                            onSave={saveOwnerName}
+                          />
+                        </FieldRow>
+                        <FieldRow label="Phone">
+                          <InlineEditField
+                            value={selectedLead.ownerPhone || ""}
+                            type="tel"
+                            editable={canManage}
+                            placeholder="Owner phone"
+                            emptyLabel="Add phone"
+                            onSave={saveOwnerPhone}
+                          />
+                        </FieldRow>
+                        <div className="col-span-2">
+                          <FieldRow label="Email">
+                            <InlineEditField
+                              value={selectedLead.ownerEmail || ""}
+                              type="email"
+                              editable={canManage}
+                              placeholder="Owner email"
+                              emptyLabel="Add email"
+                              onSave={saveOwnerEmail}
+                            />
+                          </FieldRow>
+                        </div>
+                        <label className="col-span-2 inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-neutral-300">
+                          <input
+                            type="checkbox"
+                            checked={selectedLead.optedIn === true}
+                            disabled={!canManage}
+                            onChange={(e) => saveOptedIn(e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-50"
+                          />
+                          Marketing opt-in consent
+                        </label>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Deal */}
+                  <section className="rounded-xl border border-gray-200 bg-white p-3 space-y-2.5 dark:border-neutral-800 dark:bg-neutral-900/30">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Deal
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <FieldRow label={`Est. value (${CURRENCY})`}>
+                        <InlineEditField
+                          value={
+                            selectedLead.value ? String(selectedLead.value) : ""
+                          }
+                          type="number"
+                          editable={canManage}
+                          placeholder="0"
+                          emptyLabel="—"
+                          onSave={saveValue}
+                        />
+                      </FieldRow>
+                      <FieldRow label="Next follow-up">
+                        <InlineEditField
+                          value={toDateInput(selectedLead.nextFollowUpAt)}
+                          type="date"
+                          editable={canManage}
+                          emptyLabel="—"
+                          valueClassName={`text-sm ${
+                            isOverdue(selectedLead)
+                              ? "text-red-600 dark:text-red-400 font-medium"
+                              : "text-gray-900 dark:text-neutral-100"
+                          }`}
+                          onSave={saveFollowUp}
+                        />
+                      </FieldRow>
+                    </div>
+                    <p className="pt-1.5 text-xs text-gray-500 dark:text-neutral-400 border-t border-gray-100 dark:border-neutral-800">
+                      Source:{" "}
+                      <span className="text-gray-800 dark:text-neutral-200">
+                        {SOURCE_LABELS[selectedLead.source] ||
+                          formatLabel(selectedLead.source)}
+                      </span>
+                    </p>
+                  </section>
+
+                  {/* Activity & notes */}
+                  <section className="rounded-xl border border-gray-200 bg-white p-3 space-y-3 dark:border-neutral-800 dark:bg-neutral-900/30">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+                      Activity & notes
+                    </p>
+                    <ul className="space-y-2.5 max-h-56 overflow-y-auto">
+                      {(selectedLead.activity || []).length === 0 ? (
+                        <li className="text-sm text-gray-500 dark:text-neutral-400">
+                          No activity yet.
+                        </li>
+                      ) : (
+                        selectedLead.activity.map((entry) => {
+                          const meta = ACTIVITY_META[entry.type] || {
+                            label: entry.type,
+                            icon: MessageSquare,
+                          };
+                          const authorLabel = entry.authorName || "System";
+                          const initials =
+                            authorLabel
+                              .trim()
+                              .split(/\s+/)
+                              .filter(Boolean)
+                              .slice(0, 2)
+                              .map((p) => p[0].toUpperCase())
+                              .join("") || "?";
+                          return (
+                            <li
+                              key={
+                                entry.id || `${entry.type}-${entry.createdAt}`
+                              }
+                              className="flex gap-2.5"
+                            >
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                                {initials}
+                              </span>
+                              <div className="min-w-0 flex-1 rounded-xl rounded-tl-sm bg-gray-50 px-3 py-2 dark:bg-neutral-900/80">
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <span className="text-sm font-semibold text-gray-900 dark:text-neutral-100">
+                                      {authorLabel}
+                                    </span>
+                                    <span className="ml-1.5 text-xs text-gray-500 dark:text-neutral-400">
+                                      {meta.label}
+                                    </span>
+                                  </div>
+                                  <span className="shrink-0 text-xs text-gray-400">
+                                    {formatDateTime(entry.createdAt)}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-sm text-gray-700 dark:text-neutral-300 break-words">
+                                  {activitySummary(entry)}
+                                </p>
+                              </div>
+                            </li>
+                          );
+                        })
+                      )}
+                    </ul>
+
+                    {canManage && (
+                      <form
+                        onSubmit={handleAddNote}
+                        className="space-y-2 pt-2 border-t border-gray-100 dark:border-neutral-800"
+                      >
+                        <textarea
+                          value={noteText}
+                          onChange={(e) => setNoteText(e.target.value)}
+                          rows={3}
+                          placeholder="Write a note..."
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={noteSaving || !noteText.trim()}
+                            className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-50"
+                          >
+                            {noteSaving ? "Saving..." : "Post comment"}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </section>
+
+                  {canDelete &&
+                    isLeadAssignee(selectedLead, currentUserId) && (
+                    <div className="pt-2 border-t border-gray-100 dark:border-neutral-800">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirm(selectedLead)}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete lead
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1931,201 +2057,345 @@ export default function SuperLeadsPage() {
               aria-label="Close modal"
               onClick={() => setShowAddModal(false)}
             />
-            <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6 max-h-[90vh] overflow-y-auto">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Add lead</h2>
+            <div className="relative w-full max-w-3xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                Add lead
+              </h2>
               <form onSubmit={handleAddLead} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <select
-                    value={addForm.status}
-                    onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value }))}
-                    className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                  >
-                    <option value="prospect">Prospect (found, not contacted)</option>
-                    <option value="new">New (already responded)</option>
-                  </select>
-                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="space-y-4 lg:col-span-7">
+                    <section className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/40 p-4 space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                          Restaurant lead
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-neutral-400">
+                          Capture essentials first: restaurant name, phone, and
+                          city.
+                        </p>
+                      </div>
 
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3 space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                    Restaurant
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      placeholder="Restaurant name"
-                      value={addForm.restaurantName}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, restaurantName: e.target.value }))
-                      }
-                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Restaurant phone"
-                      value={addForm.restaurantPhone}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, restaurantPhone: e.target.value }))
-                      }
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Restaurant email"
-                      value={addForm.restaurantEmail}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, restaurantEmail: e.target.value }))
-                      }
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="text"
-                      placeholder="City"
-                      value={addForm.city}
-                      onChange={(e) => setAddForm((f) => ({ ...f, city: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Google Place ID (optional)"
-                      value={addForm.googleMapsPlaceId}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, googleMapsPlaceId: e.target.value }))
-                      }
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="url"
-                      placeholder="Google Maps URL"
-                      value={addForm.googleMapsUrl}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, googleMapsUrl: e.target.value }))
-                      }
-                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                          Stage
+                        </label>
+                        <div className="inline-flex w-full rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAddForm((f) => ({ ...f, status: "prospect" }))
+                            }
+                            className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                              addForm.status === "prospect"
+                                ? "bg-primary text-white"
+                                : "text-gray-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                            }`}
+                          >
+                            Prospect
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAddForm((f) => ({ ...f, status: "new" }))
+                            }
+                            className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                              addForm.status === "new"
+                                ? "bg-primary text-white"
+                                : "text-gray-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                            }`}
+                          >
+                            New
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                          Restaurant name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Restaurant name"
+                          value={addForm.restaurantName}
+                          onChange={(e) =>
+                            setAddForm((f) => ({
+                              ...f,
+                              restaurantName: e.target.value,
+                            }))
+                          }
+                          className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Restaurant phone
+                          </label>
+                          <input
+                            type="tel"
+                            placeholder="Restaurant phone"
+                            value={addForm.restaurantPhone}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                restaurantPhone: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            City
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="City"
+                            value={addForm.city}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                city: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Restaurant email
+                          </label>
+                          <input
+                            type="email"
+                            placeholder="Restaurant email"
+                            value={addForm.restaurantEmail}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                restaurantEmail: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Google Maps URL
+                          </label>
+                          <input
+                            type="url"
+                            placeholder="Google Maps URL"
+                            value={addForm.googleMapsUrl}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                googleMapsUrl: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50/40 dark:bg-neutral-900/30 p-4 space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-gray-600 dark:text-neutral-300">
+                          Owner (optional)
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-neutral-500">
+                          Add this if available, otherwise continue.
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                          Owner name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Owner name"
+                          value={addForm.ownerName}
+                          onChange={(e) =>
+                            setAddForm((f) => ({
+                              ...f,
+                              ownerName: e.target.value,
+                            }))
+                          }
+                          className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Owner phone
+                          </label>
+                          <input
+                            type="tel"
+                            placeholder="Owner phone"
+                            value={addForm.ownerPhone}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                ownerPhone: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Owner email
+                          </label>
+                          <input
+                            type="email"
+                            placeholder="Owner email"
+                            value={addForm.ownerEmail}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                ownerEmail: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <label className="inline-flex items-start gap-2.5 text-xs font-medium text-gray-700 dark:text-neutral-300">
+                        <input
+                          type="checkbox"
+                          checked={addForm.optedIn}
+                          onChange={(e) =>
+                            setAddForm((f) => ({
+                              ...f,
+                              optedIn: e.target.checked,
+                            }))
+                          }
+                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <span>Contact has marketing opt-in consent</span>
+                      </label>
+                    </section>
+                  </div>
+
+                  <div className="space-y-4 lg:col-span-5">
+                    <section className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 space-y-3 h-full">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                          Details
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-neutral-400">
+                          Opportunity metadata and assignment.
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Est. value ({CURRENCY})
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder={`Est. value (${CURRENCY})`}
+                            value={addForm.value}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                value: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Follow-up date
+                          </label>
+                          <input
+                            type="date"
+                            value={addForm.nextFollowUpAt}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                nextFollowUpAt: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                          Source
+                        </label>
+                        <select
+                          value={addForm.source}
+                          onChange={(e) =>
+                            setAddForm((f) => ({
+                              ...f,
+                              source: e.target.value,
+                            }))
+                          }
+                          className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        >
+                          {SOURCE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {canViewAll && (
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Assignee
+                          </label>
+                          <select
+                            value={addForm.assignedTo}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                assignedTo: e.target.value,
+                              }))
+                            }
+                            className="h-10 w-full px-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          >
+                            {teamMembers.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name || m.email}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                          Initial note
+                        </label>
+                        <textarea
+                          placeholder="Initial note (optional)"
+                          value={addForm.note}
+                          onChange={(e) =>
+                            setAddForm((f) => ({ ...f, note: e.target.value }))
+                          }
+                          rows={5}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        />
+                      </div>
+                    </section>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3 space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                    Owner
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      placeholder="Owner name"
-                      value={addForm.ownerName}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, ownerName: e.target.value }))
-                      }
-                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Owner phone"
-                      value={addForm.ownerPhone}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, ownerPhone: e.target.value }))
-                      }
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Owner email"
-                      value={addForm.ownerEmail}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, ownerEmail: e.target.value }))
-                      }
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <label className="col-span-2 inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-neutral-300">
-                      <input
-                        type="checkbox"
-                        checked={addForm.optedIn}
-                        onChange={(e) => setAddForm((f) => ({ ...f, optedIn: e.target.checked }))}
-                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      Contact has marketing opt-in consent
-                    </label>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3 space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
-                    Primary contact (legacy fields)
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      placeholder="Contact name"
-                      value={addForm.name}
-                      onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Phone (or use owner/restaurant phone)"
-                      value={addForm.phone}
-                      onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      value={addForm.email}
-                      onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
-                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder={`Est. value (${CURRENCY})`}
-                    value={addForm.value}
-                    onChange={(e) => setAddForm((f) => ({ ...f, value: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                  />
-                  <input
-                    type="date"
-                    value={addForm.nextFollowUpAt}
-                    onChange={(e) => setAddForm((f) => ({ ...f, nextFollowUpAt: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                  />
-                </div>
-
-                <select
-                  value={addForm.source}
-                  onChange={(e) => setAddForm((f) => ({ ...f, source: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                >
-                  {SOURCE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                {canViewAll && (
-                  <select
-                    value={addForm.assignedTo}
-                    onChange={(e) => setAddForm((f) => ({ ...f, assignedTo: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                  >
-                    {teamMembers.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        Assign to: {m.name || m.email}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <textarea
-                  placeholder="Initial note (optional)"
-                  value={addForm.note}
-                  onChange={(e) => setAddForm((f) => ({ ...f, note: e.target.value }))}
-                  rows={2}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm resize-none"
-                />
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
@@ -2178,14 +2448,21 @@ export default function SuperLeadsPage() {
                   </div>
                 </div>
               )}
-              <div className={`p-5 space-y-4 overflow-y-auto text-sm ${importing ? "opacity-60 pointer-events-none" : ""}`}>
+              <div
+                className={`p-5 space-y-4 overflow-y-auto text-sm ${importing ? "opacity-60 pointer-events-none" : ""}`}
+              >
                 <p className="text-gray-600 dark:text-neutral-400 text-xs leading-relaxed">
-                  Required column: <code className="bg-gray-100 dark:bg-neutral-800 px-1 rounded">phone</code>.
-                  Optional: restaurant_name, restaurant_phone, restaurant_email, owner_name, owner_phone,
-                  owner_email, google_maps_url, google_maps_place_id, opted_in, name, email, city, source,
-                  value, follow_up, note, status
-                  {canViewAll ? ", assigned_to (team member email)" : ""}.
-                  Leads are assigned to you{canViewAll ? " unless assigned_to is set" : ""}.
+                  Required column:{" "}
+                  <code className="bg-gray-100 dark:bg-neutral-800 px-1 rounded">
+                    phone
+                  </code>
+                  . Optional: restaurant_name, restaurant_phone,
+                  restaurant_email, owner_name, owner_phone, owner_email,
+                  google_maps_url, google_maps_place_id, opted_in, name, email,
+                  city, source, value, follow_up, note, status
+                  {canViewAll ? ", assigned_to (team member email)" : ""}. Leads
+                  are assigned to you
+                  {canViewAll ? " unless assigned_to is set" : ""}.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -2215,31 +2492,44 @@ export default function SuperLeadsPage() {
                       <FileText className="w-4 h-4 text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Attached file</p>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{importFile.name}</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        Attached file
+                      </p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {importFile.name}
+                      </p>
                     </div>
                   </div>
                 )}
                 {importPreview?.error && (
-                  <p className="text-xs text-red-600 dark:text-red-400">{importPreview.error}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    {importPreview.error}
+                  </p>
                 )}
                 {importPreview?.rowErrors?.length > 0 && (
                   <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 max-h-28 overflow-y-auto">
-                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1">Skipped rows</p>
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                      Skipped rows
+                    </p>
                     <ul className="text-[11px] text-amber-900 dark:text-amber-100 space-y-0.5">
                       {importPreview.rowErrors.map((e, idx) => (
-                        <li key={idx}>Line {e.row}: {e.message}</li>
+                        <li key={idx}>
+                          Line {e.row}: {e.message}
+                        </li>
                       ))}
                     </ul>
                   </div>
                 )}
                 {importPreview?.importFailed?.length > 0 && (
                   <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 p-3 max-h-28 overflow-y-auto">
-                    <p className="text-xs font-semibold text-red-800 dark:text-red-200 mb-1">Server rejected rows</p>
+                    <p className="text-xs font-semibold text-red-800 dark:text-red-200 mb-1">
+                      Server rejected rows
+                    </p>
                     <ul className="text-[11px] text-red-900 dark:text-red-100 space-y-0.5">
                       {importPreview.importFailed.map((e, idx) => (
                         <li key={idx}>
-                          Row {e.row}{e.phone ? ` (${e.phone})` : ""}: {e.message}
+                          Row {e.row}
+                          {e.phone ? ` (${e.phone})` : ""}: {e.message}
                         </li>
                       ))}
                     </ul>
@@ -2248,34 +2538,54 @@ export default function SuperLeadsPage() {
                 {importPreview?.rows?.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                      Ready to import: {importPreview.rows.length} lead{importPreview.rows.length !== 1 ? "s" : ""}
+                      Ready to import: {importPreview.rows.length} lead
+                      {importPreview.rows.length !== 1 ? "s" : ""}
                     </p>
                     <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-700">
                       <table className="min-w-full text-[11px]">
                         <thead className="bg-gray-50 dark:bg-neutral-900">
                           <tr>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">Restaurant</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">Phone</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">City</th>
-                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">Status</th>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">
+                              Restaurant
+                            </th>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">
+                              Phone
+                            </th>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">
+                              City
+                            </th>
+                            <th className="px-2 py-1.5 text-left font-semibold text-gray-500">
+                              Status
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {importPreview.rows.slice(0, 5).map((row, idx) => (
-                            <tr key={idx} className="border-t border-gray-100 dark:border-neutral-800">
-                              <td className="px-2 py-1.5">{row.restaurantName || "—"}</td>
+                            <tr
+                              key={idx}
+                              className="border-t border-gray-100 dark:border-neutral-800"
+                            >
+                              <td className="px-2 py-1.5">
+                                {row.restaurantName || "—"}
+                              </td>
                               <td className="px-2 py-1.5 font-mono">
-                                {row.phone || row.restaurantPhone || row.ownerPhone || "—"}
+                                {row.phone ||
+                                  row.restaurantPhone ||
+                                  row.ownerPhone ||
+                                  "—"}
                               </td>
                               <td className="px-2 py-1.5">{row.city || "—"}</td>
-                              <td className="px-2 py-1.5">{row.status || "prospect"}</td>
+                              <td className="px-2 py-1.5">
+                                {row.status || "prospect"}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                       {importPreview.rows.length > 5 && (
                         <p className="px-2 py-1.5 text-[10px] text-gray-400 border-t border-gray-100 dark:border-neutral-800">
-                          + {importPreview.rows.length - 5} more row{importPreview.rows.length - 5 !== 1 ? "s" : ""}
+                          + {importPreview.rows.length - 5} more row
+                          {importPreview.rows.length - 5 !== 1 ? "s" : ""}
                         </p>
                       )}
                     </div>
@@ -2321,8 +2631,12 @@ export default function SuperLeadsPage() {
               onClick={() => setLostPrompt(null)}
             />
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Mark as lost</h2>
-              <p className="text-sm text-gray-500 mb-3">Optional: why was this lead lost?</p>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                Mark as lost
+              </h2>
+              <p className="text-sm text-gray-500 mb-3">
+                Optional: why was this lead lost?
+              </p>
               <form onSubmit={submitLostReason}>
                 <textarea
                   value={lostReason}
@@ -2362,7 +2676,9 @@ export default function SuperLeadsPage() {
               onClick={() => setShowConvert(false)}
             />
             <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6 max-h-[80vh] flex flex-col">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Link restaurant</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-3">
+                Link restaurant
+              </h2>
               <input
                 type="text"
                 placeholder="Search restaurants..."
@@ -2376,11 +2692,14 @@ export default function SuperLeadsPage() {
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
                 ) : filteredRestaurants.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-4 text-center">No restaurants found</p>
+                  <p className="text-sm text-gray-500 py-4 text-center">
+                    No restaurants found
+                  </p>
                 ) : (
                   filteredRestaurants.map((r) => {
                     const id = r.id || r._id;
-                    const label = r.website?.name || r.name || r.website?.subdomain || id;
+                    const label =
+                      r.website?.name || r.name || r.website?.subdomain || id;
                     return (
                       <button
                         key={id}
@@ -2389,9 +2708,13 @@ export default function SuperLeadsPage() {
                         onClick={() => handleConvert(id)}
                         className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-neutral-900 text-sm disabled:opacity-50"
                       >
-                        <span className="font-medium text-gray-900 dark:text-white">{label}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {label}
+                        </span>
                         {r.website?.subdomain && (
-                          <span className="ml-2 text-xs text-gray-400">{r.website.subdomain}.eatsdesk.app</span>
+                          <span className="ml-2 text-xs text-gray-400">
+                            {r.website.subdomain}.eatsdesk.app
+                          </span>
                         )}
                       </button>
                     );
@@ -2419,9 +2742,12 @@ export default function SuperLeadsPage() {
               onClick={() => setDeleteConfirm(null)}
             />
             <div className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete lead?</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                Delete lead?
+              </h2>
               <p className="text-sm text-gray-500 mb-4">
-                Remove <strong>{displayRestaurantName(deleteConfirm)}</strong> from the pipeline?
+                Remove <strong>{displayRestaurantName(deleteConfirm)}</strong>{" "}
+                from the pipeline?
               </p>
               <div className="flex gap-2">
                 <button
