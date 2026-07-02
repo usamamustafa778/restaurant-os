@@ -16,6 +16,7 @@ import {
   getPlatformTeamMembers,
   getRestaurantsForSuperAdmin,
   getStoredAuth,
+  sendLeadEmailForSuperAdmin,
   updateLeadForSuperAdmin,
 } from "../../../lib/apiClient";
 import { usePermissions } from "../../../contexts/PermissionContext";
@@ -28,10 +29,12 @@ import {
   Clock,
   KanbanSquare,
   Loader2,
+  Mail,
   MessageSquare,
   Phone,
   Plus,
   Search,
+  Send,
   Table2,
   Trash2,
   TrendingUp,
@@ -109,6 +112,7 @@ const ACTIVITY_META = {
   convert: { label: "Converted", icon: CheckCircle2 },
   follow_up: { label: "Follow-up", icon: Calendar },
   value_change: { label: "Value", icon: Banknote },
+  email_sent: { label: "Email", icon: Mail },
 };
 
 function formatLabel(status) {
@@ -208,6 +212,8 @@ function activitySummary(entry) {
   if (!entry) return "—";
   if (entry.type === "stage_change")
     return entry.body || `Stage: ${entry.toStatus}`;
+  if (entry.type === "email_sent")
+    return entry.body ? `Subject: ${entry.body}` : "Email sent";
   return entry.body || entry.type;
 }
 
@@ -638,6 +644,10 @@ export default function SuperLeadsPage() {
   const [selectedLead, setSelectedLead] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  const [emailComposerOpen, setEmailComposerOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
   const [stageSaving, setStageSaving] = useState(false);
 
   const [draggingLead, setDraggingLead] = useState(null);
@@ -754,6 +764,9 @@ export default function SuperLeadsPage() {
     // Only reset on switching to a different lead, not on every field
     // auto-save (which also produces a new selectedLead reference).
     setNoteText("");
+    setEmailComposerOpen(false);
+    setEmailSubject("");
+    setEmailBody("");
   }, [selectedLead?.id]);
 
   const filteredRestaurants = useMemo(() => {
@@ -1043,6 +1056,27 @@ export default function SuperLeadsPage() {
     }
   }
 
+  async function handleSendEmail(e) {
+    e.preventDefault();
+    if (!selectedLead || !emailSubject.trim() || !emailBody.trim()) return;
+    setEmailSending(true);
+    try {
+      const data = await sendLeadEmailForSuperAdmin(selectedLead.id, {
+        subject: emailSubject.trim(),
+        body: emailBody.trim(),
+      });
+      upsertLead(data.lead);
+      setEmailComposerOpen(false);
+      setEmailSubject("");
+      setEmailBody("");
+      toast.success(`Email sent to ${data.to}`);
+    } catch (err) {
+      toast.error(err.message || "Failed to send email");
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
   async function handleReassign(assigneeId) {
     if (!selectedLead || !canViewAll) return;
     try {
@@ -1192,6 +1226,7 @@ export default function SuperLeadsPage() {
     [leads],
   );
   const selectedQuickPhone = selectedLead ? primaryLeadPhone(selectedLead) : "";
+  const selectedLeadEmail = selectedLead ? primaryLeadEmail(selectedLead) : "";
 
   const tableColumns = useMemo(() => {
     const cols = [
@@ -1828,8 +1863,81 @@ export default function SuperLeadsPage() {
                           placeholder="Restaurant email"
                           emptyLabel="Add email"
                           onSave={saveRestaurantEmail}
+                          actions={
+                            canManage && selectedLeadEmail ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEmailComposerOpen((open) => !open)
+                                }
+                                className="shrink-0 text-gray-400 hover:text-primary"
+                                aria-label="Send email"
+                                title="Send email"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                              </button>
+                            ) : null
+                          }
                         />
                       </FieldRow>
+                      {emailComposerOpen && canManage && selectedLeadEmail && (
+                        <form
+                          onSubmit={handleSendEmail}
+                          className="col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2 dark:border-neutral-700 dark:bg-neutral-900/50"
+                        >
+                          <p className="text-xs text-gray-500 dark:text-neutral-400">
+                            To: {selectedLeadEmail}
+                          </p>
+                          <input
+                            type="text"
+                            value={emailSubject}
+                            onChange={(e) => setEmailSubject(e.target.value)}
+                            placeholder="Subject"
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                          <textarea
+                            value={emailBody}
+                            onChange={(e) => setEmailBody(e.target.value)}
+                            rows={4}
+                            placeholder="Write your message..."
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmailComposerOpen(false);
+                                setEmailSubject("");
+                                setEmailBody("");
+                              }}
+                              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={
+                                emailSending ||
+                                !emailSubject.trim() ||
+                                !emailBody.trim()
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-50"
+                            >
+                              {emailSending ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  Sending...
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="w-3.5 h-3.5" />
+                                  Send
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </form>
+                      )}
                       <FieldRow label="City">
                         <InlineEditField
                           value={selectedLead.city || ""}
@@ -1961,6 +2069,7 @@ export default function SuperLeadsPage() {
                             label: entry.type,
                             icon: MessageSquare,
                           };
+                          const ActivityIcon = meta.icon;
                           const authorLabel = entry.authorName || "System";
                           const initials =
                             authorLabel
@@ -1978,7 +2087,11 @@ export default function SuperLeadsPage() {
                               className="flex gap-2.5"
                             >
                               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                                {initials}
+                                {entry.type === "email_sent" ? (
+                                  <ActivityIcon className="w-4 h-4" />
+                                ) : (
+                                  initials
+                                )}
                               </span>
                               <div className="min-w-0 flex-1 rounded-xl rounded-tl-sm bg-gray-50 px-3 py-2 dark:bg-neutral-900/80">
                                 <div className="flex items-baseline justify-between gap-2">
