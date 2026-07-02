@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import SuperPageGate from "../../../components/super/SuperPageGate";
 import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
@@ -49,6 +50,7 @@ import toast from "react-hot-toast";
 const CURRENCY = "Rs";
 
 const STAGES = [
+  { key: "prospect", label: "Prospect", dot: "bg-slate-400" },
   { key: "new", label: "New", dot: "bg-gray-400" },
   { key: "contacted", label: "Contacted", dot: "bg-blue-500" },
   { key: "demo", label: "Demo", dot: "bg-amber-500" },
@@ -73,6 +75,7 @@ const SOURCE_OPTIONS = [
 const SOURCE_LABELS = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value, o.label]));
 
 const STATUS_BADGE = {
+  prospect: "bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300",
   new: "bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300",
   contacted: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300",
   demo: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
@@ -157,6 +160,22 @@ function leadInitials(lead) {
   return src.slice(0, 2).toUpperCase();
 }
 
+function primaryLeadPhone(lead) {
+  return (
+    (lead?.restaurantPhone || "").trim() ||
+    (lead?.ownerPhone || "").trim() ||
+    (lead?.phone || "").trim()
+  );
+}
+
+function primaryLeadEmail(lead) {
+  return (
+    (lead?.restaurantEmail || "").trim() ||
+    (lead?.ownerEmail || "").trim() ||
+    (lead?.email || "").trim()
+  );
+}
+
 function isOverdue(lead) {
   if (!lead.nextFollowUpAt) return false;
   if (lead.status === "won" || lead.status === "lost") return false;
@@ -201,15 +220,27 @@ const CSV_HEADER_MAP = {
   restaurant: "restaurantName",
   restaurant_name: "restaurantName",
   restaurantname: "restaurantName",
+  restaurant_phone: "restaurantPhone",
+  restaurant_email: "restaurantEmail",
+  restaurant_mail: "restaurantEmail",
   name: "name",
   contact: "name",
   contact_name: "name",
-  owner: "name",
-  owner_name: "name",
+  owner: "ownerName",
+  owner_name: "ownerName",
+  owner_phone: "ownerPhone",
+  owner_email: "ownerEmail",
   phone: "phone",
   mobile: "phone",
   phone_number: "phone",
   email: "email",
+  google_maps_url: "googleMapsUrl",
+  googlemaps_url: "googleMapsUrl",
+  maps_url: "googleMapsUrl",
+  google_maps_place_id: "googleMapsPlaceId",
+  googlemaps_place_id: "googleMapsPlaceId",
+  opted_in: "optedIn",
+  opt_in: "optedIn",
   city: "city",
   source: "source",
   value: "value",
@@ -271,8 +302,13 @@ function parseLeadsCsv(text) {
     if (row.status) {
       row.status = row.status.toLowerCase();
       if (!PIPELINE_STAGES.includes(row.status)) {
-        row.status = "new";
+        row.status = "prospect";
       }
+    }
+
+    if (row.optedIn != null && row.optedIn !== "") {
+      const normalized = String(row.optedIn).trim().toLowerCase();
+      row.optedIn = ["true", "1", "yes", "y", "on"].includes(normalized);
     }
 
     if (row.value != null && row.value !== "") {
@@ -293,6 +329,14 @@ function parseLeadsCsv(text) {
 function downloadLeadsImportTemplate() {
   const header = [
     "restaurant_name",
+    "restaurant_phone",
+    "restaurant_email",
+    "owner_name",
+    "owner_phone",
+    "owner_email",
+    "google_maps_url",
+    "google_maps_place_id",
+    "opted_in",
     "name",
     "phone",
     "email",
@@ -306,6 +350,14 @@ function downloadLeadsImportTemplate() {
   ];
   const example = [
     "Shawarma House",
+    "042-111-222333",
+    "info@shawarmahouse.com",
+    "Ali Khan",
+    "03001234567",
+    "ali@example.com",
+    "https://maps.google.com/?q=shawarma+house",
+    "ChIJ123EXAMPLE",
+    "yes",
     "Ali Khan",
     "03001234567",
     "ali@example.com",
@@ -314,7 +366,7 @@ function downloadLeadsImportTemplate() {
     "15000",
     "2026-07-15",
     "Met at expo",
-    "new",
+    "prospect",
     "",
   ];
   const blob = new Blob(["\uFEFF" + `${header.join(",")}\n${example.join(",")}\n`], {
@@ -328,6 +380,7 @@ function downloadLeadsImportTemplate() {
 }
 
 export default function SuperLeadsPage() {
+  const router = useRouter();
   const { hasAccess } = usePlatformPermissionGate("platform.leads.view");
   const { hasPermission } = usePermissions();
   const canManage = hasPermission("platform.leads.manage");
@@ -355,6 +408,21 @@ export default function SuperLeadsPage() {
   const [stageSaving, setStageSaving] = useState(false);
   const [valueDraft, setValueDraft] = useState("");
   const [followUpDraft, setFollowUpDraft] = useState("");
+  const [detailDraft, setDetailDraft] = useState({
+    restaurantName: "",
+    restaurantPhone: "",
+    restaurantEmail: "",
+    googleMapsUrl: "",
+    googleMapsPlaceId: "",
+    ownerName: "",
+    ownerPhone: "",
+    ownerEmail: "",
+    name: "",
+    phone: "",
+    email: "",
+    city: "",
+    optedIn: false,
+  });
   const [detailSaving, setDetailSaving] = useState(false);
 
   const [draggingLead, setDraggingLead] = useState(null);
@@ -363,9 +431,18 @@ export default function SuperLeadsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({
     restaurantName: "",
+    restaurantPhone: "",
+    restaurantEmail: "",
+    googleMapsUrl: "",
+    googleMapsPlaceId: "",
+    ownerName: "",
+    ownerPhone: "",
+    ownerEmail: "",
     name: "",
     phone: "",
     email: "",
+    optedIn: false,
+    status: "new",
     city: "",
     source: "manual",
     value: "",
@@ -462,6 +539,21 @@ export default function SuperLeadsPage() {
     if (!selectedLead) return;
     setValueDraft(selectedLead.value ? String(selectedLead.value) : "");
     setFollowUpDraft(toDateInput(selectedLead.nextFollowUpAt));
+    setDetailDraft({
+      restaurantName: selectedLead.restaurantName || "",
+      restaurantPhone: selectedLead.restaurantPhone || "",
+      restaurantEmail: selectedLead.restaurantEmail || "",
+      googleMapsUrl: selectedLead.googleMapsUrl || "",
+      googleMapsPlaceId: selectedLead.googleMapsPlaceId || "",
+      ownerName: selectedLead.ownerName || "",
+      ownerPhone: selectedLead.ownerPhone || "",
+      ownerEmail: selectedLead.ownerEmail || "",
+      name: selectedLead.name || "",
+      phone: selectedLead.phone || "",
+      email: selectedLead.email || "",
+      city: selectedLead.city || "",
+      optedIn: selectedLead.optedIn === true,
+    });
     setNoteText("");
   }, [selectedLead]);
 
@@ -499,7 +591,12 @@ export default function SuperLeadsPage() {
 
   async function handleAddLead(e) {
     e.preventDefault();
-    if (!addForm.phone.trim()) {
+    const resolvedPhone = (
+      addForm.phone ||
+      addForm.restaurantPhone ||
+      addForm.ownerPhone
+    ).trim();
+    if (!resolvedPhone) {
       toast.error("Phone is required");
       return;
     }
@@ -507,9 +604,18 @@ export default function SuperLeadsPage() {
     try {
       const payload = {
         restaurantName: addForm.restaurantName.trim(),
+        restaurantPhone: addForm.restaurantPhone.trim(),
+        restaurantEmail: addForm.restaurantEmail.trim(),
+        googleMapsUrl: addForm.googleMapsUrl.trim(),
+        googleMapsPlaceId: addForm.googleMapsPlaceId.trim(),
+        ownerName: addForm.ownerName.trim(),
+        ownerPhone: addForm.ownerPhone.trim(),
+        ownerEmail: addForm.ownerEmail.trim(),
+        optedIn: addForm.optedIn === true,
         name: addForm.name.trim(),
-        phone: addForm.phone.trim(),
+        phone: resolvedPhone,
         email: addForm.email.trim(),
+        status: addForm.status,
         city: addForm.city.trim(),
         source: addForm.source,
         value: addForm.value ? Number(addForm.value) : 0,
@@ -522,9 +628,18 @@ export default function SuperLeadsPage() {
       setShowAddModal(false);
       setAddForm({
         restaurantName: "",
+        restaurantPhone: "",
+        restaurantEmail: "",
+        googleMapsUrl: "",
+        googleMapsPlaceId: "",
+        ownerName: "",
+        ownerPhone: "",
+        ownerEmail: "",
         name: "",
         phone: "",
         email: "",
+        optedIn: false,
+        status: "new",
         city: "",
         source: "manual",
         value: "",
@@ -638,6 +753,36 @@ export default function SuperLeadsPage() {
     if (!selectedLead || !canManage) return;
     const nextValue = valueDraft ? Number(valueDraft) : 0;
     const body = {};
+    const scalarFields = [
+      "restaurantName",
+      "restaurantPhone",
+      "restaurantEmail",
+      "googleMapsUrl",
+      "googleMapsPlaceId",
+      "ownerName",
+      "ownerPhone",
+      "ownerEmail",
+      "name",
+      "phone",
+      "email",
+      "city",
+    ];
+
+    for (const field of scalarFields) {
+      const currentRaw = selectedLead[field] ?? "";
+      const nextRaw = detailDraft[field] ?? "";
+      const normalize =
+        field === "email" || field === "ownerEmail" || field === "restaurantEmail"
+          ? (v) => String(v || "").trim().toLowerCase()
+          : (v) => String(v || "").trim();
+      const current = normalize(currentRaw);
+      const next = normalize(nextRaw);
+      if (field === "phone" && !next) continue;
+      if (next !== current) body[field] = next;
+    }
+    if (detailDraft.optedIn !== (selectedLead.optedIn === true)) {
+      body.optedIn = detailDraft.optedIn === true;
+    }
     if (nextValue !== (selectedLead.value || 0)) body.value = nextValue;
     const currentFollow = toDateInput(selectedLead.nextFollowUpAt);
     if (followUpDraft !== currentFollow) body.nextFollowUpAt = followUpDraft || null;
@@ -717,6 +862,22 @@ export default function SuperLeadsPage() {
     }
   }
 
+  function handleCreateRestaurantFromLead(lead) {
+    if (!lead?.id || !canConvert) return;
+    const query = {
+      fromLead: "1",
+      leadId: lead.id,
+      restaurantName: lead.restaurantName || "",
+      restaurantPhone: lead.restaurantPhone || lead.phone || "",
+      restaurantEmail: lead.restaurantEmail || lead.ownerEmail || lead.email || "",
+      ownerName: lead.ownerName || lead.name || "",
+      ownerPhone: lead.ownerPhone || lead.phone || "",
+      ownerEmail: lead.ownerEmail || lead.restaurantEmail || lead.email || "",
+      city: lead.city || "",
+    };
+    router.push({ pathname: "/super/restaurants", query });
+  }
+
   async function handleDelete() {
     if (!deleteConfirm) return;
     setDeleteSaving(true);
@@ -787,13 +948,21 @@ export default function SuperLeadsPage() {
   }, [stats]);
 
   const showEmailColumn = useMemo(
-    () => leads.some((l) => (l.email || "").trim()),
+    () =>
+      leads.some(
+        (l) =>
+          (l.email || "").trim() ||
+          (l.ownerEmail || "").trim() ||
+          (l.restaurantEmail || "").trim(),
+      ),
     [leads],
   );
   const showCityColumn = useMemo(
     () => leads.some((l) => (l.city || "").trim()),
     [leads],
   );
+  const selectedQuickPhone = selectedLead ? primaryLeadPhone(selectedLead) : "";
+  const selectedQuickEmail = selectedLead ? primaryLeadEmail(selectedLead) : "";
 
   const tableColumns = useMemo(() => {
     const cols = [
@@ -819,7 +988,7 @@ export default function SuperLeadsPage() {
       {
         key: "phone",
         header: "Phone",
-        render: (_, lead) => lead.phone || "—",
+        render: (_, lead) => primaryLeadPhone(lead) || "—",
         cellClassName: "text-gray-700 dark:text-neutral-300 whitespace-nowrap",
       },
       {
@@ -899,9 +1068,9 @@ export default function SuperLeadsPage() {
         key: "email",
         header: "Email",
         render: (_, lead) =>
-          (lead.email || "").trim() ? (
+          primaryLeadEmail(lead) ? (
             <span className="text-gray-700 dark:text-neutral-300 truncate max-w-[180px] inline-block">
-              {lead.email}
+              {primaryLeadEmail(lead)}
             </span>
           ) : (
             <span className="text-gray-400">—</span>
@@ -1186,10 +1355,10 @@ export default function SuperLeadsPage() {
                                   </p>
                                 )}
                                 <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-neutral-400">
-                                  {lead.phone && (
+                                  {primaryLeadPhone(lead) && (
                                     <span className="inline-flex items-center gap-1 truncate">
                                       <Phone className="w-3 h-3 shrink-0" />
-                                      {lead.phone}
+                                      {primaryLeadPhone(lead)}
                                     </span>
                                   )}
                                 </div>
@@ -1310,9 +1479,9 @@ export default function SuperLeadsPage() {
               {/* Quick contact actions */}
               <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
                 <a
-                  href={selectedLead.phone ? `tel:${selectedLead.phone}` : undefined}
+                  href={selectedQuickPhone ? `tel:${selectedQuickPhone}` : undefined}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                    selectedLead.phone
+                    selectedQuickPhone
                       ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
                       : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
                   }`}
@@ -1321,11 +1490,11 @@ export default function SuperLeadsPage() {
                   Call
                 </a>
                 <a
-                  href={selectedLead.phone ? `https://wa.me/${selectedLead.phone.replace(/[^0-9]/g, "")}` : undefined}
+                  href={selectedQuickPhone ? `https://wa.me/${selectedQuickPhone.replace(/[^0-9]/g, "")}` : undefined}
                   target="_blank"
                   rel="noreferrer"
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                    selectedLead.phone
+                    selectedQuickPhone
                       ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
                       : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
                   }`}
@@ -1334,9 +1503,9 @@ export default function SuperLeadsPage() {
                   WhatsApp
                 </a>
                 <a
-                  href={selectedLead.email ? `mailto:${selectedLead.email}` : undefined}
+                  href={selectedQuickEmail ? `mailto:${selectedQuickEmail}` : undefined}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                    selectedLead.email
+                    selectedQuickEmail
                       ? "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
                       : "border-gray-100 text-gray-300 pointer-events-none dark:border-neutral-800 dark:text-neutral-700"
                   }`}
@@ -1348,31 +1517,193 @@ export default function SuperLeadsPage() {
 
               <div className="flex-1 overflow-y-auto p-4 space-y-5">
                 {/* Contact info */}
-                <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900/80 space-y-2">
-                  {selectedLead.name && (
-                    <p className="flex items-center gap-2">
-                      <UserPlus className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="text-gray-800 dark:text-neutral-200">{selectedLead.name}</span>
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/80">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                      Restaurant
                     </p>
-                  )}
-                  <p className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5 text-gray-400" />
-                    <span className="text-gray-800 dark:text-neutral-200">{selectedLead.phone || "—"}</span>
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5 text-gray-400" />
-                    <span className="text-gray-800 dark:text-neutral-200">{selectedLead.email || "—"}</span>
-                  </p>
-                  {selectedLead.city && (
-                    <p className="flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="text-gray-800 dark:text-neutral-200">{selectedLead.city}</span>
+                    {canManage ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={detailDraft.restaurantName}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, restaurantName: e.target.value }))
+                          }
+                          placeholder="Restaurant name"
+                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="tel"
+                          value={detailDraft.restaurantPhone}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, restaurantPhone: e.target.value }))
+                          }
+                          placeholder="Restaurant phone"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="email"
+                          value={detailDraft.restaurantEmail}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, restaurantEmail: e.target.value }))
+                          }
+                          placeholder="Restaurant email"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="text"
+                          value={detailDraft.city}
+                          onChange={(e) => setDetailDraft((d) => ({ ...d, city: e.target.value }))}
+                          placeholder="City"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="text"
+                          value={detailDraft.googleMapsPlaceId}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, googleMapsPlaceId: e.target.value }))
+                          }
+                          placeholder="Google Place ID"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="url"
+                          value={detailDraft.googleMapsUrl}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, googleMapsUrl: e.target.value }))
+                          }
+                          placeholder="Google Maps URL"
+                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 text-sm">
+                        <p className="flex items-center gap-2">
+                          <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-gray-800 dark:text-neutral-200">
+                            {selectedLead.restaurantName || "—"}
+                          </span>
+                        </p>
+                        <p className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-gray-800 dark:text-neutral-200">
+                            {selectedLead.restaurantPhone || "—"}
+                          </span>
+                        </p>
+                        <p className="flex items-center gap-2">
+                          <Mail className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-gray-800 dark:text-neutral-200">
+                            {selectedLead.restaurantEmail || "—"}
+                          </span>
+                        </p>
+                        {selectedLead.city ? (
+                          <p className="flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-800 dark:text-neutral-200">{selectedLead.city}</span>
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/80">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                      Owner
                     </p>
-                  )}
-                  <p className="flex items-center gap-2">
+                    {canManage ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={detailDraft.ownerName}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, ownerName: e.target.value }))
+                          }
+                          placeholder="Owner name"
+                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="tel"
+                          value={detailDraft.ownerPhone}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, ownerPhone: e.target.value }))
+                          }
+                          placeholder="Owner phone"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="email"
+                          value={detailDraft.ownerEmail}
+                          onChange={(e) =>
+                            setDetailDraft((d) => ({ ...d, ownerEmail: e.target.value }))
+                          }
+                          placeholder="Owner email"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="text"
+                          value={detailDraft.name}
+                          onChange={(e) => setDetailDraft((d) => ({ ...d, name: e.target.value }))}
+                          placeholder="Primary contact name"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="tel"
+                          value={detailDraft.phone}
+                          onChange={(e) => setDetailDraft((d) => ({ ...d, phone: e.target.value }))}
+                          placeholder="Primary contact phone"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <input
+                          type="email"
+                          value={detailDraft.email}
+                          onChange={(e) => setDetailDraft((d) => ({ ...d, email: e.target.value }))}
+                          placeholder="Primary contact email"
+                          className="col-span-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        />
+                        <label className="col-span-2 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+                          <input
+                            type="checkbox"
+                            checked={detailDraft.optedIn}
+                            onChange={(e) =>
+                              setDetailDraft((d) => ({ ...d, optedIn: e.target.checked }))
+                            }
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          Contact has marketing opt-in consent
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 text-sm">
+                        <p className="flex items-center gap-2">
+                          <UserPlus className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-gray-800 dark:text-neutral-200">
+                            {selectedLead.ownerName || selectedLead.name || "—"}
+                          </span>
+                        </p>
+                        <p className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-gray-800 dark:text-neutral-200">
+                            {selectedLead.ownerPhone || selectedLead.phone || "—"}
+                          </span>
+                        </p>
+                        <p className="flex items-center gap-2">
+                          <Mail className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-gray-800 dark:text-neutral-200">
+                            {selectedLead.ownerEmail || selectedLead.email || "—"}
+                          </span>
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-neutral-400">
+                          Opt-in: {selectedLead.optedIn ? "Yes" : "No"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="flex items-center gap-2 text-sm text-gray-700 dark:text-neutral-300">
                     <Building2 className="w-3.5 h-3.5 text-gray-400" />
                     <span className="text-gray-500">Source:</span>
-                    <span className="text-gray-800 dark:text-neutral-200">
+                    <span>
                       {SOURCE_LABELS[selectedLead.source] || formatLabel(selectedLead.source)}
                     </span>
                   </p>
@@ -1412,7 +1743,7 @@ export default function SuperLeadsPage() {
                         disabled={detailSaving}
                         className="w-full py-2 rounded-lg border border-primary/30 bg-primary/5 text-primary text-xs font-semibold hover:bg-primary/10 disabled:opacity-50"
                       >
-                        {detailSaving ? "Saving..." : "Save value & follow-up"}
+                        {detailSaving ? "Saving..." : "Save lead details"}
                       </button>
                     </div>
                   </div>
@@ -1455,12 +1786,12 @@ export default function SuperLeadsPage() {
                   )}
                 </div>
 
-                {/* Won → onboard */}
-                {selectedLead.status === "won" && (
+                {/* Restaurant conversion */}
+                {canConvert && (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/30">
                     <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
                       <CheckCircle2 className="w-4 h-4" />
-                      Ready to onboard
+                      Restaurant conversion
                     </p>
                     {selectedLead.convertedRestaurant ? (
                       <p className="mt-1 text-sm text-emerald-900 dark:text-emerald-200">
@@ -1472,15 +1803,24 @@ export default function SuperLeadsPage() {
                           {selectedLead.convertedRestaurantName || "Restaurant"}
                         </Link>
                       </p>
-                    ) : canConvert ? (
-                      <button
-                        type="button"
-                        onClick={openConvertModal}
-                        className="mt-2 text-xs font-semibold text-emerald-700 underline dark:text-emerald-300"
-                      >
-                        Link restaurant →
-                      </button>
-                    ) : null}
+                    ) : (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCreateRestaurantFromLead(selectedLead)}
+                          className="rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200"
+                        >
+                          Create restaurant from this lead
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openConvertModal}
+                          className="rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200"
+                        >
+                          Link existing restaurant
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1591,45 +1931,153 @@ export default function SuperLeadsPage() {
               aria-label="Close modal"
               onClick={() => setShowAddModal(false)}
             />
-            <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6 max-h-[90vh] overflow-y-auto">
+            <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-6 max-h-[90vh] overflow-y-auto">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Add lead</h2>
-              <form onSubmit={handleAddLead} className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Restaurant name"
-                  value={addForm.restaurantName}
-                  onChange={(e) => setAddForm((f) => ({ ...f, restaurantName: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
-                <input
-                  type="text"
-                  placeholder="Contact name"
-                  value={addForm.name}
-                  onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
-                <input
-                  type="tel"
-                  required
-                  placeholder="Phone *"
-                  value={addForm.phone}
-                  onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={addForm.email}
-                  onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
-                <input
-                  type="text"
-                  placeholder="City"
-                  value={addForm.city}
-                  onChange={(e) => setAddForm((f) => ({ ...f, city: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-                />
+              <form onSubmit={handleAddLead} className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    value={addForm.status}
+                    onChange={(e) => setAddForm((f) => ({ ...f, status: e.target.value }))}
+                    className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                  >
+                    <option value="prospect">Prospect (found, not contacted)</option>
+                    <option value="new">New (already responded)</option>
+                  </select>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Restaurant
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Restaurant name"
+                      value={addForm.restaurantName}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, restaurantName: e.target.value }))
+                      }
+                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Restaurant phone"
+                      value={addForm.restaurantPhone}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, restaurantPhone: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Restaurant email"
+                      value={addForm.restaurantEmail}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, restaurantEmail: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="City"
+                      value={addForm.city}
+                      onChange={(e) => setAddForm((f) => ({ ...f, city: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Google Place ID (optional)"
+                      value={addForm.googleMapsPlaceId}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, googleMapsPlaceId: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="url"
+                      placeholder="Google Maps URL"
+                      value={addForm.googleMapsUrl}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, googleMapsUrl: e.target.value }))
+                      }
+                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Owner
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Owner name"
+                      value={addForm.ownerName}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, ownerName: e.target.value }))
+                      }
+                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Owner phone"
+                      value={addForm.ownerPhone}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, ownerPhone: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Owner email"
+                      value={addForm.ownerEmail}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, ownerEmail: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <label className="col-span-2 inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-neutral-300">
+                      <input
+                        type="checkbox"
+                        checked={addForm.optedIn}
+                        onChange={(e) => setAddForm((f) => ({ ...f, optedIn: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      Contact has marketing opt-in consent
+                    </label>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Primary contact (legacy fields)
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Contact name"
+                      value={addForm.name}
+                      onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Phone (or use owner/restaurant phone)"
+                      value={addForm.phone}
+                      onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      value={addForm.email}
+                      onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
+                      className="col-span-2 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <input
                     type="number"
@@ -1646,6 +2094,7 @@ export default function SuperLeadsPage() {
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
                   />
                 </div>
+
                 <select
                   value={addForm.source}
                   onChange={(e) => setAddForm((f) => ({ ...f, source: e.target.value }))}
@@ -1732,7 +2181,9 @@ export default function SuperLeadsPage() {
               <div className={`p-5 space-y-4 overflow-y-auto text-sm ${importing ? "opacity-60 pointer-events-none" : ""}`}>
                 <p className="text-gray-600 dark:text-neutral-400 text-xs leading-relaxed">
                   Required column: <code className="bg-gray-100 dark:bg-neutral-800 px-1 rounded">phone</code>.
-                  Optional: restaurant_name, name, email, city, source, value, follow_up, note, status
+                  Optional: restaurant_name, restaurant_phone, restaurant_email, owner_name, owner_phone,
+                  owner_email, google_maps_url, google_maps_place_id, opted_in, name, email, city, source,
+                  value, follow_up, note, status
                   {canViewAll ? ", assigned_to (team member email)" : ""}.
                   Leads are assigned to you{canViewAll ? " unless assigned_to is set" : ""}.
                 </p>
@@ -1813,9 +2264,11 @@ export default function SuperLeadsPage() {
                           {importPreview.rows.slice(0, 5).map((row, idx) => (
                             <tr key={idx} className="border-t border-gray-100 dark:border-neutral-800">
                               <td className="px-2 py-1.5">{row.restaurantName || "—"}</td>
-                              <td className="px-2 py-1.5 font-mono">{row.phone}</td>
+                              <td className="px-2 py-1.5 font-mono">
+                                {row.phone || row.restaurantPhone || row.ownerPhone || "—"}
+                              </td>
                               <td className="px-2 py-1.5">{row.city || "—"}</td>
-                              <td className="px-2 py-1.5">{row.status || "new"}</td>
+                              <td className="px-2 py-1.5">{row.status || "prospect"}</td>
                             </tr>
                           ))}
                         </tbody>

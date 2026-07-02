@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import SuperPageGate from "../../../components/super/SuperPageGate";
@@ -9,6 +9,7 @@ import {
   getSuperRestaurantActivitySummary,
   getRestaurantsForSuperAdmin,
   createRestaurantForSuperAdmin,
+  convertLeadForSuperAdmin,
   impersonateRestaurantAsSuperAdmin,
   verifyRestaurantOwnerEmailsForSuperAdmin,
   approveRestaurantForSuperAdmin,
@@ -128,12 +129,15 @@ export default function SuperRestaurantsPage() {
   const [createForm, setCreateForm] = useState({
     subdomain: "",
     name: "",
+    city: "",
     contactPhone: "",
     contactEmail: "",
     adminName: "",
     adminEmail: "",
     adminPassword: "",
   });
+  const [leadPrefillContext, setLeadPrefillContext] = useState(null);
+  const leadPrefillAppliedRef = useRef(false);
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
   const [listRefreshing, setListRefreshing] = useState(false);
@@ -152,12 +156,14 @@ export default function SuperRestaurantsPage() {
     setCreateForm({
       subdomain: "",
       name: "",
+      city: "",
       contactPhone: "",
       contactEmail: "",
       adminName: "",
       adminEmail: "",
       adminPassword: "",
     });
+    setLeadPrefillContext(null);
     setCreateError("");
     setShowCreateForm(true);
   }
@@ -181,17 +187,35 @@ export default function SuperRestaurantsPage() {
     }
     try {
       setCreating(true);
-      await createRestaurantForSuperAdmin({
+      const created = await createRestaurantForSuperAdmin({
         subdomain: subdomain.trim().toLowerCase(),
         name: name.trim(),
+        city: createForm.city.trim() || undefined,
         contactPhone: createForm.contactPhone.trim() || undefined,
         contactEmail: createForm.contactEmail.trim() || undefined,
         adminName: adminName.trim(),
         adminEmail: adminEmail.trim().toLowerCase(),
         adminPassword,
       });
-      toast.success("Restaurant created. Owner can log in and set up branches.");
+      const createdRestaurantId =
+        created?.restaurant?.id || created?.restaurant?._id || null;
+      if (leadPrefillContext?.leadId && createdRestaurantId) {
+        try {
+          await convertLeadForSuperAdmin(leadPrefillContext.leadId, createdRestaurantId);
+          toast.success(
+            "Restaurant created and linked to lead. Lead moved to Won.",
+          );
+        } catch (linkErr) {
+          toast.error(
+            linkErr?.message ||
+              "Restaurant created, but linking back to lead failed.",
+          );
+        }
+      } else {
+        toast.success("Restaurant created. Owner can log in and set up branches.");
+      }
       setShowCreateForm(false);
+      setLeadPrefillContext(null);
       loadRestaurants();
     } catch (err) {
       setCreateError(err.message || "Failed to create restaurant");
@@ -355,6 +379,43 @@ export default function SuperRestaurantsPage() {
       setStatusUpdatingId(null);
     }
   }
+
+  useEffect(() => {
+    if (!router.isReady || leadPrefillAppliedRef.current) return;
+    const fromLead = String(router.query.fromLead || "") === "1";
+    const leadId = String(router.query.leadId || "").trim();
+    if (!fromLead || !leadId) return;
+
+    const pick = (key) => {
+      const raw = router.query[key];
+      if (Array.isArray(raw)) return String(raw[0] || "");
+      return String(raw || "");
+    };
+
+    const restaurantName = pick("restaurantName").trim();
+    const restaurantPhone = pick("restaurantPhone").trim();
+    const restaurantEmail = pick("restaurantEmail").trim().toLowerCase();
+    const ownerName = pick("ownerName").trim();
+    const ownerPhone = pick("ownerPhone").trim();
+    const ownerEmail = pick("ownerEmail").trim().toLowerCase();
+    const city = pick("city").trim();
+
+    setCreateForm({
+      subdomain: slugifyForSubdomain(restaurantName),
+      name: restaurantName,
+      city,
+      contactPhone: restaurantPhone || ownerPhone,
+      contactEmail: restaurantEmail || ownerEmail,
+      adminName: ownerName,
+      adminEmail: ownerEmail || restaurantEmail,
+      adminPassword: "",
+    });
+    setLeadPrefillContext({ leadId });
+    setCreateError("");
+    setShowCreateForm(true);
+    leadPrefillAppliedRef.current = true;
+    router.replace("/super/restaurants", undefined, { shallow: true }).catch(() => {});
+  }, [router.isReady, router.query, router]);
 
   useEffect(() => {
     if (!hasAccess) return;
@@ -785,6 +846,11 @@ export default function SuperRestaurantsPage() {
                 Manually onboard a new restaurant and create its admin user. They
                 will get a 30-day free trial.
               </p>
+              {leadPrefillContext?.leadId ? (
+                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  Prefilled from lead. After creation, this restaurant will be linked to that lead.
+                </p>
+              ) : null}
               {createError && (
                 <p className="text-xs text-red-600 dark:text-red-400 mb-2">
                   {createError}
@@ -884,6 +950,24 @@ export default function SuperRestaurantsPage() {
                       placeholder="contact@example.com"
                     />
                   </div>
+                  <div className="space-y-1 col-span-2">
+                    <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                      City
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={createForm.city}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          city: e.target.value,
+                        }))
+                      }
+                      className="w-full px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-50 outline-none focus:ring-2 focus:ring-primary/40 focus:border-transparent"
+                      placeholder="City"
+                    />
+                  </div>
                 </div>
                 <div className="border-t border-neutral-200 dark:border-neutral-700 pt-3 mt-3">
                   <p className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400 mb-2">
@@ -940,6 +1024,7 @@ export default function SuperRestaurantsPage() {
                     onClick={() => {
                       if (creating) return;
                       setShowCreateForm(false);
+                      setLeadPrefillContext(null);
                     }}
                     className="flex-1 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-700 dark:text-neutral-300"
                   >
