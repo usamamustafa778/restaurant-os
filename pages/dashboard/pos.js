@@ -1426,7 +1426,7 @@ export default function OrdersPage() {
               <select
                 value={orderTypeFilter}
                 onChange={(e) => setOrderTypeFilter(e.target.value)}
-                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[7.5rem]"
+                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[6.5rem]"
                 aria-label="Filter by order type"
               >
                 {ORDER_TYPE_FILTERS.map((t) => (
@@ -1440,7 +1440,7 @@ export default function OrdersPage() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[8.5rem]"
+                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[6.5rem]"
                 aria-label="Filter by order status"
               >
                 {ORDER_STATUS_FILTERS.map((s) => (
@@ -1456,7 +1456,7 @@ export default function OrdersPage() {
                   value={riderFilter}
                   onChange={(e) => setRiderFilter(e.target.value)}
                   disabled={ridersLoading}
-                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[8.5rem] disabled:opacity-60"
+                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[6.5rem] disabled:opacity-60"
                   aria-label="Filter by rider"
                 >
                   <option value="All">All riders</option>
@@ -1474,7 +1474,7 @@ export default function OrdersPage() {
                 <select
                   value={sourceFilter}
                   onChange={(e) => setSourceFilter(e.target.value)}
-                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[8.5rem]"
+                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[6.5rem]"
                   aria-label="Filter by order source"
                 >
                   {SOURCE_FILTERS.map((s) => (
