@@ -150,6 +150,16 @@ const STATUS_THEME = {
 };
 
 const ORDER_TYPE_FILTERS = ["All", "Delivery", "Dine In", "Takeaway"];
+const ORDER_STATUS_FILTERS = [
+  { value: "ALL", label: "All statuses" },
+  { value: "NEW_ORDER", label: "New Orders" },
+  { value: "PROCESSING", label: "Preparing" },
+  { value: "READY", label: "Ready" },
+  { value: "OUT_FOR_DELIVERY", label: "Out for Delivery" },
+  { value: "AWAITING_PAYMENT", label: "Awaiting Payment" },
+  { value: "DELIVERED", label: "Delivered" },
+  { value: "CANCELLED", label: "Cancelled" },
+];
 
 const SOURCE_FILTERS = [
   { value: "All", label: "All sources" },
@@ -292,6 +302,22 @@ function getOrderSourceKey(order) {
   return "POS";
 }
 
+function getCalendarDayRange(dateStr) {
+  const [y, m, d] = String(dateStr || "").split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const from = new Date(y, m - 1, d, 0, 0, 0, 0);
+  const to = new Date(y, m - 1, d, 23, 59, 59, 999);
+  return { from, to };
+}
+
+function getOrderStatusBucket(order) {
+  const status = orderStatusForTab(order?.status);
+  if (status === "DELIVERED" && !isOrderFullyClosed(order)) {
+    return "AWAITING_PAYMENT";
+  }
+  return status;
+}
+
 function toCSVRow(cells) {
   return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
 }
@@ -422,6 +448,7 @@ export default function OrdersPage() {
   const [deletingId, setDeletingId] = useState(null);
   const [search, setSearch] = useState("");
   const [orderTypeFilter, setOrderTypeFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [sourceFilter, setSourceFilter] = useState("All");
   const [riderFilter, setRiderFilter] = useState("All");
   const [suspended, setSuspended] = useState(false);
@@ -432,6 +459,7 @@ export default function OrdersPage() {
   const [datePreset, setDatePreset] = useState(null);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [customRangeMode, setCustomRangeMode] = useState("calendar");
   const [showDateDropdown, setShowDateDropdown] = useState(false);
   // paymentPendingOnly removed; payment-pending filter UI no longer exists.
 
@@ -1032,18 +1060,31 @@ export default function OrdersPage() {
       };
     }
 
-    // custom range: treat inputs as business-date strings.
+    // Custom range supports both exact calendar days and business-session windows.
     if (datePreset === "custom") {
-      const fromRange = customFrom ? getBusinessDayRange(customFrom, cutoffHour) : null;
-      const toRange = customTo ? getBusinessDayRange(customTo, cutoffHour) : null;
+      const isSessionMode = customRangeMode === "session";
+      const fromRange = customFrom
+        ? (isSessionMode
+            ? getBusinessDayRange(customFrom, cutoffHour)
+            : getCalendarDayRange(customFrom))
+        : null;
+      const toRange = customTo
+        ? (isSessionMode
+            ? getBusinessDayRange(customTo, cutoffHour)
+            : getCalendarDayRange(customTo))
+        : null;
 
-      if (fromRange && toRange) return { from: fromRange.from, to: toRange.to };
+      if (fromRange && toRange) {
+        const fromMs = Math.min(fromRange.from.getTime(), toRange.from.getTime());
+        const toMs = Math.max(fromRange.to.getTime(), toRange.to.getTime());
+        return { from: new Date(fromMs), to: new Date(toMs) };
+      }
       if (fromRange) return { from: fromRange.from, to: fromRange.to };
       if (toRange) return { from: toRange.from, to: toRange.to };
     }
 
     return getBusinessDayRange(businessDateStr, cutoffHour);
-  }, [datePreset, customFrom, customTo, businessDateStr, cutoffHour]);
+  }, [datePreset, customFrom, customTo, customRangeMode, businessDateStr, cutoffHour]);
 
   // Re-subscribe socket listeners whenever dateRange changes (must be after dateRange is declared)
   useEffect(() => {
@@ -1238,6 +1279,7 @@ export default function OrdersPage() {
     const fromMs = hasDateRange && dateRange.from ? dateRange.from.getTime() : 0;
     const toMs = hasDateRange && dateRange.to ? dateRange.to.getTime() : Infinity;
     const filterType = orderTypeFilter !== "All";
+    const filterStatus = statusFilter !== "ALL";
     const filterSource = sourceFilter !== "All";
 
     const filtered = base.filter((o) => {
@@ -1254,6 +1296,7 @@ export default function OrdersPage() {
         (o.customerPhone || "").toLowerCase().includes(term)
       )) return false;
       if (filterType && getOrderTypeLabel(o) !== orderTypeFilter) return false;
+      if (filterStatus && getOrderStatusBucket(o) !== statusFilter) return false;
       if (filterSource && getOrderSourceKey(o) !== sourceFilter) return false;
       if (riderFilter !== "All") {
         const rider = riders.find((r) => r.id === riderFilter);
@@ -1279,6 +1322,7 @@ export default function OrdersPage() {
     cashierBaseOrders,
     search,
     orderTypeFilter,
+    statusFilter,
     sourceFilter,
     riderFilter,
     riders,
@@ -1388,6 +1432,20 @@ export default function OrdersPage() {
                 {ORDER_TYPE_FILTERS.map((t) => (
                   <option key={t} value={t}>
                     {t === "All" ? `All (${totalActive})` : t}
+                  </option>
+                ))}
+              </select>
+
+              {/* Status */}
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[8.5rem]"
+                aria-label="Filter by order status"
+              >
+                {ORDER_STATUS_FILTERS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
                   </option>
                 ))}
               </select>
@@ -1509,6 +1567,35 @@ export default function OrdersPage() {
 
                         {datePreset === "custom" && (
                           <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 space-y-2">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
+                                Range Mode
+                              </label>
+                              <div className="grid grid-cols-2 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomRangeMode("calendar")}
+                                  className={`h-7 rounded-lg text-[11px] font-semibold transition-colors ${
+                                    customRangeMode === "calendar"
+                                      ? "bg-emerald-600 text-white"
+                                      : "bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700"
+                                  }`}
+                                >
+                                  Calendar Day
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomRangeMode("session")}
+                                  className={`h-7 rounded-lg text-[11px] font-semibold transition-colors ${
+                                    customRangeMode === "session"
+                                      ? "bg-emerald-600 text-white"
+                                      : "bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700"
+                                  }`}
+                                >
+                                  Session
+                                </button>
+                              </div>
+                            </div>
                             <div>
                               <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
                                 From
