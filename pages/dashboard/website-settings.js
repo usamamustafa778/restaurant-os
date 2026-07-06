@@ -495,9 +495,14 @@ export default function WebsiteSettingsPage() {
     domain: hasContent(ws.customDomain),
     contact: hasContent(ws.contactPhone) || hasContent(ws.contactEmail) || hasContent(ws.address),
     hero:
-      (ws.heroType === "banner" &&
-        (hasContent(ws.bannerUrl) || hasContent(ws.heroHeadline))) ||
-      (Array.isArray(ws.heroSlides) && ws.heroSlides.some((s) => hasContent(s?.imageUrl))),
+      ((ws.heroType === "banner" || (ws.template || "classic") === "poster") &&
+        (hasContent(ws.bannerUrl) ||
+          hasContent(ws.heroEyebrow) ||
+          hasContent(ws.heroHeadline) ||
+          hasContent(ws.heroSubheadline) ||
+          hasContent(ws.heroCtaText))) ||
+      (Array.isArray(ws.heroSlides) &&
+        ws.heroSlides.some((s) => hasContent(s?.imageUrl))),
     atmosphere:
       hasContent(ws.aboutVideoUrl) ||
       (Array.isArray(ws.galleryMedia) &&
@@ -825,6 +830,7 @@ export default function WebsiteSettingsPage() {
   const isLoungeTemplate =
     (ws.template || "classic") === "lounge" ||
     (!ws.template && false);
+  const isPosterTemplate = (ws.template || "classic") === "poster";
 
   function updateGalleryMedia(next) {
     update("galleryMedia", next);
@@ -1810,11 +1816,11 @@ export default function WebsiteSettingsPage() {
 
                 <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40 space-y-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                    Lounge hero eyebrow
+                    Hero eyebrow
                   </h4>
                   <p className="text-xs text-gray-500 dark:text-neutral-500">
-                    Small uppercase line above your headline on the Lounge template
-                    (e.g. &quot;Cinematic Lounge Experience&quot;). Leave blank to use the default.
+                    Small uppercase line above your hero headline
+                    (e.g. &quot;Live-fire kitchen · open till late · no rules&quot;). Leave blank to use the default.
                   </p>
                   <div>
                     <label className={labelCls}>Eyebrow label</label>
@@ -1828,7 +1834,7 @@ export default function WebsiteSettingsPage() {
                   </div>
                 </div>
 
-                {ws.heroType === "banner" ? (
+                {ws.heroType === "banner" || isPosterTemplate ? (
                   <div className="space-y-4">
                     {/* Banner image */}
                     <MediaField
@@ -1841,10 +1847,11 @@ export default function WebsiteSettingsPage() {
                     {/* Banner text & CTA */}
                     <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40 space-y-4">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                        Banner text &amp; CTA
+                        Hero text &amp; CTA
                       </h4>
                       <p className="text-xs text-gray-500 dark:text-neutral-500">
-                        These fields are shown on the hero overlay. If left blank, defaults to your restaurant name.
+                        These fields drive the hero eyebrow/headline/sub-headline/CTA on supported templates
+                        (including Poster). If left blank, defaults are used.
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -1915,7 +1922,7 @@ export default function WebsiteSettingsPage() {
                 ) : null}
               </div>
 
-              {ws.heroType !== "banner" ? (
+              {ws.heroType !== "banner" && !isPosterTemplate ? (
               <div className="mt-8 space-y-4 border-t border-gray-100 pt-8 dark:border-neutral-800">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
                   Slide content
