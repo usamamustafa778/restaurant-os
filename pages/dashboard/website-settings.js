@@ -70,6 +70,8 @@ const SECTIONS = [
 
 const inp =
   "w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all";
+const txtAreaInp =
+  "w-full min-h-[96px] px-4 py-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-y";
 const labelCls =
   "block text-xs font-semibold text-gray-600 dark:text-neutral-400 mb-1.5";
 const btnPrimary =
@@ -78,6 +80,8 @@ const btnSecondary =
   "inline-flex items-center gap-2 h-10 px-4 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors";
 const cardCls =
   "bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm";
+const subCardCls =
+  "rounded-2xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40";
 
 // Unified gradient for all section icons so headings consistently use the brand primary
 const iconAccentPrimary = "from-primary to-secondary";
@@ -114,7 +118,8 @@ function to24hFrom12h(value) {
   let h = Number(m[1]);
   const min = Number(m[2]);
   const ampm = String(m[3]).toUpperCase();
-  if (!Number.isFinite(h) || !Number.isFinite(min) || h < 1 || h > 12) return null;
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h < 1 || h > 12)
+    return null;
   if (ampm === "PM" && h < 12) h += 12;
   if (ampm === "AM" && h === 12) h = 0;
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
@@ -462,7 +467,9 @@ export default function WebsiteSettingsPage() {
       }
       const updated = await updateWebsiteSettings(payload);
       setWs(updated || payload);
-      setHoursDraft(parseOpeningHoursDraft((updated || payload).openingHours || {}));
+      setHoursDraft(
+        parseOpeningHoursDraft((updated || payload).openingHours || {}),
+      );
       toast.success("Website settings saved!", { id: toastId });
     } catch (err) {
       toast.error(err.message || "Failed to save", { id: toastId });
@@ -484,23 +491,34 @@ export default function WebsiteSettingsPage() {
     if (Array.isArray(v)) return v.length > 0;
     if (typeof v === "number") return Number.isFinite(v);
     if (typeof v === "boolean") return v;
-    if (v && typeof v === "object") return Object.values(v).some((x) => hasContent(x));
+    if (v && typeof v === "object")
+      return Object.values(v).some((x) => hasContent(x));
     return false;
   }
 
   const sectionCompletion = {
     template: hasContent(ws.template),
-    branding: hasContent(ws.name) || hasContent(ws.logoUrl) || hasContent(ws.themeColors?.primary),
+    branding:
+      hasContent(ws.name) ||
+      hasContent(ws.logoUrl) ||
+      hasContent(ws.themeColors?.primary),
     seo: hasContent(ws.seo?.title) || hasContent(ws.seo?.metaDescription),
     domain: hasContent(ws.customDomain),
-    contact: hasContent(ws.contactPhone) || hasContent(ws.contactEmail) || hasContent(ws.address),
+    contact:
+      hasContent(ws.contactPhone) ||
+      hasContent(ws.contactEmail) ||
+      hasContent(ws.address),
     hero:
-      ((ws.heroType === "banner" || (ws.template || "classic") === "poster") &&
+      ((ws.heroType === "banner" ||
+        (ws.template || "classic") === "poster" ||
+        (ws.template || "classic") === "olea") &&
         (hasContent(ws.bannerUrl) ||
           hasContent(ws.heroEyebrow) ||
           hasContent(ws.heroHeadline) ||
           hasContent(ws.heroSubheadline) ||
-          hasContent(ws.heroCtaText))) ||
+          hasContent(ws.heroCtaText) ||
+          hasContent(ws.heroStats) ||
+          hasContent(ws.testimonials))) ||
       (Array.isArray(ws.heroSlides) &&
         ws.heroSlides.some((s) => hasContent(s?.imageUrl))),
     atmosphere:
@@ -511,7 +529,8 @@ export default function WebsiteSettingsPage() {
     hours:
       hasContent(ws.openingHoursText) ||
       Object.values(hoursDraft || {}).some((d) => d?.enabled),
-    sections: Array.isArray(ws.websiteSections) && ws.websiteSections.length > 0,
+    sections:
+      Array.isArray(ws.websiteSections) && ws.websiteSections.length > 0,
     settings:
       ws.isPublic !== false ||
       ws.allowWebsiteOrders !== false ||
@@ -533,7 +552,11 @@ export default function WebsiteSettingsPage() {
           disabled={saving || loading}
           className={btnPrimary}
         >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
           {saving ? "Saving..." : "Save"}
         </button>
       </div>
@@ -554,11 +577,17 @@ export default function WebsiteSettingsPage() {
     setDomainSaving(true);
     setDomainFeedback(null);
     const toastId = toast.loading(
-      typedDomain ? "Connecting domain..." : "Checking domain status..."
+      typedDomain ? "Connecting domain..." : "Checking domain status...",
     );
     try {
-      const updated = await updateWebsiteSettings({ customDomain: normalizedDomain });
-      setWs((prev) => ({ ...prev, ...(updated || {}), customDomain: normalizedDomain }));
+      const updated = await updateWebsiteSettings({
+        customDomain: normalizedDomain,
+      });
+      setWs((prev) => ({
+        ...prev,
+        ...(updated || {}),
+        customDomain: normalizedDomain,
+      }));
       if (typedDomain) {
         // Keep connected domain details visible below; clear input for next add/check.
         setDomainInput("");
@@ -573,8 +602,10 @@ export default function WebsiteSettingsPage() {
             : "Domain status refreshed."),
       });
       toast.success(
-        typedDomain ? "Domain connected successfully!" : "Domain status refreshed",
-        { id: toastId }
+        typedDomain
+          ? "Domain connected successfully!"
+          : "Domain status refreshed",
+        { id: toastId },
       );
     } catch (err) {
       setDomainFeedback({
@@ -666,6 +697,36 @@ export default function WebsiteSettingsPage() {
     );
   }
 
+  function updateHeroStat(idx, field, value) {
+    const stats = [...(ws.heroStats || [])];
+    while (stats.length < 3) stats.push({ value: "", label: "" });
+    stats[idx] = { ...(stats[idx] || {}), [field]: value };
+    update("heroStats", stats);
+  }
+
+  function addTestimonial() {
+    const rows = [...(ws.testimonials || [])];
+    if (rows.length >= 6) {
+      toast.error("Maximum 6 testimonials allowed");
+      return;
+    }
+    rows.push({ quote: "", author: "", source: "" });
+    update("testimonials", rows);
+  }
+
+  function updateTestimonial(idx, field, value) {
+    const rows = [...(ws.testimonials || [])];
+    rows[idx] = { ...(rows[idx] || {}), [field]: value };
+    update("testimonials", rows);
+  }
+
+  function removeTestimonial(idx) {
+    update(
+      "testimonials",
+      (ws.testimonials || []).filter((_, i) => i !== idx),
+    );
+  }
+
   // Website section helpers
   function addWebsiteSection() {
     const sections = [...(ws.websiteSections || [])];
@@ -711,7 +772,9 @@ export default function WebsiteSettingsPage() {
   const rootDomain = "eatsdesk.app";
   const liveUrl = ws.subdomain ? `https://${ws.subdomain}.${rootDomain}` : null;
   const customDomainUrl = ws.customDomain
-    ? `https://${String(ws.customDomain).trim().replace(/^https?:\/\//i, "")}`
+    ? `https://${String(ws.customDomain)
+        .trim()
+        .replace(/^https?:\/\//i, "")}`
     : null;
   const normalizedDomain = normalizeDomainInput(domainInput);
   const connectedDomain = normalizeDomainInput(ws.customDomain);
@@ -755,10 +818,21 @@ export default function WebsiteSettingsPage() {
     ? domainStatus.dnsRecordGroups
     : pairedWwwHost && (domainStatus?.apexStatus || domainStatus?.wwwStatus)
       ? [
-          { hostname: connectedDomain, records: domainStatus?.apexStatus?.dnsRecords ?? [] },
-          { hostname: pairedWwwHost, records: domainStatus?.wwwStatus?.dnsRecords ?? [] },
+          {
+            hostname: connectedDomain,
+            records: domainStatus?.apexStatus?.dnsRecords ?? [],
+          },
+          {
+            hostname: pairedWwwHost,
+            records: domainStatus?.wwwStatus?.dnsRecords ?? [],
+          },
         ]
-      : [{ hostname: connectedDomain || "Domain", records: domainVerificationRecords }];
+      : [
+          {
+            hostname: connectedDomain || "Domain",
+            records: domainVerificationRecords,
+          },
+        ];
 
   const apexNorm = (connectedDomain || "").toLowerCase();
   const wwwNorm = (pairedWwwHost || "").toLowerCase();
@@ -828,9 +902,9 @@ export default function WebsiteSettingsPage() {
     envView === "staging" ? stagingUrl || liveUrl : effectiveLiveWebsiteUrl;
   const galleryMedia = Array.isArray(ws.galleryMedia) ? ws.galleryMedia : [];
   const isLoungeTemplate =
-    (ws.template || "classic") === "lounge" ||
-    (!ws.template && false);
+    (ws.template || "classic") === "lounge" || (!ws.template && false);
   const isPosterTemplate = (ws.template || "classic") === "poster";
+  const isOleaTemplate = (ws.template || "classic") === "olea";
 
   function updateGalleryMedia(next) {
     update("galleryMedia", next);
@@ -856,12 +930,16 @@ export default function WebsiteSettingsPage() {
     );
     try {
       const result =
-        mediaType === "video" ? await uploadVideo(file) : await uploadImage(file);
+        mediaType === "video"
+          ? await uploadVideo(file)
+          : await uploadImage(file);
       const url = result.url || result.secure_url || "";
       if (!url) throw new Error("Upload did not return a URL");
       updateGalleryMedia([...galleryMedia, { url, mediaType }]);
       toast.success(
-        mediaType === "video" ? "Video added to gallery" : "Photo added to gallery",
+        mediaType === "video"
+          ? "Video added to gallery"
+          : "Photo added to gallery",
         { id: toastId },
       );
     } catch (err) {
@@ -879,7 +957,7 @@ export default function WebsiteSettingsPage() {
   return (
     <AdminLayout title="Website Settings">
       {/* URL + Save bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
         {/* Left: URL + env toggle */}
         <div className="space-y-1">
           <div className="flex items-center gap-3">
@@ -971,7 +1049,7 @@ export default function WebsiteSettingsPage() {
         <div className="flex gap-6">
           {/* Anchor nav */}
           <div className="hidden lg:block w-48 flex-shrink-0">
-            <div className="sticky top-4 space-y-1">
+            <div className="sticky top-0 space-y-1">
               {SECTIONS.map((s) => (
                 <button
                   key={s.id}
@@ -999,7 +1077,7 @@ export default function WebsiteSettingsPage() {
 
           {/* Content */}
           <div className="flex-1 min-w-0 space-y-6">
-            <div className="lg:hidden">
+            <div className="lg:hidden block">
               <label className={labelCls}>Active Section</label>
               <select
                 value={activeSection}
@@ -1014,6 +1092,7 @@ export default function WebsiteSettingsPage() {
                 ))}
               </select>
             </div>
+
             {/* Template Selection */}
             <SectionCard
               id="template"
@@ -1166,9 +1245,16 @@ export default function WebsiteSettingsPage() {
                         <input
                           type="color"
                           aria-label="Primary color picker"
-                          value={hexForColorInput(ws.themeColors?.primary, "#ef4444")}
+                          value={hexForColorInput(
+                            ws.themeColors?.primary,
+                            "#ef4444",
+                          )}
                           onChange={(e) =>
-                            updateNested("themeColors", "primary", e.target.value)
+                            updateNested(
+                              "themeColors",
+                              "primary",
+                              e.target.value,
+                            )
                           }
                           className="h-10 w-10 shrink-0 cursor-pointer rounded-lg border-2 border-gray-200 bg-transparent p-0 dark:border-neutral-700 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-md"
                         />
@@ -1192,9 +1278,16 @@ export default function WebsiteSettingsPage() {
                         <input
                           type="color"
                           aria-label="Secondary color picker"
-                          value={hexForColorInput(ws.themeColors?.secondary, "#ffa500")}
+                          value={hexForColorInput(
+                            ws.themeColors?.secondary,
+                            "#ffa500",
+                          )}
                           onChange={(e) =>
-                            updateNested("themeColors", "secondary", e.target.value)
+                            updateNested(
+                              "themeColors",
+                              "secondary",
+                              e.target.value,
+                            )
                           }
                           className="h-10 w-10 shrink-0 cursor-pointer rounded-lg border-2 border-gray-200 bg-transparent p-0 dark:border-neutral-700 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-md"
                         />
@@ -1204,7 +1297,11 @@ export default function WebsiteSettingsPage() {
                           onChange={(e) => {
                             const v = e.target.value;
                             const parsed = parseHexColor(v);
-                            updateNested("themeColors", "secondary", parsed ?? v);
+                            updateNested(
+                              "themeColors",
+                              "secondary",
+                              parsed ?? v,
+                            );
                           }}
                           placeholder="#ffa500"
                           spellCheck={false}
@@ -1217,8 +1314,10 @@ export default function WebsiteSettingsPage() {
                     <div
                       className="flex h-10 items-center px-3 text-xs font-semibold text-white"
                       style={{
-                        backgroundColor:
-                          hexForColorInput(ws.themeColors?.primary, "#ef4444"),
+                        backgroundColor: hexForColorInput(
+                          ws.themeColors?.primary,
+                          "#ef4444",
+                        ),
                       }}
                     >
                       Navbar preview
@@ -1228,8 +1327,10 @@ export default function WebsiteSettingsPage() {
                         type="button"
                         className="h-8 rounded-lg px-3 text-xs font-semibold text-white"
                         style={{
-                          backgroundColor:
-                            hexForColorInput(ws.themeColors?.primary, "#ef4444"),
+                          backgroundColor: hexForColorInput(
+                            ws.themeColors?.primary,
+                            "#ef4444",
+                          ),
                         }}
                       >
                         Order now
@@ -1237,8 +1338,10 @@ export default function WebsiteSettingsPage() {
                       <div
                         className="h-2.5 w-20 rounded-full"
                         style={{
-                          backgroundColor:
-                            hexForColorInput(ws.themeColors?.secondary, "#ffa500"),
+                          backgroundColor: hexForColorInput(
+                            ws.themeColors?.secondary,
+                            "#ffa500",
+                          ),
                         }}
                       />
                       <div className="h-2 w-full rounded bg-gray-200 dark:bg-neutral-700" />
@@ -1265,7 +1368,9 @@ export default function WebsiteSettingsPage() {
                     type="text"
                     value={ws.seo?.title ?? ""}
                     onChange={(e) => updateSeo("title", e.target.value)}
-                    placeholder={ws.name ? `${ws.name} | Chicago` : "Joe's Diner | Chicago"}
+                    placeholder={
+                      ws.name ? `${ws.name} | Chicago` : "Joe's Diner | Chicago"
+                    }
                     className={inp}
                     maxLength={200}
                   />
@@ -1274,7 +1379,9 @@ export default function WebsiteSettingsPage() {
                   <label className={labelCls}>Meta description</label>
                   <textarea
                     value={ws.seo?.metaDescription ?? ""}
-                    onChange={(e) => updateSeo("metaDescription", e.target.value)}
+                    onChange={(e) =>
+                      updateSeo("metaDescription", e.target.value)
+                    }
                     placeholder="Burgers, fries, and shakes. Open daily."
                     rows={3}
                     maxLength={500}
@@ -1344,7 +1451,9 @@ export default function WebsiteSettingsPage() {
                         setDomainFeedback(null);
                         setDomainInput(e.target.value);
                       }}
-                      onBlur={(e) => setDomainInput(normalizeDomainInput(e.target.value))}
+                      onBlur={(e) =>
+                        setDomainInput(normalizeDomainInput(e.target.value))
+                      }
                       placeholder="yourbrand.com"
                       className={`${inp} flex-1`}
                     />
@@ -1362,25 +1471,33 @@ export default function WebsiteSettingsPage() {
                         : normalizedDomain
                           ? "Connect Domain"
                           : connectedDomain
-                          ? "Check DNS Status"
-                          : "Connect Domain"}
+                            ? "Check DNS Status"
+                            : "Connect Domain"}
                     </button>
                   </div>
                   <p className="mt-1.5 text-xs text-gray-500 dark:text-neutral-400">
-                    Enter only the hostname (no <code className="text-[11px]">https://</code>). We save the
-                    apex form (e.g. <code className="text-[11px]">yourbrand.com</code>) and automatically
-                    register both <code className="text-[11px]">yourbrand.com</code> and{" "}
-                    <code className="text-[11px]">www.yourbrand.com</code> on Vercel when applicable.
+                    Enter only the hostname (no{" "}
+                    <code className="text-[11px]">https://</code>). We save the
+                    apex form (e.g.{" "}
+                    <code className="text-[11px]">yourbrand.com</code>) and
+                    automatically register both{" "}
+                    <code className="text-[11px]">yourbrand.com</code> and{" "}
+                    <code className="text-[11px]">www.yourbrand.com</code> on
+                    Vercel when applicable.
                   </p>
                   {connectedDomain && (
                     <div className="mt-2 text-xs text-gray-600 dark:text-neutral-400 space-y-0.5">
                       <p>
-                        <span className="font-semibold text-gray-900 dark:text-white">Apex:</span>{" "}
+                        <span className="font-semibold text-gray-900 dark:text-white">
+                          Apex:
+                        </span>{" "}
                         <span className="font-mono">{connectedDomain}</span>
                       </p>
                       {pairedWwwHost ? (
                         <p>
-                          <span className="font-semibold text-gray-900 dark:text-white">WWW:</span>{" "}
+                          <span className="font-semibold text-gray-900 dark:text-white">
+                            WWW:
+                          </span>{" "}
                           <span className="font-mono">{pairedWwwHost}</span>
                         </p>
                       ) : null}
@@ -1488,18 +1605,22 @@ export default function WebsiteSettingsPage() {
 
                     {domainInvalidConfig && (
                       <div className="mx-5 mt-3 rounded-lg border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-3 text-xs leading-relaxed text-rose-900 dark:text-rose-100">
-                        Vercel reports a DNS problem for this domain. Use the records below (apex: A only,
-                        www: CNAME only) at your DNS provider, then click{" "}
+                        Vercel reports a DNS problem for this domain. Use the
+                        records below (apex: A only, www: CNAME only) at your
+                        DNS provider, then click{" "}
                         <span className="font-semibold">Refresh</span>.
                       </div>
                     )}
                     {domainPendingDns && (
                       <div className="mx-5 mt-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-100">
-                        Point your <span className="font-semibold">apex</span> to the{" "}
-                        <span className="font-semibold">A</span> record and <span className="font-semibold">www</span>{" "}
-                        to the <span className="font-semibold">CNAME</span> shown below, then click{" "}
-                        <span className="font-semibold">Check DNS Status</span> or{" "}
-                        <span className="font-semibold">Refresh</span>. Propagation can take a while.
+                        Point your <span className="font-semibold">apex</span>{" "}
+                        to the <span className="font-semibold">A</span> record
+                        and <span className="font-semibold">www</span> to the{" "}
+                        <span className="font-semibold">CNAME</span> shown
+                        below, then click{" "}
+                        <span className="font-semibold">Check DNS Status</span>{" "}
+                        or <span className="font-semibold">Refresh</span>.
+                        Propagation can take a while.
                       </div>
                     )}
 
@@ -1545,8 +1666,9 @@ export default function WebsiteSettingsPage() {
                         {group.records.length === 0 ? (
                           <div className="px-3 py-3 text-xs text-gray-600 dark:text-neutral-400">
                             No DNS rows returned for this hostname yet. Click{" "}
-                            <span className="font-semibold">Refresh</span> or compare with your
-                            Vercel project&apos;s Domains page.
+                            <span className="font-semibold">Refresh</span> or
+                            compare with your Vercel project&apos;s Domains
+                            page.
                           </div>
                         ) : (
                           <>
@@ -1568,11 +1690,16 @@ export default function WebsiteSettingsPage() {
                                   {record.type || "TXT"}
                                 </div>
                                 <div className="col-span-4 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
-                                  <span className="flex-1">{record.domain || "_vercel"}</span>
+                                  <span className="flex-1">
+                                    {record.domain || "_vercel"}
+                                  </span>
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      copyText(record.domain || "_vercel", `name-${gIdx}-${idx}`)
+                                      copyText(
+                                        record.domain || "_vercel",
+                                        `name-${gIdx}-${idx}`,
+                                      )
                                     }
                                     className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
                                     title="Copy name"
@@ -1585,12 +1712,17 @@ export default function WebsiteSettingsPage() {
                                   </button>
                                 </div>
                                 <div className="col-span-6 px-3 py-3 border-l border-gray-200 dark:border-neutral-800 text-gray-700 dark:text-neutral-300 font-mono break-all flex items-center gap-2">
-                                  <span className="flex-1">{record.value || "—"}</span>
+                                  <span className="flex-1">
+                                    {record.value || "—"}
+                                  </span>
                                   {record.value ? (
                                     <button
                                       type="button"
                                       onClick={() =>
-                                        copyText(record.value, `value-${gIdx}-${idx}`)
+                                        copyText(
+                                          record.value,
+                                          `value-${gIdx}-${idx}`,
+                                        )
                                       }
                                       className="p-1 rounded hover:bg-gray-100 dark:hover:bg-neutral-800"
                                       title="Copy value"
@@ -1642,7 +1774,11 @@ export default function WebsiteSettingsPage() {
                         </a>
                         {wwwDomainUrl ? (
                           <a
-                            href={customDomainDnsLive ? wwwDomainUrl : effectiveLiveWebsiteUrl || wwwDomainUrl}
+                            href={
+                              customDomainDnsLive
+                                ? wwwDomainUrl
+                                : effectiveLiveWebsiteUrl || wwwDomainUrl
+                            }
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
@@ -1671,11 +1807,13 @@ export default function WebsiteSettingsPage() {
                       {pairedWwwHost ? (
                         <>
                           {" "}
-                          and <span className="font-semibold">{pairedWwwHost}</span>
+                          and{" "}
+                          <span className="font-semibold">{pairedWwwHost}</span>
                         </>
                       ) : null}{" "}
-                      from your EatsDesk website and remove both from the Vercel project when possible.
-                      Your site will no longer be served on these hostnames.
+                      from your EatsDesk website and remove both from the Vercel
+                      project when possible. Your site will no longer be served
+                      on these hostnames.
                     </p>
                     <div className="flex items-center justify-end gap-2">
                       <button
@@ -1763,64 +1901,80 @@ export default function WebsiteSettingsPage() {
               isActive={activeSection === "hero"}
             >
               <div className="space-y-6">
-                <p className="text-sm text-gray-600 dark:text-neutral-400">
-                  Choose how the top of your website introduces your restaurant.{" "}
-                  <strong className="text-gray-800 dark:text-neutral-200">Hero banner</strong> uses a
-                  single full-width image with custom text.{" "}
-                  <strong className="text-gray-800 dark:text-neutral-200">Hero slides</strong> rotates
-                  multiple promotional slides. Hero text is independent from Branding.
-                </p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {[
-                    {
-                      id: "banner",
-                      title: "Hero banner",
-                      desc: "One full-width image with your own headline, sub-headline, and CTA button.",
-                    },
-                    {
-                      id: "slides",
-                      title: "Hero slides",
-                      desc: "Multiple slides each with its own title, subtitle, image, and CTA. Great for promotions.",
-                    },
-                  ].map((opt) => {
-                    const active =
-                      (ws.heroType === "banner" ? "banner" : "slides") === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => update("heroType", opt.id)}
-                        className={`text-left rounded-2xl border-2 p-5 transition-all ${
-                          active
-                            ? "border-primary ring-4 ring-primary/10 bg-primary/5 dark:bg-primary/10"
-                            : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                            {opt.title}
-                          </h4>
-                          {active && (
-                            <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-2 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
-                          {opt.desc}
-                        </p>
-                      </button>
-                    );
-                  })}
+                <div className={`${subCardCls} space-y-4`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <p className="text-sm text-gray-600 dark:text-neutral-400 max-w-3xl">
+                      Choose how the top of your website introduces your
+                      restaurant.{" "}
+                      <strong className="text-gray-800 dark:text-neutral-200">
+                        Hero banner
+                      </strong>{" "}
+                      uses one large visual with editable copy.{" "}
+                      <strong className="text-gray-800 dark:text-neutral-200">
+                        Hero slides
+                      </strong>{" "}
+                      rotates multiple promos with their own text and CTA.
+                    </p>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-[11px] font-semibold text-gray-600 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300">
+                      <Type className="h-3.5 w-3.5" />
+                      Hero copy is separate from Branding
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {[
+                      {
+                        id: "banner",
+                        title: "Hero banner",
+                        desc: "One full-width image with your own headline, sub-headline, and CTA button.",
+                      },
+                      {
+                        id: "slides",
+                        title: "Hero slides",
+                        desc: "Multiple slides each with its own title, subtitle, image, and CTA.",
+                      },
+                    ].map((opt) => {
+                      const active =
+                        (ws.heroType === "banner" ? "banner" : "slides") ===
+                        opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => update("heroType", opt.id)}
+                          className={`text-left rounded-2xl border-2 p-4 transition-all ${
+                            active
+                              ? "border-primary ring-4 ring-primary/10 bg-primary/5 dark:bg-primary/10"
+                              : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600 bg-white dark:bg-neutral-950"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                              {opt.title}
+                            </h4>
+                            {active ? (
+                              <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                                Active
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-2 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
+                            {opt.desc}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40 space-y-3">
+                <div className={`${subCardCls} space-y-3`}>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
                     Hero eyebrow
                   </h4>
                   <p className="text-xs text-gray-500 dark:text-neutral-500">
-                    Small uppercase line above your hero headline
-                    (e.g. &quot;Live-fire kitchen · open till late · no rules&quot;). Leave blank to use the default.
+                    Small uppercase line above your hero headline (e.g.
+                    &quot;Live-fire kitchen · open till late · no rules&quot;).
+                    Leave blank to use the default.
                   </p>
                   <div>
                     <label className={labelCls}>Eyebrow label</label>
@@ -1834,42 +1988,341 @@ export default function WebsiteSettingsPage() {
                   </div>
                 </div>
 
-                {ws.heroType === "banner" || isPosterTemplate ? (
-                  <div className="space-y-4">
-                    {/* Banner image */}
-                    <MediaField
-                      label="Banner image"
-                      value={ws.bannerUrl}
-                      onChange={(v) => update("bannerUrl", v)}
-                      hint="Wide image works best (1200×400 px or larger). Also used as fallback for social previews."
-                      previewClassName="aspect-[2.4/1] w-full max-h-44"
-                    />
-                    {/* Banner text & CTA */}
-                    <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-700 dark:bg-neutral-900/40 space-y-4">
+                {ws.heroType === "banner" ||
+                isPosterTemplate ||
+                isOleaTemplate ? (
+                  <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+                    <div className="xl:col-span-3 space-y-4">
+                      <MediaField
+                        label="Banner image"
+                        value={ws.bannerUrl}
+                        onChange={(v) => update("bannerUrl", v)}
+                        hint="Wide image works best (1200×400 px or larger). Also used as fallback for social previews."
+                        previewClassName="aspect-[2.4/1] w-full max-h-44"
+                      />
+                      <div className={`${subCardCls} space-y-4`}>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                          Hero text &amp; CTA
+                        </h4>
+                        <p className="text-xs text-gray-500 dark:text-neutral-500">
+                          These fields drive the hero
+                          eyebrow/headline/sub-headline/CTA on supported
+                          templates (including Poster and Olea). If left blank,
+                          defaults are used.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelCls}>Headline</label>
+                            <input
+                              type="text"
+                              value={ws.heroHeadline || ""}
+                              onChange={(e) =>
+                                update("heroHeadline", e.target.value)
+                              }
+                              placeholder="Fresh, Fast &amp; Flavourful"
+                              className={inp}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Sub-headline</label>
+                            <input
+                              type="text"
+                              value={ws.heroSubheadline || ""}
+                              onChange={(e) =>
+                                update("heroSubheadline", e.target.value)
+                              }
+                              placeholder="Order your favourite meal in minutes"
+                              className={inp}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>CTA Button Text</label>
+                            <input
+                              type="text"
+                              value={ws.heroCtaText || ""}
+                              onChange={(e) =>
+                                update("heroCtaText", e.target.value)
+                              }
+                              placeholder="Order Now"
+                              className={inp}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>CTA Button Link</label>
+                            <input
+                              type="text"
+                              value={ws.heroCtaLink || ""}
+                              onChange={(e) =>
+                                update("heroCtaLink", e.target.value)
+                              }
+                              placeholder="#menu"
+                              className={inp}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="xl:col-span-2">
+                      <div className={subCardCls}>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400 mb-3">
+                          Live preview
+                        </h4>
+                        <div className="relative rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={
+                              ws.bannerUrl ||
+                              "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80&auto=format&fit=crop"
+                            }
+                            alt="Hero preview"
+                            className="w-full aspect-[2.4/1] object-cover"
+                          />
+                          <div className="absolute inset-0 bg-black/55 p-4 flex flex-col justify-end gap-1">
+                            <p className="text-white text-lg font-bold leading-snug">
+                              {ws.heroHeadline || ws.name || "Your Headline"}
+                            </p>
+                            <p className="text-white/85 text-sm">
+                              {ws.heroSubheadline || "Your sub-headline"}
+                            </p>
+                            {ws.heroCtaText || ws.heroCtaLink ? (
+                              <span className="mt-1 inline-flex w-fit items-center rounded-full bg-primary px-4 py-1.5 text-xs font-bold text-white">
+                                {ws.heroCtaText || "Order Now"}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {isOleaTemplate ? (
+                  <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+                    <div className={`${subCardCls} space-y-4`}>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                        Hero text &amp; CTA
+                        Olea hero meta stats (optional)
                       </h4>
                       <p className="text-xs text-gray-500 dark:text-neutral-500">
-                        These fields drive the hero eyebrow/headline/sub-headline/CTA on supported templates
-                        (including Poster). If left blank, defaults are used.
+                        Configure up to three hero meta facts. Empty rows stay
+                        hidden — no fabricated values are shown.
                       </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[0, 1, 2].map((idx) => (
+                        <div
+                          key={`hero-stat-${idx}`}
+                          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+                        >
+                          <div>
+                            <label className={labelCls}>
+                              Stat {idx + 1} Value
+                            </label>
+                            <input
+                              type="text"
+                              value={ws.heroStats?.[idx]?.value || ""}
+                              onChange={(e) =>
+                                updateHeroStat(idx, "value", e.target.value)
+                              }
+                              placeholder={
+                                idx === 0
+                                  ? "4.9 ★"
+                                  : idx === 1
+                                    ? "Est. 2016"
+                                    : "30 min"
+                              }
+                              className={inp}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>
+                              Stat {idx + 1} Label
+                            </label>
+                            <input
+                              type="text"
+                              value={ws.heroStats?.[idx]?.label || ""}
+                              onChange={(e) =>
+                                updateHeroStat(idx, "label", e.target.value)
+                              }
+                              placeholder={
+                                idx === 0
+                                  ? "1,200+ reviews"
+                                  : idx === 1
+                                    ? "Old Town Quarter"
+                                    : "pickup & delivery"
+                              }
+                              className={inp}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className={`${subCardCls} space-y-4`}>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
-                          <label className={labelCls}>Headline</label>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                            Testimonials (optional)
+                          </h4>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-neutral-500">
+                            Reviews render only when real testimonials are added
+                            here.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addTestimonial}
+                          className={btnSecondary}
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add Testimonial
+                        </button>
+                      </div>
+
+                      {(ws.testimonials || []).length === 0 ? (
+                        <p className="text-xs text-gray-500 dark:text-neutral-500">
+                          No testimonials yet. The Olea reviews section will
+                          remain hidden.
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {(ws.testimonials || []).map((item, idx) => (
+                            <div
+                              key={`testimonial-${idx}`}
+                              className="rounded-xl border border-gray-200 dark:border-neutral-700 p-4 space-y-3 bg-white dark:bg-neutral-950"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                                  Testimonial {idx + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeTestimonial(idx)}
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <div>
+                                <label className={labelCls}>Quote</label>
+                                <textarea
+                                  value={item?.quote || ""}
+                                  onChange={(e) =>
+                                    updateTestimonial(
+                                      idx,
+                                      "quote",
+                                      e.target.value,
+                                    )
+                                  }
+                                  rows={3}
+                                  placeholder="The kind of place you cancel other plans for..."
+                                  className={txtAreaInp}
+                                />
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className={labelCls}>Author</label>
+                                  <input
+                                    type="text"
+                                    value={item?.author || ""}
+                                    onChange={(e) =>
+                                      updateTestimonial(
+                                        idx,
+                                        "author",
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Priya N."
+                                    className={inp}
+                                  />
+                                </div>
+                                <div>
+                                  <label className={labelCls}>
+                                    Source / Context
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={item?.source || ""}
+                                    onChange={(e) =>
+                                      updateTestimonial(
+                                        idx,
+                                        "source",
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Local guide"
+                                    className={inp}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              {ws.heroType !== "banner" &&
+              !isPosterTemplate &&
+              !isOleaTemplate ? (
+                <div className="mt-8 space-y-4 border-t border-gray-100 pt-8 dark:border-neutral-800">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                    Slide content
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-neutral-500">
+                    Each slide has its own headline, subtitle, image, and CTA —
+                    independent from Branding.
+                  </p>
+                  {(ws.heroSlides || []).map((slide, idx) => (
+                    <div key={idx} className={`${subCardCls} space-y-3`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
+                          Slide {idx + 1}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateHeroSlide(idx, "isActive", !slide.isActive)
+                            }
+                            className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                              slide.isActive
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
+                            }`}
+                          >
+                            {slide.isActive ? "Active" : "Hidden"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeHeroSlide(idx)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelCls}>Slide Title</label>
                           <input
                             type="text"
-                            value={ws.heroHeadline || ""}
-                            onChange={(e) => update("heroHeadline", e.target.value)}
+                            value={slide.title || ""}
+                            onChange={(e) =>
+                              updateHeroSlide(idx, "title", e.target.value)
+                            }
                             placeholder="Fresh, Fast &amp; Flavourful"
                             className={inp}
                           />
                         </div>
                         <div>
-                          <label className={labelCls}>Sub-headline</label>
+                          <label className={labelCls}>Slide Sub-title</label>
                           <input
                             type="text"
-                            value={ws.heroSubheadline || ""}
-                            onChange={(e) => update("heroSubheadline", e.target.value)}
+                            value={slide.subtitle || ""}
+                            onChange={(e) =>
+                              updateHeroSlide(idx, "subtitle", e.target.value)
+                            }
                             placeholder="Order your favourite meal in minutes"
                             className={inp}
                           />
@@ -1878,8 +2331,10 @@ export default function WebsiteSettingsPage() {
                           <label className={labelCls}>CTA Button Text</label>
                           <input
                             type="text"
-                            value={ws.heroCtaText || ""}
-                            onChange={(e) => update("heroCtaText", e.target.value)}
+                            value={slide.buttonText || ""}
+                            onChange={(e) =>
+                              updateHeroSlide(idx, "buttonText", e.target.value)
+                            }
                             placeholder="Order Now"
                             className={inp}
                           />
@@ -1888,148 +2343,33 @@ export default function WebsiteSettingsPage() {
                           <label className={labelCls}>CTA Button Link</label>
                           <input
                             type="text"
-                            value={ws.heroCtaLink || ""}
-                            onChange={(e) => update("heroCtaLink", e.target.value)}
+                            value={slide.buttonLink || ""}
+                            onChange={(e) =>
+                              updateHeroSlide(idx, "buttonLink", e.target.value)
+                            }
                             placeholder="#menu"
                             className={inp}
                           />
                         </div>
                       </div>
-                    </div>
-                    {/* Live preview */}
-                    <div className="rounded-xl border border-gray-200 dark:border-neutral-700 overflow-hidden relative min-h-[180px]">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={ws.bannerUrl || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80&auto=format&fit=crop"}
-                        alt="Hero preview"
-                        className="absolute inset-0 h-full w-full object-cover"
+                      <MediaField
+                        label="Slide image"
+                        value={slide.imageUrl || ""}
+                        onChange={(v) => updateHeroSlide(idx, "imageUrl", v)}
+                        hint="Landscape images work best (1200×600 px or larger)."
+                        previewClassName="aspect-[2/1] w-full max-h-36"
                       />
-                      <div className="absolute inset-0 bg-black/50 p-4 flex flex-col justify-end gap-1">
-                        <p className="text-white text-lg font-bold leading-snug">
-                          {ws.heroHeadline || ws.name || "Your Headline"}
-                        </p>
-                        <p className="text-white/85 text-sm">
-                          {ws.heroSubheadline || "Your sub-headline"}
-                        </p>
-                        {(ws.heroCtaText || ws.heroCtaLink) && (
-                          <span className="mt-1 inline-flex w-fit items-center rounded-full bg-primary px-4 py-1.5 text-xs font-bold text-white">
-                            {ws.heroCtaText || "Order Now"}
-                          </span>
-                        )}
-                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </div>
-
-              {ws.heroType !== "banner" && !isPosterTemplate ? (
-              <div className="mt-8 space-y-4 border-t border-gray-100 pt-8 dark:border-neutral-800">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                  Slide content
-                </h4>
-                <p className="text-xs text-gray-500 dark:text-neutral-500">
-                  Each slide has its own headline, subtitle, image, and CTA — independent from Branding.
-                </p>
-                {(ws.heroSlides || []).map((slide, idx) => (
-                  <div
-                    key={idx}
-                    className="border-2 border-gray-100 dark:border-neutral-800 rounded-xl p-4 space-y-3"
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addHeroSlide}
+                    className={btnSecondary}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
-                        Slide {idx + 1}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateHeroSlide(idx, "isActive", !slide.isActive)
-                          }
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                            slide.isActive
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                              : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
-                          }`}
-                        >
-                          {slide.isActive ? "Active" : "Hidden"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeHeroSlide(idx)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className={labelCls}>Slide Title</label>
-                        <input
-                          type="text"
-                          value={slide.title || ""}
-                          onChange={(e) =>
-                            updateHeroSlide(idx, "title", e.target.value)
-                          }
-                          placeholder="Fresh, Fast &amp; Flavourful"
-                          className={inp}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelCls}>Slide Sub-title</label>
-                        <input
-                          type="text"
-                          value={slide.subtitle || ""}
-                          onChange={(e) =>
-                            updateHeroSlide(idx, "subtitle", e.target.value)
-                          }
-                          placeholder="Order your favourite meal in minutes"
-                          className={inp}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelCls}>CTA Button Text</label>
-                        <input
-                          type="text"
-                          value={slide.buttonText || ""}
-                          onChange={(e) =>
-                            updateHeroSlide(idx, "buttonText", e.target.value)
-                          }
-                          placeholder="Order Now"
-                          className={inp}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelCls}>CTA Button Link</label>
-                        <input
-                          type="text"
-                          value={slide.buttonLink || ""}
-                          onChange={(e) =>
-                            updateHeroSlide(idx, "buttonLink", e.target.value)
-                          }
-                          placeholder="#menu"
-                          className={inp}
-                        />
-                      </div>
-                    </div>
-                    <MediaField
-                      label="Slide image"
-                      value={slide.imageUrl || ""}
-                      onChange={(v) => updateHeroSlide(idx, "imageUrl", v)}
-                      hint="Landscape images work best (1200×600 px or larger)."
-                      previewClassName="aspect-[2/1] w-full max-h-36"
-                    />
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addHeroSlide}
-                  className={btnSecondary}
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Slide
-                </button>
-              </div>
+                    <Plus className="w-4 h-4" />
+                    Add Slide
+                  </button>
+                </div>
               ) : null}
               {renderSectionSave("hero")}
             </SectionCard>
@@ -2045,8 +2385,9 @@ export default function WebsiteSettingsPage() {
             >
               {!isLoungeTemplate ? (
                 <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-                  Select the <strong>Lounge</strong> template to show this media on
-                  your public site. You can upload now and switch templates anytime.
+                  Select the <strong>Lounge</strong> template to show this media
+                  on your public site. You can upload now and switch templates
+                  anytime.
                 </p>
               ) : null}
 
@@ -2072,7 +2413,8 @@ export default function WebsiteSettingsPage() {
                       </h4>
                       <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
                         Add at least 3 photos or videos. When set, these replace
-                        the auto-generated gallery from hero slides and menu photos.
+                        the auto-generated gallery from hero slides and menu
+                        photos.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -2101,7 +2443,8 @@ export default function WebsiteSettingsPage() {
 
                   {galleryMedia.length === 0 ? (
                     <div className="rounded-xl border-2 border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-neutral-700 dark:text-neutral-400">
-                      No gallery media yet. Upload photos or short ambience clips.
+                      No gallery media yet. Upload photos or short ambience
+                      clips.
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -2182,7 +2525,11 @@ export default function WebsiteSettingsPage() {
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  ["whatsapp", MessageCircle, "WhatsApp Number (+923001234567)"],
+                  [
+                    "whatsapp",
+                    MessageCircle,
+                    "WhatsApp Number (+923001234567)",
+                  ],
                   ["facebook", Facebook, "Facebook URL"],
                   ["instagram", Instagram, "Instagram URL"],
                   ["twitter", Twitter, "Twitter / X URL"],
@@ -2206,7 +2553,7 @@ export default function WebsiteSettingsPage() {
                           key,
                           key === "whatsapp"
                             ? e.target.value.replace(/[^\d+]/g, "")
-                            : e.target.value
+                            : e.target.value,
                         )
                       }
                       placeholder={placeholder}
@@ -2217,7 +2564,7 @@ export default function WebsiteSettingsPage() {
                         Website link:{" "}
                         {ws.socialMedia?.whatsapp
                           ? `wa.me/${normalizeWhatsAppForWaMe(
-                              ws.socialMedia.whatsapp
+                              ws.socialMedia.whatsapp,
                             )}`
                           : "wa.me/923001234567"}
                       </p>
@@ -2246,13 +2593,14 @@ export default function WebsiteSettingsPage() {
                   2
                   <br />
                   3
-                  <br />
-                  4
+                  <br />4
                 </div>
                 <textarea
                   value={ws.openingHoursText || ""}
                   onChange={(e) => update("openingHoursText", e.target.value)}
-                  placeholder={"Mon: 9:00 AM - 10:00 PM\nTue: 9:00 AM - 10:00 PM\n..."}
+                  placeholder={
+                    "Mon: 9:00 AM - 10:00 PM\nTue: 9:00 AM - 10:00 PM\n..."
+                  }
                   rows={4}
                   className="w-full h-auto py-2.5 px-3 resize-none bg-transparent text-sm font-mono text-gray-900 dark:text-white outline-none"
                 />
@@ -2347,7 +2695,8 @@ export default function WebsiteSettingsPage() {
                       No sections added yet
                     </p>
                     <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
-                      Add up to 3 featured menu sections to highlight your best dishes on the homepage.
+                      Add up to 3 featured menu sections to highlight your best
+                      dishes on the homepage.
                     </p>
                     <button
                       type="button"
@@ -2390,202 +2739,223 @@ export default function WebsiteSettingsPage() {
                         visibleMenuItems.length > 0 || visibleDeals.length > 0;
                       return (
                         <>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                        Section {sIdx + 1}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateSection(sIdx, "isActive", !section.isActive)
-                          }
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                            section.isActive
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                              : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
-                          }`}
-                        >
-                          {section.isActive ? "Active" : "Hidden"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeSection(sIdx)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                      <div>
-                        <label className={labelCls}>Title</label>
-                        <input
-                          type="text"
-                          value={section.title || ""}
-                          onChange={(e) =>
-                            updateSection(sIdx, "title", e.target.value)
-                          }
-                          placeholder="Popular Items"
-                          className={inp}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelCls}>Subtitle</label>
-                        <input
-                          type="text"
-                          value={section.subtitle || ""}
-                          onChange={(e) =>
-                            updateSection(sIdx, "subtitle", e.target.value)
-                          }
-                          placeholder="Our most loved dishes"
-                          className={inp}
-                        />
-                      </div>
-                    </div>
-                    <label className={labelCls}>
-                      Select Items ({(section.items || []).length} selected)
-                    </label>
-                    <div className="relative mb-2">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                      <input
-                        type="text"
-                        value={websiteSectionItemSearch[sIdx] || ""}
-                        onChange={(e) =>
-                          setWebsiteSectionItemSearch((prev) => ({
-                            ...prev,
-                            [sIdx]: e.target.value,
-                          }))
-                        }
-                        placeholder="Search menu items or deals..."
-                        className="h-10 w-full rounded-xl border-2 border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
-                      />
-                    </div>
-                    <div className="max-h-64 overflow-y-auto rounded-xl border-2 border-gray-100 dark:border-neutral-800 divide-y divide-gray-100 dark:divide-neutral-800">
-                      {!hasAnySelectableItems ? (
-                        <p className="p-4 text-xs text-gray-400 text-center">
-                          No menu items or deals found. Add items in Menu or
-                          deals in Deals first.
-                        </p>
-                      ) : !hasAnyVisibleItems ? (
-                        <p className="p-4 text-xs text-gray-400 text-center">
-                          No menu items or deals match your search.
-                        </p>
-                      ) : (
-                        <>
-                          {visibleMenuItems.length > 0 && (
-                            <div>
-                              <div className="sticky top-0 z-[1] bg-gray-50 dark:bg-neutral-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                                Menu Items
-                              </div>
-                              {visibleMenuItems.map((item) => {
-                                const itemId =
-                                  item._id || item.id || item.id?.toString?.();
-                                const sectionItems = (section.items || []).map(
-                                  (id) => id?._id || id?.toString?.() || id,
-                                );
-                                const selected = sectionItems.includes(itemId);
-                                return (
-                                  <button
-                                    key={itemId}
-                                    type="button"
-                                    onClick={() =>
-                                      toggleSectionItem(sIdx, itemId)
-                                    }
-                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors border-t border-gray-50 dark:border-neutral-800 ${
-                                      selected
-                                        ? "bg-primary/5 text-gray-900 dark:text-white"
-                                        : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
-                                    }`}
-                                  >
-                                    <div
-                                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                        selected
-                                          ? "bg-primary border-primary"
-                                          : "border-gray-300 dark:border-neutral-600"
-                                      }`}
-                                    >
-                                      {selected && (
-                                        <Check className="w-3 h-3 text-white" />
-                                      )}
-                                    </div>
-                                    {item.imageUrl && (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={item.imageUrl}
-                                        alt=""
-                                        className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
-                                      />
-                                    )}
-                                    <span className="flex-1 truncate font-medium">
-                                      {item.name}
-                                    </span>
-                                    <span className="text-xs text-gray-400 flex-shrink-0">
-                                      PKR {item.price}
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                              Section {sIdx + 1}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateSection(
+                                    sIdx,
+                                    "isActive",
+                                    !section.isActive,
+                                  )
+                                }
+                                className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                                  section.isActive
+                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                                    : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
+                                }`}
+                              >
+                                {section.isActive ? "Active" : "Hidden"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeSection(sIdx)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
-                          )}
-                          {visibleDeals.length > 0 && (
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                             <div>
-                              <div className="sticky top-0 z-[1] bg-gray-50 dark:bg-neutral-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                                Deals
-                              </div>
-                              {visibleDeals.map((deal) => {
-                                const itemId =
-                                  deal._id || deal.id || deal.id?.toString?.();
-                                const sectionItems = (section.items || []).map(
-                                  (id) => id?._id || id?.toString?.() || id,
-                                );
-                                const selected = sectionItems.includes(itemId);
-                                return (
-                                  <button
-                                    key={itemId}
-                                    type="button"
-                                    onClick={() =>
-                                      toggleSectionItem(sIdx, itemId)
-                                    }
-                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors border-t border-gray-50 dark:border-neutral-800 ${
-                                      selected
-                                        ? "bg-primary/5 text-gray-900 dark:text-white"
-                                        : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
-                                    }`}
-                                  >
-                                    <div
-                                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                        selected
-                                          ? "bg-primary border-primary"
-                                          : "border-gray-300 dark:border-neutral-600"
-                                      }`}
-                                    >
-                                      {selected && (
-                                        <Check className="w-3 h-3 text-white" />
-                                      )}
-                                    </div>
-                                    {deal.imageUrl && (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={deal.imageUrl}
-                                        alt=""
-                                        className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
-                                      />
-                                    )}
-                                    <span className="flex-1 truncate font-medium">
-                                      {deal.name}
-                                    </span>
-                                    <span className="text-xs text-gray-400 flex-shrink-0">
-                                      PKR {deal.price}
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                              <label className={labelCls}>Title</label>
+                              <input
+                                type="text"
+                                value={section.title || ""}
+                                onChange={(e) =>
+                                  updateSection(sIdx, "title", e.target.value)
+                                }
+                                placeholder="Popular Items"
+                                className={inp}
+                              />
                             </div>
-                          )}
-                        </>
-                      )}
-                    </div>
+                            <div>
+                              <label className={labelCls}>Subtitle</label>
+                              <input
+                                type="text"
+                                value={section.subtitle || ""}
+                                onChange={(e) =>
+                                  updateSection(
+                                    sIdx,
+                                    "subtitle",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Our most loved dishes"
+                                className={inp}
+                              />
+                            </div>
+                          </div>
+                          <label className={labelCls}>
+                            Select Items ({(section.items || []).length}{" "}
+                            selected)
+                          </label>
+                          <div className="relative mb-2">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <input
+                              type="text"
+                              value={websiteSectionItemSearch[sIdx] || ""}
+                              onChange={(e) =>
+                                setWebsiteSectionItemSearch((prev) => ({
+                                  ...prev,
+                                  [sIdx]: e.target.value,
+                                }))
+                              }
+                              placeholder="Search menu items or deals..."
+                              className="h-10 w-full rounded-xl border-2 border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+                            />
+                          </div>
+                          <div className="max-h-64 overflow-y-auto rounded-xl border-2 border-gray-100 dark:border-neutral-800 divide-y divide-gray-100 dark:divide-neutral-800">
+                            {!hasAnySelectableItems ? (
+                              <p className="p-4 text-xs text-gray-400 text-center">
+                                No menu items or deals found. Add items in Menu
+                                or deals in Deals first.
+                              </p>
+                            ) : !hasAnyVisibleItems ? (
+                              <p className="p-4 text-xs text-gray-400 text-center">
+                                No menu items or deals match your search.
+                              </p>
+                            ) : (
+                              <>
+                                {visibleMenuItems.length > 0 && (
+                                  <div>
+                                    <div className="sticky top-0 z-[1] bg-gray-50 dark:bg-neutral-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                                      Menu Items
+                                    </div>
+                                    {visibleMenuItems.map((item) => {
+                                      const itemId =
+                                        item._id ||
+                                        item.id ||
+                                        item.id?.toString?.();
+                                      const sectionItems = (
+                                        section.items || []
+                                      ).map(
+                                        (id) =>
+                                          id?._id || id?.toString?.() || id,
+                                      );
+                                      const selected =
+                                        sectionItems.includes(itemId);
+                                      return (
+                                        <button
+                                          key={itemId}
+                                          type="button"
+                                          onClick={() =>
+                                            toggleSectionItem(sIdx, itemId)
+                                          }
+                                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors border-t border-gray-50 dark:border-neutral-800 ${
+                                            selected
+                                              ? "bg-primary/5 text-gray-900 dark:text-white"
+                                              : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                                          }`}
+                                        >
+                                          <div
+                                            className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                              selected
+                                                ? "bg-primary border-primary"
+                                                : "border-gray-300 dark:border-neutral-600"
+                                            }`}
+                                          >
+                                            {selected && (
+                                              <Check className="w-3 h-3 text-white" />
+                                            )}
+                                          </div>
+                                          {item.imageUrl && (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                              src={item.imageUrl}
+                                              alt=""
+                                              className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                                            />
+                                          )}
+                                          <span className="flex-1 truncate font-medium">
+                                            {item.name}
+                                          </span>
+                                          <span className="text-xs text-gray-400 flex-shrink-0">
+                                            PKR {item.price}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {visibleDeals.length > 0 && (
+                                  <div>
+                                    <div className="sticky top-0 z-[1] bg-gray-50 dark:bg-neutral-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                                      Deals
+                                    </div>
+                                    {visibleDeals.map((deal) => {
+                                      const itemId =
+                                        deal._id ||
+                                        deal.id ||
+                                        deal.id?.toString?.();
+                                      const sectionItems = (
+                                        section.items || []
+                                      ).map(
+                                        (id) =>
+                                          id?._id || id?.toString?.() || id,
+                                      );
+                                      const selected =
+                                        sectionItems.includes(itemId);
+                                      return (
+                                        <button
+                                          key={itemId}
+                                          type="button"
+                                          onClick={() =>
+                                            toggleSectionItem(sIdx, itemId)
+                                          }
+                                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors border-t border-gray-50 dark:border-neutral-800 ${
+                                            selected
+                                              ? "bg-primary/5 text-gray-900 dark:text-white"
+                                              : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                                          }`}
+                                        >
+                                          <div
+                                            className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                              selected
+                                                ? "bg-primary border-primary"
+                                                : "border-gray-300 dark:border-neutral-600"
+                                            }`}
+                                          >
+                                            {selected && (
+                                              <Check className="w-3 h-3 text-white" />
+                                            )}
+                                          </div>
+                                          {deal.imageUrl && (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                              src={deal.imageUrl}
+                                              alt=""
+                                              className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                                            />
+                                          )}
+                                          <span className="flex-1 truncate font-medium">
+                                            {deal.name}
+                                          </span>
+                                          <span className="text-xs text-gray-400 flex-shrink-0">
+                                            PKR {deal.price}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </>
                       );
                     })()}
@@ -2593,15 +2963,15 @@ export default function WebsiteSettingsPage() {
                 ))}
                 {(ws.websiteSections || []).length > 0 &&
                   (ws.websiteSections || []).length < 3 && (
-                  <button
-                    type="button"
-                    onClick={addWebsiteSection}
-                    className={btnSecondary}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Section
-                  </button>
-                )}
+                    <button
+                      type="button"
+                      onClick={addWebsiteSection}
+                      className={btnSecondary}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Section
+                    </button>
+                  )}
               </div>
               {renderSectionSave("sections")}
             </SectionCard>
