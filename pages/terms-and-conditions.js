@@ -19,7 +19,7 @@ export default function TermsAndConditions() {
         description="Read the Terms and Conditions for using EatsDesk. Understand your rights and responsibilities when using our restaurant OS."
         structuredData={structuredData}
       />
-      <LegalPageShell title="Terms and Conditions" lastUpdated="March 28, 2026">
+      <LegalPageShell title="Terms and Conditions" lastUpdated="July 7, 2026">
         <div className="legal-lead">
           <p>
             Welcome to EatsDesk. These Terms and Conditions (&quot;Terms&quot;)
@@ -233,6 +233,15 @@ export default function TermsAndConditions() {
               applicable to your restaurant
             </li>
                   </ul>
+          <h3>5.1 Fair Use of AI Features</h3>
+          <p>
+            AI-powered features (including the WhatsApp AI Receptionist) are
+            provided to assist with customer communication. You agree not to use
+            them to send unsolicited bulk messages, to harass, or to violate
+            WhatsApp/Meta platform policies. AI-generated responses are
+            automated assistance; you remain responsible for your
+            restaurant&apos;s communications with your customers.
+          </p>
               </div>
 
         <div className="legal-section">
@@ -261,11 +270,12 @@ export default function TermsAndConditions() {
           </p>
           <h3>6.4 Export when you leave</h3>
           <p>
-            You may request a <strong>reasonable export</strong> of Your Data in a
-            common electronic format where technically practicable. We will
-            cooperate with such requests for an active account, or within{" "}
-            <strong>30 days</strong> after termination or expiry of your subscription,
-            subject to identity verification and legal retention obligations.
+            You may request an export of Your Data on request, in a common
+            electronic format, where technically practicable, for up to{" "}
+            <strong>30 days</strong> after termination. Your Data will be
+            deleted within <strong>90 days</strong> of account closure, except
+            where retention is required for legal, accounting, or
+            dispute-resolution purposes.
           </p>
           <h3>6.5 Security</h3>
           <p>

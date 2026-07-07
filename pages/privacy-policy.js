@@ -18,7 +18,7 @@ export default function PrivacyPolicy() {
         description="Learn how EatsDesk collects, uses, and protects your data. We are committed to maintaining the privacy and security of your restaurant's information."
         structuredData={structuredData}
       />
-      <LegalPageShell title="Privacy Policy" lastUpdated="March 28, 2026">
+      <LegalPageShell title="Privacy Policy" lastUpdated="July 7, 2026">
         <div className="legal-lead">
           <p>
             At Eats Desk, we take your privacy seriously. This Privacy Policy
@@ -94,8 +94,9 @@ export default function PrivacyPolicy() {
             </li>
             <li>Passwords are hashed using secure algorithms</li>
             <li>
-              Multi-tenant architecture ensures complete data isolation between
-              restaurants
+              Our multi-tenant architecture is designed to isolate each
+              restaurant&apos;s data, with role-based access controls governing
+              who on your team can see and do what.
             </li>
             <li>Access controls and role-based permissions</li>
             <li>Automated backups to prevent data loss</li>
@@ -104,6 +105,21 @@ export default function PrivacyPolicy() {
               operations
             </li>
           </ul>
+          <p style={{ marginTop: "12px" }}>
+            Your data is stored on secure, managed cloud database
+            infrastructure (currently DigitalOcean Managed MongoDB) with
+            encryption in transit (SSL/TLS), encryption at rest, and automated
+            daily backups. Application services are hosted on established cloud
+            platforms (Vercel and Render). Access to production systems is
+            restricted to authorized personnel only.
+          </p>
+          <p style={{ marginTop: "12px" }}>
+            Additional security measures include: hashed and salted password
+            storage (passwords are never stored in plain text), token-based
+            authentication with expiring sessions, permission-gated API access
+            on every request, and audit logging of sensitive administrative
+            actions. We continuously review and improve our security controls.
+          </p>
           <p style={{ marginTop: "12px" }}>
             However, no method of transmission over the internet or electronic
             storage is 100% secure. While we strive to use commercially
@@ -127,7 +143,12 @@ export default function PrivacyPolicy() {
               third-party service providers who assist us in operating our
               platform (e.g., payment processors, hosting providers, email
               services). These providers are contractually obligated to protect
-              your data.
+              your data. AI-powered features: where you enable AI-powered
+              features (such as the WhatsApp AI Receptionist), message content
+              from those conversations is processed by our AI infrastructure
+              provider (Anthropic) solely to generate responses on your behalf.
+              Under our agreement with them, this data is not used to train
+              their models and is not retained for their own purposes.
             </li>
             <li>
               <strong>Legal Requirements:</strong> We may disclose your information
@@ -146,7 +167,26 @@ export default function PrivacyPolicy() {
         </div>
 
         <div className="legal-section">
-          <h2>5. Your Rights and Choices</h2>
+          <h2>5. Your Customers&apos; Data</h2>
+          <p>
+            When your customers place orders through your EatsDesk-powered
+            website, POS, or WhatsApp, we process their information — such as
+            name, contact details, delivery address, and order history — on
+            your behalf and under your instructions, solely to operate your
+            restaurant&apos;s services (taking orders, arranging delivery,
+            printing receipts, and generating your reports). We act as a data
+            processor for this information; you, the restaurant, are the data
+            controller. We do not sell your customers&apos; data, use it to
+            market to them, or share it with other restaurants on the platform.
+            You are responsible for informing your customers about how their
+            information is used. If a customer asks us directly to access or
+            delete their data, we will refer the request to you and assist you
+            in fulfilling it.
+          </p>
+        </div>
+
+        <div className="legal-section">
+          <h2>6. Your Rights and Choices</h2>
           <p>You have the following rights regarding your personal data:</p>
           <ul>
             <li>
@@ -162,8 +202,10 @@ export default function PrivacyPolicy() {
               and associated data by contacting our support team.
             </li>
             <li>
-              <strong>Data Portability:</strong> You can export your restaurant
-              data in standard formats.
+              <strong>Data Portability:</strong> You may request an export of
+              your restaurant&apos;s data at any time by contacting support; we
+              will provide it in a common electronic format (such as CSV)
+              within a reasonable time, where technically practicable.
             </li>
             <li>
               <strong>Marketing Opt-Out:</strong> You can unsubscribe from
@@ -174,7 +216,30 @@ export default function PrivacyPolicy() {
         </div>
 
         <div className="legal-section">
-          <h2>6. Data Retention</h2>
+          <h2>7. Data Breach Notification</h2>
+          <p>
+            In the unlikely event of a security breach affecting your data, we
+            will notify affected customers without undue delay after becoming
+            aware of it, describe the nature of the incident and the data
+            involved, and outline the steps we are taking in response.
+          </p>
+        </div>
+
+        <div className="legal-section">
+          <h2>8. Subprocessors</h2>
+          <p>
+            We rely on a small number of trusted infrastructure providers to
+            deliver the service: DigitalOcean (database hosting), Render
+            (backend hosting), Vercel (frontend hosting), Anthropic (AI
+            processing for AI-powered features), Meta (WhatsApp Business
+            Platform, for WhatsApp features), and our SMTP email provider
+            (transactional email delivery). Each processes data only as needed
+            to provide their service to us.
+          </p>
+        </div>
+
+        <div className="legal-section">
+          <h2>9. Data Retention</h2>
           <p>
             We retain your information for as long as your account is active or as
             needed to provide you services. If you close your account, we will
@@ -188,7 +253,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div className="legal-section">
-          <h2>7. Cookies and Tracking</h2>
+          <h2>10. Cookies and Tracking</h2>
           <p>
             We use cookies and similar technologies that are necessary to run the
             platform. As of the date of this policy, these include:
@@ -210,7 +275,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div className="legal-section">
-          <h2>8. Third-Party Links</h2>
+          <h2>11. Third-Party Links</h2>
           <p>
             Our platform may contain links to third-party websites or services
             (e.g., payment gateways, delivery platforms). We are not responsible for
@@ -221,7 +286,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div className="legal-section">
-          <h2>9. Children&apos;s Privacy</h2>
+          <h2>12. Children&apos;s Privacy</h2>
           <p>
             Eats Desk is intended for business use and is not designed for
             individuals under the age of 18. We do not knowingly collect
@@ -231,7 +296,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div className="legal-section">
-          <h2>10. Changes to This Privacy Policy</h2>
+          <h2>13. Changes to This Privacy Policy</h2>
           <p>
             We may update this Privacy Policy from time to time to reflect changes
             in our practices or legal requirements. We will notify you of
@@ -248,7 +313,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div className="legal-section">
-          <h2>11. Contact Us</h2>
+          <h2>14. Contact Us</h2>
           <p>
             If you have any questions, concerns, or requests regarding this Privacy
             Policy or our data practices, contact us:
