@@ -80,9 +80,15 @@ function isExpiringWithinDays(iso, days = 7) {
 const SUBSCRIPTION_PILL = {
   TRIAL: "badge-warning",
   ACTIVE: "badge-success",
+  PAST_DUE: "badge-danger",
+  GRACE: "badge-info",
   EXPIRED: "badge-danger",
   SUSPENDED: "badge-danger",
 };
+
+function formatSubscriptionStatusLabel(status) {
+  return String(status || "TRIAL").toUpperCase().replace(/_/g, " ");
+}
 
 const APPROVE_PLANS = [
   { key: "starter", label: "Starter", price: "Rs 150/day" },
@@ -513,6 +519,8 @@ export default function SuperRestaurantsPage() {
             <option value="rejected">Rejected</option>
             <option value="TRIAL">Trial</option>
             <option value="ACTIVE">Active</option>
+            <option value="PAST_DUE">Past due</option>
+            <option value="GRACE">Grace</option>
             <option value="SUSPENDED">Suspended</option>
           </select>
           <select
@@ -634,9 +642,10 @@ export default function SuperRestaurantsPage() {
                 const isPending = r.approvalStatus === "pending";
                 const isRejected = r.approvalStatus === "rejected";
                 const sub = r.subscription || {};
-                const statusLabel = String(sub.status || "TRIAL").toUpperCase();
+                const statusValue = String(sub.status || "TRIAL").toUpperCase();
+                const statusLabel = formatSubscriptionStatusLabel(statusValue);
                 const badgeClass =
-                  SUBSCRIPTION_PILL[statusLabel] || SUBSCRIPTION_PILL.TRIAL;
+                  SUBSCRIPTION_PILL[statusValue] || SUBSCRIPTION_PILL.TRIAL;
                 const trialEnd =
                   sub.trialEndsAt ||
                   sub.freeTrialEndDate ||

@@ -66,15 +66,21 @@ function SubStatusBadge({ status, readonly }) {
       </span>
     );
   }
+  const statusValue = String(status || "EXPIRED").toUpperCase();
+  const statusLabel = statusValue.replace(/_/g, " ");
   const map = {
     TRIAL: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
     ACTIVE: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+    PAST_DUE: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
+    GRACE: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
     EXPIRED: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
     SUSPENDED: "bg-bg-primary text-gray-700 dark:bg-gray-900/40 dark:text-gray-300",
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${map[status] || map.EXPIRED}`}>
-      {status || "UNKNOWN"}
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${map[statusValue] || map.EXPIRED}`}
+    >
+      {statusLabel || "UNKNOWN"}
     </span>
   );
 }

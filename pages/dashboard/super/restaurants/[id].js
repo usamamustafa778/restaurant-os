@@ -6,6 +6,7 @@ import SuperPageGate from "../../../../components/super/SuperPageGate";
 import { usePlatformPermissionGate } from "../../../../hooks/usePlatformPermissionGate";
 import DataTable from "../../../../components/ui/DataTable";
 import Button from "../../../../components/ui/Button";
+import ActionDropdown from "../../../../components/ui/ActionDropdown";
 import GenerateInvoiceModal from "../../../../components/super/GenerateInvoiceModal";
 import MarkPaidModal from "../../../../components/super/MarkPaidModal";
 import { viewInvoicePDF } from "../../../../components/super/InvoicePDF";
@@ -56,6 +57,8 @@ const STATUS_INFO_PILL = {
   TRIAL: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
   ACTIVE:
     "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
+  PAST_DUE: "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300",
+  GRACE: "bg-sky-100 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300",
   EXPIRED: "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300",
   SUSPENDED:
     "bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300",
@@ -84,6 +87,8 @@ const ENGAGEMENT_STYLES = {
 const SUBSCRIPTION_PILL = {
   TRIAL: "badge-warning",
   ACTIVE: "badge-success",
+  PAST_DUE: "badge-warning",
+  GRACE: "badge-info",
   EXPIRED: "badge-danger",
   SUSPENDED: "badge-danger",
 };
@@ -109,6 +114,10 @@ function formatDate(d) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function formatStatusLabel(status) {
+  return String(status || "TRIAL").toUpperCase().replace(/_/g, " ");
 }
 
 function toDateInputValue(d) {
@@ -331,6 +340,7 @@ export default function SuperRestaurantDetailPage() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [headerDangerOpen, setHeaderDangerOpen] = useState(false);
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
@@ -548,6 +558,12 @@ export default function SuperRestaurantDetailPage() {
 
   async function handleSaveTrialDates() {
     if (!restaurant?.id) return;
+    if (hasPaidHistory) {
+      toast.error(
+        "This restaurant has paid subscription history and cannot be reverted to trial. Use Manual Activation to set proper dates.",
+      );
+      return;
+    }
     if (!trialStartDraft || !trialEndDraft) {
       toast.error("Trial start and end dates are required.");
       return;
@@ -561,6 +577,15 @@ export default function SuperRestaurantDetailPage() {
     if (end <= start) {
       toast.error("Trial end must be after trial start.");
       return;
+    }
+    if (status !== "TRIAL") {
+      const ok = await confirm({
+        title: "Reset to trial dates?",
+        message:
+          "This will move the restaurant into TRIAL with the selected trial dates. Continue only if this tenant has never had a paid subscription.",
+        confirmLabel: "Set Trial Dates",
+      });
+      if (!ok) return;
     }
     try {
       setTrialSaving(true);
@@ -828,6 +853,7 @@ export default function SuperRestaurantDetailPage() {
   const statusClass = SUBSCRIPTION_PILL[status] || SUBSCRIPTION_PILL.TRIAL;
   const statusInfoClass =
     STATUS_INFO_PILL[status] || STATUS_INFO_PILL.TRIAL;
+  const statusLabel = formatStatusLabel(status);
   const healthBorder =
     HEALTH_BORDER[engagement.key] || HEALTH_BORDER.dormant;
   const trialEnd =
@@ -839,6 +865,10 @@ export default function SuperRestaurantDetailPage() {
   const ownerPhone = owner?.phone || website.contactPhone;
   const lastActivityText = formatRelativeTimeShort(stats?.lastOrderAt);
   const ownerEmailPending = owner?.allVerified === false;
+  const hasPaidHistory =
+    Boolean(subscription.subscriptionStartDate) ||
+    (Array.isArray(detail?.invoices) &&
+      detail.invoices.some((inv) => String(inv?.status || "").toUpperCase() === "PAID"));
 
   return (
     <AdminLayout title={website.name || "Restaurant"}>
@@ -950,12 +980,11 @@ export default function SuperRestaurantDetailPage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  disabled={!owner?.email}
-                  onClick={openPasswordModal}
+                  onClick={openEditModal}
                   className="!h-9 text-xs inline-flex items-center gap-1.5"
                 >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  Reset password
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit
                 </Button>
                 {ownerEmailPending ? (
                   <Button
@@ -973,38 +1002,38 @@ export default function SuperRestaurantDetailPage() {
                     Verify email
                   </Button>
                 ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={openEditModal}
-                  className="!h-9 text-xs inline-flex items-center gap-1.5"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Edit
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={statusUpdating}
-                  onClick={() =>
-                    handleSubscriptionStatus(
-                      status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
-                    )
-                  }
-                  className={`!h-9 text-xs ${
-                    status === "SUSPENDED"
-                      ? "border-emerald-300 text-emerald-700"
-                      : "border-amber-300 text-amber-800"
-                  }`}
-                >
-                  {statusUpdating ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : status === "SUSPENDED" ? (
-                    "Activate"
-                  ) : (
-                    "Suspend"
-                  )}
-                </Button>
+                <div className="inline-flex items-center gap-1 rounded-lg border border-red-200/70 bg-red-50/70 px-1.5 py-1 dark:border-red-900/40 dark:bg-red-950/20">
+                  <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">
+                    Risk
+                  </span>
+                  <ActionDropdown
+                    isOpen={headerDangerOpen}
+                    onToggle={() => setHeaderDangerOpen((prev) => !prev)}
+                    onClose={() => setHeaderDangerOpen(false)}
+                    actions={[
+                      {
+                        label: "Reset password",
+                        icon: <KeyRound className="w-3.5 h-3.5" />,
+                        disabled: !owner?.email,
+                        variant: "danger",
+                        onClick: openPasswordModal,
+                      },
+                      {
+                        label:
+                          status === "SUSPENDED"
+                            ? "Activate restaurant"
+                            : "Suspend restaurant",
+                        icon: <X className="w-3.5 h-3.5" />,
+                        disabled: statusUpdating,
+                        variant: "danger",
+                        onClick: () =>
+                          handleSubscriptionStatus(
+                            status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
+                          ),
+                      },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
 
@@ -1020,7 +1049,7 @@ export default function SuperRestaurantDetailPage() {
               <span
                 className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfoClass}`}
               >
-                {status}
+                {statusLabel}
               </span>
               {status === "TRIAL" && trialEndLabel ? (
                 <span
@@ -1116,7 +1145,7 @@ export default function SuperRestaurantDetailPage() {
                       key="status"
                       className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusInfoClass}`}
                     >
-                      {status}
+                      {statusLabel}
                     </span>,
                   ],
                 ].map(([label, val]) => (
@@ -1273,7 +1302,7 @@ export default function SuperRestaurantDetailPage() {
                 <span
                   className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${statusInfoClass}`}
                 >
-                  {status}
+                  {statusLabel}
                 </span>
               </div>
               <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
@@ -1314,7 +1343,7 @@ export default function SuperRestaurantDetailPage() {
                         <span
                           className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusInfoClass}`}
                         >
-                          {status}
+                          {statusLabel}
                         </span>
                       }
                     />
@@ -1351,6 +1380,18 @@ export default function SuperRestaurantDetailPage() {
                   description="Override the trial period for this restaurant. New signups still get 30 days automatically."
                 >
                   <div className="space-y-3">
+                    {hasPaidHistory ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                        This tenant has paid subscription history. Trial reset is blocked. Use
+                        <span className="font-semibold"> Manual Activation </span>
+                        to correct dates safely.
+                      </div>
+                    ) : status !== "TRIAL" ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                        Setting trial dates for a non-trial tenant requires confirmation and will
+                        move the tenant to TRIAL.
+                      </div>
+                    ) : null}
                     <div>
                       <label className={FORM_LABEL} htmlFor="trial-start">
                         Trial start
@@ -1377,7 +1418,7 @@ export default function SuperRestaurantDetailPage() {
                     </div>
                     <Button
                       type="button"
-                      disabled={trialSaving}
+                      disabled={trialSaving || hasPaidHistory}
                       onClick={handleSaveTrialDates}
                       className="!h-9 w-full text-xs"
                     >
