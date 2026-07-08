@@ -117,6 +117,18 @@ const DISCOUNT_TYPE_OPTIONS = [
   { value: "flat_total", label: "Flat total (set final price)" },
 ];
 
+const BILLING_CYCLE_OPTIONS = [
+  { value: "monthly", label: "Monthly", noticeDays: 3 },
+  { value: "quarterly", label: "Quarterly", noticeDays: 7 },
+  { value: "biannual", label: "Biannual", noticeDays: 14 },
+  { value: "annual", label: "Annual", noticeDays: 30 },
+];
+
+const BILLING_CYCLE_NOTICE_MAP = BILLING_CYCLE_OPTIONS.reduce((acc, option) => {
+  acc[option.value] = option.noticeDays;
+  return acc;
+}, {});
+
 const STATUS_CONFIRM = {
   ACTIVE: {
     title: "Activate Subscription",
@@ -138,6 +150,18 @@ function formatDate(d) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function formatDateTime(d) {
+  if (!d) return "—";
+  return new Date(d).toLocaleString();
+}
+
+function normalizeBillingCycle(value) {
+  const raw = String(value || "monthly").toLowerCase().trim();
+  return BILLING_CYCLE_OPTIONS.some((option) => option.value === raw)
+    ? raw
+    : "monthly";
 }
 
 function formatStatusLabel(status) {
@@ -416,6 +440,7 @@ export default function SuperRestaurantDetailPage() {
   const [activationEnd, setActivationEnd] = useState("");
   const [activationSaving, setActivationSaving] = useState(false);
   const [moduleDraft, setModuleDraft] = useState(defaultModuleActiveMap);
+  const [billingCycleDraft, setBillingCycleDraft] = useState("monthly");
   const [discountDraft, setDiscountDraft] = useState(() =>
     normalizeDiscountDraft({}),
   );
@@ -456,6 +481,9 @@ export default function SuperRestaurantDetailPage() {
         toDateInputValue(sub.trialEndsAt || sub.freeTrialEndDate || sub.expiresAt),
       );
       setModuleDraft(normalizeModuleActiveMap(data?.restaurant?.modules));
+      setBillingCycleDraft(
+        normalizeBillingCycle(data?.restaurant?.subscription?.billingCycle),
+      );
       setDiscountDraft(
         normalizeDiscountDraft(data?.restaurant?.subscriptionDiscount),
       );
@@ -695,6 +723,7 @@ export default function SuperRestaurantDetailPage() {
       setModuleSaving(true);
       await updateRestaurantSubscription(restaurant.id, {
         modules: modulesPayload,
+        billingCycle: normalizeBillingCycle(billingCycleDraft),
         subscriptionDiscount: normalizedDiscount,
       });
       toast.success("Module entitlements and discount updated.");
@@ -1024,6 +1053,26 @@ export default function SuperRestaurantDetailPage() {
     Boolean(subscription.subscriptionStartDate) ||
     (Array.isArray(detail?.invoices) &&
       detail.invoices.some((inv) => String(inv?.status || "").toUpperCase() === "PAID"));
+  const selectedBillingCycle = normalizeBillingCycle(billingCycleDraft);
+  const selectedNoticeWindow =
+    BILLING_CYCLE_NOTICE_MAP[selectedBillingCycle] || BILLING_CYCLE_NOTICE_MAP.monthly;
+  const nextRenewalDate = subscription.subscriptionEndDate || subscription.expiresAt || null;
+  const daysUntilRenewal = nextRenewalDate
+    ? (() => {
+        const now = new Date();
+        const d = new Date(nextRenewalDate);
+        const nowUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        const endUtc = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+        return Math.round((endUtc - nowUtc) / 86400000);
+      })()
+    : null;
+  const nextNoticeDate = nextRenewalDate
+    ? (() => {
+        const d = new Date(nextRenewalDate);
+        d.setDate(d.getDate() - selectedNoticeWindow);
+        return d;
+      })()
+    : null;
   const hasUsedTrial = Boolean(subscription.hasUsedTrial);
   const trialControlsLocked = hasUsedTrial || hasPaidHistory;
   const billingPreview = computeBillingPreview(
@@ -1570,6 +1619,60 @@ export default function SuperRestaurantDetailPage() {
 
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-4 items-start">
                 <div className="space-y-4 min-w-0">
+                  <SectionCard
+                    title="Billing Cycle & Renewal"
+                    description="Control renewal cadence and preview automation timing"
+                  >
+                    <div className="space-y-3">
+                      <div>
+                        <label className={FORM_LABEL}>Billing cycle</label>
+                        <select
+                          value={selectedBillingCycle}
+                          disabled={!canManageSubscriptions}
+                          onChange={(e) =>
+                            setBillingCycleDraft(normalizeBillingCycle(e.target.value))
+                          }
+                          className={FORM_INPUT}
+                        >
+                          {BILLING_CYCLE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 px-3 py-2 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                          <span>Next renewal date</span>
+                          <span className="font-medium">{formatDate(nextRenewalDate)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                          <span>Days until renewal</span>
+                          <span className="font-medium">
+                            {daysUntilRenewal == null ? "—" : daysUntilRenewal}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                          <span>Next notice window</span>
+                          <span className="font-medium">
+                            {selectedNoticeWindow} day
+                            {selectedNoticeWindow === 1 ? "" : "s"} before renewal
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                          <span>Next notice date</span>
+                          <span className="font-medium">{formatDate(nextNoticeDate)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                          <span>Last auto-invoice generated</span>
+                          <span className="font-medium">
+                            {formatDateTime(subscription.lastAutoInvoiceGeneratedAt)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </SectionCard>
+
                   <SectionCard
                     title="Module Entitlements"
                     description="Toggle add-on modules while keeping POS as the required base"

@@ -96,6 +96,13 @@ const APPROVE_PLANS = [
   { key: "pro", label: "Pro", price: "Rs 550/day (enterprise)" },
 ];
 
+const BILLING_CYCLE_OPTIONS = [
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "biannual", label: "Biannual" },
+  { value: "annual", label: "Annual" },
+];
+
 const ENGAGEMENT_STYLES = {
   /** Soft pills on white table — matches platform health column reference */
   active:
@@ -151,6 +158,7 @@ export default function SuperRestaurantsPage() {
   const [approveTarget, setApproveTarget] = useState(null);
   const [approvePlan, setApprovePlan] = useState("starter");
   const [approveTrialDays, setApproveTrialDays] = useState(30);
+  const [approveBillingCycle, setApproveBillingCycle] = useState("monthly");
   const [approveLoading, setApproveLoading] = useState(false);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -291,6 +299,7 @@ export default function SuperRestaurantsPage() {
       await approveRestaurantForSuperAdmin(approveTarget.id, {
         plan: approvePlan,
         trialDays: days,
+        billingCycle: approveBillingCycle,
       });
       toast.success(
         `"${approveTarget.website?.name || "Restaurant"}" approved and activated.`,
@@ -298,6 +307,7 @@ export default function SuperRestaurantsPage() {
       setApproveTarget(null);
       setApprovePlan("starter");
       setApproveTrialDays(30);
+      setApproveBillingCycle("monthly");
       loadRestaurants();
     } catch (err) {
       toast.error(err.message || "Failed to approve restaurant");
@@ -310,6 +320,7 @@ export default function SuperRestaurantsPage() {
     setApproveTarget(restaurant);
     setApprovePlan("starter");
     setApproveTrialDays(30);
+    setApproveBillingCycle("monthly");
   }
 
   function openRejectModal(restaurant) {
@@ -1135,18 +1146,36 @@ export default function SuperRestaurantsPage() {
                       ))}
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                      Trial Duration (days)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      required
-                      value={approveTrialDays}
-                      onChange={(e) => setApproveTrialDays(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-primary/40"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                        Trial Duration (days)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        required
+                        value={approveTrialDays}
+                        onChange={(e) => setApproveTrialDays(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-primary/40"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                        Billing Cycle
+                      </label>
+                      <select
+                        value={approveBillingCycle}
+                        onChange={(e) => setApproveBillingCycle(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        {BILLING_CYCLE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-neutral-700">
