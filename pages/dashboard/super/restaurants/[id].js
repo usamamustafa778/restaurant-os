@@ -27,8 +27,6 @@ import { useConfirmDialog } from "../../../../contexts/ConfirmDialogContext";
 import { usePermissions } from "../../../../contexts/PermissionContext";
 import {
   ArrowLeft,
-  Calendar,
-  CreditCard,
   ExternalLink,
   Eye,
   EyeOff,
@@ -84,15 +82,6 @@ const ENGAGEMENT_STYLES = {
     "bg-gray-100 text-gray-600 border-gray-400 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-500",
 };
 
-const SUBSCRIPTION_PILL = {
-  TRIAL: "badge-warning",
-  ACTIVE: "badge-success",
-  PAST_DUE: "badge-warning",
-  GRACE: "badge-info",
-  EXPIRED: "badge-danger",
-  SUSPENDED: "badge-danger",
-};
-
 const MODULE_DEFINITIONS = [
   { key: "pos", label: "POS Core", rate: 2500, perBranch: true, required: true },
   { key: "kds", label: "KDS", rate: 1500, perBranch: true, requires: ["pos"] },
@@ -125,7 +114,7 @@ const MODULE_MAP = MODULE_DEFINITIONS.reduce((acc, mod) => {
 const DISCOUNT_TYPE_OPTIONS = [
   { value: "percentage", label: "Percentage (%)" },
   { value: "fixed_amount", label: "Fixed amount (Rs)" },
-  { value: "flat_total", label: "Flat total (Rs)" },
+  { value: "flat_total", label: "Flat total (set final price)" },
 ];
 
 const STATUS_CONFIRM = {
@@ -419,8 +408,6 @@ export default function SuperRestaurantDetailPage() {
   const [invoiceActionId, setInvoiceActionId] = useState(null);
   const [markPaidInvoice, setMarkPaidInvoice] = useState(null);
 
-  const [planDraft, setPlanDraft] = useState("ESSENTIAL");
-  const [planSaving, setPlanSaving] = useState(false);
   const [trialStartDraft, setTrialStartDraft] = useState("");
   const [trialEndDraft, setTrialEndDraft] = useState("");
   const [trialSaving, setTrialSaving] = useState(false);
@@ -461,7 +448,6 @@ export default function SuperRestaurantDetailPage() {
       setLoading(true);
       const data = await getSuperRestaurantDetail(id);
       setDetail(data);
-      setPlanDraft(data?.restaurant?.subscription?.plan || "ESSENTIAL");
       const sub = data?.restaurant?.subscription || {};
       setTrialStartDraft(
         toDateInputValue(sub.trialStartsAt || sub.freeTrialStartDate),
@@ -662,20 +648,6 @@ export default function SuperRestaurantDetailPage() {
     }
   }
 
-  async function handleSavePlan() {
-    if (!restaurant?.id) return;
-    try {
-      setPlanSaving(true);
-      await updateRestaurantSubscription(restaurant.id, { plan: planDraft });
-      toast.success("Plan updated.");
-      loadDetail();
-    } catch (err) {
-      toast.error(err.message || "Failed to update plan");
-    } finally {
-      setPlanSaving(false);
-    }
-  }
-
   function handleModuleToggle(key, nextActive) {
     if (key === "pos" && !nextActive) {
       toast.error("POS Core is required and cannot be turned off.");
@@ -736,6 +708,12 @@ export default function SuperRestaurantDetailPage() {
 
   async function handleSaveTrialDates() {
     if (!restaurant?.id) return;
+    if (hasUsedTrial) {
+      toast.error(
+        "This restaurant has already used its trial. Use Manual Activation for paid subscriptions.",
+      );
+      return;
+    }
     if (hasPaidHistory) {
       toast.error(
         "This restaurant has paid subscription history and cannot be reverted to trial. Use Manual Activation to set proper dates.",
@@ -1028,7 +1006,6 @@ export default function SuperRestaurantDetailPage() {
   const engagement = stats?.engagement || {};
   const healthClass =
     ENGAGEMENT_STYLES[engagement.key] || ENGAGEMENT_STYLES.dormant;
-  const statusClass = SUBSCRIPTION_PILL[status] || SUBSCRIPTION_PILL.TRIAL;
   const statusInfoClass =
     STATUS_INFO_PILL[status] || STATUS_INFO_PILL.TRIAL;
   const statusLabel = formatStatusLabel(status);
@@ -1047,11 +1024,39 @@ export default function SuperRestaurantDetailPage() {
     Boolean(subscription.subscriptionStartDate) ||
     (Array.isArray(detail?.invoices) &&
       detail.invoices.some((inv) => String(inv?.status || "").toUpperCase() === "PAID"));
+  const hasUsedTrial = Boolean(subscription.hasUsedTrial);
+  const trialControlsLocked = hasUsedTrial || hasPaidHistory;
   const billingPreview = computeBillingPreview(
     moduleDraft,
     discountDraft,
     detail?.billing?.branchCount || 1,
   );
+  const subscriptionEndDate =
+    subscription.subscriptionEndDate || subscription.expiresAt || null;
+  const isGraceStatus = status === "PAST_DUE" || status === "GRACE";
+  const activeDaysRemaining =
+    status === "ACTIVE" && subscriptionEndDate
+      ? (() => {
+          const remainingMs = new Date(subscriptionEndDate).getTime() - Date.now();
+          if (!Number.isFinite(remainingMs)) return null;
+          return Math.max(0, Math.ceil(remainingMs / 86400000));
+        })()
+      : null;
+  const graceUntilDate = (() => {
+    if (!isGraceStatus) return null;
+    if (subscription.graceUntilDate) return subscription.graceUntilDate;
+    if (!subscriptionEndDate) return null;
+    const d = new Date(subscriptionEndDate);
+    d.setDate(d.getDate() + 7);
+    return d.toISOString();
+  })();
+  const graceDaysRemaining = graceUntilDate
+    ? (() => {
+        const remainingMs = new Date(graceUntilDate).getTime() - Date.now();
+        if (!Number.isFinite(remainingMs)) return null;
+        return Math.max(0, Math.ceil(remainingMs / 86400000));
+      })()
+    : null;
 
   return (
     <AdminLayout title={website.name || "Restaurant"}>
@@ -1468,218 +1473,108 @@ export default function SuperRestaurantDetailPage() {
         {/* Subscription tab */}
         {activeTab === "subscription" && (
           <div className="space-y-6 w-full">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-                <div className="flex items-center gap-2 text-xs text-neutral-500 uppercase tracking-wide font-medium mb-2">
-                  <CreditCard className="w-3.5 h-3.5" />
-                  Current plan
-                </div>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {(subscription.plan || "ESSENTIAL").toUpperCase()}
-                </p>
-              </div>
-              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-                <div className="text-xs text-neutral-500 uppercase tracking-wide font-medium mb-2">
-                  Status
-                </div>
-                <span
-                  className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${statusInfoClass}`}
-                >
-                  {statusLabel}
-                </span>
-              </div>
-              <div className="p-4 rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800">
-                <div className="flex items-center gap-2 text-xs text-neutral-500 uppercase tracking-wide font-medium mb-2">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {status === "ACTIVE" ? "Renews / ends" : "Trial ends"}
-                </div>
-                <p className="text-sm font-bold text-gray-900 dark:text-white">
-                  {status === "ACTIVE"
-                    ? formatDate(
-                        subscription.subscriptionEndDate ||
-                          subscription.expiresAt,
-                      )
-                    : formatDate(
-                        subscription.trialEndsAt ||
-                          subscription.freeTrialEndDate,
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <SectionCard
+                title="Status"
+                description="Current lifecycle state and renewal window"
+              >
+                <div className="space-y-3">
+                  <span
+                    className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${statusInfoClass}`}
+                  >
+                    {statusLabel}
+                  </span>
+                  {status === "ACTIVE" && subscriptionEndDate ? (
+                    <div className="space-y-1 text-sm">
+                      <p className="text-gray-900 dark:text-neutral-100 font-semibold">
+                        Subscription ends {formatDate(subscriptionEndDate)}
+                      </p>
+                      <p className="text-neutral-500 dark:text-neutral-400">
+                        {activeDaysRemaining} day
+                        {activeDaysRemaining === 1 ? "" : "s"} remaining
+                      </p>
+                    </div>
+                  ) : null}
+                  {isGraceStatus && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300">
+                      In grace period until {formatDate(graceUntilDate)}.
+                      {graceDaysRemaining != null
+                        ? ` ${graceDaysRemaining} day${graceDaysRemaining === 1 ? "" : "s"} remaining before readonly.`
+                        : ""}
+                    </div>
+                  )}
+                  {status === "TRIAL" && (
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                      Trial ends{" "}
+                      {formatDate(
+                        subscription.trialEndsAt || subscription.freeTrialEndDate,
                       )}
-                </p>
-              </div>
+                      .
+                    </p>
+                  )}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="Billing Summary"
+                description="Single source of truth for monthly billing"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-neutral-600 dark:text-neutral-300">
+                    <span>Billable branches</span>
+                    <span className="font-semibold">{billingPreview.branchCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-neutral-600 dark:text-neutral-300">
+                    <span>Gross</span>
+                    <span className="font-semibold">
+                      Rs {billingPreview.gross.toLocaleString("en-PK")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-neutral-600 dark:text-neutral-300">
+                    <span>
+                      Discount
+                      {discountDraft.active
+                        ? ` (${billingPreview.discountLabel})`
+                        : ""}
+                    </span>
+                    <span
+                      className={
+                        billingPreview.discountAmount > 0
+                          ? "font-semibold text-emerald-600 dark:text-emerald-400"
+                          : "font-semibold"
+                      }
+                    >
+                      Rs {billingPreview.discountAmount.toLocaleString("en-PK")}
+                    </span>
+                  </div>
+                  <div className="pt-2 mt-2 border-t border-gray-200 dark:border-neutral-700">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                      Net monthly total
+                    </p>
+                    <p className="text-2xl font-bold text-primary">
+                      Rs {billingPreview.net.toLocaleString("en-PK")}
+                    </p>
+                  </div>
+                </div>
+              </SectionCard>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-6 items-stretch w-full">
-              <div className="space-y-4 min-w-0">
-                <div className="rounded-xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
-                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                      Subscription Details
-                    </h2>
-                  </div>
-                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-                    <DetailRow
-                      label="Plan"
-                      value={(subscription.plan || "ESSENTIAL").toUpperCase()}
-                    />
-                    <DetailRow
-                      label="Status"
-                      value={
-                        <span
-                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusInfoClass}`}
-                        >
-                          {statusLabel}
-                        </span>
-                      }
-                    />
-                    <DetailRow
-                      label="Trial started"
-                      value={formatDate(
-                        subscription.trialStartsAt ||
-                          subscription.freeTrialStartDate,
-                      )}
-                    />
-                    <DetailRow
-                      label="Trial ends"
-                      value={formatDate(
-                        subscription.trialEndsAt ||
-                          subscription.freeTrialEndDate,
-                      )}
-                    />
-                    <DetailRow
-                      label="Subscription start"
-                      value={formatDate(subscription.subscriptionStartDate)}
-                    />
-                    <DetailRow
-                      label="Subscription end"
-                      value={formatDate(
-                        subscription.subscriptionEndDate ||
-                          subscription.expiresAt,
-                      )}
-                    />
-                  </div>
+            <div className="space-y-4 w-full">
+              {!canManageSubscriptions ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  You have view-only access. Ask an admin with
+                  <span className="font-semibold"> platform.subscriptions.manage </span>
+                  to edit subscription billing controls.
                 </div>
+              ) : null}
 
-                <SectionCard
-                  title="Set Trial Dates"
-                  description="Override the trial period for this restaurant. New signups still get 30 days automatically."
-                >
-                  <div className="space-y-3">
-                    {hasPaidHistory ? (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                        This tenant has paid subscription history. Trial reset is blocked. Use
-                        <span className="font-semibold"> Manual Activation </span>
-                        to correct dates safely.
-                      </div>
-                    ) : status !== "TRIAL" ? (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                        Setting trial dates for a non-trial tenant requires confirmation and will
-                        move the tenant to TRIAL.
-                      </div>
-                    ) : null}
-                    <div>
-                      <label className={FORM_LABEL} htmlFor="trial-start">
-                        Trial start
-                      </label>
-                      <input
-                        id="trial-start"
-                        type="date"
-                        value={trialStartDraft}
-                        onChange={(e) => setTrialStartDraft(e.target.value)}
-                        className={FORM_INPUT}
-                      />
-                    </div>
-                    <div>
-                      <label className={FORM_LABEL} htmlFor="trial-end">
-                        Trial end
-                      </label>
-                      <input
-                        id="trial-end"
-                        type="date"
-                        value={trialEndDraft}
-                        onChange={(e) => setTrialEndDraft(e.target.value)}
-                        className={FORM_INPUT}
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      disabled={trialSaving || hasPaidHistory}
-                      onClick={handleSaveTrialDates}
-                      className="!h-9 w-full text-xs"
-                    >
-                      {trialSaving ? "Saving…" : "Save Trial Dates"}
-                    </Button>
-                  </div>
-                </SectionCard>
-
-                {status === "TRIAL" && (
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-4 items-start">
+                <div className="space-y-4 min-w-0">
                   <SectionCard
-                    title="End Trial"
-                    description="End trial now and start a paid subscription"
-                    variant="success"
+                    title="Module Entitlements"
+                    description="Toggle add-on modules while keeping POS as the required base"
                   >
-                    <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-3">
-                      You will choose an active period of 1, 3, 6, or 12 months.
-                    </p>
-                    <Button
-                      type="button"
-                      disabled={endTrialSaving || statusUpdating}
-                      onClick={handleEndTrial}
-                      className="!h-9 w-full text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                    >
-                      {endTrialSaving ? "Activating…" : "End Trial & Activate"}
-                    </Button>
-                  </SectionCard>
-                )}
-              </div>
-
-              <div className="space-y-4 w-full">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Manage Subscription
-                </h2>
-                <SectionCard
-                  title="Change Plan"
-                  description="Update the billing tier for this restaurant"
-                >
-                  <div className="space-y-3">
-                    <div>
-                      <label className={FORM_LABEL} htmlFor="plan-select">
-                        Plan
-                      </label>
-                      <select
-                        id="plan-select"
-                        value={planDraft}
-                        onChange={(e) => setPlanDraft(e.target.value)}
-                        className={FORM_INPUT}
-                      >
-                        <option value="ESSENTIAL">ESSENTIAL</option>
-                        <option value="PROFESSIONAL">PROFESSIONAL</option>
-                        <option value="ENTERPRISE">ENTERPRISE</option>
-                      </select>
-                    </div>
-                    <Button
-                      type="button"
-                      disabled={planSaving}
-                      onClick={handleSavePlan}
-                      className="!h-9 w-full text-xs"
-                    >
-                      {planSaving ? "Saving…" : "Save Plan"}
-                    </Button>
-                  </div>
-                </SectionCard>
-
-                <SectionCard
-                  title="Module Entitlements & Discount"
-                  description="Toggle add-on modules and apply transparent billing discounts"
-                >
-                  <div className="space-y-4">
-                    {!canManageSubscriptions ? (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                        You have view-only access. Ask an admin with
-                        <span className="font-semibold"> platform.subscriptions.manage </span>
-                        to edit module entitlements.
-                      </div>
-                    ) : null}
-
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {MODULE_DEFINITIONS.map((mod) => {
                         const isActive = Boolean(moduleDraft[mod.key]);
                         const isRequired = Boolean(mod.required);
@@ -1723,11 +1618,13 @@ export default function SuperRestaurantDetailPage() {
                         );
                       })}
                     </div>
+                  </SectionCard>
 
-                    <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3 space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                        Discount
-                      </p>
+                  <SectionCard
+                    title="Discount"
+                    description="Apply transparent adjustments after module totals"
+                  >
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-sm text-gray-700 dark:text-neutral-300">
                           Discount active
@@ -1745,149 +1642,259 @@ export default function SuperRestaurantDetailPage() {
                           className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-60"
                         />
                       </div>
-                      <div>
-                        <label className={FORM_LABEL}>Type</label>
-                        <select
-                          value={discountDraft.type}
-                          disabled={!canManageSubscriptions}
-                          onChange={(e) =>
-                            setDiscountDraft((prev) => ({
-                              ...prev,
-                              type: e.target.value,
-                            }))
-                          }
-                          className={FORM_INPUT}
-                        >
-                          {DISCOUNT_TYPE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className={FORM_LABEL}>Type</label>
+                          <select
+                            value={discountDraft.type}
+                            disabled={!canManageSubscriptions}
+                            onChange={(e) =>
+                              setDiscountDraft((prev) => ({
+                                ...prev,
+                                type: e.target.value,
+                              }))
+                            }
+                            className={FORM_INPUT}
+                          >
+                            {DISCOUNT_TYPE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={FORM_LABEL}>
+                            Value
+                            {discountDraft.type === "flat_total"
+                              ? " (final monthly price)"
+                              : ""}
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step={discountDraft.type === "percentage" ? "0.01" : "1"}
+                            value={discountDraft.value}
+                            disabled={!canManageSubscriptions}
+                            onChange={(e) =>
+                              setDiscountDraft((prev) => ({
+                                ...prev,
+                                value: e.target.value === "" ? 0 : Number(e.target.value),
+                              }))
+                            }
+                            className={FORM_INPUT}
+                          />
+                        </div>
+                        <div>
+                          <label className={FORM_LABEL}>Label</label>
+                          <input
+                            type="text"
+                            placeholder="Founding client discount"
+                            value={discountDraft.label}
+                            disabled={!canManageSubscriptions}
+                            onChange={(e) =>
+                              setDiscountDraft((prev) => ({
+                                ...prev,
+                                label: e.target.value,
+                              }))
+                            }
+                            className={FORM_INPUT}
+                          />
+                        </div>
                       </div>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                        Use <span className="font-semibold">Flat total (set final price)</span> to
+                        directly set a target monthly bill (for example, 10000 for Eatout).
+                      </p>
+
+                      <div className="rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 px-3 py-2 text-xs">
+                        <p className="text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-1">
+                          Live discount preview
+                        </p>
+                        <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                          <span>Gross</span>
+                          <span className="font-medium">
+                            Rs {billingPreview.gross.toLocaleString("en-PK")}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300 mt-1">
+                          <span>
+                            Discount
+                            {discountDraft.active
+                              ? ` (${billingPreview.discountLabel})`
+                              : ""}
+                          </span>
+                          <span
+                            className={
+                              billingPreview.discountAmount > 0
+                                ? "font-medium text-emerald-600 dark:text-emerald-400"
+                                : "font-medium"
+                            }
+                          >
+                            Rs {billingPreview.discountAmount.toLocaleString("en-PK")}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200 dark:border-neutral-700 text-sm">
+                          <span className="font-semibold text-gray-800 dark:text-neutral-100">
+                            Net monthly total
+                          </span>
+                          <span className="font-bold text-primary">
+                            Rs {billingPreview.net.toLocaleString("en-PK")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="button"
+                        disabled={!canManageSubscriptions || moduleSaving}
+                        onClick={handleSaveModulesAndDiscount}
+                        className="!h-9 w-full text-xs"
+                      >
+                        {moduleSaving ? "Saving…" : "Save Module & Discount Settings"}
+                      </Button>
+                    </div>
+                  </SectionCard>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="pt-1">
+                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                      Subscription lifecycle
+                    </h2>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                      Manual activation and trial controls are grouped here to avoid mixing
+                      lifecycle actions with billing configuration.
+                    </p>
+                  </div>
+
+                  <SectionCard
+                    title="Manual Activation"
+                    description="Set custom start and end dates for a paid subscription"
+                  >
+                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className={FORM_LABEL}>Value</label>
+                        <label className={FORM_LABEL} htmlFor="activation-start">
+                          Start date
+                        </label>
                         <input
-                          type="number"
-                          min="0"
-                          step={discountDraft.type === "percentage" ? "0.01" : "1"}
-                          value={discountDraft.value}
-                          disabled={!canManageSubscriptions}
-                          onChange={(e) =>
-                            setDiscountDraft((prev) => ({
-                              ...prev,
-                              value: e.target.value === "" ? 0 : Number(e.target.value),
-                            }))
-                          }
+                          id="activation-start"
+                          type="date"
+                          value={activationStart}
+                          onChange={(e) => setActivationStart(e.target.value)}
                           className={FORM_INPUT}
                         />
                       </div>
                       <div>
-                        <label className={FORM_LABEL}>Label</label>
+                        <label className={FORM_LABEL} htmlFor="activation-end">
+                          End date
+                        </label>
                         <input
-                          type="text"
-                          placeholder="Founding client discount"
-                          value={discountDraft.label}
-                          disabled={!canManageSubscriptions}
-                          onChange={(e) =>
-                            setDiscountDraft((prev) => ({
-                              ...prev,
-                              label: e.target.value,
-                            }))
-                          }
+                          id="activation-end"
+                          type="date"
+                          value={activationEnd}
+                          onChange={(e) => setActivationEnd(e.target.value)}
                           className={FORM_INPUT}
                         />
                       </div>
                     </div>
+                      <Button
+                        type="button"
+                        disabled={activationSaving || !canManageSubscriptions}
+                        onClick={handleManualActivation}
+                        className="!h-9 w-full text-xs"
+                      >
+                        {activationSaving ? "Activating…" : "Activate Subscription"}
+                      </Button>
+                    </div>
+                  </SectionCard>
 
-                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 px-3 py-2 text-xs">
-                      <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
-                        <span>Billable branches</span>
-                        <span className="font-medium">{billingPreview.branchCount}</span>
+                  <SectionCard
+                    title="Set Trial Dates"
+                    description="Override the trial period for this restaurant. New signups still get 30 days automatically."
+                  >
+                    <div className="space-y-3">
+                      {hasUsedTrial ? (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                          Trial already used — use
+                          <span className="font-semibold"> Manual Activation </span>
+                          for paid subscriptions.
+                        </div>
+                      ) : hasPaidHistory ? (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                          This tenant has paid subscription history. Trial reset is blocked. Use
+                          <span className="font-semibold"> Manual Activation </span>
+                          to correct dates safely.
+                        </div>
+                      ) : status !== "TRIAL" ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                          Setting trial dates for a non-trial tenant requires confirmation and
+                          will move the tenant to TRIAL.
+                        </div>
+                      ) : null}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className={FORM_LABEL} htmlFor="trial-start">
+                          Trial start
+                        </label>
+                        <input
+                          id="trial-start"
+                          type="date"
+                          value={trialStartDraft}
+                          disabled={trialControlsLocked || !canManageSubscriptions}
+                          onChange={(e) => setTrialStartDraft(e.target.value)}
+                          className={FORM_INPUT}
+                        />
                       </div>
-                      <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
-                        <span>Gross</span>
-                        <span className="font-medium">
-                          Rs {billingPreview.gross.toLocaleString("en-PK")}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300 mt-1">
-                        <span>
-                          Discount
-                          {discountDraft.active
-                            ? ` (${billingPreview.discountLabel})`
-                            : ""}
-                        </span>
-                        <span
-                          className={
-                            billingPreview.discountAmount > 0
-                              ? "font-medium text-emerald-600 dark:text-emerald-400"
-                              : "font-medium"
-                          }
-                        >
-                          Rs {billingPreview.discountAmount.toLocaleString("en-PK")}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200 dark:border-neutral-700 text-sm">
-                        <span className="font-semibold text-gray-800 dark:text-neutral-100">
-                          Net monthly total
-                        </span>
-                        <span className="font-bold text-primary">
-                          Rs {billingPreview.net.toLocaleString("en-PK")}
-                        </span>
+                      <div>
+                        <label className={FORM_LABEL} htmlFor="trial-end">
+                          Trial end
+                        </label>
+                        <input
+                          id="trial-end"
+                          type="date"
+                          value={trialEndDraft}
+                          disabled={trialControlsLocked || !canManageSubscriptions}
+                          onChange={(e) => setTrialEndDraft(e.target.value)}
+                          className={FORM_INPUT}
+                        />
                       </div>
                     </div>
+                      <Button
+                        type="button"
+                        disabled={
+                          trialSaving || trialControlsLocked || !canManageSubscriptions
+                        }
+                        onClick={handleSaveTrialDates}
+                        className="!h-9 w-full text-xs"
+                      >
+                        {trialSaving ? "Saving…" : "Save Trial Dates"}
+                      </Button>
+                    </div>
+                  </SectionCard>
 
-                    <Button
-                      type="button"
-                      disabled={!canManageSubscriptions || moduleSaving}
-                      onClick={handleSaveModulesAndDiscount}
-                      className="!h-9 w-full text-xs"
+                  {status === "TRIAL" && (
+                    <SectionCard
+                      title="End Trial"
+                      description="End trial now and start a paid subscription"
+                      variant="success"
                     >
-                      {moduleSaving ? "Saving…" : "Save Module & Discount Settings"}
-                    </Button>
-                  </div>
-                </SectionCard>
-
-                <SectionCard
-                  title="Manual Activation"
-                  description="Set custom start and end dates for a paid subscription"
-                >
-                  <div className="space-y-3">
-                    <div>
-                      <label className={FORM_LABEL} htmlFor="activation-start">
-                        Start date
-                      </label>
-                      <input
-                        id="activation-start"
-                        type="date"
-                        value={activationStart}
-                        onChange={(e) => setActivationStart(e.target.value)}
-                        className={FORM_INPUT}
-                      />
-                    </div>
-                    <div>
-                      <label className={FORM_LABEL} htmlFor="activation-end">
-                        End date
-                      </label>
-                      <input
-                        id="activation-end"
-                        type="date"
-                        value={activationEnd}
-                        onChange={(e) => setActivationEnd(e.target.value)}
-                        className={FORM_INPUT}
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      disabled={activationSaving}
-                      onClick={handleManualActivation}
-                      className="!h-9 w-full text-xs"
-                    >
-                      {activationSaving ? "Activating…" : "Activate Subscription"}
-                    </Button>
-                  </div>
-                </SectionCard>
+                      <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-3">
+                        You will choose an active period of 1, 3, 6, or 12 months.
+                      </p>
+                      <Button
+                        type="button"
+                        disabled={
+                          endTrialSaving || statusUpdating || !canManageSubscriptions
+                        }
+                        onClick={handleEndTrial}
+                        className="!h-9 w-full text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        {endTrialSaving ? "Activating…" : "End Trial & Activate"}
+                      </Button>
+                    </SectionCard>
+                  )}
+                </div>
               </div>
             </div>
           </div>
