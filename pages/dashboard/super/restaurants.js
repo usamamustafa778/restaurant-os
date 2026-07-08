@@ -710,21 +710,24 @@ export default function SuperRestaurantsPage() {
                 const website = r.website || {};
                 const isPending = r.approvalStatus === "pending";
                 const isRejected = r.approvalStatus === "rejected";
+                const isApproved = !isPending && !isRejected;
                 const status = String(r.subscription?.status || "TRIAL").toUpperCase();
                 const isSuspended = status === "SUSPENDED";
                 return (
                   <div className="inline-flex min-h-[1.25rem] flex-nowrap items-center gap-2 justify-start shrink-0">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        router.push(`/super/restaurants/${r.id}`)
-                      }
-                      className="px-2 py-0.5 rounded-md border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold inline-flex items-center gap-1 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-200"
-                      title="View restaurant details"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      View
-                    </button>
+                    {isApproved ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(`/super/restaurants/${r.id}`)
+                        }
+                        className="px-2 py-0.5 rounded-md border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold inline-flex items-center gap-1 hover:bg-gray-50 dark:hover:bg-neutral-800 text-gray-700 dark:text-neutral-200"
+                        title="View restaurant details"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        View
+                      </button>
+                    ) : null}
                     {isPending && canApprove ? (
                       <>
                         <button
@@ -746,7 +749,7 @@ export default function SuperRestaurantsPage() {
                           Reject
                         </button>
                       </>
-                    ) : !isPending && !isRejected ? (
+                    ) : isApproved ? (
                       <>
                         <button
                           type="button"
