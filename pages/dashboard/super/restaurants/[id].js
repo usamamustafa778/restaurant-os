@@ -820,38 +820,32 @@ export default function SuperRestaurantDetailPage() {
   }
 
   async function handleManualActivation() {
-    if (!restaurant?.id || !activationEnd) {
-      toast.error("End date is required.");
+    if (!restaurant?.id) return;
+    if (!activationStart || !activationEnd) {
+      toast.error("Start date and end date are required.");
       return;
     }
     const end = new Date(activationEnd);
-    const start = activationStart ? new Date(activationStart) : new Date();
+    const start = new Date(activationStart);
+    if (Number.isNaN(start.getTime())) {
+      toast.error("Invalid start date.");
+      return;
+    }
     if (Number.isNaN(end.getTime())) {
       toast.error("Invalid end date.");
       return;
     }
-    const diffMs = end.getTime() - start.getTime();
-    const months = Math.max(1, Math.ceil(diffMs / (30 * 86400000)));
-    const clamped = [1, 3, 6, 12].includes(months)
-      ? months
-      : months <= 2
-        ? 1
-        : months <= 4
-          ? 3
-          : months <= 9
-            ? 6
-            : 12;
+    if (end <= start) {
+      toast.error("End date must be after start date.");
+      return;
+    }
     try {
       setActivationSaving(true);
       await updateRestaurantSubscription(restaurant.id, {
         status: "ACTIVE",
-        durationMonths: clamped,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
       });
-      if (end.toISOString()) {
-        await updateRestaurantSubscription(restaurant.id, {
-          expiresAt: end.toISOString(),
-        });
-      }
       toast.success("Subscription activated.");
       loadDetail();
     } catch (err) {
@@ -1106,6 +1100,44 @@ export default function SuperRestaurantDetailPage() {
         return Math.max(0, Math.ceil(remainingMs / 86400000));
       })()
     : null;
+  const activationPreview = (() => {
+    if (!activationStart || !activationEnd) {
+      return {
+        valid: false,
+        message: "Select start and end dates to preview lifecycle.",
+        endDate: null,
+        graceDate: null,
+      };
+    }
+    const start = new Date(activationStart);
+    const end = new Date(activationEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return {
+        valid: false,
+        message: "Enter valid dates.",
+        endDate: null,
+        graceDate: null,
+      };
+    }
+    if (end <= start) {
+      return {
+        valid: false,
+        message: "End date must be after start date.",
+        endDate: null,
+        graceDate: null,
+      };
+    }
+    const grace = new Date(end);
+    grace.setDate(grace.getDate() + 7);
+    return {
+      valid: true,
+      message: `Subscription will end ${formatDate(end)}. Grace through ${formatDate(
+        grace
+      )}.`,
+      endDate: end,
+      graceDate: grace,
+    };
+  })();
 
   return (
     <AdminLayout title={website.name || "Restaurant"}>
@@ -1901,9 +1933,22 @@ export default function SuperRestaurantDetailPage() {
                         />
                       </div>
                     </div>
+                      <div
+                        className={`rounded-lg border px-3 py-2 text-xs ${
+                          activationPreview.valid
+                            ? "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+                            : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                        }`}
+                      >
+                        {activationPreview.message}
+                      </div>
                       <Button
                         type="button"
-                        disabled={activationSaving || !canManageSubscriptions}
+                        disabled={
+                          activationSaving ||
+                          !canManageSubscriptions ||
+                          !activationPreview.valid
+                        }
                         onClick={handleManualActivation}
                         className="!h-9 w-full text-xs"
                       >
@@ -1912,69 +1957,71 @@ export default function SuperRestaurantDetailPage() {
                     </div>
                   </SectionCard>
 
-                  <SectionCard
-                    title="Set Trial Dates"
-                    description="Override the trial period for this restaurant. New signups still get 30 days automatically."
-                  >
-                    <div className="space-y-3">
-                      {hasUsedTrial ? (
-                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                          Trial already used — use
-                          <span className="font-semibold"> Manual Activation </span>
-                          for paid subscriptions.
-                        </div>
-                      ) : hasPaidHistory ? (
-                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                          This tenant has paid subscription history. Trial reset is blocked. Use
-                          <span className="font-semibold"> Manual Activation </span>
-                          to correct dates safely.
-                        </div>
-                      ) : status !== "TRIAL" ? (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                          Setting trial dates for a non-trial tenant requires confirmation and
-                          will move the tenant to TRIAL.
-                        </div>
-                      ) : null}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className={FORM_LABEL} htmlFor="trial-start">
-                          Trial start
-                        </label>
-                        <input
-                          id="trial-start"
-                          type="date"
-                          value={trialStartDraft}
-                          disabled={trialControlsLocked || !canManageSubscriptions}
-                          onChange={(e) => setTrialStartDraft(e.target.value)}
-                          className={FORM_INPUT}
-                        />
-                      </div>
-                      <div>
-                        <label className={FORM_LABEL} htmlFor="trial-end">
-                          Trial end
-                        </label>
-                        <input
-                          id="trial-end"
-                          type="date"
-                          value={trialEndDraft}
-                          disabled={trialControlsLocked || !canManageSubscriptions}
-                          onChange={(e) => setTrialEndDraft(e.target.value)}
-                          className={FORM_INPUT}
-                        />
-                      </div>
+                  {hasUsedTrial ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                      Trial completed — use
+                      <span className="font-semibold"> Manual Activation </span>
+                      to manage paid dates.
                     </div>
-                      <Button
-                        type="button"
-                        disabled={
-                          trialSaving || trialControlsLocked || !canManageSubscriptions
-                        }
-                        onClick={handleSaveTrialDates}
-                        className="!h-9 w-full text-xs"
-                      >
-                        {trialSaving ? "Saving…" : "Save Trial Dates"}
-                      </Button>
-                    </div>
-                  </SectionCard>
+                  ) : (
+                    <SectionCard
+                      title="Set Trial Dates"
+                      description="Override the trial period for this restaurant. New signups still get 30 days automatically."
+                    >
+                      <div className="space-y-3">
+                        {hasPaidHistory ? (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                            This tenant has paid subscription history. Trial reset is blocked. Use
+                            <span className="font-semibold"> Manual Activation </span>
+                            to correct dates safely.
+                          </div>
+                        ) : status !== "TRIAL" ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                            Setting trial dates for a non-trial tenant requires confirmation and
+                            will move the tenant to TRIAL.
+                          </div>
+                        ) : null}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className={FORM_LABEL} htmlFor="trial-start">
+                            Trial start
+                          </label>
+                          <input
+                            id="trial-start"
+                            type="date"
+                            value={trialStartDraft}
+                            disabled={trialControlsLocked || !canManageSubscriptions}
+                            onChange={(e) => setTrialStartDraft(e.target.value)}
+                            className={FORM_INPUT}
+                          />
+                        </div>
+                        <div>
+                          <label className={FORM_LABEL} htmlFor="trial-end">
+                            Trial end
+                          </label>
+                          <input
+                            id="trial-end"
+                            type="date"
+                            value={trialEndDraft}
+                            disabled={trialControlsLocked || !canManageSubscriptions}
+                            onChange={(e) => setTrialEndDraft(e.target.value)}
+                            className={FORM_INPUT}
+                          />
+                        </div>
+                      </div>
+                        <Button
+                          type="button"
+                          disabled={
+                            trialSaving || trialControlsLocked || !canManageSubscriptions
+                          }
+                          onClick={handleSaveTrialDates}
+                          className="!h-9 w-full text-xs"
+                        >
+                          {trialSaving ? "Saving…" : "Save Trial Dates"}
+                        </Button>
+                      </div>
+                    </SectionCard>
+                  )}
 
                   {status === "TRIAL" && (
                     <SectionCard
