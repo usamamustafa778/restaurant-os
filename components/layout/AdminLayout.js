@@ -71,6 +71,7 @@ import {
   endImpersonationAsSuperAdmin,
   getRestaurantInfo,
   getWhatsAppUnreadCount,
+  getTenantSubscriptionSummary,
 } from "../../lib/apiClient";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -712,6 +713,8 @@ export default function AdminLayout({
   const [collapsed, setCollapsed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState([]);
   const [whatsappNeedsHumanCount, setWhatsappNeedsHumanCount] = useState(0);
+  const [pendingInvoiceCount, setPendingInvoiceCount] = useState(0);
+  const [pendingInvoiceAmount, setPendingInvoiceAmount] = useState(0);
   const { theme, toggleTheme } = useTheme();
   const { hasPermission, hasViewOrManage, permissionsLoaded, roleName } = usePermissions();
 
@@ -771,6 +774,53 @@ export default function AdminLayout({
       clearInterval(intervalId);
     };
   }, [role]);
+
+  useEffect(() => {
+    const canFetchPendingInvoices =
+      role === "restaurant_admin" ||
+      role === "admin" ||
+      (role === "super_admin" && Boolean(actingAsSlug));
+    if (!canFetchPendingInvoices) {
+      setPendingInvoiceCount(0);
+      setPendingInvoiceAmount(0);
+      return;
+    }
+
+    let cancelled = false;
+    async function pollPendingInvoices() {
+      try {
+        const data = await getTenantSubscriptionSummary();
+        const invoices = Array.isArray(data?.summary?.invoices)
+          ? data.summary.invoices
+          : [];
+        const pending = invoices.filter((invoice) => {
+          const status = String(invoice?.status || "").toUpperCase();
+          return status === "SENT" || status === "OVERDUE";
+        });
+        const totalPendingAmount = pending.reduce(
+          (sum, invoice) => sum + (Number(invoice?.amount) || 0),
+          0,
+        );
+
+        if (!cancelled) {
+          setPendingInvoiceCount(pending.length);
+          setPendingInvoiceAmount(Math.round(totalPendingAmount));
+        }
+      } catch {
+        if (!cancelled) {
+          setPendingInvoiceCount(0);
+          setPendingInvoiceAmount(0);
+        }
+      }
+    }
+
+    pollPendingInvoices();
+    const intervalId = setInterval(pollPendingInvoices, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [role, actingAsSlug]);
 
   // Restrict cashier to POS – redirect away from the analytics dashboard
   useEffect(() => {
@@ -881,6 +931,7 @@ export default function AdminLayout({
   const cleanPath =
     (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
   const normalizedPath = cleanPath.replace(/^\/dashboard/, "");
+  const onSubscriptionPage = normalizedPath === "/subscription";
   const isSuperPath = !actingAsSlug && normalizedPath.startsWith("/super");
   const isSuperDashboard =
     isSuperPath || Boolean(role === "super_admin" && !actingAsSlug);
@@ -1406,6 +1457,29 @@ export default function AdminLayout({
               {role &&
                 whatsappNavRoles.includes(role) &&
                 role !== "super_admin" && <WhatsAppNotificationBell />}
+              {pendingInvoiceCount > 0 &&
+                (onSubscriptionPage ? (
+                  <span
+                    className="relative inline-flex items-center justify-center h-7 w-7 rounded-full border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300 shadow-sm cursor-default"
+                    title={`Invoice pending — Rs ${pendingInvoiceAmount.toLocaleString("en-PK")}`}
+                  >
+                    <Receipt className="h-3.5 w-3.5" />
+                    <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1 py-0.5 text-[9px] font-bold leading-none text-white">
+                      {pendingInvoiceCount > 9 ? "9+" : pendingInvoiceCount}
+                    </span>
+                  </span>
+                ) : (
+                  <Link
+                    href="/subscription"
+                    className="relative inline-flex items-center justify-center h-7 w-7 rounded-full border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300 shadow-sm"
+                    title={`Invoice pending — Rs ${pendingInvoiceAmount.toLocaleString("en-PK")}`}
+                  >
+                    <Receipt className="h-3.5 w-3.5" />
+                    <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1 py-0.5 text-[9px] font-bold leading-none text-white">
+                      {pendingInvoiceCount > 9 ? "9+" : pendingInvoiceCount}
+                    </span>
+                  </Link>
+                ))}
               <Link
                 href={profileHref}
                 className="flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-primary to-secondary text-white text-[10px] font-bold flex-shrink-0 shadow-sm"
@@ -1463,6 +1537,31 @@ export default function AdminLayout({
                   {role !== "super_admin" && whatsappNavRoles.includes(role) && (
                     <WhatsAppNotificationBell />
                   )}
+                  {pendingInvoiceCount > 0 &&
+                    (onSubscriptionPage ? (
+                      <span
+                        className={`${HEADER_TOOLBAR_BTN} relative cursor-default border-amber-200 bg-amber-50 px-3 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300`}
+                        title={`Invoice pending — Rs ${pendingInvoiceAmount.toLocaleString("en-PK")}`}
+                      >
+                        <Receipt className="h-4 w-4 shrink-0" />
+                        <span className="hidden lg:inline">Invoice pending</span>
+                        <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                          {pendingInvoiceCount > 9 ? "9+" : pendingInvoiceCount}
+                        </span>
+                      </span>
+                    ) : (
+                      <Link
+                        href="/subscription"
+                        className={`${HEADER_TOOLBAR_BTN} relative border-amber-200 bg-amber-50 px-3 text-amber-700 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:border-amber-400 dark:hover:bg-amber-500/20`}
+                        title={`Invoice pending — Rs ${pendingInvoiceAmount.toLocaleString("en-PK")}`}
+                      >
+                        <Receipt className="h-4 w-4 shrink-0" />
+                        <span className="hidden lg:inline">Invoice pending</span>
+                        <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                          {pendingInvoiceCount > 9 ? "9+" : pendingInvoiceCount}
+                        </span>
+                      </Link>
+                    ))}
                   {role !== "super_admin" && (
                     <>
                       <button
