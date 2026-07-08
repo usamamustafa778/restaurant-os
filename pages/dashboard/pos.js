@@ -3520,6 +3520,43 @@ function OrderCard({
         (paymentStatus === "unpaid" &&
           !["DELIVERED", "COMPLETED"].includes(status)));
 
+  const sourceKey = String(order.source || "POS").toUpperCase();
+  const sourceMeta = (() => {
+    if (sourceKey === "WEBSITE") {
+      return {
+        label: "Website",
+        className:
+          "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400",
+      };
+    }
+    if (sourceKey === "WHATSAPP") {
+      return {
+        label: "WhatsApp",
+        className:
+          "bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-400",
+      };
+    }
+    if (sourceKey === "FOODPANDA") {
+      return {
+        label: "Foodpanda",
+        className:
+          "bg-pink-100 dark:bg-pink-500/15 text-pink-700 dark:text-pink-400",
+      };
+    }
+    if (sourceKey === "POS") {
+      return {
+        label: "POS",
+        className:
+          "bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300",
+      };
+    }
+    return {
+      label: sourceKey,
+      className:
+        "bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-400",
+    };
+  })();
+
   const hasCTA =
     !isOrderTaker &&
     (showCollectFromRiderPerm ||
@@ -3545,11 +3582,6 @@ function OrderCard({
               <TypeIcon className="w-3 h-3" />
               {typeLabel}
             </span>
-            {order.source === "WEBSITE" && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 font-bold flex-shrink-0">
-                Website
-              </span>
-            )}
           </div>
           {isActive && (
             <span
@@ -3594,16 +3626,6 @@ function OrderCard({
               Customer: {order.customerName}
             </span>
           ) : null}
-          {order.source === "FOODPANDA" && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 dark:bg-pink-500/15 text-pink-700 dark:text-pink-400 font-bold">
-              Foodpanda
-            </span>
-          )}
-          {order.source === "WHATSAPP" && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-400 font-bold">
-              WhatsApp
-            </span>
-          )}
           {isDeliveryOrder(order) && order.assignedRiderName && (
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#25343F] bg-[#25343F]/10 dark:bg-[#25343F]/20 px-1.5 py-0.5 rounded">
               <Bike className="w-3 h-3" />
@@ -3771,10 +3793,10 @@ function OrderCard({
         </div>
       )}
 
-      {/* Payment status + actions, then total */}
+      {/* Payment/source row + price/actions row */}
       <div className="px-3 pb-2 flex flex-col gap-1">
-        <div className="flex items-center justify-between gap-2">
-          {status !== "CANCELLED" ? (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {status !== "CANCELLED" && (
             <span
               className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                 riderHandInPending
@@ -3797,9 +3819,17 @@ function OrderCard({
                   ? "Paid"
                   : "Unpaid"}
             </span>
-          ) : (
-            <span />
           )}
+          <span
+            className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-full ${sourceMeta.className}`}
+          >
+            {sourceMeta.label}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-lg font-black text-gray-900 dark:text-white tabular-nums">
+            {sym} {Math.round(getOrderTotal(order)).toLocaleString()}
+          </span>
           {!isOrderTaker && (
             <div className="flex items-center gap-0.5 ml-auto">
               {status !== "CANCELLED" && hasPermission("orders.print") && (
@@ -3848,9 +3878,6 @@ function OrderCard({
             </div>
           )}
         </div>
-        <span className="text-lg font-black text-gray-900 dark:text-white tabular-nums">
-          {sym} {Math.round(getOrderTotal(order)).toLocaleString()}
-        </span>
       </div>
 
       {/* Primary CTA — full width */}
