@@ -27,16 +27,21 @@ const MONTHS = [
   { value: 12, label: "December" },
 ];
 
-const PLAN_AMOUNTS = {
-  ESSENTIAL: 10000,
-  PROFESSIONAL: 15000,
-  ENTERPRISE: 25000,
-};
-
 const LABEL_CLASS =
   "block text-sm font-medium text-gray-700 dark:text-neutral-300 mb-1";
 const INPUT_CLASS =
   "w-full border border-gray-300 dark:border-neutral-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-neutral-900 text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500";
+const MODULE_LABELS = {
+  pos: "POS Core",
+  kds: "KDS",
+  waiterApp: "Waiter App",
+  website: "Website",
+  websiteAnalytics: "Website Analytics",
+  rider: "Rider App",
+  inventory: "Inventory",
+  accounting: "Accounting",
+  aiReceptionist: "AI Receptionist",
+};
 
 function defaultDueDate(year, month) {
   const d = new Date(year, month - 1, 10);
@@ -45,14 +50,85 @@ function defaultDueDate(year, month) {
 
 function formatAmountDisplay(value) {
   const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return "";
+  if (!Number.isFinite(num)) return "0";
   return Math.round(num).toLocaleString("en-PK");
 }
 
-function parseAmountInput(raw) {
-  const cleaned = String(raw || "").replace(/,/g, "").replace(/\D/g, "");
-  if (!cleaned) return 0;
-  return Number(cleaned);
+function normalizeDiscount(discount) {
+  const d = discount || {};
+  const type = String(d.type || "fixed_amount").toLowerCase();
+  const value = Number(d.value || 0);
+  return {
+    type: ["percentage", "fixed_amount", "flat_total"].includes(type)
+      ? type
+      : "fixed_amount",
+    value: Number.isFinite(value) && value >= 0 ? value : 0,
+    label: String(d.label || "").trim(),
+    active: Boolean(d.active),
+  };
+}
+
+function computeRestaurantBill(restaurant) {
+  if (
+    restaurant?.billing &&
+    Number.isFinite(Number(restaurant.billing.gross)) &&
+    Number.isFinite(Number(restaurant.billing.net))
+  ) {
+    const discountAmount = Math.round(
+      Number(restaurant.billing.discountAmount) || 0,
+    );
+    return {
+      gross: Math.round(Number(restaurant.billing.gross) || 0),
+      net: Math.round(Number(restaurant.billing.net) || 0),
+      discountAmount,
+      lineItems: Array.isArray(restaurant.billing.lineItems)
+        ? restaurant.billing.lineItems
+        : [],
+      discount: normalizeDiscount(restaurant.billing.discount || {}),
+      branchCount: Math.max(1, Number(restaurant.billing.branchCount) || 1),
+    };
+  }
+
+  const modules = restaurant?.modules || {};
+  const discount = normalizeDiscount(restaurant?.subscriptionDiscount);
+  const activeModuleLines = Object.entries(modules)
+    .filter(([, config]) => Boolean(config?.active))
+    .map(([key, config]) => {
+      const amount = Math.round(Number(config?.rate) || 0);
+      return {
+        kind: "module",
+        key,
+        label: MODULE_LABELS[key] || key,
+        amount,
+      };
+    });
+  const gross = activeModuleLines.reduce((sum, line) => sum + line.amount, 0);
+
+  let net = gross;
+  if (discount.active) {
+    if (discount.type === "percentage") {
+      net = Math.max(0, gross - (gross * discount.value) / 100);
+    } else if (discount.type === "fixed_amount") {
+      net = Math.max(0, gross - discount.value);
+    } else if (discount.type === "flat_total") {
+      net = Math.max(0, discount.value);
+    }
+  }
+  net = Math.round(net);
+  const discountAmount = Math.round(gross - net);
+  const lineItems = [
+    ...activeModuleLines,
+    { kind: "subtotal", label: "Subtotal", amount: gross },
+  ];
+  if (discount.active && discountAmount !== 0) {
+    lineItems.push({
+      kind: "discount",
+      label: discount.label || "Subscription discount",
+      amount: -discountAmount,
+    });
+  }
+  lineItems.push({ kind: "total", label: "Total", amount: net });
+  return { gross, net, discountAmount, lineItems, discount, branchCount: 1 };
 }
 
 function formatDueDateLong(isoDate) {
@@ -96,9 +172,6 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
   const [step, setStep] = useState("form");
   const [month, setMonth] = useState(initialMonth);
   const [year, setYear] = useState(initialYear);
-  const [amount, setAmount] = useState(
-    PLAN_AMOUNTS[plan] || PLAN_AMOUNTS.ESSENTIAL,
-  );
   const [dueDate, setDueDate] = useState(defaultDueDate(initialYear, initialMonth));
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -114,6 +187,7 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
     restaurant?.ownerAccount?.loginEmail ||
     restaurant?.website?.contactEmail ||
     "—";
+  const billPreview = useMemo(() => computeRestaurantBill(restaurant), [restaurant]);
 
   const yearOptions = useMemo(() => {
     const ys = [];
@@ -129,7 +203,7 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
 
   const dueDateLong = formatDueDateLong(dueDate);
   const dueDateShort = formatDueDateShort(dueDate);
-  const amountDisplay = formatAmountDisplay(amount);
+  const amountDisplay = formatAmountDisplay(billPreview.net);
 
   useEffect(() => {
     return () => {
@@ -141,10 +215,6 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
     setMonth(nextMonth);
     setYear(nextYear);
     setDueDate(defaultDueDate(nextYear, nextMonth));
-  }
-
-  function handleAmountChange(e) {
-    setAmount(parseAmountInput(e.target.value));
   }
 
   async function loadPreview(invoice) {
@@ -169,7 +239,6 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
       const invoice = await createSuperInvoice({
         restaurantId: restaurant.id,
         billingPeriod: { month, year },
-        amount: Number(amount),
         dueDate,
         notes: notes.trim() || undefined,
         sendEmail: false,
@@ -315,23 +384,33 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
               </div>
             </div>
 
-            <div>
-              <label className={LABEL_CLASS} htmlFor="invoice-amount">
-                Amount
-              </label>
-              <div className="flex items-center rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-orange-500">
-                <span className="pl-3 text-sm text-gray-500 dark:text-neutral-400 shrink-0">
-                  Rs
-                </span>
-                <input
-                  id="invoice-amount"
-                  type="text"
-                  inputMode="numeric"
-                  required
-                  value={amountDisplay}
-                  onChange={handleAmountChange}
-                  className="flex-1 min-w-0 border-0 bg-transparent py-2 pr-3 text-sm text-gray-900 dark:text-neutral-100 focus:outline-none focus:ring-0"
-                />
+            <div className="rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400 mb-2">
+                Bill breakdown
+              </p>
+              <div className="space-y-1 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 dark:text-neutral-400">Gross</span>
+                  <span className="font-medium">Rs {formatAmountDisplay(billPreview.gross)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 dark:text-neutral-400">
+                    Discount{billPreview.discount?.active ? ` (${billPreview.discount.label || billPreview.discount.type})` : ""}
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      billPreview.discountAmount > 0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-gray-700 dark:text-neutral-200"
+                    }`}
+                  >
+                    Rs {formatAmountDisplay(billPreview.discountAmount)}
+                  </span>
+                </div>
+                <div className="border-t border-gray-200 dark:border-neutral-700 pt-1 mt-1 flex items-center justify-between">
+                  <span className="font-semibold text-gray-800 dark:text-neutral-100">Net total</span>
+                  <span className="font-bold text-primary">Rs {amountDisplay}</span>
+                </div>
               </div>
             </div>
 
@@ -376,7 +455,7 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
                 {" · "}
                 {billingPeriodLabel}
                 {" · "}
-                <span className="font-bold">Rs {amountDisplay || "0"}</span>
+                <span className="font-bold">Rs {amountDisplay}</span>
               </p>
               <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
                 Due: {dueDateShort || "—"}
@@ -401,7 +480,7 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
               </button>
               <button
                 type="submit"
-                disabled={loading || !amount}
+                disabled={loading}
                 className="w-full sm:flex-1 py-2 rounded-lg bg-[#FF5400] hover:bg-[#e64d00] text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {loading ? (
@@ -453,12 +532,22 @@ export default function GenerateInvoiceModal({ restaurant, onClose, onSuccess })
                 />
               ) : (
                 <div className="p-4 space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Amount</span>
-                    <span className="font-bold text-primary">
-                      Rs {formatAmountDisplay(generatedInvoice?.amount)}
-                    </span>
-                  </div>
+                  {(generatedInvoice?.lineItems || []).map((line, idx) => (
+                    <div key={`${line.kind || "line"}-${idx}`} className="flex justify-between">
+                      <span className="text-gray-500">{line.label || "Line item"}</span>
+                      <span
+                        className={`${
+                          line.kind === "total"
+                            ? "font-bold text-primary"
+                            : line.kind === "discount"
+                              ? "font-semibold text-emerald-600 dark:text-emerald-400"
+                              : "font-medium"
+                        }`}
+                      >
+                        Rs {formatAmountDisplay(line.amount)}
+                      </span>
+                    </div>
+                  ))}
                   <div className="flex justify-between">
                     <span className="text-gray-500">Due date</span>
                     <span>{formatInvoiceDate(generatedInvoice?.dueDate)}</span>

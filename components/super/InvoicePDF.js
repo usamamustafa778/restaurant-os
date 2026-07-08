@@ -196,6 +196,21 @@ function formatMoney(amount) {
   return `Rs ${Math.round(Number(amount) || 0).toLocaleString("en-PK")}`;
 }
 
+function getInvoiceLines(invoice) {
+  if (Array.isArray(invoice?.lineItems) && invoice.lineItems.length > 0) {
+    return invoice.lineItems;
+  }
+  return [
+    {
+      kind: "module",
+      label: `EatsDesk ${invoice?.snapshot?.plan || "Subscription"} Plan`,
+      amount: Number(invoice?.amount) || 0,
+    },
+    { kind: "subtotal", label: "Subtotal", amount: Number(invoice?.amount) || 0 },
+    { kind: "total", label: "Total", amount: Number(invoice?.amount) || 0 },
+  ];
+}
+
 const DEFAULT_BANK_DETAILS = {
   accountTitle: "Reddev Software & Solutions",
   bankName: "UBL",
@@ -215,6 +230,7 @@ export function InvoiceDocument({ invoice }) {
   const snap = invoice.snapshot || {};
   const bank = resolveInvoiceBankDetails(invoice.bankDetails);
   const period = invoice.billingPeriod?.label || "";
+  const lines = getInvoiceLines(invoice);
 
   return (
     <Document>
@@ -264,17 +280,42 @@ export function InvoiceDocument({ invoice }) {
             <Text style={[styles.colPeriod, styles.headerText]}>Period</Text>
             <Text style={[styles.colAmount, styles.headerText]}>Amount</Text>
           </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.colDescription}>
-              EatsDesk {snap.plan || "Subscription"} Plan
-            </Text>
-            <Text style={styles.colPeriod}>{period}</Text>
-            <Text style={styles.colAmount}>{formatMoney(invoice.amount)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total Due</Text>
-            <Text style={styles.totalAmount}>{formatMoney(invoice.amount)}</Text>
-          </View>
+          {lines.map((line, idx) => {
+            if (line.kind === "total") {
+              return (
+                <View key={`line-${idx}`} style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>{line.label || "Total Due"}</Text>
+                  <Text style={styles.totalAmount}>
+                    {formatMoney(line.amount)}
+                  </Text>
+                </View>
+              );
+            }
+            const isDiscount = line.kind === "discount";
+            const isSubtotal = line.kind === "subtotal";
+            return (
+              <View key={`line-${idx}`} style={styles.tableRow}>
+                <Text
+                  style={[
+                    styles.colDescription,
+                    (isDiscount || isSubtotal) && { fontFamily: "Helvetica-Bold" },
+                  ]}
+                >
+                  {line.label || "Line item"}
+                </Text>
+                <Text style={styles.colPeriod}>{line.kind === "module" ? period : ""}</Text>
+                <Text
+                  style={[
+                    styles.colAmount,
+                    isDiscount && { color: "#059669", fontFamily: "Helvetica-Bold" },
+                    isSubtotal && { fontFamily: "Helvetica-Bold" },
+                  ]}
+                >
+                  {formatMoney(line.amount)}
+                </Text>
+              </View>
+            );
+          })}
         </View>
 
         <View style={styles.paymentBox}>

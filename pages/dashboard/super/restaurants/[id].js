@@ -93,6 +93,41 @@ const SUBSCRIPTION_PILL = {
   SUSPENDED: "badge-danger",
 };
 
+const MODULE_DEFINITIONS = [
+  { key: "pos", label: "POS Core", rate: 2500, perBranch: true, required: true },
+  { key: "kds", label: "KDS", rate: 1500, perBranch: true, requires: ["pos"] },
+  { key: "waiterApp", label: "Waiter App", rate: 1500, perBranch: true, requires: ["pos"] },
+  { key: "website", label: "Website", rate: 2500, perBranch: true },
+  {
+    key: "websiteAnalytics",
+    label: "Website Analytics",
+    rate: 2500,
+    perBranch: true,
+    requires: ["website"],
+  },
+  { key: "rider", label: "Rider App", rate: 2500, perBranch: true },
+  { key: "inventory", label: "Inventory", rate: 2500, perBranch: true, includes: "recipes" },
+  {
+    key: "accounting",
+    label: "Accounting",
+    rate: 5000,
+    perBranch: true,
+    includes: "Purchase Orders & GRN",
+  },
+  { key: "aiReceptionist", label: "AI Receptionist", rate: 5000, perBranch: true, noTrial: true },
+];
+
+const MODULE_MAP = MODULE_DEFINITIONS.reduce((acc, mod) => {
+  acc[mod.key] = mod;
+  return acc;
+}, {});
+
+const DISCOUNT_TYPE_OPTIONS = [
+  { value: "percentage", label: "Percentage (%)" },
+  { value: "fixed_amount", label: "Fixed amount (Rs)" },
+  { value: "flat_total", label: "Flat total (Rs)" },
+];
+
 const STATUS_CONFIRM = {
   ACTIVE: {
     title: "Activate Subscription",
@@ -118,6 +153,78 @@ function formatDate(d) {
 
 function formatStatusLabel(status) {
   return String(status || "TRIAL").toUpperCase().replace(/_/g, " ");
+}
+
+function defaultModuleActiveMap() {
+  return MODULE_DEFINITIONS.reduce((acc, mod) => {
+    acc[mod.key] = mod.required ? true : false;
+    return acc;
+  }, {});
+}
+
+function normalizeModuleActiveMap(raw) {
+  const base = defaultModuleActiveMap();
+  const source = raw && typeof raw === "object" ? raw : {};
+  for (const mod of MODULE_DEFINITIONS) {
+    const cfg = source[mod.key];
+    if (cfg && typeof cfg === "object" && typeof cfg.active === "boolean") {
+      base[mod.key] = cfg.active;
+    }
+  }
+  base.pos = true;
+  if (!base.website) base.websiteAnalytics = false;
+  return base;
+}
+
+function normalizeDiscountDraft(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const typeRaw = String(source.type || "fixed_amount").toLowerCase();
+  const type = ["percentage", "fixed_amount", "flat_total"].includes(typeRaw)
+    ? typeRaw
+    : "fixed_amount";
+  const valueNum = Number(source.value || 0);
+  return {
+    type,
+    value: Number.isFinite(valueNum) && valueNum >= 0 ? valueNum : 0,
+    label: String(source.label || ""),
+    active: Boolean(source.active),
+  };
+}
+
+function computeBillingPreview(moduleActiveMap, discountDraft, branchCount = 1) {
+  const modules = normalizeModuleActiveMap(
+    Object.entries(moduleActiveMap || {}).reduce((acc, [key, active]) => {
+      acc[key] = { active: Boolean(active) };
+      return acc;
+    }, {}),
+  );
+  const discount = normalizeDiscountDraft(discountDraft);
+  const safeBranchCount = Math.max(1, Number(branchCount) || 1);
+  const gross = MODULE_DEFINITIONS.reduce((sum, mod) => {
+    if (!modules[mod.key]) return sum;
+    const multiplier = mod.perBranch === false ? 1 : safeBranchCount;
+    return sum + Number(mod.rate || 0) * multiplier;
+  }, 0);
+  let net = gross;
+  if (discount.active) {
+    if (discount.type === "percentage") {
+      net = Math.max(0, gross - (gross * discount.value) / 100);
+    } else if (discount.type === "fixed_amount") {
+      net = Math.max(0, gross - discount.value);
+    } else if (discount.type === "flat_total") {
+      net = Math.max(0, discount.value);
+    }
+  }
+  net = Math.round(net);
+  const discountAmount = Math.round(gross - net);
+  return {
+    branchCount: safeBranchCount,
+    gross: Math.round(gross),
+    discountAmount,
+    net,
+    discountLabel:
+      normalizeDiscountDraft(discountDraft).label || "Subscription discount",
+  };
 }
 
 function toDateInputValue(d) {
@@ -285,6 +392,7 @@ export default function SuperRestaurantDetailPage() {
   );
   const { hasPermission } = usePermissions();
   const canImpersonate = hasPermission("platform.impersonate");
+  const canManageSubscriptions = hasPermission("platform.subscriptions.manage");
   const router = useRouter();
   const { id } = router.query;
   const { confirm } = useConfirmDialog();
@@ -320,6 +428,11 @@ export default function SuperRestaurantDetailPage() {
   const [activationStart, setActivationStart] = useState("");
   const [activationEnd, setActivationEnd] = useState("");
   const [activationSaving, setActivationSaving] = useState(false);
+  const [moduleDraft, setModuleDraft] = useState(defaultModuleActiveMap);
+  const [discountDraft, setDiscountDraft] = useState(() =>
+    normalizeDiscountDraft({}),
+  );
+  const [moduleSaving, setModuleSaving] = useState(false);
 
   const [settingsForm, setSettingsForm] = useState({
     name: "",
@@ -355,6 +468,10 @@ export default function SuperRestaurantDetailPage() {
       );
       setTrialEndDraft(
         toDateInputValue(sub.trialEndsAt || sub.freeTrialEndDate || sub.expiresAt),
+      );
+      setModuleDraft(normalizeModuleActiveMap(data?.restaurant?.modules));
+      setDiscountDraft(
+        normalizeDiscountDraft(data?.restaurant?.subscriptionDiscount),
       );
       const w = data?.restaurant?.website || {};
       setSettingsForm({
@@ -416,12 +533,15 @@ export default function SuperRestaurantDetailPage() {
       id: restaurant.id,
       website: restaurant.website,
       subscription: restaurant.subscription,
+      modules: restaurant.modules || null,
+      subscriptionDiscount: restaurant.subscriptionDiscount || null,
+      billing: detail?.billing || null,
       ownerAccount: detail?.ownerAccount || {
         displayName: owner?.name,
         loginEmail: owner?.email,
       },
     };
-  }, [restaurant, detail?.ownerAccount, owner]);
+  }, [restaurant, detail?.ownerAccount, detail?.billing, owner]);
 
   function openEditModal() {
     setEditForm({
@@ -553,6 +673,64 @@ export default function SuperRestaurantDetailPage() {
       toast.error(err.message || "Failed to update plan");
     } finally {
       setPlanSaving(false);
+    }
+  }
+
+  function handleModuleToggle(key, nextActive) {
+    if (key === "pos" && !nextActive) {
+      toast.error("POS Core is required and cannot be turned off.");
+      return;
+    }
+    if (key === "websiteAnalytics" && nextActive && !moduleDraft.website) {
+      toast.error("Website Analytics requires Website to be active.");
+      return;
+    }
+    setModuleDraft((prev) => {
+      const next = { ...prev, [key]: Boolean(nextActive) };
+      next.pos = true;
+      if (key === "website" && !nextActive) {
+        next.websiteAnalytics = false;
+      }
+      if (!next.website) {
+        next.websiteAnalytics = false;
+      }
+      return next;
+    });
+  }
+
+  async function handleSaveModulesAndDiscount() {
+    if (!restaurant?.id) return;
+    if (!canManageSubscriptions) {
+      toast.error("You don't have permission to manage subscriptions.");
+      return;
+    }
+    const normalizedDiscount = normalizeDiscountDraft(discountDraft);
+    if (!Number.isFinite(Number(normalizedDiscount.value)) || normalizedDiscount.value < 0) {
+      toast.error("Discount value must be 0 or greater.");
+      return;
+    }
+
+    const modulesPayload = MODULE_DEFINITIONS.reduce((acc, mod) => {
+      acc[mod.key] = { active: Boolean(moduleDraft[mod.key]), rate: mod.rate };
+      return acc;
+    }, {});
+    modulesPayload.pos.active = true;
+    if (!modulesPayload.website.active) {
+      modulesPayload.websiteAnalytics.active = false;
+    }
+
+    try {
+      setModuleSaving(true);
+      await updateRestaurantSubscription(restaurant.id, {
+        modules: modulesPayload,
+        subscriptionDiscount: normalizedDiscount,
+      });
+      toast.success("Module entitlements and discount updated.");
+      await loadDetail();
+    } catch (err) {
+      toast.error(err.message || "Failed to save module settings");
+    } finally {
+      setModuleSaving(false);
     }
   }
 
@@ -869,6 +1047,11 @@ export default function SuperRestaurantDetailPage() {
     Boolean(subscription.subscriptionStartDate) ||
     (Array.isArray(detail?.invoices) &&
       detail.invoices.some((inv) => String(inv?.status || "").toUpperCase() === "PAID"));
+  const billingPreview = computeBillingPreview(
+    moduleDraft,
+    discountDraft,
+    detail?.billing?.branchCount || 1,
+  );
 
   return (
     <AdminLayout title={website.name || "Restaurant"}>
@@ -1479,6 +1662,189 @@ export default function SuperRestaurantDetailPage() {
                       className="!h-9 w-full text-xs"
                     >
                       {planSaving ? "Saving…" : "Save Plan"}
+                    </Button>
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  title="Module Entitlements & Discount"
+                  description="Toggle add-on modules and apply transparent billing discounts"
+                >
+                  <div className="space-y-4">
+                    {!canManageSubscriptions ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                        You have view-only access. Ask an admin with
+                        <span className="font-semibold"> platform.subscriptions.manage </span>
+                        to edit module entitlements.
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                      {MODULE_DEFINITIONS.map((mod) => {
+                        const isActive = Boolean(moduleDraft[mod.key]);
+                        const isRequired = Boolean(mod.required);
+                        const disabled = !canManageSubscriptions || isRequired;
+                        return (
+                          <label
+                            key={mod.key}
+                            className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 ${
+                              isActive
+                                ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-800/60 dark:bg-emerald-950/20"
+                                : "border-gray-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 dark:text-neutral-100">
+                                {mod.label}
+                              </p>
+                              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                                Rs {mod.rate.toLocaleString("en-PK")}
+                                {mod.perBranch === false
+                                  ? "/mo (flat per restaurant)"
+                                  : `/branch/mo (x${billingPreview.branchCount})`}
+                                {mod.includes ? ` · includes ${mod.includes}` : ""}
+                                {mod.noTrial ? " · not included in trial" : ""}
+                                {mod.requires?.length
+                                  ? ` · requires ${mod.requires.join(", ")}`
+                                  : ""}
+                                {isRequired ? " · required base module" : ""}
+                              </p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={isActive}
+                              disabled={disabled}
+                              onChange={(e) =>
+                                handleModuleToggle(mod.key, e.target.checked)
+                              }
+                              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-60"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 dark:border-neutral-700 p-3 space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                        Discount
+                      </p>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-gray-700 dark:text-neutral-300">
+                          Discount active
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(discountDraft.active)}
+                          disabled={!canManageSubscriptions}
+                          onChange={(e) =>
+                            setDiscountDraft((prev) => ({
+                              ...prev,
+                              active: e.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-60"
+                        />
+                      </div>
+                      <div>
+                        <label className={FORM_LABEL}>Type</label>
+                        <select
+                          value={discountDraft.type}
+                          disabled={!canManageSubscriptions}
+                          onChange={(e) =>
+                            setDiscountDraft((prev) => ({
+                              ...prev,
+                              type: e.target.value,
+                            }))
+                          }
+                          className={FORM_INPUT}
+                        >
+                          {DISCOUNT_TYPE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={FORM_LABEL}>Value</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step={discountDraft.type === "percentage" ? "0.01" : "1"}
+                          value={discountDraft.value}
+                          disabled={!canManageSubscriptions}
+                          onChange={(e) =>
+                            setDiscountDraft((prev) => ({
+                              ...prev,
+                              value: e.target.value === "" ? 0 : Number(e.target.value),
+                            }))
+                          }
+                          className={FORM_INPUT}
+                        />
+                      </div>
+                      <div>
+                        <label className={FORM_LABEL}>Label</label>
+                        <input
+                          type="text"
+                          placeholder="Founding client discount"
+                          value={discountDraft.label}
+                          disabled={!canManageSubscriptions}
+                          onChange={(e) =>
+                            setDiscountDraft((prev) => ({
+                              ...prev,
+                              label: e.target.value,
+                            }))
+                          }
+                          className={FORM_INPUT}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 px-3 py-2 text-xs">
+                      <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                        <span>Billable branches</span>
+                        <span className="font-medium">{billingPreview.branchCount}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                        <span>Gross</span>
+                        <span className="font-medium">
+                          Rs {billingPreview.gross.toLocaleString("en-PK")}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300 mt-1">
+                        <span>
+                          Discount
+                          {discountDraft.active
+                            ? ` (${billingPreview.discountLabel})`
+                            : ""}
+                        </span>
+                        <span
+                          className={
+                            billingPreview.discountAmount > 0
+                              ? "font-medium text-emerald-600 dark:text-emerald-400"
+                              : "font-medium"
+                          }
+                        >
+                          Rs {billingPreview.discountAmount.toLocaleString("en-PK")}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200 dark:border-neutral-700 text-sm">
+                        <span className="font-semibold text-gray-800 dark:text-neutral-100">
+                          Net monthly total
+                        </span>
+                        <span className="font-bold text-primary">
+                          Rs {billingPreview.net.toLocaleString("en-PK")}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      disabled={!canManageSubscriptions || moduleSaving}
+                      onClick={handleSaveModulesAndDiscount}
+                      className="!h-9 w-full text-xs"
+                    >
+                      {moduleSaving ? "Saving…" : "Save Module & Discount Settings"}
                     </Button>
                   </div>
                 </SectionCard>
