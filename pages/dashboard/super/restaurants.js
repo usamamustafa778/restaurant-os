@@ -90,6 +90,54 @@ function formatSubscriptionStatusLabel(status) {
   return String(status || "TRIAL").toUpperCase().replace(/_/g, " ");
 }
 
+function getRestaurantCreationMeta(restaurant) {
+  const source = String(restaurant?.createdSource || "").toLowerCase();
+  const creatorLabel = String(restaurant?.createdByName || "").trim();
+  const approvalStatus = String(restaurant?.approvalStatus || "").toLowerCase();
+  const ownerName = String(restaurant?.ownerAccount?.displayName || "").trim();
+  const sourceLabel = source === "team_create" ? "Team created" : "Self request";
+
+  if (source === "team_create") {
+    return {
+      kind: "team",
+      label: sourceLabel,
+      creatorName: creatorLabel || "Unknown",
+    };
+  }
+  if (source === "self_request") {
+    return {
+      kind: "self",
+      label: sourceLabel,
+      creatorName: creatorLabel || ownerName || "Self-signup",
+    };
+  }
+
+  // Legacy fallback for records created before source tracking.
+  if (restaurant?.createdBy) {
+    return {
+      kind: "team",
+      label: "Team created",
+      creatorName: creatorLabel || "Unknown",
+    };
+  }
+  if (
+    creatorLabel.toLowerCase().includes("self") ||
+    approvalStatus === "pending" ||
+    approvalStatus === "rejected"
+  ) {
+    return {
+      kind: "self",
+      label: "Self request",
+      creatorName: creatorLabel || ownerName || "Self-signup",
+    };
+  }
+  return {
+    kind: "team",
+    label: "Team created",
+    creatorName: creatorLabel || "Unknown",
+  };
+}
+
 const ENGAGEMENT_STYLES = {
   /** Soft pills on white table — matches platform health column reference */
   active:
@@ -435,6 +483,9 @@ export default function SuperRestaurantsPage() {
     const email = (r.website?.contactEmail || "").toLowerCase();
     const ownerDisplay = (r.ownerAccount?.displayName || "").toLowerCase();
     const ownerLogin = (r.ownerAccount?.loginEmail || "").toLowerCase();
+    const creationMeta = getRestaurantCreationMeta(r);
+    const createdByLabel = creationMeta.creatorName.toLowerCase();
+    const createdBySource = creationMeta.label.toLowerCase();
     const plan = (r.subscription?.plan || "").toLowerCase();
     const status = (r.subscription?.status || "").toLowerCase();
     const loginEmailState = r.ownerAccount
@@ -449,6 +500,8 @@ export default function SuperRestaurantsPage() {
       email.includes(q) ||
       ownerDisplay.includes(q) ||
       ownerLogin.includes(q) ||
+      createdByLabel.includes(q) ||
+      createdBySource.includes(q) ||
       plan.includes(q) ||
       status.includes(q) ||
       loginEmailState.includes(q)
@@ -660,6 +713,29 @@ export default function SuperRestaurantsPage() {
                         {endLabel}
                       </span>
                     ) : null}
+                  </div>
+                );
+              },
+            },
+            {
+              key: "createdBy",
+              header: "Created By",
+              render: (_, r) => {
+                const meta = getRestaurantCreationMeta(r);
+                const pillClass =
+                  meta.kind === "self"
+                    ? "bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/35 dark:text-blue-200 dark:border-blue-700/60"
+                    : "bg-violet-50 text-violet-800 border border-violet-200 dark:bg-violet-950/35 dark:text-violet-200 dark:border-violet-700/60";
+                return (
+                  <div className="min-w-0 max-w-[210px]">
+                    <div className="truncate text-sm leading-snug text-gray-900 dark:text-white">
+                      {meta.creatorName}
+                    </div>
+                    <span
+                      className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${pillClass}`}
+                    >
+                      {meta.label}
+                    </span>
                   </div>
                 );
               },
