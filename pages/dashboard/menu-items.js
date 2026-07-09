@@ -18,8 +18,9 @@ import {
   copyMenuFromBranch,
   updateBranchMenuItem,
   getCurrencySymbol,
+  getModifierGroups,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check, Layers } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -335,7 +336,10 @@ export default function MenuItemsPage() {
     isMustTry: false,
     hasModifiers: false,
     modifierGroups: [],
+    attachedModifierGroupIds: [],
   });
+
+  const [availableModifierGroups, setAvailableModifierGroups] = useState([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -413,6 +417,13 @@ export default function MenuItemsPage() {
     document.addEventListener("mousedown", handleDown);
     return () => document.removeEventListener("mousedown", handleDown);
   }, [filtersOpen]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    getModifierGroups()
+      .then((list) => setAvailableModifierGroups(list.filter((g) => g.isActive !== false)))
+      .catch(() => setAvailableModifierGroups([]));
+  }, [isModalOpen]);
 
 
   // Single branch: fetch that branch's menu
@@ -559,6 +570,7 @@ export default function MenuItemsPage() {
       isMustTry: false,
       hasModifiers: false,
       modifierGroups: [],
+      attachedModifierGroupIds: [],
     });
   }
 
@@ -584,6 +596,9 @@ export default function MenuItemsPage() {
       isMustTry: item.isMustTry ?? false,
       hasModifiers: item.hasModifiers || false,
       modifierGroups: item.modifierGroups || [],
+      attachedModifierGroupIds: (item.attachedModifierGroups || []).map((g) =>
+        typeof g === "object" ? g.id : g,
+      ),
     });
     setImageTab(item.imageUrl ? "link" : "link");
     setUploadError("");
@@ -660,6 +675,7 @@ export default function MenuItemsPage() {
                 })),
               }))
             : [],
+          attachedModifierGroupIds: form.attachedModifierGroupIds || [],
         };
         if (form.id) {
           const updated = await updateItem(form.id, {
@@ -2417,6 +2433,68 @@ export default function MenuItemsPage() {
                   </button>
                 </div>
               )}
+
+              <div className="border-t border-gray-100 dark:border-neutral-800 pt-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-800 dark:text-neutral-200">
+                      Add-ons &amp; Modifiers
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                      Attach reusable modifier groups from{" "}
+                      <a href="/modifier-groups" className="text-primary hover:underline">
+                        Modifier Groups
+                      </a>
+                    </p>
+                  </div>
+                </div>
+                {availableModifierGroups.length === 0 ? (
+                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 italic">
+                    No modifier groups yet. Create groups first, then attach them here.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {availableModifierGroups.map((group) => {
+                      const attached = (form.attachedModifierGroupIds || []).includes(group.id);
+                      return (
+                        <button
+                          key={group.id}
+                          type="button"
+                          onClick={() =>
+                            setForm((prev) => {
+                              const ids = prev.attachedModifierGroupIds || [];
+                              return {
+                                ...prev,
+                                attachedModifierGroupIds: attached
+                                  ? ids.filter((id) => id !== group.id)
+                                  : [...ids, group.id],
+                              };
+                            })
+                          }
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
+                            attached
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-primary/40"
+                          }`}
+                        >
+                          {attached ? <Check className="w-3 h-3" /> : null}
+                          {group.name}
+                          {group.required ? (
+                            <span className="text-[9px] uppercase opacity-70">req</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {(form.attachedModifierGroupIds || []).length > 0 ? (
+                  <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                    {form.attachedModifierGroupIds.length} group
+                    {form.attachedModifierGroupIds.length === 1 ? "" : "s"} attached
+                  </p>
+                ) : null}
+              </div>
 
               <div className="space-y-1">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Category</label>

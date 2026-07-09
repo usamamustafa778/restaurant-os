@@ -29,6 +29,7 @@ import {
   FolderOpen,
   ShoppingBag,
   PlusSquare,
+  Layers,
   ListOrdered,
   CreditCard,
   Globe,
@@ -202,6 +203,13 @@ const tenantNav = [
     path: "/menu-items",
     label: "Menu Items",
     icon: ShoppingBag,
+    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "menu.manage",
+  },
+  {
+    path: "/modifier-groups",
+    label: "Modifier Groups",
+    icon: Layers,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "menu.manage",
   },
@@ -910,7 +918,8 @@ export default function AdminLayout({
       if (
         router.asPath.includes("/menu") ||
         router.asPath.includes("/categories") ||
-        router.asPath.includes("/menu-items")
+        router.asPath.includes("/menu-items") ||
+        router.asPath.includes("/modifier-groups")
       )
         toExpand.push("/menu");
       if (router.asPath.includes("/pos")) toExpand.push("/pos");
