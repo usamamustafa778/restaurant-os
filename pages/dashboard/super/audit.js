@@ -29,6 +29,8 @@ const ACTION_OPTIONS = [
   { value: "restaurant.approve", label: "Restaurant approve" },
   { value: "restaurant.suspend", label: "Restaurant suspend" },
   { value: "restaurant.reactivate", label: "Restaurant reactivate" },
+  { value: "restaurant.users.deactivate", label: "Restaurant users deactivate" },
+  { value: "restaurant.users.reactivate", label: "Restaurant users reactivate" },
   { value: "restaurant.delete", label: "Restaurant delete" },
   { value: "restaurant.restore", label: "Restaurant restore" },
   { value: "restaurant.permanent_delete", label: "Restaurant permanent delete" },
