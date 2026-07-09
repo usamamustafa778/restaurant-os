@@ -109,6 +109,28 @@ function isServedUnpaidOrder(order) {
   return getPaymentStatus(order) === "unpaid";
 }
 
+function canEditOrderNotes(order) {
+  if (isOrderLocked(order)) return false;
+  const status = String(order?.status || "").toUpperCase();
+  if (status === "CANCELLED" || status === "OUT_FOR_DELIVERY") return false;
+  return true;
+}
+
+function mapOrderItemsForUpdate(items = []) {
+  return items.map((item) => ({
+    menuItemId: item.menuItemId || item.menuItem || null,
+    name: item.name || "Item",
+    quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
+    unitPrice: Number(item.unitPrice) || 0,
+    note: item.note || "",
+    variantLabel: item.variantLabel || item.size || "",
+    modifierSelections: item.modifierSelections || [],
+    isAddition: item.isAddition || false,
+    addedAt: item.addedAt || null,
+    itemStatus: item.itemStatus ?? null,
+  }));
+}
+
 export default function OrderTakerPage() {
   const {
     currentBranch,
@@ -166,6 +188,7 @@ export default function OrderTakerPage() {
   const [appendingOrderId, setAppendingOrderId] = useState(null);
   const [existingItemsOpen, setExistingItemsOpen] = useState(false);
   const [markingServedId, setMarkingServedId] = useState(null);
+  const [savingItemNoteKey, setSavingItemNoteKey] = useState(null);
   const [otCustomerName, setOtCustomerName] = useState("");
   const [otCustomerPhone, setOtCustomerPhone] = useState("");
   const [otTableName, setOtTableName] = useState("");
@@ -506,6 +529,71 @@ export default function OrderTakerPage() {
     );
   }
 
+  function addNoteToItem(cartKey) {
+    const item = cart.find((c) => (c._cartKey || c.id) === cartKey);
+    const existing = item?.note || "";
+    const note = window.prompt("Add special instructions for this item:", existing);
+    if (note === null) return;
+    setCart((prev) =>
+      prev.map((c) =>
+        (c._cartKey || c.id) === cartKey ? { ...c, note: note.trim() } : c,
+      ),
+    );
+  }
+
+  function addNoteToExistingOrderItem(itemIndex) {
+    if (!appendTargetOrder) return;
+    const items = appendTargetOrder.items || [];
+    const item = items[itemIndex];
+    if (!item) return;
+    const existing = item.note || "";
+    const note = window.prompt("Add special instructions for this item:", existing);
+    if (note === null) return;
+    const trimmed = note.trim();
+    setAppendTargetOrder((prev) => {
+      if (!prev) return prev;
+      const nextItems = (prev.items || []).map((it, idx) =>
+        idx === itemIndex ? { ...it, note: trimmed } : it,
+      );
+      return { ...prev, items: nextItems };
+    });
+  }
+
+  async function saveOrderItemNote(order, itemIndex) {
+    const orderId = order?._id || order?.id;
+    if (!orderId || !canEditOrderNotes(order)) return;
+    const items = order.items || [];
+    const item = items[itemIndex];
+    if (!item) return;
+    const existing = item.note || "";
+    const note = window.prompt("Add special instructions for this item:", existing);
+    if (note === null) return;
+    const trimmed = note.trim();
+    const noteKey = `${orderId}-${itemIndex}`;
+    setSavingItemNoteKey(noteKey);
+    try {
+      const payloadItems = mapOrderItemsForUpdate(items).map((it, idx) =>
+        idx === itemIndex ? { ...it, note: trimmed } : it,
+      );
+      const updated = await updateOrder(orderId, { items: payloadItems });
+      setActiveOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id || o._id === order._id ? { ...o, ...updated } : o,
+        ),
+      );
+      setAppendTargetOrder((prev) => {
+        if (!prev) return prev;
+        if (prev.id !== order.id && prev._id !== order._id) return prev;
+        return { ...prev, ...updated };
+      });
+      toast.success(trimmed ? "Note saved" : "Note removed");
+    } catch (err) {
+      toast.error(err.message || "Could not save note");
+    } finally {
+      setSavingItemNoteKey(null);
+    }
+  }
+
   function removeFromCart(cartKey) {
     setCart((prev) => prev.filter((c) => (c._cartKey || c.id) !== cartKey));
   }
@@ -535,6 +623,7 @@ export default function OrderTakerPage() {
         items: cart.map((c) => ({
           menuItemId: c.id,
           quantity: c.quantity,
+          note: c.note?.trim() || undefined,
           modifierSelections:
             c._modifierSelectionsForOrder?.length > 0
               ? c._modifierSelectionsForOrder
@@ -846,20 +935,44 @@ export default function OrderTakerPage() {
                 </div>
               )}
 
-              <div className="space-y-0.5 mb-2">
-                {order.items?.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between text-[11px]"
-                  >
-                    <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
-                      <span className="font-bold text-gray-900 dark:text-white">
-                        {item.quantity || item.qty}x
-                      </span>{" "}
-                      {item.name}
-                    </span>
-                  </div>
-                ))}
+              <div className="space-y-1.5 mb-2">
+                {order.items?.map((item, idx) => {
+                  const noteKey = `${orderKey}-${idx}`;
+                  const isSavingNote = savingItemNoteKey === noteKey;
+                  return (
+                    <div key={idx} className="text-[11px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
+                          <span className="font-bold text-gray-900 dark:text-white">
+                            {item.quantity || item.qty}x
+                          </span>{" "}
+                          {item.name}
+                        </span>
+                        {canEditOrderNotes(order) && (
+                          <button
+                            type="button"
+                            onClick={() => saveOrderItemNote(order, idx)}
+                            disabled={isSavingNote}
+                            className="flex-shrink-0 text-[10px] font-semibold text-orange-500 hover:underline disabled:opacity-50"
+                          >
+                            {isSavingNote ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : item.note ? (
+                              "Edit note"
+                            ) : (
+                              "Add note"
+                            )}
+                          </button>
+                        )}
+                      </div>
+                      {item.note ? (
+                        <p className="mt-0.5 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
+                          📝 {item.note}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -919,6 +1032,7 @@ export default function OrderTakerPage() {
     setAppendEditDetailsOnly(false);
     setAppendTargetOrder(order);
     setCart([]);
+    setExistingItemsOpen(true);
     setOtCustomerName(String(order.customerName || "").trim());
     setOtCustomerPhone(String(order.customerPhone || order.phone || "").trim());
     setOtTableName(String(order.tableName || "").trim());
@@ -969,23 +1083,13 @@ export default function OrderTakerPage() {
         payload.tableName = otTableName.trim();
       }
       if (cart.length > 0) {
-        const existingItems = (appendTargetOrder.items || []).map((item) => ({
-          menuItemId: item.menuItemId || item.menuItem || null,
-          name: item.name || "Item",
-          quantity: Math.max(1, Number(item.quantity ?? item.qty) || 1),
-          unitPrice: Number(item.unitPrice) || 0,
-          note: item.note || "",
-          variantLabel: item.variantLabel || "",
-          modifierSelections: item.modifierSelections || [],
-          isAddition: item.isAddition || false,
-          addedAt: item.addedAt || null,
-          itemStatus: item.itemStatus ?? null,
-        }));
+        const existingItems = mapOrderItemsForUpdate(appendTargetOrder.items);
         const addedItems = cart.map((c) => ({
           menuItemId: c.id,
           name: c.name,
           quantity: Math.max(1, Number(c.quantity) || 1),
           unitPrice: Number(c.price) || 0,
+          note: c.note || "",
           variantLabel: c.size || c.variantLabel || "",
           modifierSelections:
             c._modifierSelectionsForOrder?.length > 0
@@ -1018,6 +1122,8 @@ export default function OrderTakerPage() {
         existingItems.forEach(pushItem);
         addedItems.forEach(pushItem);
         payload.items = Array.from(mergedMap.values());
+      } else if (!appendEditDetailsOnly) {
+        payload.items = mapOrderItemsForUpdate(appendTargetOrder.items);
       }
       const updated = await updateOrder(targetOrderId, payload);
       setActiveOrders((prev) =>
@@ -1032,7 +1138,11 @@ export default function OrderTakerPage() {
       setActiveTab(TABS.HOME);
       fetchActiveOrders();
       toast.success(
-        hadNewItems ? "Items added to order" : "Order details updated",
+        hadNewItems
+          ? "Items added to order"
+          : payload.items
+            ? "Order updated"
+            : "Order details updated",
       );
     } catch (err) {
       toast.error(
@@ -2126,7 +2236,7 @@ export default function OrderTakerPage() {
                       <p className="text-[10px] text-orange-600/80 dark:text-orange-400/80 mt-0.5">
                         {appendEditDetailsOnly
                           ? "Update guest or table below, then save."
-                          : "Add items from the menu, then update order."}
+                          : "Add items from the menu or edit notes on existing items, then save."}
                       </p>
                       <button
                         type="button"
@@ -2209,27 +2319,50 @@ export default function OrderTakerPage() {
                           </button>
 
                           {existingItemsOpen && (
-                            <div className="mt-1.5 space-y-1.5 opacity-60">
+                            <div className="mt-1.5 space-y-1.5">
                               {(appendTargetOrder.items || []).map(
                                 (item, idx) => (
                                   <div
                                     key={idx}
-                                    className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900"
+                                    className="rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900"
                                   >
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <Lock className="h-3 w-3 flex-shrink-0 text-gray-400" />
-                                      <span className="truncate text-sm text-gray-600 dark:text-neutral-400">
-                                        {item.name}
-                                        {(item.variantLabel || item.size) && (
-                                          <span className="ml-1 text-xs text-gray-400">
-                                            ({item.variantLabel || item.size})
-                                          </span>
-                                        )}
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <Lock className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                                        <span className="truncate text-sm text-gray-600 dark:text-neutral-400">
+                                          {item.name}
+                                          {(item.variantLabel || item.size) && (
+                                            <span className="ml-1 text-xs text-gray-400">
+                                              ({item.variantLabel || item.size})
+                                            </span>
+                                          )}
+                                        </span>
+                                      </div>
+                                      <span className="flex-shrink-0 text-sm font-medium tabular-nums text-gray-500 dark:text-neutral-500">
+                                        ×{item.qty ?? item.quantity ?? 1}
                                       </span>
                                     </div>
-                                    <span className="flex-shrink-0 text-sm font-medium tabular-nums text-gray-500 dark:text-neutral-500">
-                                      ×{item.qty ?? item.quantity ?? 1}
-                                    </span>
+                                    {!appendEditDetailsOnly &&
+                                      canEditOrderNotes(appendTargetOrder) && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              addNoteToExistingOrderItem(idx)
+                                            }
+                                            className="mt-1.5 text-xs font-medium text-orange-500 hover:underline"
+                                          >
+                                            {item.note ? "Edit note" : "Add note"}
+                                          </button>
+                                          {item.note ? (
+                                            <div className="mt-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 dark:border-blue-500/20 dark:bg-blue-500/10">
+                                              <p className="text-xs text-blue-700 dark:text-blue-400">
+                                                📝 {item.note}
+                                              </p>
+                                            </div>
+                                          ) : null}
+                                        </>
+                                      )}
                                   </div>
                                 ),
                               )}
@@ -2251,83 +2384,98 @@ export default function OrderTakerPage() {
                         <div className="space-y-2.5 mb-4">
                           {cart.map((item) => (
                             <div
-                              key={item.id}
-                              className="flex items-center gap-3 bg-white dark:bg-neutral-900 rounded-2xl p-3 border border-gray-200 dark:border-neutral-800"
+                              key={item._cartKey || item.id}
+                              className="bg-white dark:bg-neutral-900 rounded-2xl p-3 border border-gray-200 dark:border-neutral-800"
                             >
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.name}
-                                  className="w-14 h-14 rounded-xl object-cover flex-shrink-0"
-                                />
-                              ) : (
-                                <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
-                                  <Utensils className="w-5 h-5 text-gray-300 dark:text-neutral-700" />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-bold truncate leading-tight">
-                                  {item.name}
-                                  {item.size && (
-                                    <span className="text-xs font-normal text-gray-500 ml-1">
-                                      ({item.size})
-                                    </span>
-                                  )}
-                                </p>
-                                {item._modifierSelectionsForOrder
-                                  ?.filter((s) => {
-                                    const g = item.modifierGroups?.find(
-                                      (g) => g.id === s.groupId,
-                                    );
-                                    return g && !g.required;
-                                  })
-                                  .flatMap((s) => s.options)
-                                  .map((o, i) => (
-                                    <p
-                                      key={i}
-                                      className="text-[11px] text-gray-400 dark:text-neutral-500 leading-tight"
-                                    >
-                                      + {o.name}
-                                      {o.price > 0 && ` (Rs ${o.price})`}
-                                    </p>
-                                  ))}
-                                <p className="text-xs font-bold text-orange-500 mt-0.5">
-                                  Rs.{" "}
-                                  {(
-                                    item.price * item.quantity
-                                  ).toLocaleString()}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
-                                {(!appendTargetOrder ||
-                                  appendCanModifyItems) && (
-                                  <>
-                                    <button
-                                      onClick={() =>
-                                        updateQty(item._cartKey || item.id, -1)
-                                      }
-                                      className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
-                                    >
-                                      {item.quantity === 1 ? (
-                                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                      ) : (
-                                        <Minus className="w-3.5 h-3.5 text-gray-500" />
-                                      )}
-                                    </button>
-                                    <span className="w-7 text-center text-sm font-black">
-                                      {item.quantity}
-                                    </span>
-                                    <button
-                                      onClick={() =>
-                                        updateQty(item._cartKey || item.id, 1)
-                                      }
-                                      className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
-                                    >
-                                      <Plus className="w-3.5 h-3.5 text-orange-500" />
-                                    </button>
-                                  </>
+                              <div className="flex items-center gap-3">
+                                {item.imageUrl ? (
+                                  <img
+                                    src={item.imageUrl}
+                                    alt={item.name}
+                                    className="w-14 h-14 rounded-xl object-cover flex-shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
+                                    <Utensils className="w-5 h-5 text-gray-300 dark:text-neutral-700" />
+                                  </div>
                                 )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold truncate leading-tight">
+                                    {item.name}
+                                    {item.size && (
+                                      <span className="text-xs font-normal text-gray-500 ml-1">
+                                        ({item.size})
+                                      </span>
+                                    )}
+                                  </p>
+                                  {item._modifierSelectionsForOrder
+                                    ?.filter((s) => {
+                                      const g = item.modifierGroups?.find(
+                                        (g) => g.id === s.groupId,
+                                      );
+                                      return g && !g.required;
+                                    })
+                                    .flatMap((s) => s.options)
+                                    .map((o, i) => (
+                                      <p
+                                        key={i}
+                                        className="text-[11px] text-gray-400 dark:text-neutral-500 leading-tight"
+                                      >
+                                        + {o.name}
+                                        {o.price > 0 && ` (Rs ${o.price})`}
+                                      </p>
+                                    ))}
+                                  <p className="text-xs font-bold text-orange-500 mt-0.5">
+                                    Rs.{" "}
+                                    {(item.price * item.quantity).toLocaleString()}
+                                  </p>
+                                </div>
                               </div>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
+                                  {(!appendTargetOrder || appendCanModifyItems) && (
+                                    <>
+                                      <button
+                                        onClick={() =>
+                                          updateQty(item._cartKey || item.id, -1)
+                                        }
+                                        className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                                      >
+                                        {item.quantity === 1 ? (
+                                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                        ) : (
+                                          <Minus className="w-3.5 h-3.5 text-gray-500" />
+                                        )}
+                                      </button>
+                                      <span className="w-7 text-center text-sm font-black">
+                                        {item.quantity}
+                                      </span>
+                                      <button
+                                        onClick={() =>
+                                          updateQty(item._cartKey || item.id, 1)
+                                        }
+                                        className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+                                      >
+                                        <Plus className="w-3.5 h-3.5 text-orange-500" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => addNoteToItem(item._cartKey || item.id)}
+                                  className="text-xs font-medium text-orange-500 hover:underline"
+                                >
+                                  {item.note ? "Edit note" : "Add note"}
+                                </button>
+                              </div>
+                              {item.note ? (
+                                <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 dark:border-blue-500/20 dark:bg-blue-500/10">
+                                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                                    📝 {item.note}
+                                  </p>
+                                </div>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -2456,13 +2604,7 @@ export default function OrderTakerPage() {
                         ? handleAppendOrUpdateOrder
                         : handlePlaceOrder
                     }
-                    disabled={
-                      placing ||
-                      !!appendingOrderId ||
-                      (appendTargetOrder &&
-                        !appendEditDetailsOnly &&
-                        cart.length === 0)
-                    }
+                    disabled={placing || !!appendingOrderId}
                     className="flex-[2.5] min-h-[48px] py-3.5 rounded-2xl bg-emerald-600 text-white font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {placing || appendingOrderId ? (
@@ -2474,7 +2616,9 @@ export default function OrderTakerPage() {
                       <>
                         {appendEditDetailsOnly && cart.length === 0
                           ? "Save details"
-                          : "Update order"}
+                          : cart.length === 0
+                            ? "Save notes"
+                            : "Update order"}
                         <Check className="w-4 h-4" />
                       </>
                     ) : (
