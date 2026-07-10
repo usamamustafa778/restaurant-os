@@ -31,7 +31,7 @@ function isAllowedDashboardRole(role) {
 // Dashboard pages that live under pages/dashboard/ and are now served at /<page>
 const DASHBOARD_PAGES = new Set([
   "overview", "pos", "orders", "kitchen", "reservations",
-  "categories", "menu-items", "menu",
+  "categories", "menu-items", "menu", "modifier-groups",
   "customers", "inventory", "deals",
   "users", "business-settings", "settings", "tables", "history",
   "website-settings", "integrations", "whatsapp",

@@ -80,13 +80,16 @@ function buildEscPos(o) {
     if (it.variantLabel) ln(`(${it.variantLabel})`);
     const detail = `${unit.toFixed(2)}  ${String(qty).padStart(3)}  ${lineTotal.toFixed(2)}`;
     ln(pad("", detail));
-    for (const sel of (it.modifierSelections || [])) {
-      const optTotal = (sel.options || []).reduce((s, o) => s + (o.price || 0), 0);
-      // Skip required groups (price = item price, already shown via variantLabel)
-      // and free add-ons. Only print genuine paid add-ons.
-      if (optTotal === 0 || optTotal === it.unitPrice) continue;
-      const optNames = (sel.options || []).map((o) => o.name).join(', ');
-      ln(`  + ${optNames} (+${optTotal.toFixed(2)})`);
+    for (const sel of it.modifierSelections || []) {
+      for (const opt of sel.options || []) {
+        if (!opt.name) continue;
+        const optPrice = Number(opt.price) || 0;
+        if (optPrice > 0) {
+          ln(`  + ${opt.name} (+${optPrice.toFixed(2)})`);
+        } else {
+          ln(`  + ${opt.name}`);
+        }
+      }
     }
     if (it.note) ln(`  > ${it.note}`);
   }

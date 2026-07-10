@@ -1,8 +1,9 @@
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
 import Button from "../../components/ui/Button";
+import AsyncCombobox from "../../components/accounting/AsyncCombobox";
 import DataTable from "../../components/ui/DataTable";
 import ViewToggle from "../../components/ui/ViewToggle";
 import ActionDropdown from "../../components/ui/ActionDropdown";
@@ -203,34 +204,32 @@ function hasCategorySubcategories(categories) {
   return (categories || []).some((c) => c.parentId);
 }
 
-function renderCategorySelectOptions(categories) {
-  const topLevel = (categories || []).filter((c) => !c.parentId);
-  if (!hasCategorySubcategories(categories)) {
-    return topLevel.map((cat) => (
-      <option key={cat.id} value={cat.id}>
-        {cat.name}
-      </option>
-    ));
+function buildCategoryComboboxOptions(categories) {
+  const list = categories || [];
+  const topLevel = list.filter((c) => !c.parentId);
+  if (!hasCategorySubcategories(list)) {
+    return topLevel.map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+      label: cat.name,
+    }));
   }
-  return topLevel.map((cat) => {
-    const children = categories.filter((c) => c.parentId === cat.id);
+  const options = [];
+  for (const cat of topLevel) {
+    const children = list.filter((c) => c.parentId === cat.id);
     if (children.length > 0) {
-      return (
-        <optgroup key={cat.id} label={cat.name}>
-          {children.map((sub) => (
-            <option key={sub.id} value={sub.id}>
-              {sub.name}
-            </option>
-          ))}
-        </optgroup>
-      );
+      for (const sub of children) {
+        options.push({
+          id: sub.id,
+          name: sub.name,
+          label: `${cat.name} › ${sub.name}`,
+        });
+      }
+    } else {
+      options.push({ id: cat.id, name: cat.name, label: cat.name });
     }
-    return (
-      <option key={cat.id} value={cat.id}>
-        {cat.name}
-      </option>
-    );
-  });
+  }
+  return options;
 }
 
 function SuggestionPopover({ anchorEl, open, children }) {
@@ -338,6 +337,28 @@ export default function MenuItemsPage() {
     modifierGroups: [],
     attachedModifierGroupIds: [],
   });
+
+  const fetchCategoryOptions = useCallback(
+    async (query) => {
+      const opts = buildCategoryComboboxOptions(categories);
+      const needle = String(query || "").trim().toLowerCase();
+      if (!needle) return opts;
+      return opts.filter(
+        (o) =>
+          o.label.toLowerCase().includes(needle) ||
+          o.name.toLowerCase().includes(needle),
+      );
+    },
+    [categories],
+  );
+
+  const selectedCategoryObj = useMemo(() => {
+    if (!form.categoryId) return null;
+    return (
+      buildCategoryComboboxOptions(categories).find((o) => o.id === form.categoryId) ||
+      null
+    );
+  }, [form.categoryId, categories]);
 
   const [availableModifierGroups, setAvailableModifierGroups] = useState([]);
 
@@ -2498,14 +2519,18 @@ export default function MenuItemsPage() {
 
               <div className="space-y-1">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Category</label>
-                <select
-                  value={form.categoryId}
-                  onChange={e => setForm(prev => ({ ...prev, categoryId: e.target.value }))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                >
-                  <option value="">Select category</option>
-                  {renderCategorySelectOptions(categories)}
-                </select>
+                <AsyncCombobox
+                  placeholder="Search category…"
+                  fetchFn={fetchCategoryOptions}
+                  value={form.categoryId || null}
+                  valueObj={selectedCategoryObj}
+                  onChange={(id) =>
+                    setForm((prev) => ({ ...prev, categoryId: id || "" }))
+                  }
+                  displayFn={(opt) => opt.label}
+                  keyFn={(opt) => opt.id}
+                  hasError={Boolean(modalError && !form.categoryId)}
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Dietary type</label>

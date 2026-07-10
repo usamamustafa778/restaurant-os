@@ -215,13 +215,21 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
           </div>
         )}
         {(item.modifierSelections || [])
-          .filter((sel) => {
-            const optTotal = (sel.options || []).reduce((s, o) => s + (o.price || 0), 0);
-            return optTotal > 0 && optTotal !== (item.unitPrice || item.price);
-          })
-          .map((sel, si) => (
-            <div key={si} className="text-xs text-orange-500 dark:text-orange-400 leading-tight ml-7 mt-0.5">
-              + {(sel.options || []).map((o) => o.name).join(", ")}
+          .flatMap((sel) =>
+            (sel.options || []).map((opt) => ({
+              key: `${sel.groupId || sel.groupName}-${opt.optionId || opt.name}`,
+              name: opt.name,
+              price: Number(opt.price) || 0,
+            })),
+          )
+          .filter((opt) => opt.name)
+          .map((opt) => (
+            <div
+              key={opt.key}
+              className="text-xs text-orange-500 dark:text-orange-400 leading-tight ml-7 mt-0.5"
+            >
+              + {opt.name}
+              {opt.price > 0 ? ` (+Rs ${opt.price})` : ""}
             </div>
           ))}
         {item.note && (
