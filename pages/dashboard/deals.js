@@ -48,6 +48,10 @@ import {
   findMatchingFixedComponentIndex,
   formatComboItemSummary,
   formatFixedComponentLabel,
+  formatChoiceOptionLabel,
+  choiceOptionKey,
+  choiceOptionIsSelected,
+  toggleChoiceOptionInComponent,
   getComboItemType,
   getFixedComponentQtyForVariation,
   getRequiredVariationGroups,
@@ -225,9 +229,9 @@ export default function DealsPage() {
     });
 
   const menuItemById = new Map(menuItems.map((m) => [String(m.id), m]));
-  const choiceOptionIds = new Set(
+  const choiceOptionKeys = new Set(
     editingChoiceIndex != null && form.components[editingChoiceIndex]?.type === "choice"
-      ? (form.components[editingChoiceIndex].optionIds || []).map(String)
+      ? (form.components[editingChoiceIndex].options || []).map(choiceOptionKey)
       : [],
   );
   const componentsRegularTotalValue = componentsRegularTotal(form.components, menuItemById);
@@ -336,7 +340,7 @@ export default function DealsPage() {
           type: "choice",
           label: "",
           quantity: 1,
-          optionIds: [],
+          options: [],
           minSelect: 1,
           maxSelect: 1,
         },
@@ -413,6 +417,30 @@ export default function DealsPage() {
     });
   }
 
+  function addChoiceOptionFromDraft() {
+    if (!variationDraft?.menuItemId || editingChoiceIndex == null) return;
+    const item = menuItemById.get(String(variationDraft.menuItemId));
+    if (!item) return;
+    const modifierSelections = buildModifierSelectionsFromPicks(item, variationDraft.picks || {});
+    const requiredGroups = getRequiredVariationGroups(item);
+    if (requiredGroups.length && modifierSelections.length < requiredGroups.length) {
+      toast.error("Select all required size/flavour options");
+      return;
+    }
+    setForm((prev) => {
+      const components = [...prev.components];
+      const comp = components[editingChoiceIndex];
+      if (!comp || comp.type !== "choice") return prev;
+      components[editingChoiceIndex] = toggleChoiceOptionInComponent(
+        comp,
+        variationDraft.menuItemId,
+        modifierSelections,
+      );
+      return { ...prev, components };
+    });
+    setVariationDraft(null);
+  }
+
   function addFixedComponentFromDraft() {
     if (!variationDraft?.menuItemId) return;
     const item = menuItemById.get(String(variationDraft.menuItemId));
@@ -448,18 +476,17 @@ export default function DealsPage() {
     });
   }
 
-  function toggleChoiceOption(menuItemId) {
+  function toggleChoiceOption(menuItemId, modifierSelections = []) {
     if (editingChoiceIndex == null) return;
-    const id = String(menuItemId);
     setForm((prev) => {
       const components = [...prev.components];
-      const comp = { ...components[editingChoiceIndex] };
-      const ids = [...(comp.optionIds || []).map(String)];
-      const idx = ids.indexOf(id);
-      if (idx >= 0) ids.splice(idx, 1);
-      else ids.push(id);
-      comp.optionIds = ids;
-      components[editingChoiceIndex] = comp;
+      const comp = components[editingChoiceIndex];
+      if (!comp || comp.type !== "choice") return prev;
+      components[editingChoiceIndex] = toggleChoiceOptionInComponent(
+        comp,
+        menuItemId,
+        modifierSelections,
+      );
       return { ...prev, components };
     });
   }
@@ -1003,8 +1030,17 @@ export default function DealsPage() {
             const type = getComboItemType(ci);
             if (type === "choice") {
               const mappedOptions = (ci.options || [])
-                .map((o) => String(o?._id || o?.id || o || ""))
-                .filter((id) => menuItemIds.has(id));
+                .map((o) => {
+                  const menuItemId = String(
+                    o?.menuItem?._id || o?.menuItem?.id || o?.menuItem || o?._id || o?.id || o || "",
+                  );
+                  if (!menuItemId || !menuItemIds.has(menuItemId)) return null;
+                  const payload = { menuItem: menuItemId };
+                  const mods = Array.isArray(o?.modifierSelections) ? o.modifierSelections : [];
+                  if (mods.length) payload.modifierSelections = mods;
+                  return payload;
+                })
+                .filter(Boolean);
               if (!mappedOptions.length) return null;
               return {
                 type: "choice",
@@ -1778,8 +1814,8 @@ export default function DealsPage() {
                       {form.components.map((comp, index) => {
                         if (comp.type === "choice") {
                           const isEditing = editingChoiceIndex === index;
-                          const optionNames = (comp.optionIds || [])
-                            .map((id) => menuItemById.get(String(id))?.name)
+                          const optionNames = (comp.options || [])
+                            .map((opt) => formatChoiceOptionLabel(opt, menuItemById))
                             .filter(Boolean);
                           return (
                             <div
@@ -1809,11 +1845,14 @@ export default function DealsPage() {
                                         type="number"
                                         min={1}
                                         value={comp.quantity}
-                                        onChange={(e) =>
+                                        onChange={(e) => {
+                                          const quantity = Math.max(1, Number(e.target.value) || 1);
                                           updateComponent(index, {
-                                            quantity: Math.max(1, Number(e.target.value) || 1),
-                                          })
-                                        }
+                                            quantity,
+                                            minSelect: quantity,
+                                            maxSelect: quantity,
+                                          });
+                                        }}
                                         className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-center"
                                       />
                                     </div>
@@ -1927,7 +1966,7 @@ export default function DealsPage() {
                   </p>
                   <p className="text-[11px] text-gray-400 dark:text-neutral-500 mb-2">
                     {editingChoiceIndex != null
-                      ? "Check menu items the customer can pick from for this slot."
+                      ? "Pick size/flavour chips to add specific options (e.g. Large BBQ Pizza, Pepsi 1L)."
                       : "Click items to add fixed components. Items with sizes show variation chips."}
                   </p>
                   {form.components.length > 0 && (
@@ -1942,19 +1981,20 @@ export default function DealsPage() {
                     placeholder="Search items..."
                     className="mt-2 w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   />
-                  {editingChoiceIndex != null && choiceOptionIds.size > 0 && (
+                  {editingChoiceIndex != null && choiceOptionKeys.size > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {[...choiceOptionIds].map((id) => {
-                        const name = menuItemById.get(id)?.name || "Item";
+                      {(form.components[editingChoiceIndex]?.options || []).map((opt) => {
+                        const name = formatChoiceOptionLabel(opt, menuItemById);
+                        const key = choiceOptionKey(opt);
                         return (
                           <button
-                            key={id}
+                            key={key}
                             type="button"
-                            onClick={() => toggleChoiceOption(id)}
+                            onClick={() => toggleChoiceOption(opt.menuItemId, opt.modifierSelections)}
                             className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-secondary/10 text-secondary text-[10px] font-semibold hover:bg-secondary/15"
                           >
                             <X className="w-3 h-3" />
-                            <span className="max-w-[120px] truncate">{name}</span>
+                            <span className="max-w-[160px] truncate">{name}</span>
                           </button>
                         );
                       })}
@@ -1978,7 +2018,11 @@ export default function DealsPage() {
                         const isCollapsed = !!collapsedCategories[categoryName];
                         const selectedInCategory = items.filter((item) => {
                           const id = String(item.id);
-                          if (editingChoiceIndex != null) return choiceOptionIds.has(id);
+                          if (editingChoiceIndex != null) {
+                            return (form.components[editingChoiceIndex]?.options || []).some(
+                              (opt) => String(opt.menuItemId) === id,
+                            );
+                          }
                           return form.components.some(
                             (c) => c.type !== "choice" && String(c.menuItemId) === id,
                           );
@@ -2014,8 +2058,7 @@ export default function DealsPage() {
                                   const isChoiceMode = editingChoiceIndex != null;
                                   const hasVariations = itemHasRequiredVariations(item);
                                   const variationGroups = getRequiredVariationGroups(item);
-                                  const isDraftItem =
-                                    !isChoiceMode && variationDraft?.menuItemId === itemId;
+                                  const isDraftItem = variationDraft?.menuItemId === itemId;
                                   const plainSelected =
                                     !isChoiceMode &&
                                     !hasVariations &&
@@ -2025,8 +2068,18 @@ export default function DealsPage() {
                                         String(c.menuItemId) === itemId &&
                                         !(c.modifierSelections || []).length,
                                     );
+                                  const choicePlainSelected =
+                                    isChoiceMode &&
+                                    !hasVariations &&
+                                    editingChoiceIndex != null &&
+                                    choiceOptionIsSelected(
+                                      form.components,
+                                      editingChoiceIndex,
+                                      itemId,
+                                      [],
+                                    );
                                   const selected = isChoiceMode
-                                    ? choiceOptionIds.has(itemId)
+                                    ? choicePlainSelected || isDraftItem
                                     : plainSelected || isDraftItem;
 
                                   return (
@@ -2041,11 +2094,17 @@ export default function DealsPage() {
                                       }`}
                                     >
                                       <div
-                                        onClick={() =>
-                                          isChoiceMode
-                                            ? toggleChoiceOption(item.id)
-                                            : toggleFixedComponent(item.id)
-                                        }
+                                        onClick={() => {
+                                          if (isChoiceMode) {
+                                            if (hasVariations) {
+                                              setVariationDraft({ menuItemId: itemId, picks: {} });
+                                              return;
+                                            }
+                                            toggleChoiceOption(item.id, []);
+                                            return;
+                                          }
+                                          toggleFixedComponent(item.id);
+                                        }}
                                         className={`flex items-center justify-between px-3 py-2.5 cursor-pointer ${
                                           !selected ? "hover:bg-gray-50 dark:hover:bg-neutral-900" : ""
                                         }`}
@@ -2093,7 +2152,7 @@ export default function DealsPage() {
                                         </div>
                                       </div>
 
-                                      {!isChoiceMode && hasVariations ? (
+                                      {hasVariations ? (
                                         <div className="space-y-2 border-t border-gray-100 px-3 pb-3 pt-2 dark:border-neutral-800">
                                           {variationGroups.map((group) => (
                                             <div key={group.id}>
@@ -2109,11 +2168,21 @@ export default function DealsPage() {
                                                         ...(isDraftItem ? variationDraft?.picks : {}),
                                                         [String(group.id)]: String(option.id),
                                                       });
-                                                    const qty = getFixedComponentQtyForVariation(
-                                                      form.components,
-                                                      itemId,
-                                                      modifierSelections,
-                                                    );
+                                                    const qty = isChoiceMode
+                                                      ? editingChoiceIndex != null &&
+                                                        choiceOptionIsSelected(
+                                                          form.components,
+                                                          editingChoiceIndex,
+                                                          itemId,
+                                                          modifierSelections,
+                                                        )
+                                                        ? 1
+                                                        : 0
+                                                      : getFixedComponentQtyForVariation(
+                                                          form.components,
+                                                          itemId,
+                                                          modifierSelections,
+                                                        );
                                                     const draftSelected =
                                                       isDraftItem &&
                                                       String(variationDraft?.picks?.[String(group.id)]) ===
@@ -2127,6 +2196,20 @@ export default function DealsPage() {
                                                         type="button"
                                                         onClick={(e) => {
                                                           e.stopPropagation();
+                                                          if (isChoiceMode) {
+                                                            if (canQuickAdd) {
+                                                              toggleChoiceOption(itemId, modifierSelections);
+                                                              return;
+                                                            }
+                                                            setVariationDraft({
+                                                              menuItemId: itemId,
+                                                              picks: {
+                                                                ...(isDraftItem ? variationDraft?.picks : {}),
+                                                                [String(group.id)]: String(option.id),
+                                                              },
+                                                            });
+                                                            return;
+                                                          }
                                                           if (canQuickAdd) {
                                                             addFixedComponent(itemId, modifierSelections);
                                                             return;
@@ -2159,11 +2242,14 @@ export default function DealsPage() {
                                               type="button"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                addFixedComponentFromDraft();
+                                                if (isChoiceMode) addChoiceOptionFromDraft();
+                                                else addFixedComponentFromDraft();
                                               }}
                                               className="mt-1 w-full rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-white hover:brightness-95"
                                             >
-                                              Add selected variation to deal
+                                              {isChoiceMode
+                                                ? "Add this option to choice slot"
+                                                : "Add selected variation to deal"}
                                             </button>
                                           ) : null}
                                         </div>
