@@ -135,7 +135,6 @@ export default function DealsPage() {
   const [sortBy, setSortBy] = useState("newest");
   const [itemSearch, setItemSearch] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState({});
-  const [showImageFields, setShowImageFields] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
@@ -148,6 +147,7 @@ export default function DealsPage() {
   const [editingChoiceIndex, setEditingChoiceIndex] = useState(null);
   const [variationDraft, setVariationDraft] = useState(null);
   const fileInputRef = useRef(null);
+  const imageFileInputRef = useRef(null);
   const exportMenuRef = useRef(null);
   const importMenuRef = useRef(null);
 
@@ -286,7 +286,6 @@ export default function DealsPage() {
     );
     setEditingChoiceIndex(null);
     setVariationDraft(null);
-    setShowImageFields(false);
     setIsModalOpen(true);
   }
 
@@ -322,7 +321,6 @@ export default function DealsPage() {
         ).map((name) => [name, true])
       )
     );
-    setShowImageFields(Boolean(deal.imageUrl));
     setEditingChoiceIndex(null);
     setVariationDraft(null);
     setIsModalOpen(true);
@@ -474,10 +472,12 @@ export default function DealsPage() {
     try {
       const result = await uploadImage(file);
       setForm((f) => ({ ...f, imageUrl: result.url }));
+      setImageTab("link");
     } catch (err) {
       setUploadError(err.message || "Upload failed");
     } finally {
       setUploading(false);
+      if (imageFileInputRef.current) imageFileInputRef.current.value = "";
     }
   }
 
@@ -1625,6 +1625,116 @@ export default function DealsPage() {
                   />
                 </div>
 
+                {/* Deal image */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1 uppercase tracking-wide">
+                    Deal image <span className="text-gray-400 font-normal normal-case">(optional)</span>
+                  </label>
+                  <p className="mb-3 text-[11px] text-gray-500 dark:text-neutral-400">
+                    Shown on website deal cards. Use a square photo for best results.
+                  </p>
+                  <div className="flex gap-4 items-start">
+                    <div className="relative aspect-square w-28 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-inner dark:border-neutral-700 dark:bg-neutral-900">
+                      {form.imageUrl ? (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={form.imageUrl}
+                            alt="Deal preview"
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
+                            className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70"
+                            aria-label="Remove image"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2 text-center">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 dark:bg-neutral-800">
+                            <ShoppingBag className="h-5 w-5 text-gray-300 dark:text-neutral-600" />
+                          </div>
+                          <p className="text-[10px] leading-snug text-gray-400 dark:text-neutral-500">
+                            No image yet
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex w-fit rounded-lg border border-gray-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+                        <button
+                          type="button"
+                          onClick={() => setImageTab("link")}
+                          className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-all ${
+                            imageTab === "link"
+                              ? "bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900"
+                              : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          }`}
+                        >
+                          <Link className="h-3 w-3" />
+                          Paste URL
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setImageTab("upload")}
+                          className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-all ${
+                            imageTab === "upload"
+                              ? "bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900"
+                              : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          }`}
+                        >
+                          <Upload className="h-3 w-3" />
+                          Upload
+                        </button>
+                      </div>
+
+                      {imageTab === "link" ? (
+                        <input
+                          type="url"
+                          value={form.imageUrl}
+                          onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+                          placeholder="https://example.com/deal-image.jpg"
+                          className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2 text-xs text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                        />
+                      ) : (
+                        <>
+                          <input
+                            ref={imageFileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleFileUpload}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            disabled={uploading}
+                            onClick={() => imageFileInputRef.current?.click()}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 px-3 py-2.5 text-xs font-semibold text-gray-600 transition hover:border-primary/50 hover:bg-primary/5 hover:text-primary disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                          >
+                            {uploading ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Uploading…
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="h-3.5 w-3.5" />
+                                Choose image file
+                              </>
+                            )}
+                          </button>
+                        </>
+                      )}
+
+                      {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Show on POS */}
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                   <div
@@ -1635,73 +1745,6 @@ export default function DealsPage() {
                   </div>
                   <span className="text-sm text-gray-700 dark:text-neutral-300 font-medium">Show on POS</span>
                 </label>
-
-                {/* Image (collapsed by default) */}
-                <div>
-                  {!showImageFields ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowImageFields(true)}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Image
-                    </button>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
-                          Image <span className="text-gray-400 font-normal normal-case">(optional)</span>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowImageFields(false)}
-                          className="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
-                        >
-                          Hide
-                        </button>
-                      </div>
-                      <div className="flex gap-3 items-start">
-                        <div className="flex-1 space-y-2">
-                          <div className="flex rounded-lg border border-gray-200 dark:border-neutral-700 overflow-hidden w-fit">
-                            <button type="button" onClick={() => setImageTab("link")}
-                              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors ${imageTab === "link" ? "bg-primary text-white" : "bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}>
-                              <Link className="w-3 h-3" />Paste URL
-                            </button>
-                            <button type="button" onClick={() => setImageTab("upload")}
-                              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium border-l border-gray-200 dark:border-neutral-700 transition-colors ${imageTab === "upload" ? "bg-primary text-white" : "bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800"}`}>
-                              <Upload className="w-3 h-3" />Upload
-                            </button>
-                          </div>
-                          {imageTab === "link" && (
-                            <input type="text" value={form.imageUrl}
-                              onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-                              placeholder="https://example.com/image.jpg"
-                              className="w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                            />
-                          )}
-                          {imageTab === "upload" && (
-                            <label className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${uploading ? "border-primary/40 bg-primary/5" : "border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 hover:border-primary/60 hover:bg-primary/5"}`}>
-                              {uploading ? <><Loader2 className="w-3.5 h-3.5 text-primary animate-spin" /><span className="text-xs text-primary font-medium">Uploading…</span></> : <><Upload className="w-3.5 h-3.5 text-gray-400" /><span className="text-xs text-gray-500">Browse file</span></>}
-                              <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={uploading} />
-                            </label>
-                          )}
-                          {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
-                        </div>
-                        {form.imageUrl && (
-                          <div className="relative flex-shrink-0">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={form.imageUrl} alt="Preview" className="h-16 w-16 rounded-xl object-cover border border-gray-200 dark:border-neutral-700" />
-                            <button type="button" onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
-                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600">
-                              <X className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
 
                 {/* Deal components */}
                 <div>
