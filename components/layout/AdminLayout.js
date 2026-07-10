@@ -411,6 +411,7 @@ const tenantNav = [
         path: "/website-settings?section=analytics",
         label: "Analytics",
         icon: BarChart2,
+        moduleKey: "websiteAnalytics",
       },
     ],
   },
@@ -723,6 +724,7 @@ export default function AdminLayout({
   const [whatsappNeedsHumanCount, setWhatsappNeedsHumanCount] = useState(0);
   const [pendingInvoiceCount, setPendingInvoiceCount] = useState(0);
   const [pendingInvoiceAmount, setPendingInvoiceAmount] = useState(0);
+  const [activeModuleKeys, setActiveModuleKeys] = useState(null);
   const { theme, toggleTheme } = useTheme();
   const { hasPermission, hasViewOrManage, permissionsLoaded, roleName } = usePermissions();
 
@@ -784,13 +786,15 @@ export default function AdminLayout({
   }, [role]);
 
   useEffect(() => {
-    const canFetchPendingInvoices =
+    const canFetchSubscriptionSummary =
       role === "restaurant_admin" ||
       role === "admin" ||
+      role === "manager" ||
       (role === "super_admin" && Boolean(actingAsSlug));
-    if (!canFetchPendingInvoices) {
+    if (!canFetchSubscriptionSummary) {
       setPendingInvoiceCount(0);
       setPendingInvoiceAmount(0);
+      setActiveModuleKeys(null);
       return;
     }
 
@@ -813,11 +817,20 @@ export default function AdminLayout({
         if (!cancelled) {
           setPendingInvoiceCount(pending.length);
           setPendingInvoiceAmount(Math.round(totalPendingAmount));
+          const modules = Array.isArray(data?.summary?.billing?.modules)
+            ? data.summary.billing.modules
+            : [];
+          setActiveModuleKeys(
+            new Set(
+              modules.filter((module) => module.active).map((module) => module.key),
+            ),
+          );
         }
       } catch {
         if (!cancelled) {
           setPendingInvoiceCount(0);
           setPendingInvoiceAmount(0);
+          setActiveModuleKeys(new Set());
         }
       }
     }
@@ -959,6 +972,13 @@ export default function AdminLayout({
     if (!item.roles) return true;
     return item.roles.includes(navRole);
   };
+  const isNavChildVisible = (child) => {
+    if (!child?.moduleKey) return true;
+    if (!activeModuleKeys) return false;
+    return activeModuleKeys.has(child.moduleKey);
+  };
+  const getVisibleNavChildren = (children) =>
+    (children || []).filter(isNavChildVisible);
   const visibleNavItems = rawNavItems.filter(canSeeNavItem);
   const navItems = visibleNavItems.filter((item, i) => {
     if (item.type !== "section") return true;
@@ -1125,12 +1145,13 @@ export default function AdminLayout({
                         );
 
                   const Icon = item.icon;
-                  const hasChildren = item.children && item.children.length > 0;
+                  const visibleChildren = getVisibleNavChildren(item.children);
+                  const hasChildren = visibleChildren.length > 0;
                   const isExpanded = expandedGroups.includes(basePath);
                   // For groups, check if any child path matches current route
                   const navPath = getNavPath(router.asPath, router.pathname);
                   const isActive = hasChildren
-                    ? item.children.some((child) => {
+                    ? visibleChildren.some((child) => {
                         const cHref = getTenantRoute(
                           router.asPath || router.pathname,
                           child.path,
@@ -1197,7 +1218,7 @@ export default function AdminLayout({
                     // Build structured dropdown items for collapsed hover
                     const dropdownData =
                       collapsed && !mobileSidebarOpen
-                        ? item.children.map((child) => {
+                        ? visibleChildren.map((child) => {
                             const childHref = getTenantRoute(
                               router.asPath || router.pathname,
                               child.path,
@@ -1275,7 +1296,7 @@ export default function AdminLayout({
                           >
                             <div className="overflow-hidden">
                               <div className="ml-4 mt-2 space-y-1 border-l-2 border-gray-200 dark:border-neutral-800 pl-3 pb-1">
-                                {item.children.map((child) => {
+                                {visibleChildren.map((child) => {
                                   const childHref = getTenantRoute(
                                     router.asPath || router.pathname,
                                     child.path,

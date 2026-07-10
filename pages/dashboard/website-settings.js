@@ -10,6 +10,7 @@ import {
   getDeals,
   uploadImage,
   uploadVideo,
+  getTenantSubscriptionSummary,
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
 import { STOREFRONT_TEMPLATES } from "../../lib/storefrontTemplates";
@@ -379,6 +380,11 @@ export default function WebsiteSettingsPage() {
   const [websiteSectionItemSearch, setWebsiteSectionItemSearch] = useState({});
   const [activeSection, setActiveSection] = useState("template");
   const [envView, setEnvView] = useState("live");
+  const [websiteAnalyticsActive, setWebsiteAnalyticsActive] = useState(null);
+
+  const visibleSections = SECTIONS.filter(
+    (section) => section.id !== "analytics" || websiteAnalyticsActive,
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -410,11 +416,36 @@ export default function WebsiteSettingsPage() {
   }, [load]);
 
   useEffect(() => {
+    let cancelled = false;
+    async function loadModules() {
+      try {
+        const data = await getTenantSubscriptionSummary();
+        const modules = data?.summary?.billing?.modules || [];
+        const active = modules.some(
+          (module) => module.key === "websiteAnalytics" && module.active,
+        );
+        if (!cancelled) setWebsiteAnalyticsActive(active);
+      } catch {
+        if (!cancelled) setWebsiteAnalyticsActive(false);
+      }
+    }
+    loadModules();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const section = router.query.section;
     if (typeof section === "string" && SECTION_IDS.has(section)) {
+      if (section === "analytics" && websiteAnalyticsActive === false) {
+        setActiveSection("template");
+        router.replace("/website-settings", undefined, { shallow: true });
+        return;
+      }
       setActiveSection(section);
     }
-  }, [router.query.section]);
+  }, [router.query.section, websiteAnalyticsActive, router]);
 
   function update(key, value) {
     setWs((prev) => ({ ...prev, [key]: value }));
@@ -1050,7 +1081,7 @@ export default function WebsiteSettingsPage() {
           {/* Anchor nav */}
           <div className="hidden lg:block w-48 flex-shrink-0">
             <div className="sticky top-0 space-y-1">
-              {SECTIONS.map((s) => (
+              {visibleSections.map((s) => (
                 <button
                   key={s.id}
                   onClick={() => scrollTo(s.id)}
@@ -1084,7 +1115,7 @@ export default function WebsiteSettingsPage() {
                 onChange={(e) => scrollTo(e.target.value)}
                 className={inp}
               >
-                {SECTIONS.map((s) => (
+                {visibleSections.map((s) => (
                   <option key={s.id} value={s.id}>
                     {sectionCompletion[s.id] ? "● " : "○ "}
                     {s.label}
@@ -3110,16 +3141,18 @@ export default function WebsiteSettingsPage() {
               {renderSectionSave("settings")}
             </SectionCard>
 
-            <SectionCard
-              id="analytics"
-              icon={BarChart2}
-              title="Analytics"
-              subtitle="Traffic insights from your public storefront — page views, visitors, and top pages"
-              iconColor={iconAccentPrimary}
-              isActive={activeSection === "analytics"}
-            >
-              <WebsiteAnalyticsPanel />
-            </SectionCard>
+            {websiteAnalyticsActive ? (
+              <SectionCard
+                id="analytics"
+                icon={BarChart2}
+                title="Analytics"
+                subtitle="Traffic insights and add-on revenue from your public storefront"
+                iconColor={iconAccentPrimary}
+                isActive={activeSection === "analytics"}
+              >
+                <WebsiteAnalyticsPanel />
+              </SectionCard>
+            ) : null}
           </div>
         </div>
       )}

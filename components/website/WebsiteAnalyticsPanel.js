@@ -6,7 +6,10 @@ import {
   Globe,
   Loader2,
   Monitor,
+  ShoppingBag,
   Smartphone,
+  Sparkles,
+  TrendingUp,
   Users,
 } from "lucide-react";
 
@@ -28,6 +31,10 @@ function fmtShortDate(dateStr) {
   if (!dateStr) return "—";
   const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function fmtRs(value) {
+  return `Rs ${Math.round(Number(value) || 0).toLocaleString()}`;
 }
 
 function formatPathLabel(path) {
@@ -79,6 +86,174 @@ function DailyTrendChart({ daily = [] }) {
         })}
       </div>
     </div>
+  );
+}
+
+function AddonHeadline({ addons, dateLabel }) {
+  const headline = addons?.headline || addons?.summary;
+  if (!headline) return null;
+
+  const revenue = Number(headline.modifierRevenue) || 0;
+  const share = Number(headline.modifierShareOfRevenue) || 0;
+  const ordersWithAddons =
+    Number(headline.ordersWithAddons ?? addons?.summary?.ordersWithAddons) || 0;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-6 shadow-sm dark:border-emerald-500/30 dark:from-emerald-950/40 dark:via-neutral-950 dark:to-teal-950/30">
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/25">
+          <Sparkles className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+            Add-on revenue proof
+          </p>
+          <p className="mt-2 text-xl font-black leading-snug text-gray-900 dark:text-white sm:text-2xl">
+            Add-ons generated{" "}
+            <span className="text-emerald-600 dark:text-emerald-400">{fmtRs(revenue)}</span>{" "}
+            this period
+            {share > 0 ? (
+              <>
+                {" "}
+                (<span className="text-emerald-600 dark:text-emerald-400">{share}%</span> of
+                revenue)
+              </>
+            ) : null}{" "}
+            across{" "}
+            <span className="text-emerald-600 dark:text-emerald-400">
+              {ordersWithAddons.toLocaleString()}
+            </span>{" "}
+            {ordersWithAddons === 1 ? "order" : "orders"}.
+          </p>
+          {dateLabel ? (
+            <p className="mt-2 text-xs text-gray-500 dark:text-neutral-400">{dateLabel}</p>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AddonPerformanceSection({ addons }) {
+  const summary = addons?.summary;
+  if (!summary) return null;
+
+  const topByRevenue = addons?.topAddonsByRevenue || [];
+  const topByCount = addons?.topAddonsByCount || [];
+
+  return (
+    <section className="rounded-2xl border-2 border-gray-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-bold text-gray-900 dark:text-white">
+            <ShoppingBag className="h-4 w-4" />
+            Add-ons &amp; Upsell Performance
+          </h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-neutral-400">
+            Modifier add-ons and &ldquo;Complete your meal&rdquo; cross-sell revenue from website
+            orders.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Add-on revenue
+          </p>
+          <p className="mt-2 text-2xl font-black text-gray-900 dark:text-white">
+            {fmtRs(summary.modifierRevenue)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Attach rate
+          </p>
+          <p className="mt-2 text-2xl font-black text-gray-900 dark:text-white">
+            {summary.attachRate}%
+          </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+            {summary.ordersWithAddons} of {summary.totalOrders} orders
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Avg add-on / order
+          </p>
+          <p className="mt-2 text-2xl font-black text-gray-900 dark:text-white">
+            {fmtRs(summary.avgAddonValuePerOrder)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/50">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Cross-sell revenue
+          </p>
+          <p className="mt-2 text-2xl font-black text-gray-900 dark:text-white">
+            {fmtRs(summary.crossSellRevenue)}
+          </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
+            vs {fmtRs(summary.menuLineRevenue)} from menu
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
+            <TrendingUp className="h-4 w-4" />
+            Top add-ons by revenue
+          </h3>
+          <div className="mt-3 space-y-2">
+            {topByRevenue.length > 0 ? (
+              topByRevenue.map((row) => (
+                <div
+                  key={`rev-${row.optionId || row.name}`}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900"
+                >
+                  <span className="truncate text-sm text-gray-800 dark:text-neutral-200">
+                    {row.name}
+                  </span>
+                  <span className="shrink-0 text-sm font-semibold text-gray-900 dark:text-white">
+                    {fmtRs(row.revenue)} · {row.count}×
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="py-4 text-sm text-gray-500">
+                No paid add-ons recorded in this period yet.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+            Top add-ons by count
+          </h3>
+          <div className="mt-3 space-y-2">
+            {topByCount.length > 0 ? (
+              topByCount.map((row) => (
+                <div
+                  key={`cnt-${row.optionId || row.name}`}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2 dark:bg-neutral-900"
+                >
+                  <span className="truncate text-sm text-gray-800 dark:text-neutral-200">
+                    {row.name}
+                  </span>
+                  <span className="shrink-0 text-sm font-semibold text-gray-900 dark:text-white">
+                    {row.count}× · {fmtRs(row.revenue)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="py-4 text-sm text-gray-500">
+                No paid add-ons recorded in this period yet.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -156,6 +331,9 @@ export default function WebsiteAnalyticsPanel() {
         </div>
       ) : (
         <>
+          <AddonHeadline addons={report?.addons} dateLabel={dateLabel} />
+          <AddonPerformanceSection addons={report?.addons} />
+
           <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-gray-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
               <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
