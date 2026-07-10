@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { getWebsiteAnalytics } from "../../lib/apiClient";
 import {
   Activity,
@@ -261,6 +262,7 @@ export default function WebsiteAnalyticsPanel() {
   const [preset, setPreset] = useState("7d");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [moduleLocked, setModuleLocked] = useState(false);
   const [report, setReport] = useState(null);
 
   useEffect(() => {
@@ -270,10 +272,15 @@ export default function WebsiteAnalyticsPanel() {
       try {
         setLoading(true);
         setErr("");
+        setModuleLocked(false);
         const data = await getWebsiteAnalytics({ preset });
         if (!cancelled) setReport(data || null);
       } catch (e) {
         if (!cancelled) {
+          const locked =
+            e?.details?.code === "MODULE_NOT_ACTIVE" ||
+            e?.code === 403;
+          setModuleLocked(locked);
           setErr(e?.message || "Failed to load website analytics");
           setReport(null);
         }
@@ -327,7 +334,17 @@ export default function WebsiteAnalyticsPanel() {
         </div>
       ) : err ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-          {err}
+          <p>{err}</p>
+          {moduleLocked ? (
+            <p className="mt-3 text-sm">
+              Enable <span className="font-semibold">Website Analytics</span> on
+              your plan from{" "}
+              <Link href="/subscription" className="font-semibold underline underline-offset-2">
+                Subscription
+              </Link>
+              , or ask EatsDesk support if it should already be active.
+            </p>
+          ) : null}
         </div>
       ) : (
         <>

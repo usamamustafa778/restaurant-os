@@ -10,7 +10,6 @@ import {
   getDeals,
   uploadImage,
   uploadVideo,
-  getTenantSubscriptionSummary,
 } from "../../lib/apiClient";
 import toast from "react-hot-toast";
 import { STOREFRONT_TEMPLATES } from "../../lib/storefrontTemplates";
@@ -380,11 +379,6 @@ export default function WebsiteSettingsPage() {
   const [websiteSectionItemSearch, setWebsiteSectionItemSearch] = useState({});
   const [activeSection, setActiveSection] = useState("template");
   const [envView, setEnvView] = useState("live");
-  const [websiteAnalyticsActive, setWebsiteAnalyticsActive] = useState(null);
-
-  const visibleSections = SECTIONS.filter(
-    (section) => section.id !== "analytics" || websiteAnalyticsActive,
-  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -416,36 +410,13 @@ export default function WebsiteSettingsPage() {
   }, [load]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadModules() {
-      try {
-        const data = await getTenantSubscriptionSummary();
-        const modules = data?.summary?.billing?.modules || [];
-        const active = modules.some(
-          (module) => module.key === "websiteAnalytics" && module.active,
-        );
-        if (!cancelled) setWebsiteAnalyticsActive(active);
-      } catch {
-        if (!cancelled) setWebsiteAnalyticsActive(false);
-      }
-    }
-    loadModules();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     const section = router.query.section;
     if (typeof section === "string" && SECTION_IDS.has(section)) {
-      if (section === "analytics" && websiteAnalyticsActive === false) {
-        setActiveSection("template");
-        router.replace("/website-settings", undefined, { shallow: true });
-        return;
-      }
       setActiveSection(section);
     }
-  }, [router.query.section, websiteAnalyticsActive, router]);
+  }, [router.query.section]);
+
+  const visibleSections = SECTIONS;
 
   function update(key, value) {
     setWs((prev) => ({ ...prev, [key]: value }));
@@ -3141,18 +3112,16 @@ export default function WebsiteSettingsPage() {
               {renderSectionSave("settings")}
             </SectionCard>
 
-            {websiteAnalyticsActive ? (
-              <SectionCard
-                id="analytics"
-                icon={BarChart2}
-                title="Analytics"
-                subtitle="Traffic insights and add-on revenue from your public storefront"
-                iconColor={iconAccentPrimary}
-                isActive={activeSection === "analytics"}
-              >
-                <WebsiteAnalyticsPanel />
-              </SectionCard>
-            ) : null}
+            <SectionCard
+              id="analytics"
+              icon={BarChart2}
+              title="Analytics"
+              subtitle="Traffic insights and add-on revenue from your public storefront"
+              iconColor={iconAccentPrimary}
+              isActive={activeSection === "analytics"}
+            >
+              <WebsiteAnalyticsPanel />
+            </SectionCard>
           </div>
         </div>
       )}

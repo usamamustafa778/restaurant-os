@@ -411,7 +411,6 @@ const tenantNav = [
         path: "/website-settings?section=analytics",
         label: "Analytics",
         icon: BarChart2,
-        moduleKey: "websiteAnalytics",
       },
     ],
   },
