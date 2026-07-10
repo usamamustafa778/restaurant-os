@@ -44,6 +44,15 @@ import {
   getPaymentAccounts,
 } from "../../lib/apiClient";
 import { printBillReceipt } from "../../lib/printBillReceipt";
+import {
+  buildInitialModifierSelections,
+  buildPosCartLine,
+  computeItemUnitPrice,
+  getPickerGroupsForItem,
+  hasAttachedModifierGroups,
+  isModifierSelectionComplete as isItemModifierSelectionComplete,
+  itemNeedsModifierPicker,
+} from "../../lib/modifier-pricing";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -936,11 +945,20 @@ export default function POSView({
           const modSels = it.modifierSelections || [];
           if (modSels.length > 0) {
             const fingerprint = modSels
-              .flatMap((s) => (s.options || []).map((o) => o.optionId))
+              .map((s) => s.groupId + ":" + (s.options || []).map((o) => o.optionId).sort().join(","))
               .sort()
-              .join(",");
+              .join("|");
             if (fingerprint) cartKey = id + "|" + fingerprint;
           }
+          const selectedModifiers = modSels.flatMap((s) =>
+            (s.options || []).map((o) => ({
+              groupId: s.groupId,
+              groupName: s.groupName,
+              optionId: o.optionId,
+              optionName: o.name,
+              price: Number(o.price) || 0,
+            })),
+          );
           return {
             id,
             name: it.name,
@@ -949,6 +967,7 @@ export default function POSView({
             imageUrl,
             _cartKey: cartKey,
             _modifierSelectionsForOrder: modSels,
+            _selectedModifiers: selectedModifiers,
             size: it.variantLabel || "",
           };
         });
@@ -1634,7 +1653,7 @@ export default function POSView({
     }
     const result = [];
     for (const item of allItemsForGrid) {
-      if (!item.hasModifiers || !item.modifierGroups?.length) {
+      if ((!item.hasModifiers || !item.modifierGroups?.length) && !hasAttachedModifierGroups(item)) {
         result.push(item);
         continue;
       }
@@ -1801,80 +1820,66 @@ export default function POSView({
     }
   }, [filteredItems.length, focusedItemIndex]);
 
+  const openModifierPicker = (item, qty = 1) => {
+    setModifierPickerItem({
+      ...item,
+      _pickerGroups: getPickerGroupsForItem(item),
+      _pendingQty: qty,
+    });
+    setModifierSelections(buildInitialModifierSelections(item));
+  };
+
   const addToCart = (item, qty = 1) => {
     if (editingOrderId && servedUnpaidEdit && !canEditAfterServed) {
       toast.error("You don't have permission to edit served orders.");
       return;
     }
-    // Cases 1 & 2: flattened card (has a pre-baked required selection)
+
     if (item._preselectedRequired) {
-      // Combine remaining required groups + optional groups for the modal
-      const modalGroups = [
-        ...(item._remainingRequiredGroups || []),
-        ...(item._optionalGroups || []),
-      ];
-      if (modalGroups.length === 0) {
-        // Case 1: no further choices needed — add directly to cart
-        const presel = item._preselectedRequired;
-        const cartKey = item._flattenedId || item.id;
-        const unitPrice = presel.option.price;
-        const variantLabel = presel.option.name;
-        const modifierSelectionsForOrder = [
-          {
-            groupId: presel.groupId,
-            groupName: presel.groupName,
-            options: [presel.option],
-          },
-        ];
-        const existing = cart.find((i) => i._cartKey === cartKey);
-        if (existing) {
-          setCart(
-            cart.map((i) =>
-              i._cartKey === cartKey
-                ? {
-                    ...i,
-                    quantity:
-                      i.quantity + Math.max(1, Math.floor(Number(qty)) || 1),
-                  }
-                : i,
-            ),
-          );
-        } else {
-          setCart([
-            ...cart,
-            {
-              ...item,
-              id: item.id,
-              _cartKey: cartKey,
-              price: unitPrice,
-              quantity: Math.max(1, Math.floor(Number(qty)) || 1),
-              size: variantLabel,
-              _modifierSelectionsForOrder: modifierSelectionsForOrder,
-            },
-          ]);
-        }
-        setBulkAddQtyInput("1");
-      } else {
-        // Case 2: open modal showing remaining required + optional groups
-        setModifierPickerItem({
-          ...item,
-          modifierGroups: modalGroups,
-          _preselectedRequired: item._preselectedRequired,
-          _pendingQty: qty,
-        });
-        setModifierSelections({});
+      if (itemNeedsModifierPicker(item)) {
+        openModifierPicker(item, qty);
+        return;
       }
+
+      const line = buildPosCartLine(
+        item,
+        qty,
+        buildInitialModifierSelections(item),
+      );
+      const existing = cart.find((i) => i._cartKey === line.cartKey);
+      if (existing) {
+        setCart(
+          cart.map((i) =>
+            i._cartKey === line.cartKey
+              ? { ...i, quantity: i.quantity + line.quantity }
+              : i,
+          ),
+        );
+      } else {
+        setCart([
+          ...cart,
+          {
+            ...item,
+            id: item.id,
+            _cartKey: line.cartKey,
+            price: line.unitPrice,
+            quantity: line.quantity,
+            size: line.variantLabel,
+            _modifierSelectionsForOrder: line.modifierSelectionsForOrder,
+            _selectedModifiers: line.selectedModifiers,
+          },
+        ]);
+      }
+      setBulkAddQtyInput("1");
       return;
     }
 
-    // Case 3: item has only optional groups (no required) — open full modal as before
-    if (item.hasModifiers && item.modifierGroups?.length > 0) {
-      setModifierPickerItem({ ...item, _pendingQty: qty });
-      setModifierSelections({});
+    if (itemNeedsModifierPicker(item)) {
+      openModifierPicker(item, qty);
       return;
     }
 
-    // Case 4: no modifiers — existing direct-add behavior
+    // No modifiers — fast path direct add
     const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
     const existingItem = cart.find((i) => i.id === item.id);
     const isDeal = item.isDeal;
@@ -1926,102 +1931,22 @@ export default function POSView({
     if (!item) return;
 
     const qty = Math.max(1, Math.floor(Number(item._pendingQty)) || 1);
-
-    // Build a fingerprint so same item with different modifiers = different cart entries
-    const selectionFingerprint = Object.entries(modifierSelections)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(
-        ([gId, opts]) =>
-          gId +
-          ":" +
-          opts
-            .map((o) => o.optionId)
-            .sort()
-            .join(","),
-      )
-      .join("|");
-
-    // Use _flattenedId as the cart key base when this is a flattened card (Case 2)
-    const cartKeyBase = item._flattenedId || item.id;
-    const cartKey =
-      cartKeyBase + (selectionFingerprint ? "|" + selectionFingerprint : "");
-
-    // Compute unit price from all groups shown in the modal
-    const allModalGroups = item.modifierGroups || [];
-    const requiredInModal = allModalGroups.filter((g) => g.required);
-    const optionalInModal = allModalGroups.filter((g) => !g.required);
-    const requiredModalTotal = requiredInModal.reduce((sum, g) => {
-      const sel = modifierSelections[g.id] || [];
-      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
-    }, 0);
-    const optionalModalTotal = optionalInModal.reduce((sum, g) => {
-      const sel = modifierSelections[g.id] || [];
-      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
-    }, 0);
-
-    let unitPrice;
-    if (item._preselectedRequired) {
-      // Pre-baked required price + any remaining-required + optional prices from modal
-      unitPrice =
-        item._preselectedRequired.option.price +
-        requiredModalTotal +
-        optionalModalTotal;
-    } else {
-      if (requiredInModal.length > 0 && requiredModalTotal > 0) {
-        unitPrice = requiredModalTotal + optionalModalTotal;
-      } else {
-        unitPrice = (item.finalPrice ?? item.price) + optionalModalTotal;
-      }
+    const fullSelections = { ...modifierSelections };
+    if (
+      item._preselectedRequired &&
+      !(fullSelections[item._preselectedRequired.groupId] || []).length
+    ) {
+      Object.assign(fullSelections, buildInitialModifierSelections(item));
     }
 
-    // Build variant label
-    let variantLabel;
-    if (item._preselectedRequired) {
-      const modalSelectedNames = Object.values(modifierSelections)
-        .flat()
-        .map((o) => o.name);
-      variantLabel = modalSelectedNames.length
-        ? `${item._preselectedRequired.option.name} (${modalSelectedNames.join(", ")})`
-        : item._preselectedRequired.option.name;
-    } else {
-      const allSelectedNames = Object.values(modifierSelections)
-        .flat()
-        .map((o) => o.name);
-      variantLabel = allSelectedNames.join(", ") || "Regular";
-    }
-
-    // Build modifierSelections array for the order payload
-    const modifierSelectionsForOrder = (item.modifierGroups || [])
-      .map((g) => {
-        const selected = modifierSelections[g.id] || [];
-        if (selected.length === 0) return null;
-        return {
-          groupId: g.id,
-          groupName: g.groupName,
-          options: selected.map((o) => ({
-            optionId: o.optionId,
-            name: o.name,
-            price: o.price,
-          })),
-        };
-      })
-      .filter(Boolean);
-
-    // Prepend the pre-baked required selection when present (Case 2)
-    if (item._preselectedRequired) {
-      const presel = item._preselectedRequired;
-      modifierSelectionsForOrder.unshift({
-        groupId: presel.groupId,
-        groupName: presel.groupName,
-        options: [presel.option],
-      });
-    }
-
-    const existingItem = cart.find((i) => i._cartKey === cartKey);
+    const line = buildPosCartLine(item, qty, fullSelections);
+    const existingItem = cart.find((i) => i._cartKey === line.cartKey);
     if (existingItem) {
       setCart(
         cart.map((i) =>
-          i._cartKey === cartKey ? { ...i, quantity: i.quantity + qty } : i,
+          i._cartKey === line.cartKey
+            ? { ...i, quantity: i.quantity + line.quantity }
+            : i,
         ),
       );
     } else {
@@ -2029,11 +1954,12 @@ export default function POSView({
         ...cart,
         {
           ...item,
-          _cartKey: cartKey,
-          price: unitPrice,
-          quantity: qty,
-          size: variantLabel,
-          _modifierSelectionsForOrder: modifierSelectionsForOrder,
+          _cartKey: line.cartKey,
+          price: line.unitPrice,
+          quantity: line.quantity,
+          size: line.variantLabel,
+          _modifierSelectionsForOrder: line.modifierSelectionsForOrder,
+          _selectedModifiers: line.selectedModifiers,
         },
       ]);
     }
@@ -2044,13 +1970,15 @@ export default function POSView({
 
   const isModifierSelectionComplete = () => {
     if (!modifierPickerItem) return false;
-    const requiredGroups = (modifierPickerItem.modifierGroups || []).filter(
-      (g) => g.required,
-    );
-    return requiredGroups.every((g) => {
-      const sel = modifierSelections[g.id] || [];
-      return sel.length > 0;
-    });
+    const fullSelections = { ...modifierSelections };
+    if (
+      modifierPickerItem._preselectedRequired &&
+      !(fullSelections[modifierPickerItem._preselectedRequired.groupId] || [])
+        .length
+    ) {
+      Object.assign(fullSelections, buildInitialModifierSelections(modifierPickerItem));
+    }
+    return isItemModifierSelectionComplete(modifierPickerItem, fullSelections);
   };
 
   const clearCart = () => {
@@ -3703,30 +3631,24 @@ export default function POSView({
                           <div className="flex-1 min-w-0">
                             <h4 className="text-base font-bold text-gray-900 dark:text-white line-clamp-1">
                               {item.name}
-                              {item.size && (
+                              {item.size && !item._selectedModifiers?.length ? (
                                 <span className="text-xs font-normal text-gray-500 dark:text-neutral-500">
                                   {" "}
                                   ({item.size})
                                 </span>
-                              )}
+                              ) : null}
                             </h4>
-                            {item._modifierSelectionsForOrder
-                              ?.filter((s) => {
-                                const group = item.modifierGroups?.find(
-                                  (g) => g.id === s.groupId,
-                                );
-                                return group && !group.required;
-                              })
-                              .flatMap((s) => s.options)
-                              .map((o, i) => (
-                                <div
-                                  key={i}
-                                  className="text-xs text-gray-400 dark:text-neutral-500 leading-tight"
-                                >
-                                  + {o.name}
-                                  {o.price > 0 && <span> (Rs {o.price})</span>}
-                                </div>
-                              ))}
+                            {(item._selectedModifiers || []).map((mod, mi) => (
+                              <div
+                                key={`${mod.optionId}-${mi}`}
+                                className="text-xs text-gray-400 dark:text-neutral-500 leading-tight pl-2"
+                              >
+                                + {mod.optionName}
+                                {mod.price > 0 ? (
+                                  <span> Rs {mod.price}</span>
+                                ) : null}
+                              </div>
+                            ))}
                           </div>
                           {isPrivilegedEditor && canModifyServedOrderItems && (
                             <button
@@ -6900,15 +6822,17 @@ export default function POSView({
 
             {/* Modifier groups */}
             <div className="p-5 space-y-6">
-              {(modifierPickerItem.modifierGroups || [])
+              {(modifierPickerItem._pickerGroups ||
+                modifierPickerItem.modifierGroups ||
+                [])
                 .slice()
-                .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                .sort((a, b) => (a.sortOrder || a.displayOrder || 0) - (b.sortOrder || b.displayOrder || 0))
                 .map((group) => (
                   <div key={group.id}>
                     {/* Group header */}
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {group.groupName}
+                        {group.groupName || group.name}
                       </span>
                       <span
                         className={`text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -6928,16 +6852,21 @@ export default function POSView({
                         .slice()
                         .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
                         .map((option) => {
+                          const maxSelections =
+                            group.maxSelections ??
+                            (group.maxSelect === 0
+                              ? 99
+                              : Math.max(1, group.maxSelect || 1));
                           const groupSel = modifierSelections[group.id] || [];
                           const isSelected = groupSel.some(
                             (s) => s.optionId === option.id,
                           );
+                          const isAttached = group.source === "attached";
 
                           const toggleOption = () => {
                             setModifierSelections((prev) => {
                               const existing = prev[group.id] || [];
-                              if (group.maxSelections === 1) {
-                                // Radio behaviour
+                              if (maxSelections === 1) {
                                 return {
                                   ...prev,
                                   [group.id]: isSelected
@@ -6950,32 +6879,29 @@ export default function POSView({
                                         },
                                       ],
                                 };
-                              } else {
-                                // Checkbox behaviour
-                                if (isSelected) {
-                                  return {
-                                    ...prev,
-                                    [group.id]: existing.filter(
-                                      (s) => s.optionId !== option.id,
-                                    ),
-                                  };
-                                } else if (
-                                  existing.length < group.maxSelections
-                                ) {
-                                  return {
-                                    ...prev,
-                                    [group.id]: [
-                                      ...existing,
-                                      {
-                                        optionId: option.id,
-                                        name: option.name,
-                                        price: option.price,
-                                      },
-                                    ],
-                                  };
-                                }
-                                return prev;
                               }
+                              if (isSelected) {
+                                return {
+                                  ...prev,
+                                  [group.id]: existing.filter(
+                                    (s) => s.optionId !== option.id,
+                                  ),
+                                };
+                              }
+                              if (existing.length < maxSelections) {
+                                return {
+                                  ...prev,
+                                  [group.id]: [
+                                    ...existing,
+                                    {
+                                      optionId: option.id,
+                                      name: option.name,
+                                      price: option.price,
+                                    },
+                                  ],
+                                };
+                              }
+                              return prev;
                             });
                           };
 
@@ -6990,7 +6916,6 @@ export default function POSView({
                               }`}
                             >
                               <div className="flex items-center gap-3">
-                                {/* Radio / checkbox indicator */}
                                 <div
                                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                                     isSelected
@@ -7014,14 +6939,20 @@ export default function POSView({
                               </div>
                               <span
                                 className={`text-sm font-semibold ${
-                                  isSelected
-                                    ? "text-orange-600 dark:text-orange-400"
-                                    : "text-gray-500 dark:text-neutral-400"
+                                  isAttached
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : isSelected
+                                      ? "text-orange-600 dark:text-orange-400"
+                                      : "text-gray-500 dark:text-neutral-400"
                                 }`}
                               >
                                 {option.price > 0
-                                  ? `Rs ${option.price.toLocaleString()}`
-                                  : ""}
+                                  ? isAttached
+                                    ? `+Rs ${option.price.toLocaleString()}`
+                                    : `Rs ${option.price.toLocaleString()}`
+                                  : isAttached
+                                    ? "Included"
+                                    : "Free"}
                               </span>
                             </button>
                           );
@@ -7034,23 +6965,21 @@ export default function POSView({
             {/* Footer — live total + add button */}
             <div className="sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-gray-100 dark:border-neutral-800 p-5">
               {(() => {
-                const requiredTotal = (modifierPickerItem.modifierGroups || [])
-                  .filter((g) => g.required)
-                  .reduce((sum, g) => {
-                    const sel = modifierSelections[g.id] || [];
-                    return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
-                  }, 0);
-                const optionalTotal = (modifierPickerItem.modifierGroups || [])
-                  .filter((g) => !g.required)
-                  .reduce((sum, g) => {
-                    const sel = modifierSelections[g.id] || [];
-                    return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
-                  }, 0);
-                const displayTotal =
-                  requiredTotal > 0
-                    ? requiredTotal + optionalTotal
-                    : (modifierPickerItem.finalPrice ??
-                        modifierPickerItem.price) + optionalTotal;
+                const fullSelections = { ...modifierSelections };
+                if (
+                  modifierPickerItem._preselectedRequired &&
+                  !(fullSelections[modifierPickerItem._preselectedRequired.groupId] || [])
+                    .length
+                ) {
+                  Object.assign(
+                    fullSelections,
+                    buildInitialModifierSelections(modifierPickerItem),
+                  );
+                }
+                const displayTotal = computeItemUnitPrice(
+                  modifierPickerItem,
+                  fullSelections,
+                );
 
                 return (
                   <div className="flex items-center justify-between mb-3">

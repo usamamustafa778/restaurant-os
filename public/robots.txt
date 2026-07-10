@@ -3,7 +3,8 @@
 # Allow all bots to crawl public pages
 User-agent: *
 Allow: /
-Allow: /r/*
+Allow: /blog
+Allow: /blog/*
 
 # Disallow dashboard pages (served at root level, auth-protected)
 Disallow: /overview

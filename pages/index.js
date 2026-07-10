@@ -421,6 +421,9 @@ export default function Home() {
               <li>
                 <Link href="/#faq">FAQ</Link>
               </li>
+              <li>
+                <Link href="/blog">Blog</Link>
+              </li>
             </ul>
             <div className="nav-cta">
               <Link href="/login" className="btn btn-ghost">

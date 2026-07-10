@@ -3033,6 +3033,210 @@ body:has(.legal-doc-page) {
   letter-spacing: 0.2px;
 }
 
+/* ─── BLOG ───────────────────────────────────────────────────────── */
+body:has(.blog-page) {
+  cursor: auto;
+}
+
+.eatsdesk-landing.blog-page .blog-hero {
+  padding: 120px 32px 48px;
+  background: var(--dark-2);
+  border-bottom: 1px solid var(--gray-1);
+}
+
+.eatsdesk-landing.blog-page .blog-hero-inner {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.eatsdesk-landing.blog-page .blog-back {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--gray-4);
+  margin-bottom: 20px;
+  transition: color 0.2s;
+}
+
+.eatsdesk-landing.blog-page .blog-back:hover {
+  color: var(--orange);
+}
+
+.eatsdesk-landing.blog-page .blog-eyebrow {
+  font-family: var(--font-syne), sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin-bottom: 12px;
+}
+
+.eatsdesk-landing.blog-page .blog-hero h1 {
+  font-family: var(--font-syne), sans-serif;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--white);
+}
+
+.eatsdesk-landing.blog-page .blog-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--gray-4);
+}
+
+.eatsdesk-landing.blog-page .blog-meta p {
+  color: var(--gray-4);
+  line-height: 1.6;
+  max-width: 52ch;
+}
+
+.eatsdesk-landing.blog-page .blog-meta-dot {
+  opacity: 0.5;
+}
+
+.eatsdesk-landing.blog-page .blog-body {
+  padding: 48px 32px 80px;
+  background: var(--dark);
+}
+
+.eatsdesk-landing.blog-page .blog-inner {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.eatsdesk-landing.blog-page .blog-grid {
+  display: grid;
+  gap: 20px;
+}
+
+@media (min-width: 700px) {
+  .eatsdesk-landing.blog-page .blog-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.eatsdesk-landing.blog-page .blog-card {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--gray-1);
+  background: var(--dark-2);
+  transition: border-color 0.2s, transform 0.2s;
+  text-decoration: none;
+  color: inherit;
+  height: 100%;
+}
+
+.eatsdesk-landing.blog-page .blog-card:hover {
+  border-color: rgba(255, 84, 0, 0.45);
+  transform: translateY(-2px);
+}
+
+.eatsdesk-landing.blog-page .blog-card-category {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin-bottom: 10px;
+}
+
+.eatsdesk-landing.blog-page .blog-card-title {
+  font-family: var(--font-syne), sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--white);
+  margin-bottom: 10px;
+}
+
+.eatsdesk-landing.blog-page .blog-card-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--gray-4);
+  flex: 1;
+}
+
+.eatsdesk-landing.blog-page .blog-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gray-1);
+  font-size: 12px;
+  color: var(--gray-3);
+}
+
+.eatsdesk-landing.blog-page .blog-article h2 {
+  font-family: var(--font-syne), sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--white);
+  margin: 2rem 0 0.75rem;
+}
+
+.eatsdesk-landing.blog-page .blog-article h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--white);
+  margin: 1.5rem 0 0.5rem;
+}
+
+.eatsdesk-landing.blog-page .blog-article p {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--gray-5);
+  margin-bottom: 1rem;
+}
+
+.eatsdesk-landing.blog-page .blog-article ul {
+  margin: 0 0 1.25rem 1.25rem;
+  padding: 0;
+}
+
+.eatsdesk-landing.blog-page .blog-article ul li {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--gray-5);
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
+}
+
+.eatsdesk-landing.blog-page .blog-post-cta {
+  margin-top: 48px;
+  padding: 28px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 84, 0, 0.35);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 84, 0, 0.12),
+    rgba(255, 84, 0, 0.04)
+  );
+}
+
+.eatsdesk-landing.blog-page .blog-post-cta h3 {
+  font-family: var(--font-syne), sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--white);
+  margin-bottom: 8px;
+}
+
+.eatsdesk-landing.blog-page .blog-post-cta p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--gray-4);
+  margin-bottom: 16px;
+}
+
 /* ─── LEGAL ──────────────────────────────────────────────────────── */
 @media(max-width:900px) {
   .eatsdesk-landing.legal-doc-page .legal-doc-hero {

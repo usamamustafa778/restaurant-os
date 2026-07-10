@@ -91,6 +91,15 @@ export default function MarketingFooter() {
           </ul>
         </nav>
 
+        <nav className="footer-col" aria-label="Resources">
+          <h4 className="footer-col-title">Resources</h4>
+          <ul className="footer-link-list">
+            <li>
+              <Link href="/blog">Blog</Link>
+            </li>
+          </ul>
+        </nav>
+
         <nav className="footer-col" aria-label="Social links">
           <h4 className="footer-col-title">Socials</h4>
           <ul className="footer-link-list">

@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useEffect } from "react";
 import MarketingFooter from "./MarketingFooter";
 
-export default function LegalPageShell({ title, lastUpdated, children }) {
+export default function BlogPageShell({
+  title,
+  eyebrow = "Blog",
+  meta,
+  backHref = "/blog",
+  backLabel = "← All articles",
+  children,
+}) {
   useEffect(() => {
     const nav = document.getElementById("nav");
     const onScroll = () =>
@@ -15,7 +22,7 @@ export default function LegalPageShell({ title, lastUpdated, children }) {
   }, []);
 
   return (
-    <div className="eatsdesk-landing legal-doc-page">
+    <div className="eatsdesk-landing blog-page">
       <nav id="nav">
         <div className="nav-inner">
           <Link href="/" className="nav-logo">
@@ -36,19 +43,10 @@ export default function LegalPageShell({ title, lastUpdated, children }) {
               <Link href="/#pricing">Pricing</Link>
             </li>
             <li>
-              <Link href="/#how">How it works</Link>
-            </li>
-            <li>
-              <Link href="/#testimonials">Reviews</Link>
-            </li>
-            <li>
-              <Link href="/#compare">Compare</Link>
+              <Link href="/blog">Blog</Link>
             </li>
             <li>
               <Link href="/#faq">FAQ</Link>
-            </li>
-            <li>
-              <Link href="/blog">Blog</Link>
             </li>
           </ul>
           <div className="nav-cta">
@@ -63,30 +61,31 @@ export default function LegalPageShell({ title, lastUpdated, children }) {
         </div>
       </nav>
 
-      <section className="legal-doc-hero">
-        <div className="legal-doc-hero-inner">
-          <Link href="/" className="legal-doc-back">
-            ← Back to home
+      <section className="blog-hero">
+        <div className="blog-hero-inner">
+          <Link href={backHref} className="blog-back">
+            {backLabel}
           </Link>
+          <p className="blog-eyebrow">{eyebrow}</p>
           <h1>{title}</h1>
-          <p className="legal-doc-updated">Last updated: {lastUpdated}</p>
+          {meta ? <div className="blog-meta">{meta}</div> : null}
         </div>
       </section>
 
-      <div className="legal-doc-body">
-        <div className="legal-doc-inner">{children}</div>
+      <div className="blog-body">
+        <div className="blog-inner">{children}</div>
       </div>
 
       <section className="cta-section">
         <div className="section-inner">
           <h2 className="cta-title">
-            Your restaurant deserves
+            Ready to run your restaurant
             <br />
-            better than paper.
+            on one screen?
           </h2>
           <p className="cta-sub">
-            30 days free. We set everything up. You start taking orders the
-            same day.
+            30 days free. POS, kitchen, riders, inventory, and your website —
+            no credit card required.
           </p>
           <Link href="/signup" className="btn btn-white">
             Start free — 30 days →

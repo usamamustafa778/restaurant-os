@@ -314,6 +314,10 @@ export default function MenuItemsPage() {
   }
   const categories = data?.categories || [];
   const items = data?.items || [];
+  const upsellExcludedItems = useMemo(
+    () => items.filter((item) => item.excludeFromUpsell === true),
+    [items],
+  );
   const inventoryItems = data?.inventoryItems || [];
   // When a branch is selected, only show ingredients that have a BranchInventory record
   const branchFilteredInventoryItems = inventoryItems.filter(item => item.hasBranchRecord !== false);
@@ -333,6 +337,7 @@ export default function MenuItemsPage() {
     availableAtAllBranches: true,
     isTrending: false,
     isMustTry: false,
+    excludeFromUpsell: false,
     hasModifiers: false,
     modifierGroups: [],
     attachedModifierGroupIds: [],
@@ -589,6 +594,7 @@ export default function MenuItemsPage() {
       availableAtAllBranches: true,
       isTrending: false,
       isMustTry: false,
+      excludeFromUpsell: false,
       hasModifiers: false,
       modifierGroups: [],
       attachedModifierGroupIds: [],
@@ -615,6 +621,7 @@ export default function MenuItemsPage() {
       availableAtAllBranches: item.availableAtAllBranches ?? true,
       isTrending: item.isTrending ?? false,
       isMustTry: item.isMustTry ?? false,
+      excludeFromUpsell: item.excludeFromUpsell === true,
       hasModifiers: item.hasModifiers || false,
       modifierGroups: item.modifierGroups || [],
       attachedModifierGroupIds: (item.attachedModifierGroups || []).map((g) =>
@@ -625,6 +632,20 @@ export default function MenuItemsPage() {
     setUploadError("");
     setModalError("");
     setIsModalOpen(true);
+  }
+
+  async function handleReincludeInUpsell(item) {
+    if (!item?.id) return;
+    try {
+      const updated = await updateItem(item.id, { excludeFromUpsell: false });
+      setData((prev) => ({
+        ...prev,
+        items: prev.items.map((i) => (i.id === updated.id ? updated : i)),
+      }));
+      toast.success(`"${item.name}" can appear in cart suggestions again`);
+    } catch (err) {
+      toast.error(err?.message || "Could not update item");
+    }
   }
 
   async function handleSubmit(e) {
@@ -709,6 +730,7 @@ export default function MenuItemsPage() {
             availableAtAllBranches: form.availableAtAllBranches,
             isTrending: form.isTrending,
             isMustTry: form.isMustTry,
+            excludeFromUpsell: form.excludeFromUpsell === true,
             ...modifierPayload,
           });
           setData(prev => ({
@@ -727,6 +749,7 @@ export default function MenuItemsPage() {
             availableAtAllBranches: form.availableAtAllBranches,
             isTrending: form.isTrending,
             isMustTry: form.isMustTry,
+            excludeFromUpsell: form.excludeFromUpsell === true,
             ...(currentBranch?.id && { branchId: currentBranch.id }),
             ...modifierPayload,
           });
@@ -1885,6 +1908,39 @@ export default function MenuItemsPage() {
       ) : (
         <div className="w-full min-w-0 overflow-x-hidden">
 
+          {upsellExcludedItems.length > 0 && (
+            <div className="menu-items-no-print mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-500/25 dark:bg-amber-500/10">
+              <div className="mb-2 flex items-center gap-2">
+                <ShoppingBag className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  Hidden from cart upsell suggestions
+                </h3>
+              </div>
+              <p className="mb-3 text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-200/80">
+                These items still appear on your menu and can be ordered normally — they are only excluded from the &quot;Complete your meal&quot; row on your website.
+              </p>
+              <ul className="space-y-2">
+                {upsellExcludedItems.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-white/80 px-3 py-2 dark:border-amber-500/20 dark:bg-neutral-950/60"
+                  >
+                    <span className="min-w-0 truncate text-xs font-medium text-gray-900 dark:text-neutral-100">
+                      {item.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleReincludeInUpsell(item)}
+                      className="shrink-0 text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      Suggest again
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Grid View - 2 cards on mobile, no horizontal scroll */}
           {viewMode === "grid" && (
             <div className="w-full min-w-0 overflow-x-hidden grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -2575,6 +2631,38 @@ export default function MenuItemsPage() {
                   <Star className="w-3.5 h-3.5 text-blue-500" />
                   <span className="text-xs text-gray-700 dark:text-neutral-300">Must Try</span>
                 </label>
+              </div>
+              <div className="border-t border-gray-100 dark:border-neutral-800 pt-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <span className="text-[11px] font-medium text-gray-700 dark:text-neutral-300">
+                      Suggest as an add-on in customer cart
+                    </span>
+                    <p className="mt-0.5 text-[10px] leading-relaxed text-gray-400 dark:text-neutral-500">
+                      When on, this item may appear in the &quot;Complete your meal&quot; suggestions on your website.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        excludeFromUpsell: !prev.excludeFromUpsell,
+                      }))
+                    }
+                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                      !form.excludeFromUpsell ? "bg-primary" : "bg-gray-200 dark:bg-neutral-700"
+                    }`}
+                    aria-pressed={!form.excludeFromUpsell}
+                    aria-label="Suggest as an add-on in customer cart"
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                        !form.excludeFromUpsell ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Image (optional)</label>
