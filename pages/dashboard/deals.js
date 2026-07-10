@@ -41,11 +41,18 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
+  buildModifierSelectionsFromPicks,
   comboItemToComponent,
   componentToComboItem,
   componentsRegularTotal,
+  findMatchingFixedComponentIndex,
   formatComboItemSummary,
+  formatFixedComponentLabel,
   getComboItemType,
+  getFixedComponentQtyForVariation,
+  getRequiredVariationGroups,
+  itemHasRequiredVariations,
+  modifierSelectionsFingerprint,
   validateComponents,
 } from "../../lib/dealComboItems";
 
@@ -139,6 +146,7 @@ export default function DealsPage() {
   const [branchImportSelectedIds, setBranchImportSelectedIds] = useState([]);
   const [branchImportSubmitting, setBranchImportSubmitting] = useState(false);
   const [editingChoiceIndex, setEditingChoiceIndex] = useState(null);
+  const [variationDraft, setVariationDraft] = useState(null);
   const fileInputRef = useRef(null);
   const exportMenuRef = useRef(null);
   const importMenuRef = useRef(null);
@@ -217,11 +225,6 @@ export default function DealsPage() {
     });
 
   const menuItemById = new Map(menuItems.map((m) => [String(m.id), m]));
-  const fixedComponentsMap = new Map(
-    form.components
-      .filter((c) => c.type !== "choice")
-      .map((c) => [String(c.menuItemId), c]),
-  );
   const choiceOptionIds = new Set(
     editingChoiceIndex != null && form.components[editingChoiceIndex]?.type === "choice"
       ? (form.components[editingChoiceIndex].optionIds || []).map(String)
@@ -265,6 +268,7 @@ export default function DealsPage() {
     setImageTab("link");
     setUploadError("");
     setItemSearch("");
+    setVariationDraft(null);
     setCollapsedCategories(
       Object.fromEntries(
         Object.keys(
@@ -281,6 +285,7 @@ export default function DealsPage() {
       )
     );
     setEditingChoiceIndex(null);
+    setVariationDraft(null);
     setShowImageFields(false);
     setIsModalOpen(true);
   }
@@ -319,6 +324,7 @@ export default function DealsPage() {
     );
     setShowImageFields(Boolean(deal.imageUrl));
     setEditingChoiceIndex(null);
+    setVariationDraft(null);
     setIsModalOpen(true);
   }
 
@@ -361,32 +367,87 @@ export default function DealsPage() {
     }));
   }
 
-  function toggleFixedComponent(menuItemId) {
+  function addFixedComponent(menuItemId, modifierSelections = []) {
     setEditingChoiceIndex(null);
     setForm((prev) => {
-      const idx = prev.components.findIndex(
-        (c) => c.type !== "choice" && String(c.menuItemId) === String(menuItemId),
-      );
+      const idx = findMatchingFixedComponentIndex(prev.components, menuItemId, modifierSelections);
+      if (idx >= 0) {
+        return {
+          ...prev,
+          components: prev.components.map((c, i) =>
+            i === idx ? { ...c, quantity: (Number(c.quantity) || 1) + 1 } : c,
+          ),
+        };
+      }
+      return {
+        ...prev,
+        components: [
+          ...prev.components,
+          {
+            type: "fixed",
+            menuItemId,
+            quantity: 1,
+            modifierSelections: modifierSelections || [],
+          },
+        ],
+      };
+    });
+  }
+
+  function toggleFixedComponent(menuItemId) {
+    const item = menuItemById.get(String(menuItemId));
+    if (itemHasRequiredVariations(item)) {
+      setVariationDraft({ menuItemId: String(menuItemId), picks: {} });
+      setEditingChoiceIndex(null);
+      return;
+    }
+    setVariationDraft(null);
+    setEditingChoiceIndex(null);
+    setForm((prev) => {
+      const idx = findMatchingFixedComponentIndex(prev.components, menuItemId, []);
       if (idx >= 0) {
         return { ...prev, components: prev.components.filter((_, i) => i !== idx) };
       }
       return {
         ...prev,
-        components: [...prev.components, { type: "fixed", menuItemId, quantity: 1 }],
+        components: [...prev.components, { type: "fixed", menuItemId, quantity: 1, modifierSelections: [] }],
       };
     });
   }
 
-  function setFixedComponentQuantity(menuItemId, qty) {
+  function addFixedComponentFromDraft() {
+    if (!variationDraft?.menuItemId) return;
+    const item = menuItemById.get(String(variationDraft.menuItemId));
+    if (!item) return;
+    const modifierSelections = buildModifierSelectionsFromPicks(item, variationDraft.picks || {});
+    const requiredGroups = getRequiredVariationGroups(item);
+    if (requiredGroups.length && modifierSelections.length < requiredGroups.length) {
+      toast.error("Select a size/variation for each required group");
+      return;
+    }
+    addFixedComponent(variationDraft.menuItemId, modifierSelections);
+    setVariationDraft(null);
+  }
+
+  function setFixedComponentQuantityAt(index, qty) {
     const q = Math.max(1, Number(qty) || 1);
-    setForm((prev) => ({
-      ...prev,
-      components: prev.components.map((c) =>
-        c.type !== "choice" && String(c.menuItemId) === String(menuItemId)
-          ? { ...c, quantity: q }
-          : c,
-      ),
-    }));
+    updateComponent(index, { quantity: q });
+  }
+
+  function decrementFixedComponentAt(index) {
+    setForm((prev) => {
+      const comp = prev.components[index];
+      if (!comp || comp.type === "choice") return prev;
+      if ((Number(comp.quantity) || 1) <= 1) {
+        return { ...prev, components: prev.components.filter((_, i) => i !== index) };
+      }
+      return {
+        ...prev,
+        components: prev.components.map((c, i) =>
+          i === index ? { ...c, quantity: (Number(c.quantity) || 1) - 1 } : c,
+        ),
+      };
+    });
   }
 
   function toggleChoiceOption(menuItemId) {
@@ -432,7 +493,7 @@ export default function DealsPage() {
       toast.error("Deal price is required");
       return;
     }
-    const componentError = validateComponents(form.components);
+    const componentError = validateComponents(form.components, menuItemById);
     if (componentError) {
       setModalError(componentError);
       toast.error(componentError);
@@ -451,6 +512,7 @@ export default function DealsPage() {
       startDate: new Date(form.startDate || new Date()).toISOString(),
       endDate: ensureEndDateISO(form.startDate || new Date(), form.endDate),
       showOnPOS: form.showOnPOS,
+      showOnWebsite: true,
       branches: currentBranch?.id ? [currentBranch.id] : [],
       imageUrl: form.imageUrl.trim() || undefined,
     };
@@ -509,7 +571,19 @@ export default function DealsPage() {
   }
 
   function getDealStatus(deal) {
-    return deal.isActive && deal.endDate && new Date(deal.endDate) >= new Date();
+    const now = new Date();
+    if (!deal.isActive) return false;
+    if (deal.startDate && new Date(deal.startDate) > now) return false;
+    if (deal.endDate && new Date(deal.endDate) < now) return false;
+    return true;
+  }
+
+  function getDealStatusLabel(deal) {
+    const now = new Date();
+    if (!deal.isActive) return "Inactive";
+    if (deal.startDate && new Date(deal.startDate) > now) return "Scheduled";
+    if (deal.endDate && new Date(deal.endDate) < now) return "Expired";
+    return "Active";
   }
 
   function exportCSV() {
@@ -1199,6 +1273,7 @@ export default function DealsPage() {
               {filtered.map((deal) => {
                 const id = deal._id || deal.id;
                 const isActive = getDealStatus(deal);
+                const statusLabel = getDealStatusLabel(deal);
                 const isDeleting = deletingId === id;
                 const comboItems = deal.comboItems || [];
                 const endDate = deal.endDate ? new Date(deal.endDate) : null;
@@ -1226,12 +1301,14 @@ export default function DealsPage() {
                       {/* Status badge */}
                       <div className="absolute top-2.5 left-2.5">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-sm ${
-                          isActive
+                          statusLabel === "Active"
                             ? "bg-emerald-500/90 text-white"
-                            : "bg-gray-500/80 text-white"
+                            : statusLabel === "Scheduled"
+                              ? "bg-amber-500/90 text-white"
+                              : "bg-gray-500/80 text-white"
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-white" : "bg-white/70"}`} />
-                          {isActive ? "Active" : "Inactive"}
+                          {statusLabel}
                         </span>
                       </div>
                       {/* Action buttons */}
@@ -1374,14 +1451,17 @@ export default function DealsPage() {
                   header: "Status",
                   hideOnTablet: true,
                   render: (_, row) => {
+                    const statusLabel = getDealStatusLabel(row);
                     const isActive = getDealStatus(row);
                     return (
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        isActive
+                        statusLabel === "Active"
                           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                          : "bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-neutral-400"
+                          : statusLabel === "Scheduled"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
+                            : "bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-neutral-400"
                       }`}>
-                        {isActive ? "Active" : "Inactive"}
+                        {statusLabel}
                       </span>
                     );
                   },
@@ -1521,8 +1601,13 @@ export default function DealsPage() {
                       />
                     </div>
                     <p className="mt-1.5 text-[11px] text-gray-400 dark:text-neutral-500">
-                      Leave empty for no expiry
+                      Leave end date empty for no expiry. Deals only appear on website and POS during this range.
                     </p>
+                    {form.startDate && new Date(`${form.startDate}T23:59:59`) > new Date() ? (
+                      <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                        Start date is in the future — deal will show as Scheduled until then.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1744,28 +1829,33 @@ export default function DealsPage() {
                             </div>
                           );
                         }
-                        const item = menuItemById.get(String(comp.menuItemId));
                         return (
                           <div
-                            key={`fixed-${comp.menuItemId}-${index}`}
+                            key={`fixed-${index}-${comp.menuItemId}-${modifierSelectionsFingerprint(comp.modifierSelections)}`}
                             className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 dark:border-neutral-700 px-3 py-2.5"
                           >
                             <div className="min-w-0">
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-bold uppercase mr-2">
                                 Fixed
                               </span>
-                              <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 truncate">
-                                {item?.name || "Unknown item"}
+                              <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200">
+                                {formatFixedComponentLabel(comp, menuItemById)}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => decrementFixedComponentAt(index)}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+                                aria-label="Decrease quantity"
+                              >
+                                −
+                              </button>
                               <input
                                 type="number"
                                 min={1}
                                 value={comp.quantity}
-                                onChange={(e) =>
-                                  setFixedComponentQuantity(comp.menuItemId, e.target.value)
-                                }
+                                onChange={(e) => setFixedComponentQuantityAt(index, e.target.value)}
                                 className="w-12 px-1.5 py-1 border border-gray-200 dark:border-neutral-700 rounded-lg text-xs text-center"
                               />
                               <button
@@ -1795,7 +1885,7 @@ export default function DealsPage() {
                   <p className="text-[11px] text-gray-400 dark:text-neutral-500 mb-2">
                     {editingChoiceIndex != null
                       ? "Check menu items the customer can pick from for this slot."
-                      : "Click items to add fixed components to the deal."}
+                      : "Click items to add fixed components. Items with sizes show variation chips."}
                   </p>
                   {form.components.length > 0 && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
@@ -1846,7 +1936,9 @@ export default function DealsPage() {
                         const selectedInCategory = items.filter((item) => {
                           const id = String(item.id);
                           if (editingChoiceIndex != null) return choiceOptionIds.has(id);
-                          return fixedComponentsMap.has(id);
+                          return form.components.some(
+                            (c) => c.type !== "choice" && String(c.menuItemId) === id,
+                          );
                         }).length;
                         return (
                           <div key={categoryName} className="rounded-xl border border-gray-100 dark:border-neutral-800">
@@ -1877,39 +1969,162 @@ export default function DealsPage() {
                                 {items.map((item) => {
                                   const itemId = String(item.id);
                                   const isChoiceMode = editingChoiceIndex != null;
+                                  const hasVariations = itemHasRequiredVariations(item);
+                                  const variationGroups = getRequiredVariationGroups(item);
+                                  const isDraftItem =
+                                    !isChoiceMode && variationDraft?.menuItemId === itemId;
+                                  const plainSelected =
+                                    !isChoiceMode &&
+                                    !hasVariations &&
+                                    form.components.some(
+                                      (c) =>
+                                        c.type !== "choice" &&
+                                        String(c.menuItemId) === itemId &&
+                                        !(c.modifierSelections || []).length,
+                                    );
                                   const selected = isChoiceMode
                                     ? choiceOptionIds.has(itemId)
-                                    : fixedComponentsMap.has(itemId);
-                                  const fixedComp = fixedComponentsMap.get(itemId);
+                                    : plainSelected || isDraftItem;
+
                                   return (
                                     <div
                                       key={item.id}
-                                      onClick={() =>
-                                        isChoiceMode
-                                          ? toggleChoiceOption(item.id)
-                                          : toggleFixedComponent(item.id)
-                                      }
-                                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${selected ? (isChoiceMode ? "bg-secondary/8 dark:bg-secondary/10 border border-secondary/20" : "bg-primary/8 dark:bg-primary/10 border border-primary/20") : "hover:bg-gray-50 dark:hover:bg-neutral-900 border border-transparent"}`}
+                                      className={`rounded-xl border transition-colors ${
+                                        selected
+                                          ? isChoiceMode
+                                            ? "border-secondary/20 bg-secondary/8 dark:bg-secondary/10"
+                                            : "border-primary/20 bg-primary/8 dark:bg-primary/10"
+                                          : "border-transparent"
+                                      }`}
                                     >
-                                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                                        <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-colors ${selected ? (isChoiceMode ? "bg-secondary border-secondary" : "bg-primary border-primary") : "border-gray-300 dark:border-neutral-600"}`}>
-                                          {selected && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <p className={`text-xs font-semibold truncate ${selected ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-neutral-300"}`}>{item.name}</p>
-                                          <p className="text-[10px] text-gray-400 dark:text-neutral-500">{sym} {item.price}</p>
+                                      <div
+                                        onClick={() =>
+                                          isChoiceMode
+                                            ? toggleChoiceOption(item.id)
+                                            : toggleFixedComponent(item.id)
+                                        }
+                                        className={`flex items-center justify-between px-3 py-2.5 cursor-pointer ${
+                                          !selected ? "hover:bg-gray-50 dark:hover:bg-neutral-900" : ""
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                          <div
+                                            className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-colors ${
+                                              selected
+                                                ? isChoiceMode
+                                                  ? "bg-secondary border-secondary"
+                                                  : "bg-primary border-primary"
+                                                : "border-gray-300 dark:border-neutral-600"
+                                            }`}
+                                          >
+                                            {selected && (
+                                              <svg
+                                                className="w-2.5 h-2.5 text-white"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke="currentColor"
+                                                strokeWidth={3}
+                                              >
+                                                <path
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                  d="M5 13l4 4L19 7"
+                                                />
+                                              </svg>
+                                            )}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p
+                                              className={`text-xs font-semibold truncate ${
+                                                selected
+                                                  ? "text-gray-900 dark:text-white"
+                                                  : "text-gray-700 dark:text-neutral-300"
+                                              }`}
+                                            >
+                                              {item.name}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                                              {hasVariations ? "Pick a size/variation below" : `${sym} ${item.price}`}
+                                            </p>
+                                          </div>
                                         </div>
                                       </div>
-                                      {!isChoiceMode && fixedComp && (
-                                        <input
-                                          type="number"
-                                          min={1}
-                                          value={fixedComp.quantity}
-                                          onClick={(e) => e.stopPropagation()}
-                                          onChange={(e) => setFixedComponentQuantity(item.id, e.target.value)}
-                                          className="w-12 px-1.5 py-1 border-2 border-primary/30 rounded-lg text-xs text-center bg-white dark:bg-neutral-900 text-gray-900 dark:text-white outline-none focus:border-primary transition-all ml-2 flex-shrink-0"
-                                        />
-                                      )}
+
+                                      {!isChoiceMode && hasVariations ? (
+                                        <div className="space-y-2 border-t border-gray-100 px-3 pb-3 pt-2 dark:border-neutral-800">
+                                          {variationGroups.map((group) => (
+                                            <div key={group.id}>
+                                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                                                {group.groupName}
+                                              </p>
+                                              <div className="flex flex-wrap gap-1.5">
+                                                {(group.options || [])
+                                                  .filter((o) => o.isAvailable !== false)
+                                                  .map((option) => {
+                                                    const modifierSelections =
+                                                      buildModifierSelectionsFromPicks(item, {
+                                                        ...(isDraftItem ? variationDraft?.picks : {}),
+                                                        [String(group.id)]: String(option.id),
+                                                      });
+                                                    const qty = getFixedComponentQtyForVariation(
+                                                      form.components,
+                                                      itemId,
+                                                      modifierSelections,
+                                                    );
+                                                    const draftSelected =
+                                                      isDraftItem &&
+                                                      String(variationDraft?.picks?.[String(group.id)]) ===
+                                                        String(option.id);
+                                                    const groupsCount = variationGroups.length;
+                                                    const canQuickAdd = groupsCount === 1;
+
+                                                    return (
+                                                      <button
+                                                        key={option.id}
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          if (canQuickAdd) {
+                                                            addFixedComponent(itemId, modifierSelections);
+                                                            return;
+                                                          }
+                                                          setVariationDraft({
+                                                            menuItemId: itemId,
+                                                            picks: {
+                                                              ...(isDraftItem ? variationDraft?.picks : {}),
+                                                              [String(group.id)]: String(option.id),
+                                                            },
+                                                          });
+                                                        }}
+                                                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+                                                          qty > 0 || draftSelected
+                                                            ? "border-primary bg-primary text-white"
+                                                            : "border-gray-200 bg-white text-gray-600 hover:border-primary/40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                                        }`}
+                                                      >
+                                                        {option.name}
+                                                        {Number(option.price) > 0 ? ` +${sym}${option.price}` : ""}
+                                                        {qty > 0 ? ` ×${qty}` : ""}
+                                                      </button>
+                                                    );
+                                                  })}
+                                              </div>
+                                            </div>
+                                          ))}
+                                          {variationGroups.length > 1 && isDraftItem ? (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                addFixedComponentFromDraft();
+                                              }}
+                                              className="mt-1 w-full rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-white hover:brightness-95"
+                                            >
+                                              Add selected variation to deal
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
                                     </div>
                                   );
                                 })}

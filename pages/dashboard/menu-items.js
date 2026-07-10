@@ -2295,96 +2295,342 @@ export default function MenuItemsPage() {
       {/* Item Create/Edit Modal */}
       {isModalOpen && (
         <>
-        <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 shadow-xl p-5 text-xs max-h-[90vh] overflow-y-auto">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-              {form.id ? "Edit menu item" : "New menu item"}
-            </h2>
-            <p className="text-[11px] text-gray-500 dark:text-neutral-400 mb-4">
-              Configure name, price and category for this item.
-            </p>
+        <div className="menu-items-no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-md">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-neutral-800 dark:bg-neutral-950 dark:ring-white/5">
+            {/* Top bar */}
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-3.5 dark:border-neutral-800">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold tracking-tight text-gray-900 dark:text-white">
+                  {form.id ? "Edit item" : "New item"}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => { resetForm(); setIsModalOpen(false); }}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
             {modalError && (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 text-[11px] text-red-700 dark:text-red-400">
-                {modalError}
+              <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{modalError}</span>
               </div>
             )}
-            <form onSubmit={handleSubmit} className="space-y-3" autoComplete="off">
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Name</label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  value={form.name}
-                  onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Chicken burger, Fries..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
-              </div>
-              {/* Price — hidden when hasModifiers is true */}
-              {!form.hasModifiers ? (
-                <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Price</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.price}
-                    onChange={e => setForm(prev => ({ ...prev, price: e.target.value }))}
-                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Starting price</label>
-                  <div className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-500 dark:text-neutral-400">
-                    {(() => {
-                      const rg = form.modifierGroups.filter(g => g.required);
-                      const prices = rg.flatMap(g => (g.options || []).map(o => Number(o.price) || 0));
-                      return prices.length > 0 ? `Starting from Rs ${Math.min(...prices)}` : 'Starting from Rs \u2014';
-                    })()}
-                  </div>
-                </div>
-              )}
 
-              {/* Modifier toggle + builder */}
-              <div className="border-t border-gray-100 dark:border-neutral-800 pt-3 mt-1">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-medium text-gray-700 dark:text-neutral-300">This item has variations or add-ons</span>
-                    {!form.hasModifiers && (
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-0.5">e.g. sizes (Small/Large) or optional toppings</p>
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" autoComplete="off">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                  <div className="min-w-0 flex-1">
+                    {/* Details */}
+                    <section>
+                      <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        Details
+                      </h3>
+                      <div className="space-y-2.5">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Name
+                          </label>
+                          <input
+                            type="text"
+                            autoComplete="off"
+                            value={form.name}
+                            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                            placeholder="e.g. Chicken burger"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {!form.hasModifiers ? (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                                Price ({sym})
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={form.price}
+                                onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
+                                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                                Starting price
+                              </label>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-400">
+                                {(() => {
+                                  const rg = form.modifierGroups.filter((g) => g.required);
+                                  const prices = rg.flatMap((g) => (g.options || []).map((o) => Number(o.price) || 0));
+                                  return prices.length > 0 ? `From ${sym} ${Math.min(...prices)}` : "From —";
+                                })()}
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                              Category
+                            </label>
+                            <AsyncCombobox
+                              placeholder="Search…"
+                              fetchFn={fetchCategoryOptions}
+                              value={form.categoryId || null}
+                              valueObj={selectedCategoryObj}
+                              onChange={(id) => setForm((prev) => ({ ...prev, categoryId: id || "" }))}
+                              displayFn={(opt) => opt.label}
+                              keyFn={(opt) => opt.id}
+                              hasError={Boolean(modalError && !form.categoryId)}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Description
+                            <span className="ml-1 font-normal text-gray-400">(optional)</span>
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={form.description}
+                            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                            placeholder="Shown on menu and website"
+                            className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm text-gray-600 dark:text-neutral-300">
+                            Suggest in &quot;Complete your meal&quot;
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setForm((prev) => ({ ...prev, excludeFromUpsell: !prev.excludeFromUpsell }))}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${
+                              !form.excludeFromUpsell ? "bg-primary" : "bg-gray-200 dark:bg-neutral-700"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 translate-y-0.5 transform rounded-full bg-white shadow transition ${
+                                !form.excludeFromUpsell ? "translate-x-4" : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  {/* Image sidebar */}
+                  <div className="h-fit w-full shrink-0 rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/30 lg:w-44">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                      Photo
+                    </p>
+                    <div className="relative mx-auto aspect-square w-full max-w-[10rem] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-inner dark:border-neutral-700 dark:bg-neutral-900">
+                      {form.imageUrl ? (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={form.imageUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setForm((prev) => ({ ...prev, imageUrl: "" }))}
+                            className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70"
+                            aria-label="Remove image"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-1.5 px-3 text-center">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 dark:bg-neutral-800">
+                            <ShoppingBag className="h-5 w-5 text-gray-300 dark:text-neutral-600" />
+                          </div>
+                          <p className="text-[10px] leading-snug text-gray-400 dark:text-neutral-500">
+                            Add a photo for menu & website
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+                      {[
+                        { id: "link", label: "URL", icon: Link },
+                        { id: "upload", label: "Upload", icon: Upload },
+                      ].map(({ id, label, icon: Icon }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setImageTab(id)}
+                          className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[10px] font-semibold transition-all ${
+                            imageTab === id
+                              ? "bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900"
+                              : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                          }`}
+                        >
+                          <Icon className="h-3 w-3" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {imageTab === "link" ? (
+                      <input
+                        type="url"
+                        value={form.imageUrl}
+                        onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                        placeholder="https://…"
+                        className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                      />
+                    ) : (
+                      <div className="mt-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          disabled={uploading}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-300 bg-white px-2.5 py-2 text-[11px] font-semibold text-gray-700 transition hover:border-primary/40 hover:text-primary disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-300"
+                        >
+                          {uploading ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Uploading…
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-3.5 w-3.5" />
+                              Choose file
+                            </>
+                          )}
+                        </button>
+                      </div>
                     )}
+                    {uploadError ? (
+                      <p className="mt-2 text-[11px] text-red-500">{uploadError}</p>
+                    ) : null}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setForm(prev => ({
-                      ...prev,
-                      hasModifiers: !prev.hasModifiers,
-                      modifierGroups: prev.hasModifiers ? [] : prev.modifierGroups,
-                    }))}
-                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                      form.hasModifiers ? 'bg-primary' : 'bg-gray-200 dark:bg-neutral-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ${
-                        form.hasModifiers ? 'translate-x-4' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
                 </div>
-              </div>
 
-              {/* Choice groups builder */}
-              {form.hasModifiers && (
-                <div className="space-y-2 overflow-visible">
-                  {form.modifierGroups.map((group, gi) => (
-                    <div
-                      key={group.id || gi}
-                      className="overflow-visible rounded-xl border border-gray-200 dark:border-neutral-700"
-                    >
-                      {/* Group header */}
-                      <div className="flex items-center gap-2 rounded-t-xl px-3 py-2 bg-gray-50 dark:bg-neutral-800/60">
+                <div className="space-y-4">
+                    {/* Dietary type */}
+                    <section>
+                      <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        Dietary type
+                      </h3>
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+                        <div className="flex flex-nowrap items-center gap-2">
+                          <div className="flex min-w-0 flex-1 flex-nowrap gap-1.5">
+                            {[
+                              { value: "veg", label: "Veg", dot: "bg-emerald-500" },
+                              { value: "non_veg", label: "Non-veg", dot: "bg-red-500" },
+                              { value: "egg", label: "Egg", dot: "bg-amber-500" },
+                            ].map((opt) => {
+                              const active = form.dietaryType === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => setForm((prev) => ({ ...prev, dietaryType: opt.value }))}
+                                  className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                                    active
+                                      ? "border-primary bg-primary text-white shadow-sm shadow-primary/25"
+                                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  <span className={`h-2 w-2 rounded-full ${active ? "bg-white/90" : opt.dot}`} />
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="h-5 w-px shrink-0 bg-gray-200 dark:bg-neutral-700" aria-hidden="true" />
+                          <div className="flex shrink-0 flex-nowrap gap-1.5">
+                            {[
+                              { key: "isTrending", icon: Flame, label: "Trending", color: "text-orange-500" },
+                              { key: "isMustTry", icon: Star, label: "Must try", color: "text-blue-500" },
+                            ].map(({ key, icon: Icon, label, color }) => {
+                              const active = form[key];
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => setForm((prev) => ({ ...prev, [key]: !prev[key] }))}
+                                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                                    active
+                                      ? "border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900"
+                                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  <Icon className={`h-3 w-3 ${active ? "text-inherit" : color}`} />
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* Customizations */}
+                    <section>
+                      <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        Customizations
+                      </h3>
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-medium text-gray-800 dark:text-neutral-200">
+                              Variations or add-ons
+                            </p>
+                            {!form.hasModifiers && (
+                              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-neutral-400">
+                                Sizes, toppings, or other choices
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setForm(prev => ({
+                              ...prev,
+                              hasModifiers: !prev.hasModifiers,
+                              modifierGroups: prev.hasModifiers ? [] : prev.modifierGroups,
+                            }))}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none ${
+                              form.hasModifiers ? "bg-primary" : "bg-gray-200 dark:bg-neutral-700"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 translate-y-0.5 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                                form.hasModifiers ? "translate-x-4" : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* Choice groups builder */}
+                    {form.hasModifiers && (
+                      <div className="space-y-3 overflow-visible">
+                        {form.modifierGroups.map((group, gi) => (
+                          <div
+                            key={group.id || gi}
+                            className="overflow-visible rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
+                          >
+                            {/* Group header */}
+                            <div className="flex items-center gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-50/80 px-3.5 py-2.5 dark:border-neutral-800 dark:bg-neutral-800/50">
                         <span className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wide w-4 flex-shrink-0">
                           {gi + 1}
                         </span>
@@ -2501,283 +2747,108 @@ export default function MenuItemsPage() {
                       </div>
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    onClick={addGroup}
-                    className="w-full py-2 rounded-xl border border-dashed border-orange-300 dark:border-orange-500/40 text-orange-500 dark:text-orange-400 text-xs font-medium hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-colors"
-                  >
-                    + Add group
-                  </button>
-                </div>
-              )}
-
-              <div className="border-t border-gray-100 dark:border-neutral-800 pt-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-primary shrink-0" />
-                  <div>
-                    <p className="text-[11px] font-semibold text-gray-800 dark:text-neutral-200">
-                      Add-ons &amp; Modifiers
-                    </p>
-                    <p className="text-[10px] text-gray-400 dark:text-neutral-500">
-                      Attach reusable modifier groups from{" "}
-                      <a href="/modifier-groups" className="text-primary hover:underline">
-                        Modifier Groups
-                      </a>
-                    </p>
-                  </div>
-                </div>
-                {availableModifierGroups.length === 0 ? (
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 italic">
-                    No modifier groups yet. Create groups first, then attach them here.
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {availableModifierGroups.map((group) => {
-                      const attached = (form.attachedModifierGroupIds || []).includes(group.id);
-                      return (
                         <button
-                          key={group.id}
                           type="button"
-                          onClick={() =>
-                            setForm((prev) => {
-                              const ids = prev.attachedModifierGroupIds || [];
-                              return {
-                                ...prev,
-                                attachedModifierGroupIds: attached
-                                  ? ids.filter((id) => id !== group.id)
-                                  : [...ids, group.id],
-                              };
-                            })
-                          }
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
-                            attached
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-400 hover:border-primary/40"
-                          }`}
+                          onClick={addGroup}
+                          className="w-full rounded-xl border border-dashed border-primary/30 py-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/5 dark:border-primary/40"
                         >
-                          {attached ? <Check className="w-3 h-3" /> : null}
-                          {group.name}
-                          {group.required ? (
-                            <span className="text-[9px] uppercase opacity-70">req</span>
-                          ) : null}
+                          + Add group
                         </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {(form.attachedModifierGroupIds || []).length > 0 ? (
-                  <p className="text-[10px] text-gray-500 dark:text-neutral-400">
-                    {form.attachedModifierGroupIds.length} group
-                    {form.attachedModifierGroupIds.length === 1 ? "" : "s"} attached
-                  </p>
-                ) : null}
-              </div>
+                      </div>
+                    )}
 
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Category</label>
-                <AsyncCombobox
-                  placeholder="Search category…"
-                  fetchFn={fetchCategoryOptions}
-                  value={form.categoryId || null}
-                  valueObj={selectedCategoryObj}
-                  onChange={(id) =>
-                    setForm((prev) => ({ ...prev, categoryId: id || "" }))
-                  }
-                  displayFn={(opt) => opt.label}
-                  keyFn={(opt) => opt.id}
-                  hasError={Boolean(modalError && !form.categoryId)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Dietary type</label>
-                <div className="flex gap-4">
-                  {[
-                    { value: "veg", label: "Veg" },
-                    { value: "non_veg", label: "Non-veg" },
-                    { value: "egg", label: "Egg" },
-                  ].map((opt) => (
-                    <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="dietaryType"
-                        value={opt.value}
-                        checked={form.dietaryType === opt.value}
-                        onChange={() => setForm(prev => ({ ...prev, dietaryType: opt.value }))}
-                        className="w-3.5 h-3.5 rounded-full border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <span className="text-xs text-gray-700 dark:text-neutral-300">{opt.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.isTrending}
-                    onChange={e => setForm(prev => ({ ...prev, isTrending: e.target.checked }))}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <Flame className="w-3.5 h-3.5 text-red-500" />
-                  <span className="text-xs text-gray-700 dark:text-neutral-300">Trending</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.isMustTry}
-                    onChange={e => setForm(prev => ({ ...prev, isMustTry: e.target.checked }))}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <Star className="w-3.5 h-3.5 text-blue-500" />
-                  <span className="text-xs text-gray-700 dark:text-neutral-300">Must Try</span>
-                </label>
-              </div>
-              <div className="border-t border-gray-100 dark:border-neutral-800 pt-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <span className="text-[11px] font-medium text-gray-700 dark:text-neutral-300">
-                      Suggest as an add-on in customer cart
-                    </span>
-                    <p className="mt-0.5 text-[10px] leading-relaxed text-gray-400 dark:text-neutral-500">
-                      When on, this item may appear in the &quot;Complete your meal&quot; suggestions on your website.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        excludeFromUpsell: !prev.excludeFromUpsell,
-                      }))
-                    }
-                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                      !form.excludeFromUpsell ? "bg-primary" : "bg-gray-200 dark:bg-neutral-700"
-                    }`}
-                    aria-pressed={!form.excludeFromUpsell}
-                    aria-label="Suggest as an add-on in customer cart"
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ${
-                        !form.excludeFromUpsell ? "translate-x-4" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Image (optional)</label>
-                <div className="flex rounded-lg border border-gray-300 dark:border-neutral-700 overflow-hidden w-fit">
-                  <button
-                    type="button"
-                    onClick={() => setImageTab("link")}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                      imageTab === "link"
-                        ? "bg-primary text-white"
-                        : "bg-bg-secondary dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-bg-primary dark:hover:bg-neutral-800"
-                    }`}
-                  >
-                    <Link className="w-3 h-3" />
-                    Paste URL
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setImageTab("upload")}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium border-l border-gray-300 dark:border-neutral-700 transition-colors ${
-                      imageTab === "upload"
-                        ? "bg-primary text-white"
-                        : "bg-bg-secondary dark:bg-neutral-900 text-gray-700 dark:text-neutral-300 hover:bg-bg-primary dark:hover:bg-neutral-800"
-                    }`}
-                  >
-                    <Upload className="w-3 h-3" />
-                    Upload from PC
-                  </button>
-                </div>
-
-                {imageTab === "link" && (
-                  <input
-                    type="text"
-                    value={form.imageUrl}
-                    onChange={e => setForm(prev => ({ ...prev, imageUrl: e.target.value }))}
-                    placeholder="https://example.com/image.jpg"
-                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                  />
-                )}
-
-                {imageTab === "upload" && (
-                  <div className="space-y-2">
-                    <label
-                      className={`flex flex-col items-center justify-center w-full h-28 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
-                        uploading
-                          ? "border-primary/40 bg-primary/5"
-                          : "border-gray-300 dark:border-neutral-700 bg-bg-primary dark:bg-neutral-900 hover:bg-bg-primary dark:hover:bg-neutral-800 hover:border-primary/60"
-                      }`}
-                    >
-                      {uploading ? (
-                        <div className="flex flex-col items-center gap-1">
-                          <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                          <span className="text-[11px] text-primary font-medium">Uploading...</span>
+                    <section>
+                      <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        Shared groups
+                      </h3>
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+                        <div className="mb-2 flex items-center gap-2">
+                          <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          <div>
+                            <p className="text-xs font-medium text-gray-800 dark:text-neutral-200">
+                              Reusable modifier groups
+                            </p>
+                            <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                              From{" "}
+                              <a href="/modifier-groups" className="font-medium text-primary hover:underline">
+                                Modifier Groups
+                              </a>
+                            </p>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="flex flex-col items-center gap-1">
-                          <Upload className="w-5 h-5 text-gray-400 dark:text-neutral-500" />
-                          <span className="text-[11px] text-gray-500 dark:text-neutral-400">Click to browse or drag & drop</span>
-                          <span className="text-[10px] text-gray-400 dark:text-neutral-500">JPG, PNG, WEBP up to 5 MB</span>
-                        </div>
-                      )}
-                      <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={uploading} />
-                    </label>
-                    {uploadError && <p className="text-[11px] text-red-600">{uploadError}</p>}
-                  </div>
-                )}
+                        {availableModifierGroups.length === 0 ? (
+                          <p className="text-xs italic text-gray-400 dark:text-neutral-500">
+                            No modifier groups yet. Create groups first, then attach them here.
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {availableModifierGroups.map((group) => {
+                              const attached = (form.attachedModifierGroupIds || []).includes(group.id);
+                              return (
+                                <button
+                                  key={group.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setForm((prev) => {
+                                      const ids = prev.attachedModifierGroupIds || [];
+                                      return {
+                                        ...prev,
+                                        attachedModifierGroupIds: attached
+                                          ? ids.filter((id) => id !== group.id)
+                                          : [...ids, group.id],
+                                      };
+                                    })
+                                  }
+                                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                                    attached
+                                      ? "border-primary bg-primary text-white shadow-sm shadow-primary/20"
+                                      : "border-gray-200 bg-white text-gray-600 hover:border-primary/40 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                                  }`}
+                                >
+                                  {attached ? <Check className="h-3 w-3" /> : null}
+                                  {group.name}
+                                  {group.required ? (
+                                    <span className="text-[9px] uppercase opacity-70">req</span>
+                                  ) : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {(form.attachedModifierGroupIds || []).length > 0 ? (
+                          <p className="mt-2 text-[11px] text-gray-500 dark:text-neutral-400">
+                            {form.attachedModifierGroupIds.length} group
+                            {form.attachedModifierGroupIds.length === 1 ? "" : "s"} attached
+                          </p>
+                        ) : null}
+                      </div>
+                    </section>
+                </div>
+              </div>
 
-                {form.imageUrl && (
-                  <div className="relative w-fit">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={form.imageUrl} alt="Preview" className="h-20 w-20 rounded-lg object-cover border border-gray-300 dark:border-neutral-700" />
-                    <button
-                      type="button"
-                      onClick={() => setForm(prev => ({ ...prev, imageUrl: "" }))}
-                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-1">
-                <label className="text-gray-700 dark:text-neutral-300 text-[11px] font-medium">Description (optional)</label>
-                <textarea
-                  rows={2}
-                  value={form.description}
-                  onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-shadow"
-                />
-              </div>
-              
-              {/* Available at All Branches Toggle */}
-              {/* Branch-wide vs location-specific toggle removed to keep each branch managing its own menu */}              
-              <div className="flex justify-end gap-2 pt-2">
-                <Button 
-                  type="button" 
-                  variant="ghost" 
+              <div className="flex shrink-0 items-center justify-end gap-2 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => { resetForm(); setIsModalOpen(false); }}
                   disabled={isLoading}
+                  className="h-8 rounded-lg px-3 text-xs"
                 >
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
-                  className="gap-1.5"
+                <Button
+                  type="submit"
                   disabled={isLoading}
+                  className="h-8 gap-1 rounded-lg bg-gradient-to-r from-primary to-secondary px-4 text-xs shadow-md shadow-primary/20 hover:shadow-primary/30"
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      {form.id ? "Saving..." : "Creating..."}
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {form.id ? "Saving…" : "Creating…"}
                     </>
                   ) : (
                     <>
-                      <Plus className="w-3 h-3" />
+                      <Plus className="h-3.5 w-3.5" />
                       {form.id ? "Save changes" : "Create item"}
                     </>
                   )}

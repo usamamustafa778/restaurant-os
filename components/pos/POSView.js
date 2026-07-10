@@ -1521,10 +1521,13 @@ export default function POSView({
     try {
       const branchId = currentBranch?.id;
       const allDeals = await getDeals(false);
+      const now = new Date();
       const deals = Array.isArray(allDeals)
         ? allDeals.filter((d) => {
             if (!d.isActive) return false;
-            if (d.endDate && new Date(d.endDate) < new Date()) return false;
+            if (d.showOnPOS === false) return false;
+            if (d.startDate && new Date(d.startDate) > now) return false;
+            if (d.endDate && new Date(d.endDate) < now) return false;
             // If deal has branch restrictions, only show for matching branch
             if (branchId && d.branches?.length > 0) {
               return d.branches.some(
