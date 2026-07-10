@@ -1432,7 +1432,7 @@ export default function DealsPage() {
       {/* Deal Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-neutral-800">
+          <div className="bg-white dark:bg-neutral-950 rounded-sm shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-neutral-800">
 
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between flex-shrink-0">
