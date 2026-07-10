@@ -40,6 +40,14 @@ import {
   Building2,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import {
+  comboItemToComponent,
+  componentToComboItem,
+  componentsRegularTotal,
+  formatComboItemSummary,
+  getComboItemType,
+  validateComponents,
+} from "../../lib/dealComboItems";
 
 function parseCSVLine(line) {
   const out = [];
@@ -82,7 +90,7 @@ function getEmptyForm() {
     id: null,
     name: "",
     description: "",
-    selectedItems: [],
+    components: [],
     comboPrice: "",
     startDate: today,
     endDate: "",
@@ -130,6 +138,7 @@ export default function DealsPage() {
   const [branchImportSourceLoading, setBranchImportSourceLoading] = useState(false);
   const [branchImportSelectedIds, setBranchImportSelectedIds] = useState([]);
   const [branchImportSubmitting, setBranchImportSubmitting] = useState(false);
+  const [editingChoiceIndex, setEditingChoiceIndex] = useState(null);
   const fileInputRef = useRef(null);
   const exportMenuRef = useRef(null);
   const importMenuRef = useRef(null);
@@ -208,21 +217,19 @@ export default function DealsPage() {
     });
 
   const menuItemById = new Map(menuItems.map((m) => [String(m.id), m]));
-  const selectedItemsMap = new Map(form.selectedItems.map((s) => [String(s.menuItemId), s]));
-  const selectedItemPills = form.selectedItems
-    .map((s) => {
-      const item = menuItemById.get(String(s.menuItemId));
-      if (!item) return null;
-      return { id: String(s.menuItemId), name: item.name };
-    })
-    .filter(Boolean);
-  const selectedItemsTotal = form.selectedItems.reduce((sum, selected) => {
-    const item = menuItemById.get(String(selected.menuItemId));
-    const price = Number(item?.price) || 0;
-    return sum + price * (Number(selected.quantity) || 1);
-  }, 0);
+  const fixedComponentsMap = new Map(
+    form.components
+      .filter((c) => c.type !== "choice")
+      .map((c) => [String(c.menuItemId), c]),
+  );
+  const choiceOptionIds = new Set(
+    editingChoiceIndex != null && form.components[editingChoiceIndex]?.type === "choice"
+      ? (form.components[editingChoiceIndex].optionIds || []).map(String)
+      : [],
+  );
+  const componentsRegularTotalValue = componentsRegularTotal(form.components, menuItemById);
   const comboPriceNum = Number(form.comboPrice) || 0;
-  const savingsAmount = Math.max(0, selectedItemsTotal - comboPriceNum);
+  const savingsAmount = Math.max(0, componentsRegularTotalValue - comboPriceNum);
 
   const normalizedItemSearch = itemSearch.trim().toLowerCase();
   const categoryNameById = new Map(
@@ -273,6 +280,7 @@ export default function DealsPage() {
         ).map((name) => [name, true])
       )
     );
+    setEditingChoiceIndex(null);
     setShowImageFields(false);
     setIsModalOpen(true);
   }
@@ -283,10 +291,7 @@ export default function DealsPage() {
       id,
       name: deal.name || "",
       description: deal.description || "",
-      selectedItems: (deal.comboItems || []).map((ci) => ({
-        menuItemId: ci.menuItem?._id || ci.menuItem,
-        quantity: ci.quantity || 1,
-      })),
+      components: (deal.comboItems || []).map(comboItemToComponent),
       comboPrice: deal.comboPrice != null ? String(deal.comboPrice) : "",
       startDate: deal.startDate ? deal.startDate.slice(0, 10) : "",
       endDate: deal.endDate ? deal.endDate.slice(0, 10) : "",
@@ -313,27 +318,91 @@ export default function DealsPage() {
       )
     );
     setShowImageFields(Boolean(deal.imageUrl));
+    setEditingChoiceIndex(null);
     setIsModalOpen(true);
   }
 
-  function toggleItemSelection(menuItemId) {
-    setForm((prev) => {
-      const existing = prev.selectedItems.find((i) => i.menuItemId === menuItemId);
-      if (existing) {
-        return { ...prev, selectedItems: prev.selectedItems.filter((i) => i.menuItemId !== menuItemId) };
-      }
-      return { ...prev, selectedItems: [...prev.selectedItems, { menuItemId, quantity: 1 }] };
+  function addChoiceSlot() {
+    const newIndex = form.components.length;
+    setForm((prev) => ({
+      ...prev,
+      components: [
+        ...prev.components,
+        {
+          type: "choice",
+          label: "",
+          quantity: 1,
+          optionIds: [],
+          minSelect: 1,
+          maxSelect: 1,
+        },
+      ],
+    }));
+    setEditingChoiceIndex(newIndex);
+  }
+
+  function removeComponent(index) {
+    setForm((prev) => ({
+      ...prev,
+      components: prev.components.filter((_, i) => i !== index),
+    }));
+    setEditingChoiceIndex((prev) => {
+      if (prev == null) return null;
+      if (prev === index) return null;
+      if (prev > index) return prev - 1;
+      return prev;
     });
   }
 
-  function setItemQuantity(menuItemId, qty) {
+  function updateComponent(index, patch) {
+    setForm((prev) => ({
+      ...prev,
+      components: prev.components.map((comp, i) => (i === index ? { ...comp, ...patch } : comp)),
+    }));
+  }
+
+  function toggleFixedComponent(menuItemId) {
+    setEditingChoiceIndex(null);
+    setForm((prev) => {
+      const idx = prev.components.findIndex(
+        (c) => c.type !== "choice" && String(c.menuItemId) === String(menuItemId),
+      );
+      if (idx >= 0) {
+        return { ...prev, components: prev.components.filter((_, i) => i !== idx) };
+      }
+      return {
+        ...prev,
+        components: [...prev.components, { type: "fixed", menuItemId, quantity: 1 }],
+      };
+    });
+  }
+
+  function setFixedComponentQuantity(menuItemId, qty) {
     const q = Math.max(1, Number(qty) || 1);
     setForm((prev) => ({
       ...prev,
-      selectedItems: prev.selectedItems.map((i) =>
-        i.menuItemId === menuItemId ? { ...i, quantity: q } : i,
+      components: prev.components.map((c) =>
+        c.type !== "choice" && String(c.menuItemId) === String(menuItemId)
+          ? { ...c, quantity: q }
+          : c,
       ),
     }));
+  }
+
+  function toggleChoiceOption(menuItemId) {
+    if (editingChoiceIndex == null) return;
+    const id = String(menuItemId);
+    setForm((prev) => {
+      const components = [...prev.components];
+      const comp = { ...components[editingChoiceIndex] };
+      const ids = [...(comp.optionIds || []).map(String)];
+      const idx = ids.indexOf(id);
+      if (idx >= 0) ids.splice(idx, 1);
+      else ids.push(id);
+      comp.optionIds = ids;
+      components[editingChoiceIndex] = comp;
+      return { ...prev, components };
+    });
   }
 
   async function handleFileUpload(e) {
@@ -363,9 +432,10 @@ export default function DealsPage() {
       toast.error("Deal price is required");
       return;
     }
-    if (form.selectedItems.length === 0) {
-      setModalError("Please select at least one item");
-      toast.error("Please select at least one item");
+    const componentError = validateComponents(form.components);
+    if (componentError) {
+      setModalError(componentError);
+      toast.error(componentError);
       return;
     }
 
@@ -376,10 +446,7 @@ export default function DealsPage() {
       name: form.name.trim(),
       description: form.description.trim(),
       dealType: "COMBO",
-      comboItems: form.selectedItems.map((s) => ({
-        menuItem: s.menuItemId,
-        quantity: s.quantity,
-      })),
+      comboItems: form.components.map(componentToComboItem),
       comboPrice: Number(form.comboPrice),
       startDate: new Date(form.startDate || new Date()).toISOString(),
       endDate: ensureEndDateISO(form.startDate || new Date(), form.endDate),
@@ -692,7 +759,7 @@ export default function DealsPage() {
           unknown.push(name);
           continue;
         }
-        comboItems.push({ menuItem: menuItem.id, quantity: qty });
+        comboItems.push({ type: "fixed", menuItem: menuItem.id, quantity: qty });
       }
       return { comboItems, unknown };
     };
@@ -859,10 +926,29 @@ export default function DealsPage() {
 
         const comboItems = (deal.comboItems || [])
           .map((ci) => {
+            const type = getComboItemType(ci);
+            if (type === "choice") {
+              const mappedOptions = (ci.options || [])
+                .map((o) => String(o?._id || o?.id || o || ""))
+                .filter((id) => menuItemIds.has(id));
+              if (!mappedOptions.length) return null;
+              return {
+                type: "choice",
+                label: ci.label || "",
+                quantity: Math.max(1, Number(ci.quantity) || 1),
+                options: mappedOptions,
+                minSelect: ci.minSelect ?? 1,
+                maxSelect: ci.maxSelect ?? 1,
+              };
+            }
             const rawId = ci.menuItem?._id || ci.menuItem?.id || ci.menuItem;
             const menuItemId = String(rawId || "");
             if (!menuItemIds.has(menuItemId)) return null;
-            return { menuItem: menuItemId, quantity: Math.max(1, Number(ci.quantity) || 1) };
+            return {
+              type: "fixed",
+              menuItem: menuItemId,
+              quantity: Math.max(1, Number(ci.quantity) || 1),
+            };
           })
           .filter(Boolean);
 
@@ -1188,7 +1274,9 @@ export default function DealsPage() {
                           {comboItems.slice(0, 2).map((ci, i) => (
                             <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-[10px] font-medium text-gray-600 dark:text-neutral-400">
                               <Tag className="w-2.5 h-2.5" />
-                              {ci.menuItem?.name || "Item"}{ci.quantity > 1 ? ` ×${ci.quantity}` : ""}
+                              {getComboItemType(ci) === "choice"
+                                ? ci.label || "Choice"
+                                : `${ci.menuItem?.name || "Item"}${ci.quantity > 1 ? ` ×${ci.quantity}` : ""}`}
                             </span>
                           ))}
                           {comboItems.length > 2 && (
@@ -1260,7 +1348,9 @@ export default function DealsPage() {
                   header: "Items",
                   hideOnMobile: true,
                   render: (value) => {
-                    const items = (value || []).map((ci) => `${ci.menuItem?.name || "Item"} ×${ci.quantity}`);
+                    const items = (value || []).map((ci) =>
+                      formatComboItemSummary(ci, menuItemById, sym),
+                    );
                     const preview = items.slice(0, 2).join(", ");
                     const extra = items.length > 2 ? ` +${items.length - 2} more` : "";
                     return (
@@ -1405,7 +1495,8 @@ export default function DealsPage() {
                       />
                     </div>
                     <p className="mt-1.5 text-[11px] text-gray-500 dark:text-neutral-400">
-                      Items total: {sym} {Math.round(selectedItemsTotal).toLocaleString()}{" "}
+                      Regular total (avg for choice slots): {sym}{" "}
+                      {Math.round(componentsRegularTotalValue).toLocaleString()}{" "}
                       <span className="mx-1 text-gray-300 dark:text-neutral-600">|</span>
                       You save: {sym} {Math.round(savingsAmount).toLocaleString()}
                     </p>
@@ -1527,17 +1618,188 @@ export default function DealsPage() {
                   )}
                 </div>
 
+                {/* Deal components */}
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
+                      Components <span className="text-red-500 normal-case">*</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingChoiceIndex(null)}
+                        className="text-[11px] font-semibold text-primary hover:underline"
+                      >
+                        + Fixed item
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addChoiceSlot}
+                        className="text-[11px] font-semibold text-secondary hover:underline"
+                      >
+                        + Choice slot
+                      </button>
+                    </div>
+                  </div>
+                  {form.components.length === 0 ? (
+                    <p className="text-xs text-gray-400 dark:text-neutral-500 rounded-xl border border-dashed border-gray-200 dark:border-neutral-700 px-3 py-4 text-center">
+                      Add fixed items or choice slots using the panel on the right.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {form.components.map((comp, index) => {
+                        if (comp.type === "choice") {
+                          const isEditing = editingChoiceIndex === index;
+                          const optionNames = (comp.optionIds || [])
+                            .map((id) => menuItemById.get(String(id))?.name)
+                            .filter(Boolean);
+                          return (
+                            <div
+                              key={`choice-${index}`}
+                              className={`rounded-xl border px-3 py-2.5 ${
+                                isEditing
+                                  ? "border-secondary/40 bg-secondary/5"
+                                  : "border-gray-200 dark:border-neutral-700"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0 space-y-2">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-secondary/10 text-secondary text-[10px] font-bold uppercase">
+                                    Choice slot
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={comp.label}
+                                    onChange={(e) => updateComponent(index, { label: e.target.value })}
+                                    placeholder='e.g. "Choose your drink"'
+                                    className="w-full px-2.5 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white outline-none focus:border-secondary"
+                                  />
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                      <label className="text-[10px] text-gray-400 uppercase">Qty</label>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={comp.quantity}
+                                        onChange={(e) =>
+                                          updateComponent(index, {
+                                            quantity: Math.max(1, Number(e.target.value) || 1),
+                                          })
+                                        }
+                                        className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-center"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-gray-400 uppercase">Min</label>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={comp.minSelect}
+                                        onChange={(e) =>
+                                          updateComponent(index, {
+                                            minSelect: Math.max(1, Number(e.target.value) || 1),
+                                          })
+                                        }
+                                        className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-center"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-gray-400 uppercase">Max</label>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={comp.maxSelect}
+                                        onChange={(e) =>
+                                          updateComponent(index, {
+                                            maxSelect: Math.max(1, Number(e.target.value) || 1),
+                                          })
+                                        }
+                                        className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-center"
+                                      />
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-gray-500 dark:text-neutral-400">
+                                    {optionNames.length
+                                      ? `${optionNames.length} option${optionNames.length !== 1 ? "s" : ""}: ${optionNames.slice(0, 4).join(", ")}${optionNames.length > 4 ? "…" : ""}`
+                                      : "Select options in the panel on the right →"}
+                                  </p>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingChoiceIndex(index)}
+                                    className="text-[10px] font-semibold text-secondary hover:underline"
+                                  >
+                                    {isEditing ? "Editing" : "Edit options"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeComponent(index)}
+                                    className="text-[10px] font-semibold text-red-500 hover:underline"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                        const item = menuItemById.get(String(comp.menuItemId));
+                        return (
+                          <div
+                            key={`fixed-${comp.menuItemId}-${index}`}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 dark:border-neutral-700 px-3 py-2.5"
+                          >
+                            <div className="min-w-0">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-bold uppercase mr-2">
+                                Fixed
+                              </span>
+                              <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 truncate">
+                                {item?.name || "Unknown item"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <input
+                                type="number"
+                                min={1}
+                                value={comp.quantity}
+                                onChange={(e) =>
+                                  setFixedComponentQuantity(comp.menuItemId, e.target.value)
+                                }
+                                className="w-12 px-1.5 py-1 border border-gray-200 dark:border-neutral-700 rounded-lg text-xs text-center"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeComponent(index)}
+                                className="text-red-500 hover:text-red-600"
+                                aria-label="Remove"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
               </div>
 
               {/* Right — Item picker */}
               <div className="md:w-80 flex flex-col border-t md:border-t-0 border-gray-100 dark:border-neutral-800 flex-shrink-0">
                 <div className="px-4 pt-4 pb-2 flex-shrink-0">
-                  <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide mb-2">
-                    Items in deal <span className="text-red-500 normal-case">*</span>
+                  <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
+                    {editingChoiceIndex != null ? "Choice options" : "Add fixed items"}
                   </p>
-                  {form.selectedItems.length > 0 && (
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500 mb-2">
+                    {editingChoiceIndex != null
+                      ? "Check menu items the customer can pick from for this slot."
+                      : "Click items to add fixed components to the deal."}
+                  </p>
+                  {form.components.length > 0 && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
-                      {form.selectedItems.length} selected
+                      {form.components.length} component{form.components.length !== 1 ? "s" : ""}
                     </span>
                   )}
                   <input
@@ -1547,20 +1809,22 @@ export default function DealsPage() {
                     placeholder="Search items..."
                     className="mt-2 w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                   />
-                  {selectedItemPills.length > 0 && (
+                  {editingChoiceIndex != null && choiceOptionIds.size > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {selectedItemPills.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => toggleItemSelection(item.id)}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-semibold hover:bg-primary/15"
-                          title={`Remove ${item.name}`}
-                        >
-                          <X className="w-3 h-3" />
-                          <span className="max-w-[120px] truncate">{item.name}</span>
-                        </button>
-                      ))}
+                      {[...choiceOptionIds].map((id) => {
+                        const name = menuItemById.get(id)?.name || "Item";
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => toggleChoiceOption(id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-secondary/10 text-secondary text-[10px] font-semibold hover:bg-secondary/15"
+                          >
+                            <X className="w-3 h-3" />
+                            <span className="max-w-[120px] truncate">{name}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1579,7 +1843,11 @@ export default function DealsPage() {
                     <div className="space-y-2">
                       {categoryEntries.map(({ categoryName, items }) => {
                         const isCollapsed = !!collapsedCategories[categoryName];
-                        const selectedInCategory = items.filter((item) => selectedItemsMap.has(String(item.id))).length;
+                        const selectedInCategory = items.filter((item) => {
+                          const id = String(item.id);
+                          if (editingChoiceIndex != null) return choiceOptionIds.has(id);
+                          return fixedComponentsMap.has(id);
+                        }).length;
                         return (
                           <div key={categoryName} className="rounded-xl border border-gray-100 dark:border-neutral-800">
                             <button
@@ -1607,15 +1875,24 @@ export default function DealsPage() {
                             {!isCollapsed && (
                               <div className="space-y-1 px-2 pb-2">
                                 {items.map((item) => {
-                                  const selected = form.selectedItems.find((s) => String(s.menuItemId) === String(item.id));
+                                  const itemId = String(item.id);
+                                  const isChoiceMode = editingChoiceIndex != null;
+                                  const selected = isChoiceMode
+                                    ? choiceOptionIds.has(itemId)
+                                    : fixedComponentsMap.has(itemId);
+                                  const fixedComp = fixedComponentsMap.get(itemId);
                                   return (
                                     <div
                                       key={item.id}
-                                      onClick={() => toggleItemSelection(item.id)}
-                                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${selected ? "bg-primary/8 dark:bg-primary/10 border border-primary/20" : "hover:bg-gray-50 dark:hover:bg-neutral-900 border border-transparent"}`}
+                                      onClick={() =>
+                                        isChoiceMode
+                                          ? toggleChoiceOption(item.id)
+                                          : toggleFixedComponent(item.id)
+                                      }
+                                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${selected ? (isChoiceMode ? "bg-secondary/8 dark:bg-secondary/10 border border-secondary/20" : "bg-primary/8 dark:bg-primary/10 border border-primary/20") : "hover:bg-gray-50 dark:hover:bg-neutral-900 border border-transparent"}`}
                                     >
                                       <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                                        <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-colors ${selected ? "bg-primary border-primary" : "border-gray-300 dark:border-neutral-600"}`}>
+                                        <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-colors ${selected ? (isChoiceMode ? "bg-secondary border-secondary" : "bg-primary border-primary") : "border-gray-300 dark:border-neutral-600"}`}>
                                           {selected && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                                         </div>
                                         <div className="min-w-0">
@@ -1623,13 +1900,13 @@ export default function DealsPage() {
                                           <p className="text-[10px] text-gray-400 dark:text-neutral-500">{sym} {item.price}</p>
                                         </div>
                                       </div>
-                                      {selected && (
+                                      {!isChoiceMode && fixedComp && (
                                         <input
                                           type="number"
                                           min={1}
-                                          value={selected.quantity}
+                                          value={fixedComp.quantity}
                                           onClick={(e) => e.stopPropagation()}
-                                          onChange={(e) => setItemQuantity(item.id, e.target.value)}
+                                          onChange={(e) => setFixedComponentQuantity(item.id, e.target.value)}
                                           className="w-12 px-1.5 py-1 border-2 border-primary/30 rounded-lg text-xs text-center bg-white dark:bg-neutral-900 text-gray-900 dark:text-white outline-none focus:border-primary transition-all ml-2 flex-shrink-0"
                                         />
                                       )}
