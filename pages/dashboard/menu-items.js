@@ -595,6 +595,8 @@ export default function MenuItemsPage() {
     if (!currentBranch?.id || !copySourceBranchId) return;
     setCopySubmitting(true);
     try {
+      let totalCopied = 0;
+      let totalUpdated = 0;
       if (copySourceBranchId === "all" && copyAllBranchesData?.items) {
         const selectedSet = new Set(copySelectedItemIds);
         const byBranch = {};
@@ -606,15 +608,29 @@ export default function MenuItemsPage() {
           }
         });
         for (const [branchId, itemIds] of Object.entries(byBranch)) {
-          if (itemIds.length) await copyMenuFromBranch(branchId, { categoryIds: [], itemIds });
+          if (itemIds.length) {
+            const result = await copyMenuFromBranch(branchId, { categoryIds: [], itemIds });
+            totalCopied += result?.copiedItems || 0;
+            totalUpdated += result?.updatedItems || 0;
+          }
         }
-        toast.success("Selected items copied to this branch.");
+        toast.success(
+          totalUpdated > 0
+            ? `Copied ${totalCopied} new item${totalCopied === 1 ? "" : "s"} and updated ${totalUpdated} existing.`
+            : `Copied ${totalCopied} item${totalCopied === 1 ? "" : "s"} to this branch.`,
+        );
       } else if (copySourceBranchId !== "all") {
-        await copyMenuFromBranch(copySourceBranchId, {
+        const result = await copyMenuFromBranch(copySourceBranchId, {
           categoryIds: [],
           itemIds: copySelectedItemIds
         });
-        toast.success("Items copied to this branch.");
+        const copied = result?.copiedItems || 0;
+        const updated = result?.updatedItems || 0;
+        toast.success(
+          updated > 0
+            ? `Copied ${copied} new item${copied === 1 ? "" : "s"} and updated ${updated} existing (including variations).`
+            : `Copied ${copied} item${copied === 1 ? "" : "s"} to this branch.`,
+        );
       }
       setCopyModalOpen(false);
       setCopyAllBranchesData(null);

@@ -47,11 +47,15 @@ import { printBillReceipt } from "../../lib/printBillReceipt";
 import {
   buildInitialModifierSelections,
   buildPosCartLine,
+  buildCartItemAfterVariationChange,
   computeItemUnitPrice,
   getPickerGroupsForItem,
   hasAttachedModifierGroups,
   isModifierSelectionComplete as isItemModifierSelectionComplete,
+  isSingleSelectModifierGroup,
   itemNeedsModifierPicker,
+  modifierSelectionsFromCartItem,
+  resolveMenuItemForCartLine,
 } from "../../lib/modifier-pricing";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
@@ -1928,6 +1932,103 @@ export default function POSView({
     setCart(cart.filter((item) => (item._cartKey || item.id) !== cartKey));
   };
 
+  const changeCartItemVariation = (cartKey, groupId, optionId) => {
+    if (!canModifyServedOrderItems) return;
+    const itemIndex = cart.findIndex((i) => (i._cartKey || i.id) === cartKey);
+    if (itemIndex < 0) return;
+
+    const cartItem = cart[itemIndex];
+    if (cartItem.isDeal || cartItem._isDeal) return;
+
+    const template = resolveMenuItemForCartLine(cartItem, menu.items || []);
+    const groups = getPickerGroupsForItem(template).filter(isSingleSelectModifierGroup);
+    const group = groups.find((g) => String(g.id) === String(groupId));
+    if (!group) return;
+
+    const option = (group.options || []).find(
+      (o) => String(o.id) === String(optionId) && o.isAvailable !== false,
+    );
+    if (!option) return;
+
+    const built = buildCartItemAfterVariationChange(
+      cartItem,
+      menu.items || [],
+      groupId,
+      option,
+    );
+    if (!built) return;
+
+    const { itemForLine, line } = built;
+    if (line.cartKey === cartKey) return;
+
+    const qty = cartItem.quantity;
+    const nextCart = cart.filter((_, i) => i !== itemIndex);
+    const mergeIndex = nextCart.findIndex((i) => i._cartKey === line.cartKey);
+
+    if (mergeIndex >= 0) {
+      nextCart[mergeIndex] = {
+        ...nextCart[mergeIndex],
+        quantity: nextCart[mergeIndex].quantity + qty,
+      };
+    } else {
+      nextCart.push({
+        ...itemForLine,
+        id: template.id || cartItem.id,
+        name: template.name || cartItem.name,
+        _cartKey: line.cartKey,
+        price: line.unitPrice,
+        quantity: qty,
+        size: line.variantLabel,
+        _modifierSelectionsForOrder: line.modifierSelectionsForOrder,
+        _selectedModifiers: line.selectedModifiers,
+      });
+    }
+
+    setCart(nextCart);
+
+    const note = itemNotes[cartKey];
+    if (note) {
+      setItemNotes((prev) => {
+        const next = { ...prev };
+        delete next[cartKey];
+        next[line.cartKey] = note;
+        return next;
+      });
+    }
+  };
+
+  const getCartItemVariationGroups = (cartItem) => {
+    if (cartItem.isDeal || cartItem._isDeal) return [];
+    const template = resolveMenuItemForCartLine(cartItem, menu.items || []);
+    if (!template) return [];
+
+    const groups = [];
+    const legacyGroups = template.modifierGroups || [];
+
+    if (template._preselectedRequired) {
+      const primary = legacyGroups.find(
+        (g) => String(g.id) === String(template._preselectedRequired.groupId),
+      );
+      if (primary && isSingleSelectModifierGroup(primary)) {
+        groups.push(primary);
+      }
+    }
+
+    for (const group of getPickerGroupsForItem(template)) {
+      if (isSingleSelectModifierGroup(group)) {
+        groups.push(group);
+      }
+    }
+
+    const seen = new Set();
+    return groups.filter((group) => {
+      const id = String(group.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return (group.options || []).some((o) => o.isAvailable !== false);
+    });
+  };
+
   const confirmModifierSelection = () => {
     const item = modifierPickerItem;
     if (!item) return;
@@ -3597,6 +3698,7 @@ export default function POSView({
                   cartKey,
                   item.quantity,
                 );
+                const variationGroups = getCartItemVariationGroups(item);
                 return (
                   <div
                     key={item.id}
@@ -3640,17 +3742,15 @@ export default function POSView({
                                 </span>
                               ) : null}
                             </h4>
-                            {(item._selectedModifiers || []).map((mod, mi) => (
-                              <div
-                                key={`${mod.optionId}-${mi}`}
-                                className="text-xs text-gray-400 dark:text-neutral-500 leading-tight pl-2"
-                              >
-                                + {mod.optionName}
-                                {mod.price > 0 ? (
-                                  <span> Rs {mod.price}</span>
-                                ) : null}
-                              </div>
-                            ))}
+                            {variationGroups.length === 0 &&
+                              (item._selectedModifiers || []).map((mod, mi) => (
+                                <div
+                                  key={`${mod.optionId}-${mi}`}
+                                  className="text-xs text-gray-400 dark:text-neutral-500 leading-tight pl-2"
+                                >
+                                  + {mod.optionName}
+                                </div>
+                              ))}
                           </div>
                           {isPrivilegedEditor && canModifyServedOrderItems && (
                             <button
@@ -3665,10 +3765,10 @@ export default function POSView({
                           )}
                         </div>
 
-                        {/* Quantity and Add Note Row */}
-                        <div className="flex items-center justify-between gap-2">
+                        {/* Quantity, variation, and add note */}
+                        <div className="mt-2 flex items-center gap-2">
                           <div
-                            className="flex items-center gap-1 bg-gray-100 dark:bg-neutral-900 rounded-md p-0.5"
+                            className="flex shrink-0 items-center gap-1 rounded-md bg-gray-100 p-0.5 dark:bg-neutral-900"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <button
@@ -3705,15 +3805,59 @@ export default function POSView({
                               <Plus className="w-3 h-3 dark:text-neutral-400" />
                             </button>
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              addNoteToItem(item._cartKey || item.id);
-                            }}
-                            className="text-sm text-primary hover:underline font-medium"
-                          >
-                            Add Note
-                          </button>
+
+                          <div className="ml-auto flex shrink-0 items-center gap-2">
+                            {variationGroups.length > 0 && (
+                              <div
+                                className="flex items-center gap-1.5"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {variationGroups.map((group) => {
+                                  const selections = modifierSelectionsFromCartItem(item);
+                                  const selected =
+                                    (selections[String(group.id)] || [])[0]?.optionId || "";
+                                  return (
+                                    <select
+                                      key={group.id}
+                                      value={String(selected)}
+                                      disabled={!canModifyServedOrderItems}
+                                      onChange={(e) =>
+                                        changeCartItemVariation(
+                                          cartKey,
+                                          group.id,
+                                          e.target.value,
+                                        )
+                                      }
+                                      aria-label={group.groupName || group.name}
+                                      className="w-fit max-w-[8rem] rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                                    >
+                                      {(group.options || [])
+                                        .filter((o) => o.isAvailable !== false)
+                                        .sort(
+                                          (a, b) =>
+                                            (a.sortOrder || 0) - (b.sortOrder || 0),
+                                        )
+                                        .map((opt) => (
+                                          <option key={opt.id} value={opt.id}>
+                                            {opt.name}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addNoteToItem(item._cartKey || item.id);
+                              }}
+                              className="w-fit shrink-0 text-sm font-medium text-primary hover:underline"
+                            >
+                              Add Note
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
