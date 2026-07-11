@@ -31,7 +31,7 @@ import {
   auditSessionReportPayments,
 } from "../../lib/sessionReportBreakdown";
 import { printBillReceipt } from "../../lib/printBillReceipt";
-import { mergeReceiptItems, formatOrderItemDisplayName, getOrderItemModifierSubtexts } from "../../lib/orderDisplay.js";
+import { formatReceiptItemsForBill, formatOrderItemDisplayName, getOrderItemModifierSubtexts } from "../../lib/orderDisplay.js";
 import {
   getBusinessDate,
   getBusinessDayRange,
@@ -3390,7 +3390,48 @@ function RiderPickerDropdown({
 // ─── OrderCard component ────────────────────────────────────────────────────
 
 function OrderItemRow({ item }) {
+  const [dealOpen, setDealOpen] = useState(false);
   const qty = item.qty ?? item.quantity ?? 1;
+
+  if (item.isDealLine) {
+    const choices = item.dealChoices || [];
+    return (
+      <div className="text-[11px]">
+        <button
+          type="button"
+          onClick={() => setDealOpen((open) => !open)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="min-w-0 truncate pr-2 font-semibold text-gray-900 dark:text-neutral-100">
+            {item.name}
+            <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-primary">
+              Deal
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-gray-500 dark:text-neutral-500">
+            <span className="font-bold tabular-nums">×{qty}</span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform ${dealOpen ? "rotate-180" : ""}`}
+            />
+          </span>
+        </button>
+        {dealOpen ? (
+          <div className="mt-1 space-y-0.5 border-l-2 border-primary/30 pl-2.5">
+            {choices.map((choice, ci) => (
+              <div
+                key={`${choice.name}-${ci}`}
+                className="text-[10px] leading-tight text-gray-500 dark:text-neutral-400"
+              >
+                · {choice.name}
+                {choice.qty > 1 ? ` ×${choice.qty}` : ""}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   const subtexts = getOrderItemModifierSubtexts(item);
   return (
     <div className="text-[11px]">
@@ -3503,7 +3544,7 @@ function OrderCard({
     !isDeliveryOrder(order) &&
     order.source !== "FOODPANDA";
 
-  const displayItems = mergeReceiptItems(order.items || []);
+  const displayItems = formatReceiptItemsForBill(order);
   const visibleItems = displayItems.slice(0, 3);
   const hiddenCount = displayItems.length - 3;
 
