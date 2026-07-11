@@ -747,7 +747,7 @@ export default function RiderPortalPage() {
   const dealMenuItems = useMemo(
     () =>
       (availableDeals || [])
-        .filter((d) => d.dealType === "COMBO" && d.showOnPOS !== false)
+        .filter((d) => d.dealType === "COMBO")
         .map((d) => ({
           id: `deal-${d._id || d.id}`,
           _id: `deal-${d._id || d.id}`,

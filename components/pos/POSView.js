@@ -1525,7 +1525,6 @@ export default function POSView({
       const deals = Array.isArray(allDeals)
         ? allDeals.filter((d) => {
             if (!d.isActive) return false;
-            if (d.showOnPOS === false) return false;
             if (d.startDate && new Date(d.startDate) > now) return false;
             if (d.endDate && new Date(d.endDate) < now) return false;
             // If deal has branch restrictions, only show for matching branch
@@ -1638,7 +1637,7 @@ export default function POSView({
 
   // Build virtual menu items for active combo deals so they appear at the end of the menu grid
   const dealMenuItems = (availableDeals || [])
-    .filter((d) => d.dealType === "COMBO" && d.showOnPOS !== false)
+    .filter((d) => d.dealType === "COMBO")
     .map((d) => ({
       id: `deal-${d._id || d.id}`,
       name: d.name,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
+import Button from "../../components/ui/Button";
 import DataTable from "../../components/ui/DataTable";
 import PageLoader from "../../components/ui/PageLoader";
 import ViewToggle from "../../components/ui/ViewToggle";
@@ -46,6 +47,8 @@ import {
   FolderOpen,
   PanelLeftClose,
   PanelLeftOpen,
+  AlertTriangle,
+  Search,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -147,7 +150,7 @@ function getEmptyForm() {
     comboPrice: "",
     startDate: today,
     endDate: "",
-    showOnPOS: true,
+    isActive: true,
     imageUrl: "",
     categoryId: "",
   };
@@ -189,6 +192,7 @@ export default function DealsPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [itemSearch, setItemSearch] = useState("");
+  const [itemCategoryFilter, setItemCategoryFilter] = useState("all");
   const [collapsedCategories, setCollapsedCategories] = useState({});
   const [importLoading, setImportLoading] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -204,7 +208,7 @@ export default function DealsPage() {
   const [categorySavingId, setCategorySavingId] = useState(null);
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
-  const [editingChoiceIndex, setEditingChoiceIndex] = useState(null);
+  const [itemPickerMode, setItemPickerMode] = useState(null);
   const [variationDraft, setVariationDraft] = useState(null);
   const fileInputRef = useRef(null);
   const imageFileInputRef = useRef(null);
@@ -310,42 +314,78 @@ export default function DealsPage() {
 
   const menuItemById = new Map(menuItems.map((m) => [String(m.id), m]));
 
+  const choicePickerIndex = typeof itemPickerMode === "number" ? itemPickerMode : null;
+  const isItemPickerOpen = itemPickerMode != null;
+
   const staleDealIssues = useMemo(
     () => collectDealComponentStaleIssues(form.components, menuItemById),
     [form.components, menuItems],
   );
   const choiceOptionKeys = new Set(
-    editingChoiceIndex != null && form.components[editingChoiceIndex]?.type === "choice"
-      ? (form.components[editingChoiceIndex].options || []).map(choiceOptionKey)
+    choicePickerIndex != null && form.components[choicePickerIndex]?.type === "choice"
+      ? (form.components[choicePickerIndex].options || []).map(choiceOptionKey)
       : [],
   );
   const componentsRegularTotalValue = componentsRegularTotal(form.components, menuItemById);
   const comboPriceNum = Number(form.comboPrice) || 0;
   const savingsAmount = Math.max(0, componentsRegularTotalValue - comboPriceNum);
 
-  const normalizedItemSearch = itemSearch.trim().toLowerCase();
-  const categoryNameById = new Map(
-    menuCategories.map((c) => [String(c.id || c._id), c.name]).filter(([, name]) => Boolean(name))
+  const categoryNameById = useMemo(
+    () =>
+      new Map(
+        menuCategories.map((c) => [String(c.id || c._id), c.name]).filter(([, name]) => Boolean(name)),
+      ),
+    [menuCategories],
   );
-  const groupedMenuItems = menuItems.reduce((acc, item) => {
-    const categoryName =
-      (item.categoryName && String(item.categoryName).trim()) ||
-      (item.category?.name && String(item.category.name).trim()) ||
-      categoryNameById.get(String(item.categoryId || "")) ||
-      "Uncategorized";
-    if (!acc[categoryName]) acc[categoryName] = [];
-    acc[categoryName].push(item);
-    return acc;
-  }, {});
-  const categoryEntries = Object.entries(groupedMenuItems)
-    .map(([categoryName, items]) => {
-      const visibleItems = items
-        .filter((item) => !normalizedItemSearch || item.name.toLowerCase().includes(normalizedItemSearch))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      return { categoryName, items: visibleItems };
-    })
-    .filter((group) => group.items.length > 0)
-    .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+
+  const pickerBaseGroupedItems = useMemo(() => {
+    const groups = new Map();
+    for (const item of menuItems) {
+      const categoryId = String(item.categoryId || item.category?.id || item.category?._id || "");
+      const categoryName =
+        (categoryId && categoryNameById.get(categoryId)) ||
+        (item.categoryName && String(item.categoryName).trim()) ||
+        (item.category?.name && String(item.category.name).trim()) ||
+        "Uncategorized";
+      const groupKey = categoryId || `uncategorized:${categoryName}`;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          categoryId: categoryId || null,
+          categoryName,
+          items: [],
+        });
+      }
+      groups.get(groupKey).items.push(item);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+  }, [menuItems, categoryNameById]);
+
+  const pickerCategoryOptions = useMemo(() => {
+    const options = menuCategories
+      .map((c) => ({ id: String(c.id || c._id), name: c.name }))
+      .filter((cat) => pickerBaseGroupedItems.some((g) => g.categoryId === cat.id));
+    if (pickerBaseGroupedItems.some((g) => !g.categoryId)) {
+      options.push({ id: "__uncategorized__", name: "Uncategorized" });
+    }
+    return options;
+  }, [menuCategories, pickerBaseGroupedItems]);
+
+  const categoryEntries = useMemo(() => {
+    const term = itemSearch.trim().toLowerCase();
+    return pickerBaseGroupedItems
+      .filter((group) => {
+        if (itemCategoryFilter === "all") return true;
+        if (itemCategoryFilter === "__uncategorized__") return !group.categoryId;
+        return group.categoryId === itemCategoryFilter;
+      })
+      .map((group) => ({
+        ...group,
+        items: group.items
+          .filter((item) => !term || item.name.toLowerCase().includes(term))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [pickerBaseGroupedItems, itemSearch, itemCategoryFilter]);
 
   async function handleCreateDealCategory(e) {
     e?.preventDefault?.();
@@ -454,6 +494,7 @@ export default function DealsPage() {
     setImageTab("link");
     setUploadError("");
     setItemSearch("");
+    setItemCategoryFilter("all");
     setVariationDraft(null);
     setCollapsedCategories(
       Object.fromEntries(
@@ -470,7 +511,7 @@ export default function DealsPage() {
         ).map((name) => [name, true])
       )
     );
-    setEditingChoiceIndex(null);
+    setItemPickerMode(null);
     setVariationDraft(null);
     setIsModalOpen(true);
   }
@@ -485,7 +526,7 @@ export default function DealsPage() {
       comboPrice: deal.comboPrice != null ? String(deal.comboPrice) : "",
       startDate: deal.startDate ? deal.startDate.slice(0, 10) : "",
       endDate: deal.endDate ? deal.endDate.slice(0, 10) : "",
-      showOnPOS: deal.showOnPOS ?? true,
+      isActive: deal.isActive !== false,
       imageUrl: deal.imageUrl || "",
       categoryId: getDealCategoryId(deal) || "",
     });
@@ -493,6 +534,7 @@ export default function DealsPage() {
     setImageTab("link");
     setUploadError("");
     setItemSearch("");
+    setItemCategoryFilter("all");
     setCollapsedCategories(
       Object.fromEntries(
         Object.keys(
@@ -508,9 +550,25 @@ export default function DealsPage() {
         ).map((name) => [name, true])
       )
     );
-    setEditingChoiceIndex(null);
+    setItemPickerMode(null);
     setVariationDraft(null);
     setIsModalOpen(true);
+  }
+
+  function closeItemPicker() {
+    setItemPickerMode(null);
+    setVariationDraft(null);
+    setItemCategoryFilter("all");
+  }
+
+  function openFixedItemPicker() {
+    setItemPickerMode("fixed");
+    setVariationDraft(null);
+  }
+
+  function openChoiceItemPicker(index) {
+    setItemPickerMode(index);
+    setVariationDraft(null);
   }
 
   function addChoiceSlot() {
@@ -529,7 +587,7 @@ export default function DealsPage() {
         },
       ],
     }));
-    setEditingChoiceIndex(newIndex);
+    setItemPickerMode(newIndex);
   }
 
   function removeComponent(index) {
@@ -537,8 +595,9 @@ export default function DealsPage() {
       ...prev,
       components: prev.components.filter((_, i) => i !== index),
     }));
-    setEditingChoiceIndex((prev) => {
+    setItemPickerMode((prev) => {
       if (prev == null) return null;
+      if (prev === "fixed") return prev;
       if (prev === index) return null;
       if (prev > index) return prev - 1;
       return prev;
@@ -553,7 +612,6 @@ export default function DealsPage() {
   }
 
   function addFixedComponent(menuItemId, modifierSelections = []) {
-    setEditingChoiceIndex(null);
     setForm((prev) => {
       const idx = findMatchingFixedComponentIndex(prev.components, menuItemId, modifierSelections);
       if (idx >= 0) {
@@ -583,11 +641,9 @@ export default function DealsPage() {
     const item = menuItemById.get(String(menuItemId));
     if (itemHasRequiredVariations(item)) {
       setVariationDraft({ menuItemId: String(menuItemId), picks: {} });
-      setEditingChoiceIndex(null);
       return;
     }
     setVariationDraft(null);
-    setEditingChoiceIndex(null);
     setForm((prev) => {
       const idx = findMatchingFixedComponentIndex(prev.components, menuItemId, []);
       if (idx >= 0) {
@@ -601,7 +657,7 @@ export default function DealsPage() {
   }
 
   function addChoiceOptionFromDraft() {
-    if (!variationDraft?.menuItemId || editingChoiceIndex == null) return;
+    if (!variationDraft?.menuItemId || choicePickerIndex == null) return;
     const item = menuItemById.get(String(variationDraft.menuItemId));
     if (!item) return;
     const modifierSelections = buildModifierSelectionsFromPicks(item, variationDraft.picks || {});
@@ -612,9 +668,9 @@ export default function DealsPage() {
     }
     setForm((prev) => {
       const components = [...prev.components];
-      const comp = components[editingChoiceIndex];
+      const comp = components[choicePickerIndex];
       if (!comp || comp.type !== "choice") return prev;
-      components[editingChoiceIndex] = toggleChoiceOptionInComponent(
+      components[choicePickerIndex] = toggleChoiceOptionInComponent(
         comp,
         variationDraft.menuItemId,
         modifierSelections,
@@ -660,12 +716,12 @@ export default function DealsPage() {
   }
 
   function toggleChoiceOption(menuItemId, modifierSelections = []) {
-    if (editingChoiceIndex == null) return;
+    if (choicePickerIndex == null) return;
     setForm((prev) => {
       const components = [...prev.components];
-      const comp = components[editingChoiceIndex];
+      const comp = components[choicePickerIndex];
       if (!comp || comp.type !== "choice") return prev;
-      components[editingChoiceIndex] = toggleChoiceOptionInComponent(
+      components[choicePickerIndex] = toggleChoiceOptionInComponent(
         comp,
         menuItemId,
         modifierSelections,
@@ -721,8 +777,9 @@ export default function DealsPage() {
       comboPrice: Number(form.comboPrice),
       startDate: new Date(form.startDate || new Date()).toISOString(),
       endDate: ensureEndDateISO(form.startDate || new Date(), form.endDate),
-      showOnPOS: form.showOnPOS,
-      showOnWebsite: true,
+      isActive: form.isActive,
+      showOnWebsite: form.isActive,
+      showOnPOS: form.isActive,
       branches: currentBranch?.id ? [currentBranch.id] : [],
       imageUrl: form.imageUrl.trim() || undefined,
       category: form.categoryId || null,
@@ -805,7 +862,7 @@ export default function DealsPage() {
       ["Branch", branchName],
       ["Generated", date],
       [],
-      ["Name", "Description", "Items", "Deal Price", "Start Date", "End Date", "Show On POS", "Status"],
+      ["Name", "Description", "Items", "Deal Price", "Start Date", "End Date", "Status"],
       ...filtered.map((deal) => {
         const comboItems = (deal.comboItems || [])
           .map((ci) => `${ci.menuItem?.name || "Item"} x${Number(ci.quantity) || 1}`)
@@ -819,8 +876,7 @@ export default function DealsPage() {
           deal.comboPrice ?? "",
           startDate,
           endDate,
-          deal.showOnPOS ?? true ? "Yes" : "No",
-          getDealStatus(deal) ? "Active" : "Inactive",
+          getDealStatusLabel(deal),
         ];
       }),
       [],
@@ -972,6 +1028,7 @@ export default function DealsPage() {
         else if (k === "deal price" || k === "price" || k === "combo price") col.price = i;
         else if (k === "start date" || k === "start") col.startDate = i;
         else if (k === "end date" || k === "end" || k === "expiry date") col.endDate = i;
+        else if (k === "active" || k === "status") col.isActive = i;
         else if (k === "show on pos" || k === "showonpos") col.showOnPos = i;
       });
       return col;
@@ -1065,6 +1122,7 @@ export default function DealsPage() {
         priceRaw: cells[col.price],
         startDate: col.startDate != null ? String(cells[col.startDate] ?? "").trim() : "",
         endDate: col.endDate != null ? String(cells[col.endDate] ?? "").trim() : "",
+        isActiveRaw: col.isActive != null ? cells[col.isActive] : undefined,
         showOnPosRaw: col.showOnPos != null ? cells[col.showOnPos] : undefined,
       });
     }
@@ -1119,6 +1177,19 @@ export default function DealsPage() {
           continue;
         }
 
+        const resolveImportActive = () => {
+          if (row.isActiveRaw !== undefined && row.isActiveRaw !== "") {
+            const raw = String(row.isActiveRaw).trim().toLowerCase();
+            if (raw === "inactive" || raw === "no" || raw === "false" || raw === "0") return false;
+            if (raw === "active" || raw === "yes" || raw === "true" || raw === "1") return true;
+            return parseYesNoCell(row.isActiveRaw);
+          }
+          if (row.showOnPosRaw !== undefined && row.showOnPosRaw !== "") {
+            return parseYesNoCell(row.showOnPosRaw);
+          }
+          return true;
+        };
+
         const payload = {
           name: row.name,
           description: row.description || "",
@@ -1127,10 +1198,9 @@ export default function DealsPage() {
           comboPrice: price,
           startDate: startDate.toISOString(),
           endDate: ensureEndDateISO(startDate, endDate),
-          showOnPOS:
-            row.showOnPosRaw !== undefined && row.showOnPosRaw !== ""
-              ? parseYesNoCell(row.showOnPosRaw)
-              : true,
+          isActive: resolveImportActive(),
+          showOnWebsite: resolveImportActive(),
+          showOnPOS: resolveImportActive(),
           branches: [currentBranch.id],
         };
 
@@ -1260,7 +1330,9 @@ export default function DealsPage() {
           comboPrice: Number(deal.comboPrice) || 0,
           startDate: deal.startDate ? new Date(deal.startDate).toISOString() : new Date().toISOString(),
           endDate: ensureEndDateISO(deal.startDate || new Date(), deal.endDate),
-          showOnPOS: deal.showOnPOS ?? true,
+          isActive: deal.isActive !== false,
+          showOnWebsite: deal.isActive !== false,
+          showOnPOS: deal.isActive !== false,
           imageUrl: deal.imageUrl || undefined,
           branches: [currentBranch.id],
         };
@@ -1891,188 +1963,210 @@ export default function DealsPage() {
 
       {/* Deal Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-sm shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-neutral-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-md">
+          <div className={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-neutral-800 dark:bg-neutral-950 dark:ring-white/5 ${isItemPickerOpen ? "max-w-5xl" : "max-w-2xl"}`}>
 
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between flex-shrink-0">
-              <div>
-                <h2 className="text-base font-bold text-gray-900 dark:text-white">
-                  {form.id ? "Edit Deal" : "New Deal"}
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 px-5 py-3.5 dark:border-neutral-800">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold tracking-tight text-gray-900 dark:text-white">
+                  {form.id ? "Edit deal" : "New deal"}
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5">
-                  {form.id ? "Update deal details below" : "Fill in details and pick items for this combo"}
-                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[11px] font-semibold ${
+                      form.isActive
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-gray-400 dark:text-neutral-500"
+                    }`}
+                  >
+                    {form.isActive ? "Active" : "Inactive"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, isActive: !f.isActive }))}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${
+                      form.isActive ? "bg-emerald-500" : "bg-gray-200 dark:bg-neutral-700"
+                    }`}
+                    aria-label={form.isActive ? "Set deal inactive" : "Set deal active"}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 translate-y-0.5 transform rounded-full bg-white shadow-sm transition ${
+                        form.isActive ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Two-column body */}
-            <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+            {modalError && (
+              <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
 
-              {/* Left — Deal Details */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 md:border-r border-gray-100 dark:border-neutral-800">
+            {staleDealIssues.length > 0 && (
+              <div className="mx-5 mt-3 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
+                <p className="flex items-center gap-1.5 font-semibold">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  Outdated variation references
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed opacity-90">
+                  Remove affected options and re-add them using the chips in the item picker.
+                </p>
+                <ul className="mt-2 space-y-1 text-[11px]">
+                  {staleDealIssues.slice(0, 6).map((issue, idx) => (
+                    <li key={`${issue.componentIndex}-${issue.optionIndex ?? "f"}-${issue.kind}-${idx}`}>
+                      • {issue.label}
+                      {issue.kind === "stale_option"
+                        ? ` — "${issue.optionName}" (${issue.groupName}) not on menu anymore`
+                        : issue.kind === "stale_group"
+                          ? ` — variation group "${issue.groupName}" changed`
+                          : " — menu item missing"}
+                    </li>
+                  ))}
+                  {staleDealIssues.length > 6 ? (
+                    <li>• …and {staleDealIssues.length - 6} more</li>
+                  ) : null}
+                </ul>
+              </div>
+            )}
 
-                {modalError && (
-                  <div className="p-3 rounded-xl bg-red-50 dark:bg-red-500/10 text-xs text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30">
-                    {modalError}
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col" autoComplete="off">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+
+              {/* Left — deal details & components */}
+              <div className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 ${isItemPickerOpen ? "md:border-r md:border-gray-100 dark:md:border-neutral-800" : ""}`}>
+
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                  <div className="min-w-0 flex-1 space-y-4">
+                    <section>
+                      <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                        Details
+                      </h3>
+                      <div className="space-y-2.5">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={form.name}
+                            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                            placeholder="e.g. Family Combo"
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Category
+                          </label>
+                          <select
+                            value={form.categoryId}
+                            onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                          >
+                            <option value="">Uncategorized</option>
+                            {sortedDealCategories
+                              .filter((c) => c.isActive !== false)
+                              .map((cat) => (
+                                <option key={cat.id} value={cat.id}>
+                                  {cat.name}
+                                </option>
+                              ))}
+                          </select>
+                          {!form.categoryId && (
+                            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                              Uncategorized deals are hidden on the customer website.
+                            </p>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                              Deal price ({sym}) <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={form.comboPrice}
+                              onChange={(e) => setForm((f) => ({ ...f, comboPrice: e.target.value }))}
+                              placeholder="0"
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                            />
+                            <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-400">
+                              Regular: {sym}{Math.round(componentsRegularTotalValue).toLocaleString()}
+                              <span className="mx-1 text-gray-300">·</span>
+                              Save {sym}{Math.round(savingsAmount).toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                              Valid dates
+                            </label>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="date"
+                                value={form.startDate}
+                                onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
+                                className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-900 shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                              />
+                              <span className="shrink-0 text-xs text-gray-400">to</span>
+                              <input
+                                type="date"
+                                value={form.endDate}
+                                onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
+                                className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-900 shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                              />
+                            </div>
+                            <p className="mt-1 text-[11px] text-gray-400 dark:text-neutral-500">
+                              Empty end = no expiry
+                            </p>
+                            {form.startDate && new Date(`${form.startDate}T23:59:59`) > new Date() ? (
+                              <p className="mt-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                                Scheduled until start date
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Description
+                            <span className="ml-1 font-normal text-gray-400">(optional)</span>
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={form.description}
+                            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                            placeholder="Shown on website deal cards"
+                            className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </section>
                   </div>
-                )}
 
-                {staleDealIssues.length > 0 && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
-                    <p className="font-semibold">Outdated variation references</p>
-                    <p className="mt-1 text-[11px] leading-relaxed opacity-90">
-                      Some components point at size/flavour options that no longer exist on the menu
-                      (often after a menu edit before stable IDs). Remove the affected options and
-                      re-add them using the current chips on the right.
+                  {/* Photo sidebar */}
+                  <div className="h-fit w-full shrink-0 rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/30 lg:w-44">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                      Photo
                     </p>
-                    <ul className="mt-2 space-y-1 text-[11px]">
-                      {staleDealIssues.slice(0, 6).map((issue, idx) => (
-                        <li key={`${issue.componentIndex}-${issue.optionIndex ?? "f"}-${issue.kind}-${idx}`}>
-                          • {issue.label}
-                          {issue.kind === "stale_option"
-                            ? ` — "${issue.optionName}" (${issue.groupName}) not on menu anymore`
-                            : issue.kind === "stale_group"
-                              ? ` — variation group "${issue.groupName}" changed`
-                              : " — menu item missing"}
-                        </li>
-                      ))}
-                      {staleDealIssues.length > 6 ? (
-                        <li>• …and {staleDealIssues.length - 6} more</li>
-                      ) : null}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Deal name + pricing + validity */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                      Deal name <span className="text-red-500 normal-case">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={form.name}
-                      onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                      placeholder="e.g. Family Combo"
-                      className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                      Category
-                    </label>
-                    <select
-                      value={form.categoryId}
-                      onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
-                      className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                    >
-                      <option value="">Uncategorized</option>
-                      {sortedDealCategories
-                        .filter((c) => c.isActive !== false)
-                        .map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                    </select>
-                    {!form.categoryId && (
-                      <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
-                        Uncategorized deals are hidden on the customer website.
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                      Deal price <span className="text-red-500 normal-case">*</span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">{sym}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        value={form.comboPrice}
-                        onChange={(e) => setForm((f) => ({ ...f, comboPrice: e.target.value }))}
-                        placeholder="Deal price"
-                        className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                      />
-                    </div>
-                    <p className="mt-1.5 text-[11px] text-gray-500 dark:text-neutral-400">
-                      Regular total (avg for choice slots): {sym}{" "}
-                      {Math.round(componentsRegularTotalValue).toLocaleString()}{" "}
-                      <span className="mx-1 text-gray-300 dark:text-neutral-600">|</span>
-                      You save: {sym} {Math.round(savingsAmount).toLocaleString()}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                      Deal valid from
-                    </label>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="date"
-                        value={form.startDate}
-                        onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
-                        className="flex-1 w-0 px-2 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                      />
-                      <span className="text-gray-400 text-xs flex-shrink-0">to</span>
-                      <input
-                        type="date"
-                        value={form.endDate}
-                        onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
-                        className="flex-1 w-0 px-2 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                      />
-                    </div>
-                    <p className="mt-1.5 text-[11px] text-gray-400 dark:text-neutral-500">
-                      Leave end date empty for no expiry. Deals only appear on website and POS during this range.
-                    </p>
-                    {form.startDate && new Date(`${form.startDate}T23:59:59`) > new Date() ? (
-                      <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                        Start date is in the future — deal will show as Scheduled until then.
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-                    Description <span className="text-gray-400 font-normal normal-case">(optional)</span>
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={form.description}
-                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                    placeholder="Describe the deal..."
-                    className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none"
-                  />
-                </div>
-
-                {/* Deal image */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1 uppercase tracking-wide">
-                    Deal image <span className="text-gray-400 font-normal normal-case">(optional)</span>
-                  </label>
-                  <p className="mb-3 text-[11px] text-gray-500 dark:text-neutral-400">
-                    Shown on website deal cards. Use a square photo for best results.
-                  </p>
-                  <div className="flex gap-4 items-start">
-                    <div className="relative aspect-square w-28 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-inner dark:border-neutral-700 dark:bg-neutral-900">
+                    <div className="relative mx-auto aspect-square w-full max-w-[10rem] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-inner dark:border-neutral-700 dark:bg-neutral-900">
                       {form.imageUrl ? (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={form.imageUrl}
-                            alt="Deal preview"
-                            className="h-full w-full object-cover"
-                          />
+                          <img src={form.imageUrl} alt="" className="h-full w-full object-cover" />
                           <button
                             type="button"
                             onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
@@ -2083,110 +2177,91 @@ export default function DealsPage() {
                           </button>
                         </>
                       ) : (
-                        <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2 text-center">
+                        <div className="flex h-full flex-col items-center justify-center gap-1.5 px-3 text-center">
                           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 dark:bg-neutral-800">
-                            <ShoppingBag className="h-5 w-5 text-gray-300 dark:text-neutral-600" />
+                            <Percent className="h-5 w-5 text-gray-300 dark:text-neutral-600" />
                           </div>
                           <p className="text-[10px] leading-snug text-gray-400 dark:text-neutral-500">
-                            No image yet
+                            Deal card image
                           </p>
                         </div>
                       )}
                     </div>
-
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex w-fit rounded-lg border border-gray-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+                    <div className="mt-3 flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+                      {[
+                        { id: "link", label: "URL", icon: Link },
+                        { id: "upload", label: "Upload", icon: Upload },
+                      ].map(({ id, label, icon: Icon }) => (
                         <button
+                          key={id}
                           type="button"
-                          onClick={() => setImageTab("link")}
-                          className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-all ${
-                            imageTab === "link"
+                          onClick={() => setImageTab(id)}
+                          className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[10px] font-semibold transition-all ${
+                            imageTab === id
                               ? "bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900"
                               : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
                           }`}
                         >
-                          <Link className="h-3 w-3" />
-                          Paste URL
+                          <Icon className="h-3 w-3" />
+                          {label}
                         </button>
+                      ))}
+                    </div>
+                    {imageTab === "link" ? (
+                      <input
+                        type="url"
+                        value={form.imageUrl}
+                        onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+                        placeholder="https://…"
+                        className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                      />
+                    ) : (
+                      <div className="mt-2">
+                        <input
+                          ref={imageFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
                         <button
                           type="button"
-                          onClick={() => setImageTab("upload")}
-                          className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-all ${
-                            imageTab === "upload"
-                              ? "bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900"
-                              : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-                          }`}
+                          disabled={uploading}
+                          onClick={() => imageFileInputRef.current?.click()}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-300 bg-white px-2.5 py-2 text-[11px] font-semibold text-gray-700 transition hover:border-primary/40 hover:text-primary disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-300"
                         >
-                          <Upload className="h-3 w-3" />
-                          Upload
+                          {uploading ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Uploading…
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-3.5 w-3.5" />
+                              Choose file
+                            </>
+                          )}
                         </button>
                       </div>
-
-                      {imageTab === "link" ? (
-                        <input
-                          type="url"
-                          value={form.imageUrl}
-                          onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-                          placeholder="https://example.com/deal-image.jpg"
-                          className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2 text-xs text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-                        />
-                      ) : (
-                        <>
-                          <input
-                            ref={imageFileInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFileUpload}
-                            className="hidden"
-                          />
-                          <button
-                            type="button"
-                            disabled={uploading}
-                            onClick={() => imageFileInputRef.current?.click()}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 px-3 py-2.5 text-xs font-semibold text-gray-600 transition hover:border-primary/50 hover:bg-primary/5 hover:text-primary disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
-                          >
-                            {uploading ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Uploading…
-                              </>
-                            ) : (
-                              <>
-                                <Upload className="h-3.5 w-3.5" />
-                                Choose image file
-                              </>
-                            )}
-                          </button>
-                        </>
-                      )}
-
-                      {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
-                    </div>
+                    )}
+                    {uploadError ? (
+                      <p className="mt-2 text-[11px] text-red-500">{uploadError}</p>
+                    ) : null}
                   </div>
                 </div>
 
-                {/* Show on POS */}
-                <label className="flex items-center gap-3 cursor-pointer select-none">
-                  <div
-                    onClick={() => setForm((f) => ({ ...f, showOnPOS: !f.showOnPOS }))}
-                    className={`w-9 h-5 rounded-full transition-colors flex-shrink-0 relative cursor-pointer ${form.showOnPOS ? "bg-primary" : "bg-gray-300 dark:bg-neutral-700"}`}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${form.showOnPOS ? "translate-x-4" : "translate-x-0.5"}`} />
-                  </div>
-                  <span className="text-sm text-gray-700 dark:text-neutral-300 font-medium">Show on POS</span>
-                </label>
-
-                {/* Deal components */}
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide">
-                      Components <span className="text-red-500 normal-case">*</span>
-                    </label>
+                <section className="mt-4">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                      Components <span className="text-red-500">*</span>
+                    </h3>
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setEditingChoiceIndex(null)}
-                        className="text-[11px] font-semibold text-primary hover:underline"
+                        onClick={openFixedItemPicker}
+                        className={`text-[11px] font-semibold hover:underline ${
+                          itemPickerMode === "fixed" ? "text-primary" : "text-primary/80"
+                        }`}
                       >
                         + Fixed item
                       </button>
@@ -2200,14 +2275,14 @@ export default function DealsPage() {
                     </div>
                   </div>
                   {form.components.length === 0 ? (
-                    <p className="text-xs text-gray-400 dark:text-neutral-500 rounded-xl border border-dashed border-gray-200 dark:border-neutral-700 px-3 py-4 text-center">
-                      Add fixed items or choice slots using the panel on the right.
+                    <p className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-400 dark:border-neutral-700 dark:text-neutral-500">
+                      Click <strong>+ Fixed item</strong> or <strong>+ Choice slot</strong> to pick menu items.
                     </p>
                   ) : (
                     <div className="space-y-2">
                       {form.components.map((comp, index) => {
                         if (comp.type === "choice") {
-                          const isEditing = editingChoiceIndex === index;
+                          const isEditing = itemPickerMode === index;
                           const optionNames = (comp.options || [])
                             .map((opt) => formatChoiceOptionLabel(opt, menuItemById))
                             .filter(Boolean);
@@ -2292,7 +2367,7 @@ export default function DealsPage() {
                                 <div className="flex flex-col gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => setEditingChoiceIndex(index)}
+                                    onClick={() => openChoiceItemPicker(index)}
                                     className="text-[10px] font-semibold text-secondary hover:underline"
                                   >
                                     {isEditing ? "Editing" : "Edit options"}
@@ -2356,23 +2431,33 @@ export default function DealsPage() {
                       })}
                     </div>
                   )}
-                </div>
+                </section>
 
               </div>
 
-              {/* Right — Item picker */}
-              <div className="md:w-80 flex flex-col border-t md:border-t-0 border-gray-100 dark:border-neutral-800 flex-shrink-0">
-                <div className="px-4 pt-4 pb-2 flex-shrink-0">
-                  <p className="text-xs font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wide mb-1">
-                    {editingChoiceIndex != null ? "Choice options" : "Add fixed items"}
+              {isItemPickerOpen && (
+              <div className="flex w-full shrink-0 flex-col border-t border-gray-100 dark:border-neutral-800 md:w-80 md:border-l md:border-t-0">
+                <div className="shrink-0 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <h3 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                      {choicePickerIndex != null ? "Choice options" : "Fixed items"}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={closeItemPicker}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                      aria-label="Close item picker"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-gray-500 dark:text-neutral-400">
+                    {choicePickerIndex != null
+                      ? "Tap size/flavour chips under each item — not the row itself."
+                      : "Click items to add fixed components. Variation chips appear below sized items."}
                   </p>
-                  <p className="text-[11px] text-gray-400 dark:text-neutral-500 mb-2">
-                    {editingChoiceIndex != null
-                      ? "Do not check the whole item — tap a size/flavour chip under each pizza or drink (e.g. Medium, 1L). Chips appear below items that have sizes set up in Menu Items."
-                      : "Click items to add fixed components. Items with sizes show variation chips underneath."}
-                  </p>
-                  {editingChoiceIndex != null &&
-                    (form.components[editingChoiceIndex]?.options || []).some((opt) =>
+                  {choicePickerIndex != null &&
+                    (form.components[choicePickerIndex]?.options || []).some((opt) =>
                       choiceOptionHasStaleReferences(opt, menuItemById),
                     ) && (
                       <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] font-medium text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
@@ -2380,11 +2465,11 @@ export default function DealsPage() {
                         Remove them (× on the chip), then re-add using the chips below each item.
                       </p>
                     )}
-                  {editingChoiceIndex != null &&
-                    !(form.components[editingChoiceIndex]?.options || []).some((opt) =>
+                  {choicePickerIndex != null &&
+                    !(form.components[choicePickerIndex]?.options || []).some((opt) =>
                       choiceOptionHasStaleReferences(opt, menuItemById),
                     ) &&
-                    (form.components[editingChoiceIndex]?.options || []).some((opt) =>
+                    (form.components[choicePickerIndex]?.options || []).some((opt) =>
                       choiceOptionNeedsVariation(opt, menuItemById),
                     ) && (
                       <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
@@ -2396,16 +2481,49 @@ export default function DealsPage() {
                       {form.components.length} component{form.components.length !== 1 ? "s" : ""}
                     </span>
                   )}
-                  <input
-                    type="text"
-                    value={itemSearch}
-                    onChange={(e) => setItemSearch(e.target.value)}
-                    placeholder="Search items..."
-                    className="mt-2 w-full px-3 py-2 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                  />
-                  {editingChoiceIndex != null && choiceOptionKeys.size > 0 && (
+                  <div className="mt-2 flex flex-col gap-2">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={itemSearch}
+                        onChange={(e) => setItemSearch(e.target.value)}
+                        placeholder="Search items…"
+                        className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                      />
+                    </div>
+                    {pickerCategoryOptions.length > 0 && (
+                      <select
+                        value={itemCategoryFilter}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setItemCategoryFilter(next);
+                          if (next !== "all") {
+                            const group = pickerBaseGroupedItems.find((g) =>
+                              next === "__uncategorized__" ? !g.categoryId : g.categoryId === next,
+                            );
+                            if (group) {
+                              setCollapsedCategories((prev) => ({
+                                ...prev,
+                                [group.categoryName]: false,
+                              }));
+                            }
+                          }
+                        }}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs text-gray-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                      >
+                        <option value="all">All categories</option>
+                        {pickerCategoryOptions.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  {choicePickerIndex != null && choiceOptionKeys.size > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {(form.components[editingChoiceIndex]?.options || []).map((opt) => {
+                      {(form.components[choicePickerIndex]?.options || []).map((opt) => {
                         const name = formatChoiceOptionLabel(opt, menuItemById);
                         const key = choiceOptionKey(opt);
                         const isStale = choiceOptionHasStaleReferences(opt, menuItemById);
@@ -2440,7 +2558,11 @@ export default function DealsPage() {
                   ) : categoryEntries.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-10 text-center px-4">
                       <ShoppingBag className="w-8 h-8 text-gray-300 dark:text-neutral-700 mb-2" />
-                      <p className="text-xs text-gray-400 dark:text-neutral-500">No matching items.</p>
+                      <p className="text-xs text-gray-400 dark:text-neutral-500">
+                        {itemSearch || itemCategoryFilter !== "all"
+                          ? "No items match your search or category filter."
+                          : "No matching items."}
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -2448,8 +2570,8 @@ export default function DealsPage() {
                         const isCollapsed = !!collapsedCategories[categoryName];
                         const selectedInCategory = items.filter((item) => {
                           const id = String(item.id);
-                          if (editingChoiceIndex != null) {
-                            return (form.components[editingChoiceIndex]?.options || []).some(
+                          if (choicePickerIndex != null) {
+                            return (form.components[choicePickerIndex]?.options || []).some(
                               (opt) => String(opt.menuItemId) === id,
                             );
                           }
@@ -2485,7 +2607,7 @@ export default function DealsPage() {
                               <div className="space-y-1 px-2 pb-2">
                                 {items.map((item) => {
                                   const itemId = String(item.id);
-                                  const isChoiceMode = editingChoiceIndex != null;
+                                  const isChoiceMode = choicePickerIndex != null;
                                   const hasVariations = itemHasRequiredVariations(item);
                                   const variationGroups = getRequiredVariationGroups(item);
                                   const isDraftItem = variationDraft?.menuItemId === itemId;
@@ -2501,10 +2623,10 @@ export default function DealsPage() {
                                   const choicePlainSelected =
                                     isChoiceMode &&
                                     !hasVariations &&
-                                    editingChoiceIndex != null &&
+                                    choicePickerIndex != null &&
                                     choiceOptionIsSelected(
                                       form.components,
-                                      editingChoiceIndex,
+                                      choicePickerIndex,
                                       itemId,
                                       [],
                                     );
@@ -2602,10 +2724,10 @@ export default function DealsPage() {
                                                         [String(group.id)]: String(option.id),
                                                       });
                                                     const qty = isChoiceMode
-                                                      ? editingChoiceIndex != null &&
+                                                      ? choicePickerIndex != null &&
                                                         choiceOptionIsSelected(
                                                           form.components,
-                                                          editingChoiceIndex,
+                                                          choicePickerIndex,
                                                           itemId,
                                                           modifierSelections,
                                                         )
@@ -2699,32 +2821,39 @@ export default function DealsPage() {
                   )}
                 </div>
               </div>
+              )}
 
+              </div>
+
+              <div className="flex shrink-0 items-center justify-end gap-2 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setIsModalOpen(false)}
+                  disabled={isLoading}
+                  className="h-8 rounded-lg px-3 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                  className="h-8 gap-1 rounded-lg bg-gradient-to-r from-primary to-secondary px-4 text-xs shadow-md shadow-primary/20 hover:shadow-primary/30"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {form.id ? "Saving…" : "Creating…"}
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-3.5 w-3.5" />
+                      {form.id ? "Save changes" : "Create deal"}
+                    </>
+                  )}
+                </Button>
+              </div>
             </form>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-100 dark:border-neutral-800 flex justify-end gap-3 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                disabled={isLoading}
-                className="px-5 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                onClick={handleSubmit}
-                disabled={isLoading}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
-              >
-                {isLoading ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
-                ) : (
-                  form.id ? "Update Deal" : "Create Deal"
-                )}
-              </button>
-            </div>
 
           </div>
         </div>
