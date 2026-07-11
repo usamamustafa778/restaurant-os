@@ -125,6 +125,7 @@ function mapOrderItemsForUpdate(items = []) {
     note: item.note || "",
     variantLabel: item.variantLabel || item.size || "",
     modifierSelections: item.modifierSelections || [],
+    lineSource: item.lineSource || undefined,
     isAddition: item.isAddition || false,
     addedAt: item.addedAt || null,
     itemStatus: item.itemStatus ?? null,
