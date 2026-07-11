@@ -17,6 +17,7 @@ import {
   getStoredAuth,
   getSourceBranchMenu,
   copyMenuFromBranch,
+  copyItemVariations,
   updateBranchMenuItem,
   getCurrencySymbol,
   getModifierGroups,
@@ -336,10 +337,6 @@ export default function MenuItemsPage() {
   }
   const categories = data?.categories || [];
   const items = data?.items || [];
-  const upsellExcludedItems = useMemo(
-    () => items.filter((item) => item.excludeFromUpsell === true),
-    [items],
-  );
   const inventoryItems = data?.inventoryItems || [];
   // When a branch is selected, only show ingredients that have a BranchInventory record
   const branchFilteredInventoryItems = inventoryItems.filter(item => item.hasBranchRecord !== false);
@@ -422,6 +419,11 @@ export default function MenuItemsPage() {
   const [recipeAddSearch, setRecipeAddSearch] = useState("");
 
   const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copyVariationsModalOpen, setCopyVariationsModalOpen] = useState(false);
+  const [copyVariationsTargetIds, setCopyVariationsTargetIds] = useState([]);
+  const [copyVariationsSubmitting, setCopyVariationsSubmitting] = useState(false);
+  const [copyVariationsSearch, setCopyVariationsSearch] = useState("");
+  const [copyVariationsCategoryFilter, setCopyVariationsCategoryFilter] = useState("all");
   const [copySourceBranchId, setCopySourceBranchId] = useState("");
   const [copySourceData, setCopySourceData] = useState(null);
   const [copySourceLoading, setCopySourceLoading] = useState(false);
@@ -432,6 +434,8 @@ export default function MenuItemsPage() {
   const [focusedGroupIndex, setFocusedGroupIndex] = useState(null);
   const [groupNameAnchor, setGroupNameAnchor] = useState(null);
   const [optionNameAnchor, setOptionNameAnchor] = useState(null);
+  const pendingGroupFocusRef = useRef(false);
+  const groupNameInputRefs = useRef({});
 
   useEffect(() => {
     if (!exportMenuOpen) return;
@@ -465,6 +469,25 @@ export default function MenuItemsPage() {
     document.addEventListener("mousedown", handleDown);
     return () => document.removeEventListener("mousedown", handleDown);
   }, [filtersOpen]);
+
+  useEffect(() => {
+    if (!form.hasModifiers) {
+      setFocusedGroupIndex(null);
+      setGroupNameAnchor(null);
+      return;
+    }
+    if (!pendingGroupFocusRef.current || form.modifierGroups.length === 0) return;
+    pendingGroupFocusRef.current = false;
+    const timer = setTimeout(() => {
+      const el = groupNameInputRefs.current[0];
+      if (el) {
+        el.focus();
+        setFocusedGroupIndex(0);
+        setGroupNameAnchor(el);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [form.hasModifiers, form.modifierGroups.length]);
 
   useEffect(() => {
     if (!isModalOpen) return;
@@ -609,7 +632,7 @@ export default function MenuItemsPage() {
       id: null,
       name: "",
       price: "",
-      categoryId: categories[0]?.id || "",
+      categoryId: "",
       dietaryType: "non_veg",
       imageUrl: "",
       description: "",
@@ -621,6 +644,10 @@ export default function MenuItemsPage() {
       modifierGroups: [],
       attachedModifierGroupIds: [],
     });
+    setCopyVariationsModalOpen(false);
+    setCopyVariationsTargetIds([]);
+    setCopyVariationsSearch("");
+    setCopyVariationsCategoryFilter("all");
   }
 
   function startCreate() {
@@ -656,20 +683,6 @@ export default function MenuItemsPage() {
     setIsModalOpen(true);
   }
 
-  async function handleReincludeInUpsell(item) {
-    if (!item?.id) return;
-    try {
-      const updated = await updateItem(item.id, { excludeFromUpsell: false });
-      setData((prev) => ({
-        ...prev,
-        items: prev.items.map((i) => (i.id === updated.id ? updated : i)),
-      }));
-      toast.success(`"${item.name}" can appear in cart suggestions again`);
-    } catch (err) {
-      toast.error(err?.message || "Could not update item");
-    }
-  }
-
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.name.trim()) { 
@@ -684,15 +697,15 @@ export default function MenuItemsPage() {
     }
     if (form.hasModifiers) {
       if (form.modifierGroups.length === 0) {
-        const msg = 'Add at least one modifier group (e.g. Choose Your Size)';
+        const msg = 'Add at least one variation group (e.g. Choose Your Size)';
         setModalError(msg); toast.error(msg); return;
       }
       if (form.modifierGroups.some(g => !g.groupName.trim())) {
-        const msg = 'All modifier groups need a name';
+        const msg = 'All variation groups need a name';
         setModalError(msg); toast.error(msg); return;
       }
       if (form.modifierGroups.some(g => (g.options || []).length < 2)) {
-        const msg = 'Each modifier group needs at least 2 options';
+        const msg = 'Each variation group needs at least 2 choices';
         setModalError(msg); toast.error(msg); return;
       }
       if (form.modifierGroups.some(g => (g.options || []).some(o => !o.name.trim()))) {
@@ -704,7 +717,7 @@ export default function MenuItemsPage() {
         setModalError(msg); toast.error(msg); return;
       }
       if (!form.modifierGroups.some(g => g.required)) {
-        const msg = 'At least one group must be marked as Required';
+        const msg = 'At least one variation group must be marked as Required';
         setModalError(msg); toast.error(msg); return;
       }
     }
@@ -956,18 +969,42 @@ export default function MenuItemsPage() {
 
   // ─── Modifier group helpers ───────────────────────────────────────────────────
 
+  function createEmptyModifierGroup(sortOrder = 0) {
+    return {
+      groupName: "",
+      required: true,
+      maxSelections: 1,
+      sortOrder,
+      options: [],
+    };
+  }
+
+  function toggleHasModifiers() {
+    setForm((prev) => {
+      if (prev.hasModifiers) {
+        pendingGroupFocusRef.current = false;
+        return { ...prev, hasModifiers: false, modifierGroups: [] };
+      }
+      const needsFirstGroup = prev.modifierGroups.length === 0;
+      if (needsFirstGroup) {
+        pendingGroupFocusRef.current = true;
+      }
+      return {
+        ...prev,
+        hasModifiers: true,
+        modifierGroups: needsFirstGroup
+          ? [createEmptyModifierGroup(0)]
+          : prev.modifierGroups,
+      };
+    });
+  }
+
   function addGroup() {
     setForm(prev => ({
       ...prev,
       modifierGroups: [
         ...prev.modifierGroups,
-        {
-          groupName: '',
-          required: true,
-          maxSelections: 1,
-          sortOrder: prev.modifierGroups.length,
-          options: [],
-        },
+        createEmptyModifierGroup(prev.modifierGroups.length),
       ],
     }));
   }
@@ -1057,6 +1094,82 @@ export default function MenuItemsPage() {
       }),
     }));
   }
+
+  function openCopyVariationsModal() {
+    setCopyVariationsTargetIds([]);
+    setCopyVariationsSearch("");
+    setCopyVariationsCategoryFilter("all");
+    setCopyVariationsModalOpen(true);
+  }
+
+  function toggleCopyVariationsTarget(itemId) {
+    setCopyVariationsTargetIds((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+    );
+  }
+
+  async function handleCopyVariationsSubmit() {
+    if (!form.id || copyVariationsTargetIds.length === 0) return;
+    setCopyVariationsSubmitting(true);
+    try {
+      const result = await copyItemVariations(form.id, copyVariationsTargetIds);
+      const count = result.updatedCount ?? 0;
+      toast.success(`Variations copied to ${count} item${count === 1 ? "" : "s"}`);
+      if (result.skippedItemIds?.length) {
+        toast.error(`${result.skippedItemIds.length} item(s) could not be updated`);
+      }
+      setCopyVariationsModalOpen(false);
+      setCopyVariationsTargetIds([]);
+      await refetch();
+    } catch (err) {
+      toast.error(err?.message || "Failed to copy variations");
+    } finally {
+      setCopyVariationsSubmitting(false);
+    }
+  }
+
+  const copyVariationsBaseGroupedItems = useMemo(() => {
+    if (!form.id) return [];
+    const activeItems = items.filter(
+      (item) =>
+        item.id !== form.id &&
+        (item.finalAvailable ?? item.available ?? true),
+    );
+    return categories
+      .map((cat) => ({
+        categoryId: cat.id,
+        categoryName: cat.name,
+        items: activeItems
+          .filter((item) => item.categoryId === cat.id)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [items, categories, form.id]);
+
+  const copyVariationsGroupedItems = useMemo(() => {
+    const term = copyVariationsSearch.trim().toLowerCase();
+    return copyVariationsBaseGroupedItems
+      .filter((group) =>
+        copyVariationsCategoryFilter === "all" ||
+        group.categoryId === copyVariationsCategoryFilter,
+      )
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          if (!term) return true;
+          return (
+            item.name.toLowerCase().includes(term) ||
+            group.categoryName.toLowerCase().includes(term)
+          );
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [copyVariationsBaseGroupedItems, copyVariationsSearch, copyVariationsCategoryFilter]);
+
+  const copyVariationsAllTargetIds = useMemo(
+    () => copyVariationsGroupedItems.flatMap((group) => group.items.map((item) => item.id)),
+    [copyVariationsGroupedItems],
+  );
 
   async function handleSaveRecipe() {
     if (!recipeDialog.itemId) return;
@@ -1915,39 +2028,6 @@ export default function MenuItemsPage() {
       ) : (
         <div className="w-full min-w-0 overflow-x-hidden">
 
-          {upsellExcludedItems.length > 0 && (
-            <div className="menu-items-no-print mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-500/25 dark:bg-amber-500/10">
-              <div className="mb-2 flex items-center gap-2">
-                <ShoppingBag className="h-4 w-4 text-amber-700 dark:text-amber-300" />
-                <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-                  Hidden from cart upsell suggestions
-                </h3>
-              </div>
-              <p className="mb-3 text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-200/80">
-                These items still appear on your menu and can be ordered normally — they are only excluded from the &quot;Complete your meal&quot; row on your website.
-              </p>
-              <ul className="space-y-2">
-                {upsellExcludedItems.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-white/80 px-3 py-2 dark:border-amber-500/20 dark:bg-neutral-950/60"
-                  >
-                    <span className="min-w-0 truncate text-xs font-medium text-gray-900 dark:text-neutral-100">
-                      {item.name}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleReincludeInUpsell(item)}
-                      className="shrink-0 text-[11px] font-semibold text-primary hover:underline"
-                    >
-                      Suggest again
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
           {/* Grid View - 2 cards on mobile, no horizontal scroll */}
           {viewMode === "grid" && (
             <div className="w-full min-w-0 overflow-x-hidden grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -2382,10 +2462,10 @@ export default function MenuItemsPage() {
                           )}
                           <div>
                             <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
-                              Category
+                              Category <span className="text-red-500">*</span>
                             </label>
                             <AsyncCombobox
-                              placeholder="Search…"
+                              placeholder="Select category…"
                               fetchFn={fetchCategoryOptions}
                               value={form.categoryId || null}
                               valueObj={selectedCategoryObj}
@@ -2609,11 +2689,7 @@ export default function MenuItemsPage() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => setForm(prev => ({
-                              ...prev,
-                              hasModifiers: !prev.hasModifiers,
-                              modifierGroups: prev.hasModifiers ? [] : prev.modifierGroups,
-                            }))}
+                            onClick={toggleHasModifiers}
                             className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none ${
                               form.hasModifiers ? "bg-primary" : "bg-gray-200 dark:bg-neutral-700"
                             }`}
@@ -2628,21 +2704,36 @@ export default function MenuItemsPage() {
                       </div>
                     </section>
 
-                    {/* Choice groups builder */}
+                    {/* Variation groups builder */}
                     {form.hasModifiers && (
                       <div className="space-y-3 overflow-visible">
+                        {form.id && form.modifierGroups.length > 0 && hasPermission("menu.manage") && (
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={openCopyVariationsModal}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 dark:border-primary/40 dark:bg-primary/10"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              Copy to other items
+                            </button>
+                          </div>
+                        )}
                         {form.modifierGroups.map((group, gi) => (
                           <div
                             key={group.id || gi}
                             className="overflow-visible rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
                           >
-                            {/* Group header */}
+                            {/* Variation group header */}
                             <div className="flex items-center gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-50/80 px-3.5 py-2.5 dark:border-neutral-800 dark:bg-neutral-800/50">
                         <span className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wide w-4 flex-shrink-0">
                           {gi + 1}
                         </span>
                         <div className="relative flex-1 min-w-0">
                           <input
+                            ref={(el) => {
+                              groupNameInputRefs.current[gi] = el;
+                            }}
                             type="text"
                             value={group.groupName}
                             onChange={e =>
@@ -2658,7 +2749,7 @@ export default function MenuItemsPage() {
                                 setGroupNameAnchor(null);
                               }, 150);
                             }}
-                            placeholder="Group name, e.g. Size"
+                            placeholder="Variation group name, e.g. Size"
                             className="w-full bg-transparent text-xs font-medium text-gray-900 dark:text-white outline-none placeholder:text-gray-400 dark:placeholder:text-neutral-500"
                           />
                         </div>
@@ -2759,7 +2850,7 @@ export default function MenuItemsPage() {
                           onClick={addGroup}
                           className="w-full rounded-xl border border-dashed border-primary/30 py-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/5 dark:border-primary/40"
                         >
-                          + Add group
+                          + Add variation group
                         </button>
                       </div>
                     )}
@@ -3310,6 +3401,149 @@ export default function MenuItemsPage() {
               >
                 {copySubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
                 {copySubmitting ? "Copying…" : `Copy to ${currentBranch?.name || "this branch"}`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy variations to other items */}
+      {copyVariationsModalOpen && (
+        <div className="menu-items-no-print fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl dark:bg-neutral-950">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-neutral-800">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Copy variations to other items</h2>
+              <button
+                type="button"
+                onClick={() => setCopyVariationsModalOpen(false)}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-6">
+              <p className="text-sm text-gray-600 dark:text-neutral-400">
+                Copy variation groups from <strong>{form.name || "this item"}</strong> to the items you select below.
+                Uses the last saved variations on this item.
+              </p>
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  This will replace existing size variations on selected items.
+                </p>
+              </div>
+              {copyVariationsBaseGroupedItems.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-neutral-400">
+                  No other active menu items in this branch.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="relative min-w-0 flex-1">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="search"
+                        value={copyVariationsSearch}
+                        onChange={(e) => setCopyVariationsSearch(e.target.value)}
+                        placeholder="Search items…"
+                        className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                      />
+                    </div>
+                    <select
+                      value={copyVariationsCategoryFilter}
+                      onChange={(e) => setCopyVariationsCategoryFilter(e.target.value)}
+                      className={`${selectBaseCls} min-w-[9rem] shrink-0`}
+                    >
+                      <option value="all">All categories</option>
+                      {copyVariationsBaseGroupedItems.map((group) => (
+                        <option key={group.categoryId} value={group.categoryId}>
+                          {group.categoryName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {copyVariationsGroupedItems.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-neutral-400">
+                      No items match your search or category filter.
+                    </p>
+                  ) : (
+                    <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-gray-600 dark:text-neutral-400">
+                      Active items by category
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCopyVariationsTargetIds(copyVariationsAllTargetIds)}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Select all visible
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCopyVariationsTargetIds([])}
+                        className="text-xs text-gray-500 hover:underline"
+                      >
+                        Deselect all
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-80 space-y-3 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-neutral-700">
+                    {copyVariationsGroupedItems.map((group) => (
+                      <div key={group.categoryId}>
+                        <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+                          {group.categoryName}
+                        </p>
+                        <div className="divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-neutral-800 dark:border-neutral-800">
+                          {group.items.map((item) => (
+                            <label
+                              key={item.id}
+                              className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800/50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={copyVariationsTargetIds.includes(item.id)}
+                                onChange={() => toggleCopyVariationsTarget(item.id)}
+                                className="rounded border-gray-300 text-primary"
+                              />
+                              <span className="flex-1 text-sm text-gray-900 dark:text-white">{item.name}</span>
+                              {item.hasModifiers && (
+                                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                  Has variations
+                                </span>
+                              )}
+                              <span className="text-xs text-gray-500">
+                                {sym} {Number(item.finalPrice ?? item.price ?? 0).toFixed(0)}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-neutral-800">
+              <Button type="button" variant="ghost" onClick={() => setCopyVariationsModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCopyVariationsSubmit}
+                disabled={copyVariationsSubmitting || copyVariationsTargetIds.length === 0}
+              >
+                {copyVariationsSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                {copyVariationsSubmitting
+                  ? "Copying…"
+                  : `Copy to ${copyVariationsTargetIds.length} item${copyVariationsTargetIds.length === 1 ? "" : "s"}`}
               </Button>
             </div>
           </div>
