@@ -57,6 +57,11 @@ import {
   modifierSelectionsFromCartItem,
   resolveMenuItemForCartLine,
 } from "../../lib/modifier-pricing";
+import {
+  buildDealSelectionsFingerprint,
+  isDealConfigurable,
+} from "../../lib/dealComboItems";
+import PosDealCustomizeModal from "./PosDealCustomizeModal";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -424,6 +429,7 @@ export default function POSView({
   const [showDealsSection, setShowDealsSection] = useState(false);
   const [applicableDeals, setApplicableDeals] = useState([]);
   const [dealDiscount, setDealDiscount] = useState(0);
+  const [dealCustomizeTarget, setDealCustomizeTarget] = useState(null);
 
   // Expanded cart items (for showing price details)
   const [expandedCartItems, setExpandedCartItems] = useState([]);
@@ -1372,16 +1378,7 @@ export default function POSView({
         // This ensures the order goes through the normal KDS pipeline before
         // payment is attached — same two-step flow as editing an existing order.
         const placed = await createPosOrder({
-          items: cart.map((item) => ({
-            menuItemId: item.id,
-            quantity: item.quantity,
-            note: itemNotes[item._cartKey || item.id] || undefined,
-            modifierSelections:
-              item._modifierSelectionsForOrder?.length > 0
-                ? item._modifierSelectionsForOrder
-                : undefined,
-            variantLabel: item.size || item.variantLabel || undefined,
-          })),
+          items: cart.map(mapCartLineToPosOrderItem),
           orderType,
           paymentMethod: "PENDING",
           discountAmount: totalDiscount,
@@ -1835,6 +1832,55 @@ export default function POSView({
     setModifierSelections(buildInitialModifierSelections(item));
   };
 
+  const mapCartLineToPosOrderItem = useCallback(
+    (item) => ({
+      menuItemId: item.id,
+      quantity: item.quantity,
+      note: itemNotes[item._cartKey || item.id] || undefined,
+      modifierSelections:
+        item._modifierSelectionsForOrder?.length > 0
+          ? item._modifierSelectionsForOrder
+          : undefined,
+      variantLabel: item.size || item.variantLabel || undefined,
+      dealSelections: item._dealSelections || undefined,
+    }),
+    [itemNotes],
+  );
+
+  const addDealToCart = (deal, qty = 1, selectionsBySlot = {}) => {
+    const dealId = deal._id || deal.id;
+    const fingerprint = buildDealSelectionsFingerprint(deal, selectionsBySlot);
+    const cartKey = `deal-${dealId}${fingerprint ? `|${fingerprint}` : ""}`;
+    const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
+    const existing = cart.find((i) => (i._cartKey || i.id) === cartKey);
+    if (existing) {
+      setCart(
+        cart.map((i) =>
+          (i._cartKey || i.id) === cartKey
+            ? { ...i, quantity: i.quantity + quantity }
+            : i,
+        ),
+      );
+    } else {
+      setCart([
+        ...cart,
+        {
+          id: `deal-${dealId}`,
+          _cartKey: cartKey,
+          name: deal.name,
+          price: deal.comboPrice || 0,
+          quantity,
+          imageUrl: deal.imageUrl || "",
+          isDeal: true,
+          _dealId: dealId,
+          _dealSelections: selectionsBySlot,
+        },
+      ]);
+    }
+    setDealCustomizeTarget(null);
+    setBulkAddQtyInput("1");
+  };
+
   const addToCart = (item, qty = 1) => {
     if (editingOrderId && servedUnpaidEdit && !canEditAfterServed) {
       toast.error("You don't have permission to edit served orders.");
@@ -1883,6 +1929,16 @@ export default function POSView({
     if (itemNeedsModifierPicker(item)) {
       openModifierPicker(item, qty);
       return;
+    }
+
+    if (item.isDeal) {
+      const deal = availableDeals.find(
+        (d) => `deal-${d._id || d.id}` === item.id,
+      );
+      if (deal && isDealConfigurable(deal)) {
+        setDealCustomizeTarget({ deal, qty });
+        return;
+      }
     }
 
     // No modifiers — fast path direct add
@@ -2361,15 +2417,7 @@ export default function POSView({
 
     try {
       const result = await createPosOrder({
-        items: cart.map((item) => ({
-          menuItemId: item.id,
-          quantity: item.quantity,
-          note: itemNotes[item._cartKey || item.id] || undefined,
-          modifierSelections:
-            item._modifierSelectionsForOrder?.length > 0
-              ? item._modifierSelectionsForOrder
-              : undefined,
-        })),
+        items: cart.map(mapCartLineToPosOrderItem),
         orderType,
         paymentMethod: "PENDING",
         discountAmount: totalDiscount,
@@ -2637,15 +2685,7 @@ export default function POSView({
     try {
       setPrintingMenu(true);
       const result = await createPosOrder({
-        items: cart.map((item) => ({
-          menuItemId: item.id,
-          quantity: item.quantity,
-          note: itemNotes[item._cartKey || item.id] || undefined,
-          modifierSelections:
-            item._modifierSelectionsForOrder?.length > 0
-              ? item._modifierSelectionsForOrder
-              : undefined,
-        })),
+        items: cart.map(mapCartLineToPosOrderItem),
         orderType,
         paymentMethod: "PENDING",
         discountAmount: totalDiscount,
@@ -6914,6 +6954,17 @@ export default function POSView({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Deal customize modal (choice slots) ─────────────────────────────── */}
+      {dealCustomizeTarget && (
+        <PosDealCustomizeModal
+          deal={dealCustomizeTarget.deal}
+          menuItems={menu.items || []}
+          pendingQty={dealCustomizeTarget.qty}
+          onClose={() => setDealCustomizeTarget(null)}
+          onConfirm={addDealToCart}
+        />
       )}
 
       {/* ── Modifier Picker Modal ───────────────────────────────────────────── */}
