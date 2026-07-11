@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
 import DataTable from "../../components/ui/DataTable";
@@ -51,6 +51,10 @@ import {
   formatChoiceOptionLabel,
   choiceOptionKey,
   choiceOptionIsSelected,
+  choiceOptionNeedsVariation,
+  choiceOptionHasStaleReferences,
+  collectDealComponentStaleIssues,
+  fixedComponentHasStaleReferences,
   toggleChoiceOptionInComponent,
   getComboItemType,
   getFixedComponentQtyForVariation,
@@ -229,6 +233,11 @@ export default function DealsPage() {
     });
 
   const menuItemById = new Map(menuItems.map((m) => [String(m.id), m]));
+
+  const staleDealIssues = useMemo(
+    () => collectDealComponentStaleIssues(form.components, menuItemById),
+    [form.components, menuItems],
+  );
   const choiceOptionKeys = new Set(
     editingChoiceIndex != null && form.components[editingChoiceIndex]?.type === "choice"
       ? (form.components[editingChoiceIndex].options || []).map(choiceOptionKey)
@@ -1581,6 +1590,32 @@ export default function DealsPage() {
                   </div>
                 )}
 
+                {staleDealIssues.length > 0 && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
+                    <p className="font-semibold">Outdated variation references</p>
+                    <p className="mt-1 text-[11px] leading-relaxed opacity-90">
+                      Some components point at size/flavour options that no longer exist on the menu
+                      (often after a menu edit before stable IDs). Remove the affected options and
+                      re-add them using the current chips on the right.
+                    </p>
+                    <ul className="mt-2 space-y-1 text-[11px]">
+                      {staleDealIssues.slice(0, 6).map((issue, idx) => (
+                        <li key={`${issue.componentIndex}-${issue.optionIndex ?? "f"}-${issue.kind}-${idx}`}>
+                          • {issue.label}
+                          {issue.kind === "stale_option"
+                            ? ` — "${issue.optionName}" (${issue.groupName}) not on menu anymore`
+                            : issue.kind === "stale_group"
+                              ? ` — variation group "${issue.groupName}" changed`
+                              : " — menu item missing"}
+                        </li>
+                      ))}
+                      {staleDealIssues.length > 6 ? (
+                        <li>• …and {staleDealIssues.length - 6} more</li>
+                      ) : null}
+                    </ul>
+                  </div>
+                )}
+
                 {/* Deal name + pricing + validity */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
@@ -1823,6 +1858,10 @@ export default function DealsPage() {
                               className={`rounded-xl border px-3 py-2.5 ${
                                 isEditing
                                   ? "border-secondary/40 bg-secondary/5"
+                                  : (comp.options || []).some((opt) =>
+                                        choiceOptionHasStaleReferences(opt, menuItemById),
+                                      )
+                                    ? "border-red-300 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20"
                                   : "border-gray-200 dark:border-neutral-700"
                               }`}
                             >
@@ -1914,7 +1953,11 @@ export default function DealsPage() {
                         return (
                           <div
                             key={`fixed-${index}-${comp.menuItemId}-${modifierSelectionsFingerprint(comp.modifierSelections)}`}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 dark:border-neutral-700 px-3 py-2.5"
+                            className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 ${
+                              fixedComponentHasStaleReferences(comp, menuItemById)
+                                ? "border-red-300 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20"
+                                : "border-gray-200 dark:border-neutral-700"
+                            }`}
                           >
                             <div className="min-w-0">
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-bold uppercase mr-2">
@@ -1966,9 +2009,29 @@ export default function DealsPage() {
                   </p>
                   <p className="text-[11px] text-gray-400 dark:text-neutral-500 mb-2">
                     {editingChoiceIndex != null
-                      ? "Pick size/flavour chips to add specific options (e.g. Large BBQ Pizza, Pepsi 1L)."
-                      : "Click items to add fixed components. Items with sizes show variation chips."}
+                      ? "Do not check the whole item — tap a size/flavour chip under each pizza or drink (e.g. Medium, 1L). Chips appear below items that have sizes set up in Menu Items."
+                      : "Click items to add fixed components. Items with sizes show variation chips underneath."}
                   </p>
+                  {editingChoiceIndex != null &&
+                    (form.components[editingChoiceIndex]?.options || []).some((opt) =>
+                      choiceOptionHasStaleReferences(opt, menuItemById),
+                    ) && (
+                      <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] font-medium text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
+                        Some options reference old size/flavour IDs that no longer exist on the menu.
+                        Remove them (× on the chip), then re-add using the chips below each item.
+                      </p>
+                    )}
+                  {editingChoiceIndex != null &&
+                    !(form.components[editingChoiceIndex]?.options || []).some((opt) =>
+                      choiceOptionHasStaleReferences(opt, menuItemById),
+                    ) &&
+                    (form.components[editingChoiceIndex]?.options || []).some((opt) =>
+                      choiceOptionNeedsVariation(opt, menuItemById),
+                    ) && (
+                      <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+                        Some selected options are missing a size/flavour. Remove them (× on the chip), then add again using the chips below each item.
+                      </p>
+                    )}
                   {form.components.length > 0 && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">
                       {form.components.length} component{form.components.length !== 1 ? "s" : ""}
@@ -1986,12 +2049,20 @@ export default function DealsPage() {
                       {(form.components[editingChoiceIndex]?.options || []).map((opt) => {
                         const name = formatChoiceOptionLabel(opt, menuItemById);
                         const key = choiceOptionKey(opt);
+                        const isStale = choiceOptionHasStaleReferences(opt, menuItemById);
+                        const needsVariation = !isStale && choiceOptionNeedsVariation(opt, menuItemById);
                         return (
                           <button
                             key={key}
                             type="button"
                             onClick={() => toggleChoiceOption(opt.menuItemId, opt.modifierSelections)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-secondary/10 text-secondary text-[10px] font-semibold hover:bg-secondary/15"
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold hover:opacity-90 ${
+                              isStale
+                                ? "bg-red-100 text-red-900 ring-1 ring-red-300 dark:bg-red-950/50 dark:text-red-100"
+                                : needsVariation
+                                  ? "bg-amber-100 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-100"
+                                  : "bg-secondary/10 text-secondary hover:bg-secondary/15"
+                            }`}
                           >
                             <X className="w-3 h-3" />
                             <span className="max-w-[160px] truncate">{name}</span>
@@ -2153,7 +2224,10 @@ export default function DealsPage() {
                                       </div>
 
                                       {hasVariations ? (
-                                        <div className="space-y-2 border-t border-gray-100 px-3 pb-3 pt-2 dark:border-neutral-800">
+                                        <div className="space-y-2 border-t border-primary/15 bg-primary/[0.03] px-3 pb-3 pt-2 dark:border-primary/20 dark:bg-primary/5">
+                                          <p className="text-[10px] font-semibold text-primary">
+                                            Choose size / flavour for this deal option
+                                          </p>
                                           {variationGroups.map((group) => (
                                             <div key={group.id}>
                                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">

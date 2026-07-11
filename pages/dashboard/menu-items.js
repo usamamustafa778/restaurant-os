@@ -93,6 +93,28 @@ function getRecipeVolumeMismatchHints(menuName, ingredientNames) {
   return hints;
 }
 
+function isMongoObjectId(value) {
+  return typeof value === "string" && /^[a-f0-9]{24}$/i.test(value.trim());
+}
+
+/** Include stable Mongo ids on save so backend preserves modifier group/option _ids. */
+function modifierGroupsForSave(groups) {
+  return (groups || []).map((g, gi) => ({
+    ...(isMongoObjectId(g.id) ? { id: g.id.trim() } : {}),
+    groupName: g.groupName,
+    required: g.required,
+    maxSelections: g.maxSelections || 1,
+    sortOrder: g.sortOrder ?? gi,
+    options: (g.options || []).map((o, oi) => ({
+      ...(isMongoObjectId(o.id) ? { id: o.id.trim() } : {}),
+      name: o.name,
+      price: Number(o.price) || 0,
+      isAvailable: o.isAvailable !== false,
+      sortOrder: o.sortOrder ?? oi,
+    })),
+  }));
+}
+
 const VARIATION_SUGGESTIONS = {
   size: [
     "Small",
@@ -703,20 +725,7 @@ export default function MenuItemsPage() {
       async () => {
         const modifierPayload = {
           hasModifiers: form.hasModifiers,
-          modifierGroups: form.hasModifiers
-            ? form.modifierGroups.map((g, gi) => ({
-                groupName: g.groupName,
-                required: g.required,
-                maxSelections: g.maxSelections || 1,
-                sortOrder: gi,
-                options: (g.options || []).map((o, oi) => ({
-                  name: o.name,
-                  price: Number(o.price) || 0,
-                  isAvailable: o.isAvailable !== false,
-                  sortOrder: oi,
-                })),
-              }))
-            : [],
+          modifierGroups: form.hasModifiers ? modifierGroupsForSave(form.modifierGroups) : [],
           attachedModifierGroupIds: form.attachedModifierGroupIds || [],
         };
         if (form.id) {
@@ -953,7 +962,6 @@ export default function MenuItemsPage() {
       modifierGroups: [
         ...prev.modifierGroups,
         {
-          id: Date.now().toString(),
           groupName: '',
           required: true,
           maxSelections: 1,
@@ -1000,7 +1008,6 @@ export default function MenuItemsPage() {
           options: [
             ...(g.options || []),
             {
-              id: Date.now().toString(),
               name: '',
               price: 0,
               isAvailable: true,
