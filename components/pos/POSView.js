@@ -931,10 +931,21 @@ export default function POSView({
         const cartItems = rebuildPosCartFromOrder(order, menuItems, availableDeals);
 
         const initialNotes = {};
-        cartItems.forEach((ci, idx) => {
-          const note = items[idx]?.note;
+        cartItems.forEach((ci) => {
+          if (ci.isDeal) return;
+          const cartKey = ci._cartKey || ci.id;
+          const match = items.find(
+            (it) =>
+              it.lineSource !== "deal" &&
+              String(it.menuItemId) === String(ci.id) &&
+              !(order.appliedDeals || []).some((d) => {
+                const dealName = String(d.dealName || "").trim();
+                return dealName && String(it.note || "").startsWith(dealName);
+              }),
+          );
+          const note = match?.note;
           if (note && String(note).trim()) {
-            initialNotes[ci._cartKey || ci.id] = String(note).trim();
+            initialNotes[cartKey] = String(note).trim();
           }
         });
 
@@ -1590,6 +1601,17 @@ export default function POSView({
     }));
 
   const allItemsForGrid = [...menu.items, ...dealMenuItems];
+
+  // POS renders combo deals in a dedicated "Deals" tab — skip menu categories with the same name.
+  const menuCategoryTabs = useMemo(() => {
+    const seenNames = new Set(["deals"]);
+    return (menu.categories || []).filter((cat) => {
+      const name = String(cat.name || "").trim().toLowerCase();
+      if (!name || seenNames.has(name)) return false;
+      seenNames.add(name);
+      return true;
+    });
+  }, [menu.categories]);
 
   // Flatten items with required size groups into individual cards (one per required option)
   const flattenedMenuItems = useMemo(() => {
@@ -3104,7 +3126,7 @@ export default function POSView({
                   </span>
                 </button>
 
-                {menu.categories.map((cat) => {
+                {menuCategoryTabs.map((cat) => {
                   const catItemCount = allItemsForGrid.filter(
                     (item) => !item.isDeal && item.categoryId === cat.id,
                   ).length;
@@ -3118,9 +3140,7 @@ export default function POSView({
                           : "border-gray-200 dark:border-neutral-700 hover:border-primary/50 bg-white dark:bg-neutral-900 text-gray-700 dark:text-neutral-300"
                       }`}
                     >
-                      <span className="whitespace-nowrap">
-                        {String(cat.name || "").toLowerCase()}
-                      </span>{" "}
+                      <span className="whitespace-nowrap">{cat.name}</span>{" "}
                       <span className="font-normal opacity-60">
                         {catItemCount}
                       </span>
@@ -3708,6 +3728,15 @@ export default function POSView({
                                 </span>
                               ) : null}
                             </h4>
+                            {item.isDeal && item._dealSelections ? (
+                              <div className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5 leading-tight">
+                                {Object.values(item._dealSelections)
+                                  .flat()
+                                  .map((pick) => pick.name)
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </div>
+                            ) : null}
                             {variationGroups.length === 0 &&
                               (item._selectedModifiers || []).map((mod, mi) => (
                                 <div
