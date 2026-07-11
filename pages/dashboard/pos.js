@@ -3407,6 +3407,15 @@ function OrderItemRow({ item }) {
             <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-primary">
               Deal
             </span>
+            {!dealOpen && choices.length > 0 ? (
+              <span className="mt-0.5 block truncate text-[10px] font-normal text-gray-500 dark:text-neutral-400">
+                {choices
+                  .map((choice) =>
+                    choice.qty > 1 ? `${choice.name} ×${choice.qty}` : choice.name,
+                  )
+                  .join(" · ")}
+              </span>
+            ) : null}
           </span>
           <span className="flex shrink-0 items-center gap-1 text-gray-500 dark:text-neutral-500">
             <span className="font-bold tabular-nums">×{qty}</span>
