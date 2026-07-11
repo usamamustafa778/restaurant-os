@@ -2578,12 +2578,44 @@ export default function POSView({
       taxLabel,
       taxableAmount,
       grandTotal: amountDue,
-      items: cart.map((it) => ({
-        name: it.name,
-        qty: it.quantity,
-        unitPrice: it.price,
-        note: itemNotes[it._cartKey || it.id] || undefined,
-      })),
+      items: cart.map((it) => {
+        const cartKey = it._cartKey || it.id;
+        const userNote = itemNotes[cartKey] || undefined;
+        if (it.isDeal || it._isDeal) {
+          const selections = it._dealSelections || {};
+          const dealQty = Math.max(1, Number(it.quantity) || 1);
+          const choiceCounts = new Map();
+          for (const picks of Object.values(selections)) {
+            for (const pick of picks || []) {
+              const label = String(pick.name || "").trim() || "Item";
+              const pickQty = Math.max(1, Number(pick.qty) || 1);
+              choiceCounts.set(
+                label,
+                (choiceCounts.get(label) || 0) + pickQty * dealQty,
+              );
+            }
+          }
+          return {
+            name: it.name,
+            qty: dealQty,
+            unitPrice: it.price,
+            isDealLine: true,
+            dealChoices: [...choiceCounts.entries()].map(([name, qty]) => ({
+              name,
+              qty,
+            })),
+            note: userNote,
+          };
+        }
+        return {
+          name: it.name,
+          qty: it.quantity,
+          unitPrice: it.price,
+          note: userNote,
+          modifierSelections: it._modifierSelectionsForOrder,
+          variantLabel: it.size || it.variantLabel,
+        };
+      }),
       ...overrides,
     };
   }
