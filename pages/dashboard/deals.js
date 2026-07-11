@@ -74,6 +74,11 @@ import {
   modifierSelectionsFingerprint,
   validateComponents,
 } from "../../lib/dealComboItems";
+import {
+  buildDestMenuIndex,
+  collectMissingDealImportItems,
+  mapDealComboItemsToBranch,
+} from "../../lib/dealBranchImport";
 
 function parseCSVLine(line) {
   const out = [];
@@ -163,8 +168,11 @@ export default function DealsPage() {
   const { confirm } = useConfirmDialog();
   const { viewMode, setViewMode } = useViewMode("table");
 
-  const fetchDeals = () => getDeals();
-  const { data: deals, loading: pageLoading, error, suspended, setData: setDeals, refetch } = usePageData(fetchDeals);
+  const fetchDeals = () => (currentBranch?.id ? getDeals(true, currentBranch.id) : getDeals(true));
+  const { data: deals, loading: pageLoading, error, suspended, setData: setDeals, refetch } = usePageData(
+    fetchDeals,
+    [currentBranch?.id],
+  );
 
   const fetchMenu = () => getMenu(currentBranch?.id);
   const { data: menuData } = usePageData(fetchMenu, [currentBranch?.id]);
@@ -202,6 +210,8 @@ export default function DealsPage() {
   const [branchImportSourceDeals, setBranchImportSourceDeals] = useState([]);
   const [branchImportSourceLoading, setBranchImportSourceLoading] = useState(false);
   const [branchImportSelectedIds, setBranchImportSelectedIds] = useState([]);
+  const [branchImportSourceMenu, setBranchImportSourceMenu] = useState([]);
+  const [branchImportSourceMenuLoading, setBranchImportSourceMenuLoading] = useState(false);
   const [branchImportSubmitting, setBranchImportSubmitting] = useState(false);
   const [categoriesPanelOpen, setCategoriesPanelOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -216,6 +226,13 @@ export default function DealsPage() {
   const importMenuRef = useRef(null);
 
   const dealsList = Array.isArray(deals) ? deals : [];
+  const dealBelongsToCurrentBranch = (deal) => {
+    if (!currentBranch?.id) return true;
+    return (deal?.branches || []).some((branchRef) => {
+      const id = typeof branchRef === "string" ? branchRef : branchRef?.id || branchRef?._id;
+      return String(id || "") === String(currentBranch.id);
+    });
+  };
   const sourceBranches = (branches || []).filter((b) => b.id !== currentBranch?.id);
   const canImportFromBranch = !!currentBranch?.id && sourceBranches.length > 0;
 
@@ -245,27 +262,36 @@ export default function DealsPage() {
     if (!branchImportModalOpen || !branchImportSourceId) {
       setBranchImportSourceDeals([]);
       setBranchImportSelectedIds([]);
+      setBranchImportSourceMenu([]);
       return;
     }
     let cancelled = false;
     setBranchImportSourceLoading(true);
-    getDeals(true)
-      .then((allDeals) => {
+    setBranchImportSourceMenuLoading(true);
+    Promise.all([getDeals(true, branchImportSourceId), getMenu(branchImportSourceId)])
+      .then(([allDeals, sourceMenu]) => {
         if (cancelled) return;
         const sourceDeals = (Array.isArray(allDeals) ? allDeals : []).filter((deal) =>
           (deal.branches || []).some((branchRef) => {
             const id = typeof branchRef === "string" ? branchRef : branchRef?.id || branchRef?._id;
             return String(id || "") === String(branchImportSourceId);
-          })
+          }),
         );
         setBranchImportSourceDeals(sourceDeals);
         setBranchImportSelectedIds([]);
+        setBranchImportSourceMenu(sourceMenu?.items || []);
       })
       .catch(() => {
-        if (!cancelled) setBranchImportSourceDeals([]);
+        if (!cancelled) {
+          setBranchImportSourceDeals([]);
+          setBranchImportSourceMenu([]);
+        }
       })
       .finally(() => {
-        if (!cancelled) setBranchImportSourceLoading(false);
+        if (!cancelled) {
+          setBranchImportSourceLoading(false);
+          setBranchImportSourceMenuLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -517,6 +543,10 @@ export default function DealsPage() {
   }
 
   function startEdit(deal) {
+    if (currentBranch?.id && !dealBelongsToCurrentBranch(deal)) {
+      toast.error("This deal belongs to another branch. Switch to that branch to edit it.");
+      return;
+    }
     const id = deal._id || deal.id;
     setForm({
       id,
@@ -1256,7 +1286,28 @@ export default function DealsPage() {
 
     setBranchImportSubmitting(true);
     const existingNames = new Set(dealsList.map((d) => String(d.name || "").trim().toLowerCase()));
-    const menuItemIds = new Set(menuItems.map((m) => String(m.id)));
+    const destMenuByName = buildDestMenuIndex(menuItems);
+    const sourceMenuById = new Map(
+      branchImportSourceMenu.map((m) => [String(m.id || m._id), m]),
+    );
+    for (const deal of branchImportSourceDeals) {
+      for (const ci of deal.comboItems || []) {
+        const type = getComboItemType(ci);
+        if (type === "choice") {
+          for (const opt of ci.options || []) {
+            const populated = opt?.menuItem;
+            if (populated && typeof populated === "object" && populated._id) {
+              sourceMenuById.set(String(populated._id), populated);
+            }
+          }
+        } else {
+          const populated = ci?.menuItem;
+          if (populated && typeof populated === "object" && populated._id) {
+            sourceMenuById.set(String(populated._id), populated);
+          }
+        }
+      }
+    }
     let created = 0;
     let skipped = 0;
     const failReasons = [];
@@ -1279,46 +1330,23 @@ export default function DealsPage() {
           continue;
         }
 
-        const comboItems = (deal.comboItems || [])
-          .map((ci) => {
-            const type = getComboItemType(ci);
-            if (type === "choice") {
-              const mappedOptions = (ci.options || [])
-                .map((o) => {
-                  const menuItemId = String(
-                    o?.menuItem?._id || o?.menuItem?.id || o?.menuItem || o?._id || o?.id || o || "",
-                  );
-                  if (!menuItemId || !menuItemIds.has(menuItemId)) return null;
-                  const payload = { menuItem: menuItemId };
-                  const mods = Array.isArray(o?.modifierSelections) ? o.modifierSelections : [];
-                  if (mods.length) payload.modifierSelections = mods;
-                  return payload;
-                })
-                .filter(Boolean);
-              if (!mappedOptions.length) return null;
-              return {
-                type: "choice",
-                label: ci.label || "",
-                quantity: Math.max(1, Number(ci.quantity) || 1),
-                options: mappedOptions,
-                minSelect: ci.minSelect ?? 1,
-                maxSelect: ci.maxSelect ?? 1,
-              };
-            }
-            const rawId = ci.menuItem?._id || ci.menuItem?.id || ci.menuItem;
-            const menuItemId = String(rawId || "");
-            if (!menuItemIds.has(menuItemId)) return null;
-            return {
-              type: "fixed",
-              menuItem: menuItemId,
-              quantity: Math.max(1, Number(ci.quantity) || 1),
-            };
-          })
-          .filter(Boolean);
+        const comboItems = mapDealComboItemsToBranch(deal.comboItems || [], {
+          sourceMenuById,
+          destMenuByName,
+        });
 
         if (!comboItems.length) {
           skipped++;
-          failReasons.push(`Missing menu items for ${deal.name}`);
+          const missing = collectMissingDealImportItems(
+            deal.comboItems || [],
+            destMenuByName,
+            sourceMenuById,
+          );
+          failReasons.push(
+            missing.length
+              ? `${deal.name}: copy menu items first (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""})`
+              : `Missing menu items for ${deal.name}`,
+          );
           continue;
         }
 
@@ -2893,6 +2921,16 @@ export default function DealsPage() {
               {branchImportSourceId && currentBranch?.name && (
                 <p className="text-xs text-gray-600 dark:text-neutral-400">
                   Copying from <strong>{sourceBranches.find((b) => b.id === branchImportSourceId)?.name ?? "source"}</strong> to <strong>{currentBranch.name}</strong> (this branch). Select deals to import.
+                </p>
+              )}
+              {branchImportSourceId && !branchImportSourceMenuLoading && branchImportSourceMenu.length === 0 && (
+                <p className="text-xs text-amber-700 dark:text-amber-400 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2">
+                  The source branch menu could not be loaded, or it has no items. Import matching menu items into this branch first (Menu Items → Import from branch), then import deals.
+                </p>
+              )}
+              {branchImportSourceId && menuItems.length === 0 && (
+                <p className="text-xs text-amber-700 dark:text-amber-400 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-3 py-2">
+                  This branch has no menu items yet. Copy menu items from the source branch before importing deals.
                 </p>
               )}
               {branchImportSourceLoading && (

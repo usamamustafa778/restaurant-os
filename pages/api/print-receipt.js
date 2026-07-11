@@ -1,4 +1,9 @@
 import net from "net";
+import {
+  formatOrderItemDisplayName,
+  formatReceiptItemsForBill,
+  getOrderItemBillModifierLines,
+} from "../../lib/orderDisplay.js";
 const ESC = "\x1B";
 const GS = "\x1D";
 const LF = "\x0A";
@@ -68,17 +73,15 @@ function buildEscPos(o) {
 
   let totalItems = 0;
   let totalQty = 0;
-  for (const it of o.items || []) {
+  for (const it of formatReceiptItemsForBill(o)) {
     const qty = it.qty ?? it.quantity ?? 1;
     const unit = it.unitPrice ?? it.price ?? 0;
     const lineTotal = it.lineTotal ?? unit * qty;
     totalItems++;
     totalQty += qty;
-    ln(it.name || "");
+    ln(formatOrderItemDisplayName(it));
     if (it.isDealLine) {
       ln("  (Combo deal)");
-    } else if (it.variantLabel) {
-      ln(`(${it.variantLabel})`);
     }
     const detail = `${unit.toFixed(2)}  ${String(qty).padStart(3)}  ${lineTotal.toFixed(2)}`;
     ln(pad("", detail));
@@ -87,15 +90,12 @@ function buildEscPos(o) {
         ln(`  - ${choice.name} x${choice.qty}`);
       }
     } else {
-      for (const sel of it.modifierSelections || []) {
-        for (const opt of sel.options || []) {
-          if (!opt.name) continue;
-          const optPrice = Number(opt.price) || 0;
-          if (optPrice > 0) {
-            ln(`  + ${opt.name} (+${optPrice.toFixed(2)})`);
-          } else {
-            ln(`  + ${opt.name}`);
-          }
+      for (const opt of getOrderItemBillModifierLines(it)) {
+        const optPrice = Number(opt.price) || 0;
+        if (optPrice > 0) {
+          ln(`  + ${opt.name} (+${optPrice.toFixed(2)})`);
+        } else {
+          ln(`  + ${opt.name}`);
         }
       }
     }

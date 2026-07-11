@@ -55,6 +55,7 @@ import {
   isSingleSelectModifierGroup,
   itemNeedsModifierPicker,
   modifierSelectionsFromCartItem,
+  getSelectedOptionIdForGroup,
   resolveMenuItemForCartLine,
   buildPosCartItemsFromOrderItems,
   mapPosCartLineToOrderUpdatePayload,
@@ -2417,7 +2418,12 @@ export default function POSView({
           qty,
           unitPrice: unit,
           lineTotal: unit * qty,
-          note: itemNotes[it.id] || undefined,
+          note: itemNotes[it._cartKey || it.id] || undefined,
+          variantLabel: it.size || it.variantLabel || undefined,
+          modifierSelections:
+            it._modifierSelectionsForOrder?.length > 0
+              ? it._modifierSelectionsForOrder
+              : undefined,
         };
       });
 
@@ -3840,13 +3846,11 @@ export default function POSView({
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {variationGroups.map((group) => {
-                                  const selections = modifierSelectionsFromCartItem(item);
-                                  const selected =
-                                    (selections[String(group.id)] || [])[0]?.optionId || "";
+                                  const selected = getSelectedOptionIdForGroup(group, item);
                                   return (
                                     <select
                                       key={group.id}
-                                      value={String(selected)}
+                                      value={selected}
                                       disabled={!canModifyServedOrderItems}
                                       onChange={(e) =>
                                         changeCartItemVariation(

@@ -31,7 +31,7 @@ import {
   auditSessionReportPayments,
 } from "../../lib/sessionReportBreakdown";
 import { printBillReceipt } from "../../lib/printBillReceipt";
-import { mergeReceiptItems } from "../../lib/orderDisplay.js";
+import { mergeReceiptItems, formatOrderItemDisplayName, getOrderItemModifierSubtexts } from "../../lib/orderDisplay.js";
 import {
   getBusinessDate,
   getBusinessDayRange,
@@ -3389,6 +3389,31 @@ function RiderPickerDropdown({
 
 // ─── OrderCard component ────────────────────────────────────────────────────
 
+function OrderItemRow({ item }) {
+  const qty = item.qty ?? item.quantity ?? 1;
+  const subtexts = getOrderItemModifierSubtexts(item);
+  return (
+    <div className="text-[11px]">
+      <div className="flex items-center justify-between">
+        <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
+          {formatOrderItemDisplayName(item)}
+        </span>
+        <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
+          ×{qty}
+        </span>
+      </div>
+      {subtexts.map((line, si) => (
+        <div
+          key={si}
+          className="text-[10px] text-gray-400 dark:text-neutral-500 ml-2 leading-tight"
+        >
+          {line}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function OrderCard({
   order,
   now,
@@ -3717,22 +3742,7 @@ function OrderCard({
           {expanded && (
             <div className="px-2.5 py-2 mt-1 rounded-lg bg-gray-50 dark:bg-neutral-900/80 space-y-1">
               {displayItems.map((it, idx) => (
-                <div key={idx} className="text-[11px]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
-                      {it.name}
-                      {it.variantLabel && (
-                        <span className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-1">({it.variantLabel})</span>
-                      )}
-                    </span>
-                    <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">×{it.qty ?? it.quantity ?? 1}</span>
-                  </div>
-                  {(it.modifierSelections || []).map((sel, si) => (
-                    <div key={si} className="text-[10px] text-gray-400 dark:text-neutral-500 ml-2 leading-tight">
-                      {sel.groupName}: {(sel.options || []).map((o) => o.name).join(", ")}
-                    </div>
-                  ))}
-                </div>
+                <OrderItemRow key={idx} item={it} />
               ))}
             </div>
           )}
@@ -3742,19 +3752,7 @@ function OrderCard({
         <div className="mx-3 mb-2 px-2.5 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900/80">
           <div className="space-y-1">
             {visibleItems.map((it, idx) => (
-              <div key={idx} className="text-[11px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
-                    {it.name}
-                    {it.variantLabel && (
-                      <span className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-1">({it.variantLabel})</span>
-                    )}
-                  </span>
-                  <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
-                    ×{it.qty ?? it.quantity ?? 1}
-                  </span>
-                </div>
-              </div>
+              <OrderItemRow key={idx} item={it} />
             ))}
           </div>
           {hiddenCount > 0 && (
@@ -3769,24 +3767,7 @@ function OrderCard({
           {expanded && hiddenCount > 0 && (
             <div className="space-y-1 mt-1 pt-1 border-t border-gray-200/60 dark:border-neutral-800">
               {displayItems.slice(3).map((it, idx) => (
-                <div key={idx} className="text-[11px]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-800 dark:text-neutral-200 truncate pr-2 font-medium">
-                      {it.name}
-                      {it.variantLabel && (
-                        <span className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-1">({it.variantLabel})</span>
-                      )}
-                    </span>
-                    <span className="text-gray-500 dark:text-neutral-500 font-bold flex-shrink-0 tabular-nums">
-                      ×{it.qty ?? it.quantity ?? 1}
-                    </span>
-                  </div>
-                  {(it.modifierSelections || []).map((sel, si) => (
-                    <div key={si} className="text-[10px] text-gray-400 dark:text-neutral-500 ml-2 leading-tight">
-                      {sel.groupName}: {(sel.options || []).map((o) => o.name).join(", ")}
-                    </div>
-                  ))}
-                </div>
+                <OrderItemRow key={idx} item={it} />
               ))}
             </div>
           )}
