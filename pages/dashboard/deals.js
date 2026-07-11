@@ -13,6 +13,10 @@ import { handleAsyncAction } from "../../utils/toastActions";
 import {
   getMenu,
   getDeals,
+  getDealCategories,
+  createDealCategory,
+  updateDealCategory,
+  deleteDealCategory,
   createDeal,
   updateDeal,
   deleteDeal,
@@ -34,10 +38,14 @@ import {
   ArrowUpDown,
   RefreshCw,
   ChevronDown,
+  ChevronUp,
   FileDown,
   FileText,
   Printer,
   Building2,
+  FolderOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -99,6 +107,36 @@ function ensureEndDateISO(startDateLike, endDateLike) {
   return new Date(safeStart.getTime() + 86400000).toISOString();
 }
 
+function getDealCategoryId(deal) {
+  if (!deal?.category) return null;
+  if (typeof deal.category === "object") {
+    return String(deal.category._id || deal.category.id || "") || null;
+  }
+  return String(deal.category);
+}
+
+function buildDealsGroupedByCategory(deals, dealCategories) {
+  const sortedCats = [...(dealCategories || [])]
+    .filter((c) => c.isActive !== false)
+    .sort(
+      (a, b) =>
+        (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
+  const groups = sortedCats
+    .map((cat) => ({
+      categoryId: cat.id,
+      categoryName: cat.name,
+      deals: deals.filter((d) => getDealCategoryId(d) === cat.id),
+    }))
+    .filter((g) => g.deals.length > 0);
+  const uncategorized = deals.filter((d) => !getDealCategoryId(d));
+  if (uncategorized.length) {
+    groups.push({ categoryId: null, categoryName: "Uncategorized", deals: uncategorized });
+  }
+  return groups;
+}
+
 function getEmptyForm() {
   const today = new Date().toISOString().slice(0, 10);
   return {
@@ -111,6 +149,7 @@ function getEmptyForm() {
     endDate: "",
     showOnPOS: true,
     imageUrl: "",
+    categoryId: "",
   };
 }
 
@@ -128,6 +167,14 @@ export default function DealsPage() {
   const { data: menuData } = usePageData(fetchMenu, [currentBranch?.id]);
   const menuItems = menuData?.items || [];
   const menuCategories = menuData?.categories || [];
+
+  const fetchDealCategories = () => getDealCategories();
+  const {
+    data: dealCategoriesData,
+    setData: setDealCategoriesData,
+    refetch: refetchDealCategories,
+  } = usePageData(fetchDealCategories);
+  const dealCategories = Array.isArray(dealCategoriesData) ? dealCategoriesData : [];
 
   const [form, setForm] = useState(getEmptyForm);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -152,6 +199,11 @@ export default function DealsPage() {
   const [branchImportSourceLoading, setBranchImportSourceLoading] = useState(false);
   const [branchImportSelectedIds, setBranchImportSelectedIds] = useState([]);
   const [branchImportSubmitting, setBranchImportSubmitting] = useState(false);
+  const [categoriesPanelOpen, setCategoriesPanelOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categorySavingId, setCategorySavingId] = useState(null);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
   const [editingChoiceIndex, setEditingChoiceIndex] = useState(null);
   const [variationDraft, setVariationDraft] = useState(null);
   const fileInputRef = useRef(null);
@@ -232,6 +284,30 @@ export default function DealsPage() {
       return 0;
     });
 
+  const dealsGroupedByCategory = useMemo(
+    () => buildDealsGroupedByCategory(filtered, dealCategories),
+    [filtered, dealCategories],
+  );
+
+  const sortedDealCategories = useMemo(
+    () =>
+      [...dealCategories].sort(
+        (a, b) =>
+          (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      ),
+    [dealCategories],
+  );
+
+  const dealCountByCategoryId = useMemo(() => {
+    const counts = new Map();
+    for (const deal of dealsList) {
+      const catId = getDealCategoryId(deal);
+      if (catId) counts.set(catId, (counts.get(catId) || 0) + 1);
+    }
+    return counts;
+  }, [dealsList]);
+
   const menuItemById = new Map(menuItems.map((m) => [String(m.id), m]));
 
   const staleDealIssues = useMemo(
@@ -270,6 +346,103 @@ export default function DealsPage() {
     })
     .filter((group) => group.items.length > 0)
     .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+
+  async function handleCreateDealCategory(e) {
+    e?.preventDefault?.();
+    const name = newCategoryName.trim();
+    if (!name) {
+      toast.error("Category name is required");
+      return;
+    }
+    setCategorySavingId("new");
+    try {
+      const created = await createDealCategory({ name });
+      setDealCategoriesData((prev) =>
+        Array.isArray(prev) ? [...prev, created].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)) : [created],
+      );
+      setNewCategoryName("");
+      toast.success("Category created");
+    } catch (err) {
+      toast.error(err?.message || "Failed to create category");
+    } finally {
+      setCategorySavingId(null);
+    }
+  }
+
+  async function handleSaveCategoryRename(categoryId) {
+    const name = editingCategoryName.trim();
+    if (!name) {
+      toast.error("Category name is required");
+      return;
+    }
+    setCategorySavingId(categoryId);
+    try {
+      const updated = await updateDealCategory(categoryId, { name });
+      setDealCategoriesData((prev) =>
+        Array.isArray(prev) ? prev.map((c) => (c.id === categoryId ? updated : c)) : prev,
+      );
+      setEditingCategoryId(null);
+      setEditingCategoryName("");
+      toast.success("Category updated");
+    } catch (err) {
+      toast.error(err?.message || "Failed to update category");
+    } finally {
+      setCategorySavingId(null);
+    }
+  }
+
+  async function handleDeleteDealCategory(categoryId) {
+    const count = dealCountByCategoryId.get(categoryId) || 0;
+    const ok = await confirm({
+      title: "Delete deal category",
+      message:
+        count > 0
+          ? `Delete this category? ${count} deal(s) will become uncategorized.`
+          : "Delete this category?",
+    });
+    if (!ok) return;
+    setCategorySavingId(categoryId);
+    try {
+      await deleteDealCategory(categoryId);
+      setDealCategoriesData((prev) =>
+        Array.isArray(prev) ? prev.filter((c) => c.id !== categoryId) : prev,
+      );
+      setDeals((prev) =>
+        Array.isArray(prev)
+          ? prev.map((d) => (getDealCategoryId(d) === categoryId ? { ...d, category: null } : d))
+          : prev,
+      );
+      if (form.categoryId === categoryId) {
+        setForm((f) => ({ ...f, categoryId: "" }));
+      }
+      toast.success("Category deleted");
+    } catch (err) {
+      toast.error(err?.message || "Failed to delete category");
+    } finally {
+      setCategorySavingId(null);
+    }
+  }
+
+  async function moveDealCategory(categoryId, direction) {
+    const list = sortedDealCategories;
+    const index = list.findIndex((c) => c.id === categoryId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= list.length) return;
+    const current = list[index];
+    const neighbor = list[targetIndex];
+    setCategorySavingId(categoryId);
+    try {
+      await Promise.all([
+        updateDealCategory(current.id, { displayOrder: neighbor.displayOrder ?? targetIndex }),
+        updateDealCategory(neighbor.id, { displayOrder: current.displayOrder ?? index }),
+      ]);
+      await refetchDealCategories();
+    } catch (err) {
+      toast.error(err?.message || "Failed to reorder categories");
+    } finally {
+      setCategorySavingId(null);
+    }
+  }
 
   function startCreate() {
     if (!currentBranch?.id) {
@@ -314,6 +487,7 @@ export default function DealsPage() {
       endDate: deal.endDate ? deal.endDate.slice(0, 10) : "",
       showOnPOS: deal.showOnPOS ?? true,
       imageUrl: deal.imageUrl || "",
+      categoryId: getDealCategoryId(deal) || "",
     });
     setModalError("");
     setImageTab("link");
@@ -551,6 +725,7 @@ export default function DealsPage() {
       showOnWebsite: true,
       branches: currentBranch?.id ? [currentBranch.id] : [],
       imageUrl: form.imageUrl.trim() || undefined,
+      category: form.categoryId || null,
     };
 
     const result = await handleAsyncAction(
@@ -1232,6 +1407,24 @@ export default function DealsPage() {
               </div>
             )}
           </div>
+          {hasPermission("menu.manage") && (
+            <button
+              type="button"
+              onClick={() => setCategoriesPanelOpen((open) => !open)}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-all ${
+                categoriesPanelOpen
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              }`}
+            >
+              {categoriesPanelOpen ? (
+                <PanelLeftClose className="h-4 w-4 shrink-0" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4 shrink-0" />
+              )}
+              <span className="hidden sm:inline">Categories</span>
+            </button>
+          )}
           {hasPermission("menu.manage_deals") && (
           <button
             type="button"
@@ -1311,11 +1504,156 @@ export default function DealsPage() {
           </div>
         </div>
       ) : (
-        <>
+        <div className="flex items-start gap-4">
+          {categoriesPanelOpen && hasPermission("menu.manage") && (
+            <aside className="w-72 shrink-0 rounded-2xl border-2 border-gray-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="mb-3 flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Deal categories</h3>
+              </div>
+              <p className="mb-3 text-[11px] leading-relaxed text-gray-500 dark:text-neutral-400">
+                Group deals for your storefront. Reorder controls display sequence.
+              </p>
+              <form onSubmit={handleCreateDealCategory} className="mb-4 flex gap-2">
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="New category…"
+                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs text-gray-900 outline-none focus:border-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                />
+                <button
+                  type="submit"
+                  disabled={categorySavingId === "new"}
+                  className="inline-flex items-center justify-center rounded-lg bg-primary px-2.5 py-2 text-white disabled:opacity-50"
+                >
+                  {categorySavingId === "new" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </form>
+              <div className="max-h-[28rem] space-y-2 overflow-y-auto">
+                {sortedDealCategories.length === 0 ? (
+                  <p className="text-xs italic text-gray-400 dark:text-neutral-500">No categories yet</p>
+                ) : (
+                  sortedDealCategories.map((cat, index) => {
+                    const isEditing = editingCategoryId === cat.id;
+                    const isSaving = categorySavingId === cat.id;
+                    const dealCount = dealCountByCategoryId.get(cat.id) || 0;
+                    return (
+                      <div
+                        key={cat.id}
+                        className="rounded-xl border border-gray-100 bg-gray-50/80 p-2.5 dark:border-neutral-800 dark:bg-neutral-900/60"
+                      >
+                        {isEditing ? (
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              value={editingCategoryName}
+                              onChange={(e) => setEditingCategoryName(e.target.value)}
+                              className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveCategoryRename(cat.id)}
+                              disabled={isSaving}
+                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCategoryId(null);
+                                setEditingCategoryName("");
+                              }}
+                              className="rounded-md px-2 py-1 text-[10px] text-gray-500"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-start gap-1.5">
+                              <p className="min-w-0 flex-1 text-xs font-semibold text-gray-900 dark:text-white">
+                                {cat.name}
+                              </p>
+                              <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-neutral-800 dark:text-neutral-400">
+                                {dealCount}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => moveDealCategory(cat.id, -1)}
+                                disabled={index === 0 || isSaving}
+                                className="rounded p-1 text-gray-400 hover:bg-white hover:text-primary disabled:opacity-30 dark:hover:bg-neutral-800"
+                                title="Move up"
+                              >
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveDealCategory(cat.id, 1)}
+                                disabled={index === sortedDealCategories.length - 1 || isSaving}
+                                className="rounded p-1 text-gray-400 hover:bg-white hover:text-primary disabled:opacity-30 dark:hover:bg-neutral-800"
+                                title="Move down"
+                              >
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCategoryId(cat.id);
+                                  setEditingCategoryName(cat.name);
+                                }}
+                                className="rounded p-1 text-gray-400 hover:bg-white hover:text-primary dark:hover:bg-neutral-800"
+                                title="Rename"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDealCategory(cat.id)}
+                                disabled={isSaving}
+                                className="ml-auto rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </aside>
+          )}
+
+          <div className="min-w-0 flex-1 space-y-8">
           {/* Grid View */}
           {viewMode === "grid" && (
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filtered.map((deal) => {
+            dealsGroupedByCategory.length === 0 ? (
+              <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white px-6 py-16 text-center dark:border-neutral-800 dark:bg-neutral-950">
+                <p className="text-sm text-gray-500 dark:text-neutral-400">
+                  {dealsList.length === 0
+                    ? "No deals yet. Click 'New Deal' to create one."
+                    : "No deals match your search"}
+                </p>
+              </div>
+            ) : (
+              dealsGroupedByCategory.map((group) => (
+                <section key={group.categoryId || "uncategorized"}>
+                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                    {group.categoryName}
+                  </h3>
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {group.deals.map((deal) => {
                 const id = deal._id || deal.id;
                 const isActive = getDealStatus(deal);
                 const statusLabel = getDealStatusLabel(deal);
@@ -1423,31 +1761,28 @@ export default function DealsPage() {
                   </div>
                 );
               })}
-
-              {filtered.length === 0 && (
-                <div className="col-span-full flex flex-col items-center justify-center py-20">
-                  <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-4">
-                    <Percent className="w-10 h-10 text-gray-300 dark:text-neutral-700" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-neutral-400 mb-1">
-                    {dealsList.length === 0 ? "No deals yet" : "No deals match your filters"}
-                  </p>
-                  {dealsList.length === 0 && (
-                    <button
-                      onClick={startCreate}
-                      className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Create Deal
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+                </section>
+              ))
+            )
           )}
 
           {/* Table View */}
           {viewMode === "table" && (
+            dealsGroupedByCategory.length === 0 ? (
+              <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white px-6 py-16 text-center dark:border-neutral-800 dark:bg-neutral-950">
+                <p className="text-sm text-gray-500 dark:text-neutral-400">
+                  {dealsList.length === 0
+                    ? "No deals yet. Click 'New Deal' to create one."
+                    : "No deals match your search"}
+                </p>
+              </div>
+            ) : (
+              dealsGroupedByCategory.map((group) => (
+                <section key={`table-${group.categoryId || "uncategorized"}`} className="space-y-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                    {group.categoryName}
+                  </h3>
             <DataTable
               variant="card"
               columns={[
@@ -1543,15 +1878,15 @@ export default function DealsPage() {
                   },
                 },
               ]}
-              rows={filtered}
-              emptyMessage={
-                dealsList.length === 0
-                  ? "No deals yet. Click 'New Deal' to create one."
-                  : "No deals match your search"
-              }
+              rows={group.deals}
+              emptyMessage="No deals in this category"
             />
+                </section>
+              ))
+            )
           )}
-        </>
+          </div>
+        </div>
       )}
 
       {/* Deal Modal */}
@@ -1629,6 +1964,30 @@ export default function DealsPage() {
                       placeholder="e.g. Family Combo"
                       className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                     />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
+                      Category
+                    </label>
+                    <select
+                      value={form.categoryId}
+                      onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
+                      className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                    >
+                      <option value="">Uncategorized</option>
+                      {sortedDealCategories
+                        .filter((c) => c.isActive !== false)
+                        .map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                    </select>
+                    {!form.categoryId && (
+                      <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                        Uncategorized deals are hidden on the customer website.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
