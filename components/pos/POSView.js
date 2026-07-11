@@ -58,6 +58,7 @@ import {
   resolveMenuItemForCartLine,
   buildPosCartItemsFromOrderItems,
   mapPosCartLineToOrderUpdatePayload,
+  rebuildPosCartFromOrder,
 } from "../../lib/modifier-pricing";
 import {
   buildDealSelectionsFingerprint,
@@ -927,7 +928,7 @@ export default function POSView({
         }
         const items = order.items || [];
         const menuItems = menu.items || [];
-        const cartItems = buildPosCartItemsFromOrderItems(items, menuItems);
+        const cartItems = rebuildPosCartFromOrder(order, menuItems, availableDeals);
 
         const initialNotes = {};
         cartItems.forEach((ci, idx) => {
@@ -997,6 +998,7 @@ export default function POSView({
   }, [
     propEditOrderId,
     menu?.items?.length,
+    availableDeals,
     currentBranch?.id,
     currentBranch?.deliveryLocations,
     hasPermission,
@@ -6703,9 +6705,10 @@ export default function POSView({
                             setEditingOrder(order);
                             const items = order.items || [];
                             const menuItems = menu.items || [];
-                            const cartItems = buildPosCartItemsFromOrderItems(
-                              items,
+                            const cartItems = rebuildPosCartFromOrder(
+                              order,
                               menuItems,
+                              availableDeals,
                             );
                             setCart(cartItems);
                             setOriginalOrderItems(
