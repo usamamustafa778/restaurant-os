@@ -56,6 +56,8 @@ import {
   itemNeedsModifierPicker,
   modifierSelectionsFromCartItem,
   resolveMenuItemForCartLine,
+  buildPosCartItemsFromOrderItems,
+  mapPosCartLineToOrderUpdatePayload,
 } from "../../lib/modifier-pricing";
 import {
   buildDealSelectionsFingerprint,
@@ -925,70 +927,13 @@ export default function POSView({
         }
         const items = order.items || [];
         const menuItems = menu.items || [];
-        const cartItems = items.map((it) => {
-          const menuItemId = it.menuItemId || null;
-          let id = menuItemId;
-          let price = it.unitPrice ?? 0;
-          let imageUrl = "";
-          if (!id) {
-            const byName = menuItems.find(
-              (m) =>
-                (m.name || "").toLowerCase() === (it.name || "").toLowerCase(),
-            );
-            if (byName) {
-              id = byName.id;
-              price = byName.finalPrice ?? byName.price ?? price;
-              imageUrl = byName.imageUrl || "";
-            } else {
-              id = `edit-${it.name}-${Math.random().toString(36).slice(2)}`;
-            }
-          } else {
-            const mi = menuItems.find((m) => (m.id || m._id) === id);
-            if (mi) {
-              imageUrl = mi.imageUrl || "";
-              price = mi.finalPrice ?? mi.price ?? price;
-            }
-          }
-          // Build _cartKey using the same fingerprint logic as addToCart so
-          // that deduplication works when the cashier adds more of the same item.
-          let cartKey = id;
-          const modSels = it.modifierSelections || [];
-          if (modSels.length > 0) {
-            const fingerprint = modSels
-              .map((s) => s.groupId + ":" + (s.options || []).map((o) => o.optionId).sort().join(","))
-              .sort()
-              .join("|");
-            if (fingerprint) cartKey = id + "|" + fingerprint;
-          }
-          const selectedModifiers = modSels.flatMap((s) =>
-            (s.options || []).map((o) => ({
-              groupId: s.groupId,
-              groupName: s.groupName,
-              optionId: o.optionId,
-              optionName: o.name,
-              price: Number(o.price) || 0,
-            })),
-          );
-          return {
-            id,
-            name: it.name,
-            price,
-            quantity: it.qty ?? it.quantity ?? 1,
-            imageUrl,
-            _cartKey: cartKey,
-            _modifierSelectionsForOrder: modSels,
-            _selectedModifiers: selectedModifiers,
-            size: it.variantLabel || "",
-          };
-        });
+        const cartItems = buildPosCartItemsFromOrderItems(items, menuItems);
 
-        // Pre-populate itemNotes from the saved order so existing notes are
-        // visible when editing, and clear any stale notes from unrelated orders.
         const initialNotes = {};
-        items.forEach((it) => {
-          if (it.note && it.note.trim()) {
-            const noteKey = it.menuItemId || it.id;
-            if (noteKey) initialNotes[noteKey] = it.note.trim();
+        cartItems.forEach((ci, idx) => {
+          const note = items[idx]?.note;
+          if (note && String(note).trim()) {
+            initialNotes[ci._cartKey || ci.id] = String(note).trim();
           }
         });
 
@@ -1325,12 +1270,7 @@ export default function POSView({
       if (editingOrderId) {
         // Edit mode: update the existing order's items first, then record payment on it
         await updateOrder(editingOrderId, {
-          items: cart.map((item) => ({
-            menuItemId: String(item.id).startsWith("edit-") ? null : item.id,
-            quantity: item.quantity,
-            unitPrice: item.price,
-            name: item.name,
-          })),
+          items: cart.map((item) => mapPosCartLineToOrderUpdatePayload(item, itemNotes)),
           discountAmount: totalDiscount,
           ...buildPosDiscountApiFields(),
           customerName: customerName.trim(),
@@ -1833,17 +1773,7 @@ export default function POSView({
   };
 
   const mapCartLineToPosOrderItem = useCallback(
-    (item) => ({
-      menuItemId: item.id,
-      quantity: item.quantity,
-      note: itemNotes[item._cartKey || item.id] || undefined,
-      modifierSelections:
-        item._modifierSelectionsForOrder?.length > 0
-          ? item._modifierSelectionsForOrder
-          : undefined,
-      variantLabel: item.size || item.variantLabel || undefined,
-      dealSelections: item._dealSelections || undefined,
-    }),
+    (item) => mapPosCartLineToOrderUpdatePayload(item, itemNotes),
     [itemNotes],
   );
 
@@ -2547,13 +2477,7 @@ export default function POSView({
     const toastId = toast.loading("Updating order...");
     try {
       await updateOrder(editingOrderId, {
-        items: cart.map((item) => ({
-          menuItemId: String(item.id).startsWith("edit-") ? null : item.id,
-          quantity: item.quantity,
-          unitPrice: item.price,
-          name: item.name,
-          note: itemNotes[item._cartKey || item.id] || undefined,
-        })),
+        items: cart.map((item) => mapPosCartLineToOrderUpdatePayload(item, itemNotes)),
         discountAmount: totalDiscount,
         ...buildPosDiscountApiFields(),
         customerName: customerName.trim(),
@@ -6779,42 +6703,10 @@ export default function POSView({
                             setEditingOrder(order);
                             const items = order.items || [];
                             const menuItems = menu.items || [];
-                            const cartItems = items.map((it) => {
-                              const menuItemId = it.menuItemId || null;
-                              let itemId = menuItemId;
-                              let price = it.unitPrice ?? 0;
-                              let imageUrl = "";
-                              if (!itemId) {
-                                const byName = menuItems.find(
-                                  (m) =>
-                                    (m.name || "").toLowerCase() ===
-                                    (it.name || "").toLowerCase(),
-                                );
-                                if (byName) {
-                                  itemId = byName.id;
-                                  price =
-                                    byName.finalPrice ?? byName.price ?? price;
-                                  imageUrl = byName.imageUrl || "";
-                                } else {
-                                  itemId = `edit-${it.name}-${Math.random().toString(36).slice(2)}`;
-                                }
-                              } else {
-                                const mi = menuItems.find(
-                                  (m) => (m.id || m._id) === itemId,
-                                );
-                                if (mi) {
-                                  imageUrl = mi.imageUrl || "";
-                                  price = mi.finalPrice ?? mi.price ?? price;
-                                }
-                              }
-                              return {
-                                id: itemId,
-                                name: it.name,
-                                price,
-                                quantity: it.qty ?? 1,
-                                imageUrl,
-                              };
-                            });
+                            const cartItems = buildPosCartItemsFromOrderItems(
+                              items,
+                              menuItems,
+                            );
                             setCart(cartItems);
                             setOriginalOrderItems(
                               cartItems.map((i) => ({
