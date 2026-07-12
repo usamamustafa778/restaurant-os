@@ -377,6 +377,7 @@ export default function WebsiteSettingsPage() {
   const [menuItems, setMenuItems] = useState([]);
   const [deals, setDeals] = useState([]);
   const [websiteSectionItemSearch, setWebsiteSectionItemSearch] = useState({});
+  const [heroSlideLinkSearch, setHeroSlideLinkSearch] = useState({});
   const [activeSection, setActiveSection] = useState("template");
   const [envView, setEnvView] = useState("live");
 
@@ -680,9 +681,18 @@ export default function WebsiteSettingsPage() {
       title: "",
       subtitle: "",
       imageUrl: "",
-      buttonText: "Order Now",
+      buttonText: "",
+      buttonLink: "",
+      buttonLinkType: "url",
+      buttonLinkTarget: "",
       isActive: true,
     });
+    update("heroSlides", slides);
+  }
+
+  function updateHeroSlideFields(idx, patch) {
+    const slides = [...(ws.heroSlides || [])];
+    slides[idx] = { ...slides[idx], ...patch };
     update("heroSlides", slides);
   }
 
@@ -2341,18 +2351,183 @@ export default function WebsiteSettingsPage() {
                             className={inp}
                           />
                         </div>
+                      </div>
+                      <div className="space-y-3">
                         <div>
-                          <label className={labelCls}>CTA Button Link</label>
-                          <input
-                            type="text"
-                            value={slide.buttonLink || ""}
-                            onChange={(e) =>
-                              updateHeroSlide(idx, "buttonLink", e.target.value)
-                            }
-                            placeholder="#menu"
+                          <label className={labelCls}>CTA Link Type</label>
+                          <select
+                            value={slide.buttonLinkType || "url"}
+                            onChange={(e) => {
+                              const nextType = e.target.value;
+                              if (nextType === "url") {
+                                updateHeroSlideFields(idx, {
+                                  buttonLinkType: "url",
+                                  buttonLinkTarget: "",
+                                });
+                                return;
+                              }
+                              updateHeroSlideFields(idx, {
+                                buttonLinkType: nextType,
+                                buttonLink: "",
+                              });
+                            }}
                             className={inp}
-                          />
+                          >
+                            <option value="url">Custom URL</option>
+                            <option value="menu">Menu item</option>
+                            <option value="deal">Deal</option>
+                          </select>
                         </div>
+                        {(slide.buttonLinkType || "url") === "url" ? (
+                          <div>
+                            <label className={labelCls}>CTA Button Link</label>
+                            <input
+                              type="text"
+                              value={slide.buttonLink || ""}
+                              onChange={(e) =>
+                                updateHeroSlide(idx, "buttonLink", e.target.value)
+                              }
+                              placeholder="#menu"
+                              className={inp}
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className={labelCls}>
+                              {(slide.buttonLinkType || "url") === "deal"
+                                ? "Select Deal"
+                                : "Select Menu Item"}
+                            </label>
+                            {(() => {
+                              const linkType = slide.buttonLinkType || "menu";
+                              const linkSearch = String(
+                                heroSlideLinkSearch[idx] || "",
+                              )
+                                .trim()
+                                .toLowerCase();
+                              const sourceItems =
+                                linkType === "deal" ? dealItems : menuItems;
+                              const visibleItems = linkSearch
+                                ? sourceItems.filter((item) =>
+                                    String(item?.name || "")
+                                      .toLowerCase()
+                                      .includes(linkSearch),
+                                  )
+                                : sourceItems;
+                              const selectedId = String(
+                                slide.buttonLinkTarget || "",
+                              );
+                              const selectedItem = sourceItems.find(
+                                (item) =>
+                                  String(item?._id || item?.id || "") ===
+                                  selectedId,
+                              );
+
+                              return (
+                                <>
+                                  {selectedItem ? (
+                                    <div className="mb-2 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-gray-900 dark:text-white">
+                                      <span className="truncate pr-3">
+                                        {selectedItem.name}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateHeroSlideFields(idx, {
+                                            buttonLinkTarget: "",
+                                          })
+                                        }
+                                        className="shrink-0 text-xs font-semibold text-red-500 hover:text-red-600"
+                                      >
+                                        Clear
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  <div className="relative mb-2">
+                                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                      type="text"
+                                      value={heroSlideLinkSearch[idx] || ""}
+                                      onChange={(e) =>
+                                        setHeroSlideLinkSearch((prev) => ({
+                                          ...prev,
+                                          [idx]: e.target.value,
+                                        }))
+                                      }
+                                      placeholder={
+                                        linkType === "deal"
+                                          ? "Search deals..."
+                                          : "Search menu items..."
+                                      }
+                                      className="h-10 w-full rounded-xl border-2 border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+                                    />
+                                  </div>
+                                  <div className="max-h-48 overflow-y-auto rounded-xl border-2 border-gray-100 dark:border-neutral-800 divide-y divide-gray-100 dark:divide-neutral-800">
+                                    {sourceItems.length === 0 ? (
+                                      <p className="p-4 text-xs text-gray-400 text-center">
+                                        No {linkType === "deal" ? "deals" : "menu items"} found.
+                                      </p>
+                                    ) : visibleItems.length === 0 ? (
+                                      <p className="p-4 text-xs text-gray-400 text-center">
+                                        No matches for your search.
+                                      </p>
+                                    ) : (
+                                      visibleItems.map((item) => {
+                                        const itemId = String(
+                                          item?._id || item?.id || "",
+                                        );
+                                        const selected = selectedId === itemId;
+                                        return (
+                                          <button
+                                            key={itemId}
+                                            type="button"
+                                            onClick={() =>
+                                              updateHeroSlideFields(idx, {
+                                                buttonLinkTarget: itemId,
+                                              })
+                                            }
+                                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                                              selected
+                                                ? "bg-primary/5 text-gray-900 dark:text-white"
+                                                : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                                            }`}
+                                          >
+                                            <div
+                                              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                                selected
+                                                  ? "bg-primary border-primary"
+                                                  : "border-gray-300 dark:border-neutral-600"
+                                              }`}
+                                            >
+                                              {selected ? (
+                                                <Check className="w-3 h-3 text-white" />
+                                              ) : null}
+                                            </div>
+                                            {item.imageUrl ? (
+                                              // eslint-disable-next-line @next/next/no-img-element
+                                              <img
+                                                src={item.imageUrl}
+                                                alt=""
+                                                className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                                              />
+                                            ) : null}
+                                            <span className="truncate">
+                                              {item.name}
+                                            </span>
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                  <p className="mt-2 text-[11px] text-gray-500 dark:text-neutral-500">
+                                    Clicking the slide CTA opens this{" "}
+                                    {linkType === "deal" ? "deal" : "menu item"} on your storefront.
+                                  </p>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                       <MediaField
                         label="Slide image"
