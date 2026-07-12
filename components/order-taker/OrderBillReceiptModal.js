@@ -28,13 +28,15 @@ function orderTypeLabel(orderType) {
   return "—";
 }
 
-function statusLabel(status) {
+function statusLabel(status, orderType) {
   const s = String(status || "").toUpperCase().replace(/\s+/g, "_");
+  const type = String(orderType || "").toUpperCase();
   const map = {
-    DELIVERED: "Served",
+    DELIVERED: type === "DINE_IN" ? "Served" : "Delivered",
     COMPLETED: "Completed",
     CANCELLED: "Cancelled",
     READY: "Ready",
+    OUT_FOR_DELIVERY: "Out for delivery",
   };
   return map[s] || String(status || "—").replace(/_/g, " ");
 }
@@ -264,7 +266,7 @@ export default function OrderBillReceiptModal({
               </p>
             </div>
             <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-              {statusLabel(order?.status)}
+              {statusLabel(order?.status, order?.orderType || order?.type)}
             </span>
           </div>
 

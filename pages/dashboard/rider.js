@@ -9,6 +9,7 @@ import {
   createPosOrder,
   updateOrder,
   getWebsiteSettings,
+  getRestaurantInfo,
   getStoredAuth,
   clearStoredAuth,
   SubscriptionInactiveError,
@@ -56,9 +57,11 @@ import {
   Tag,
   AlertTriangle,
   Lock,
+  Receipt,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
+import OrderBillReceiptModal from "../../components/order-taker/OrderBillReceiptModal";
 
 const TABS = { NEW_ORDER: "new_order", HOME: "home", HISTORY: "history" };
 const STEPS = { MENU: "menu", CART: "cart" };
@@ -242,6 +245,12 @@ export default function RiderPortalPage() {
   // Auth
   const [userName, setUserName] = useState("");
   const [riderId, setRiderId] = useState(null);
+  const [billOrder, setBillOrder] = useState(null);
+  const [restaurantBranding, setRestaurantBranding] = useState({
+    name: "",
+    logoUrl: "",
+    primaryColor: "#F97316",
+  });
 
   // Orders
   const [orders, setOrders] = useState([]);
@@ -318,6 +327,30 @@ export default function RiderPortalPage() {
     const auth = getStoredAuth();
     setUserName(auth?.user?.name || auth?.user?.email || "");
     setRiderId(auth?.user?.id || auth?.user?._id || null);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getRestaurantInfo()
+      .then((info) => {
+        if (cancelled || !info) return;
+        setRestaurantBranding({
+          name: info.name || info.restaurantName || "",
+          logoUrl:
+            info.logoUrl ||
+            info.settings?.restaurantLogoUrl ||
+            info.website?.logoUrl ||
+            "",
+          primaryColor:
+            info.themeColors?.primary ||
+            info.website?.themeColors?.primary ||
+            "#F97316",
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const getCurrentOrdersParams = useCallback(() => {
@@ -1016,11 +1049,12 @@ export default function RiderPortalPage() {
     }
   }
 
-  async function handleCollectOrder(orderId) {
+  async function handleCollectOrder(order) {
+    const orderId = order?.id || order?._id || order;
     setCollectingId(orderId);
     const toastId = toast.loading("Collecting order...");
     try {
-      const updated = await collectOrderByRider(orderId);
+      const updated = await collectOrderByRider(orderId, order?.branchId || null);
       setOrders((prev) => prev.map((o) => (o.id === orderId || o._id === orderId ? { ...o, ...updated } : o)));
       triggerHaptic([18, 40, 18]);
       toast.success("Out for delivery!", { id: toastId });
@@ -1031,11 +1065,12 @@ export default function RiderPortalPage() {
     }
   }
 
-  async function handleMarkDelivered(orderId) {
+  async function handleMarkDelivered(order) {
+    const orderId = order?.id || order?._id || order;
     setDeliveringId(orderId);
     const toastId = toast.loading("Marking as delivered...");
     try {
-      const updated = await markOrderDeliveredByRider(orderId);
+      const updated = await markOrderDeliveredByRider(orderId, order?.branchId || null);
       setOrders((prev) => prev.map((o) => (o.id === orderId || o._id === orderId ? { ...o, ...updated } : o)));
       triggerHaptic([24, 50, 24]);
       toast.success("Order delivered!", { id: toastId });
@@ -1406,6 +1441,11 @@ export default function RiderPortalPage() {
                       const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
                         String(order.status || "").toUpperCase(),
                       );
+                      const canShowBill =
+                        order.status === "OUT_FOR_DELIVERY" &&
+                        order.assignedRiderId &&
+                        riderId &&
+                        String(order.assignedRiderId) === String(riderId);
                       const tokenLabel = `#${order.tokenNumber || getOrderId(order).toString().slice(-4)}`;
                       const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
                       return (
@@ -1524,7 +1564,7 @@ export default function RiderPortalPage() {
 
                             {order.status === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
                               <button
-                                onClick={() => handleCollectOrder(orderId)}
+                                onClick={() => handleCollectOrder(order)}
                                 disabled={collectingId === orderId}
                                 className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
                               >
@@ -1534,12 +1574,22 @@ export default function RiderPortalPage() {
                             )}
                             {order.status === "OUT_FOR_DELIVERY" && order.assignedRiderId && riderId && order.assignedRiderId === riderId && (
                               <button
-                                onClick={() => handleMarkDelivered(orderId)}
+                                onClick={() => handleMarkDelivered(order)}
                                 disabled={deliveringId === orderId}
                                 className="w-full py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
                               >
                                 {deliveringId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                                 Mark as Delivered
+                              </button>
+                            )}
+                            {canShowBill && (
+                              <button
+                                type="button"
+                                onClick={() => setBillOrder(order)}
+                                className={`${order.status === "OUT_FOR_DELIVERY" ? "mt-2" : ""} w-full py-2.5 rounded-xl border border-stone-200 bg-white text-stone-800 font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white`}
+                              >
+                                <Receipt className="w-4 h-4" />
+                                Show bill to customer
                               </button>
                             )}
                           </div>
@@ -1965,6 +2015,17 @@ export default function RiderPortalPage() {
                                 <User className="w-3 h-3" />
                                 {order.customerName}
                               </div>
+                            )}
+                            {(order.status === "DELIVERED" ||
+                              order.status === "COMPLETED") && (
+                              <button
+                                type="button"
+                                onClick={() => setBillOrder(order)}
+                                className="mt-3 w-full py-2.5 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+                              >
+                                <Receipt className="w-3.5 h-3.5" />
+                                Show bill to customer
+                              </button>
                             )}
                           </div>
                         </div>
@@ -2687,6 +2748,17 @@ export default function RiderPortalPage() {
           </button>
         </nav>
       </div>
+
+      {/* Customer bill receipt */}
+      {billOrder && (
+        <OrderBillReceiptModal
+          order={billOrder}
+          restaurantName={restaurantBranding.name}
+          logoUrl={restaurantBranding.logoUrl}
+          primaryColor={restaurantBranding.primaryColor}
+          onClose={() => setBillOrder(null)}
+        />
+      )}
 
       {/* Branch modal */}
       {showBranchModal && branches?.length > 0 && (
