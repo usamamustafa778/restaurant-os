@@ -6,12 +6,26 @@ import {
   comboItemToPosChoiceSlot,
   countSlotPicks,
   formatChoiceOptionLabel,
+  formatComboItemSummary,
   getComboItemType,
   getRequiredVariationGroups,
   getSlotPickBounds,
   isDealSelectionComplete,
   normalizeChoiceOption,
 } from "../../lib/dealComboItems";
+
+function FixedItemRow({ label }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-900">
+      <span className="min-w-0 flex-1 text-sm font-medium text-gray-800 dark:text-neutral-100">
+        {label}
+      </span>
+      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+        Included
+      </span>
+    </div>
+  );
+}
 
 function VariationPickerPanel({
   menuItem,
@@ -198,6 +212,15 @@ export default function PosDealCustomizeModal({
       .filter(Boolean);
   }, [deal, menuItemById]);
 
+  const fixedComponents = useMemo(() => {
+    return (deal?.comboItems || [])
+      .filter((ci) => getComboItemType(ci) === "fixed")
+      .map((ci, index) => ({
+        key: `fixed-${index}`,
+        label: formatComboItemSummary(ci, menuItemById),
+      }));
+  }, [deal, menuItemById]);
+
   const variationMenuItem = variationFlow
     ? menuItemById.get(
         String(
@@ -303,6 +326,19 @@ export default function PosDealCustomizeModal({
         ) : (
           <>
             <div className="space-y-4 p-5">
+              {fixedComponents.length > 0 ? (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                    Included
+                  </h4>
+                  {fixedComponents.map((component) => (
+                    <FixedItemRow
+                      key={component.key}
+                      label={component.label}
+                    />
+                  ))}
+                </div>
+              ) : null}
               {choiceSlots.map((slot) => {
                 const picks =
                   selectionsBySlot[slot.slotIndex] ||
