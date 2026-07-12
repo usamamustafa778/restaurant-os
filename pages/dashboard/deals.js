@@ -105,14 +105,12 @@ function toCSVRow(cells) {
   return cells.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",");
 }
 
-function ensureEndDateISO(startDateLike, endDateLike) {
-  const start = new Date(startDateLike || new Date());
-  const safeStart = Number.isNaN(start.getTime()) ? new Date() : start;
-  if (endDateLike) {
-    const end = new Date(endDateLike);
-    if (!Number.isNaN(end.getTime())) return end.toISOString();
-  }
-  return new Date(safeStart.getTime() + 86400000).toISOString();
+function parseEndDateForPayload(endDateLike) {
+  const raw = String(endDateLike ?? "").trim();
+  if (!raw) return null;
+  const end = new Date(raw);
+  if (Number.isNaN(end.getTime())) return null;
+  return end.toISOString();
 }
 
 function getDealCategoryId(deal) {
@@ -806,7 +804,7 @@ export default function DealsPage() {
       comboItems: form.components.map(componentToComboItem),
       comboPrice: Number(form.comboPrice),
       startDate: new Date(form.startDate || new Date()).toISOString(),
-      endDate: ensureEndDateISO(form.startDate || new Date(), form.endDate),
+      endDate: parseEndDateForPayload(form.endDate),
       isActive: form.isActive,
       showOnWebsite: form.isActive,
       showOnPOS: form.isActive,
@@ -1227,7 +1225,7 @@ export default function DealsPage() {
           comboItems,
           comboPrice: price,
           startDate: startDate.toISOString(),
-          endDate: ensureEndDateISO(startDate, endDate),
+          endDate: parseEndDateForPayload(endDate),
           isActive: resolveImportActive(),
           showOnWebsite: resolveImportActive(),
           showOnPOS: resolveImportActive(),
@@ -1357,7 +1355,7 @@ export default function DealsPage() {
           comboItems,
           comboPrice: Number(deal.comboPrice) || 0,
           startDate: deal.startDate ? new Date(deal.startDate).toISOString() : new Date().toISOString(),
-          endDate: ensureEndDateISO(deal.startDate || new Date(), deal.endDate),
+          endDate: parseEndDateForPayload(deal.endDate),
           isActive: deal.isActive !== false,
           showOnWebsite: deal.isActive !== false,
           showOnPOS: deal.isActive !== false,
@@ -2151,12 +2149,27 @@ export default function DealsPage() {
                                 className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-900 shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
                               />
                               <span className="shrink-0 text-xs text-gray-400">to</span>
-                              <input
-                                type="date"
-                                value={form.endDate}
-                                onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
-                                className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-900 shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-                              />
+                              <div className="relative min-w-0 flex-1">
+                                <input
+                                  type="date"
+                                  value={form.endDate}
+                                  onChange={(e) =>
+                                    setForm((f) => ({ ...f, endDate: e.target.value }))
+                                  }
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 pr-8 text-xs text-gray-900 shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                                />
+                                {form.endDate ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setForm((f) => ({ ...f, endDate: "" }))}
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                                    title="Clear expiry date"
+                                    aria-label="Clear expiry date"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                             <p className="mt-1 text-[11px] text-gray-400 dark:text-neutral-500">
                               Empty end = no expiry
