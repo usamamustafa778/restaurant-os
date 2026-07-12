@@ -1808,7 +1808,7 @@ export default function OrderTakerPage() {
                           key={f.key}
                           type="button"
                           onClick={() => setHistoryFilter(f.key)}
-                          className={`flex-shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                          className={`flex-shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1 ${
                             active
                               ? "bg-orange-500 text-white"
                               : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
@@ -1917,14 +1917,14 @@ export default function OrderTakerPage() {
                             </div>
                           </div>
                           <div className="px-3.5 py-3">
-                            <div className="flex items-start justify-between gap-2 mb-1">
+                            <div className="flex items-start justify-between gap-2">
                               <span className="text-sm font-black text-gray-900 dark:text-white tabular-nums">
                                 #
                                 {order.tokenNumber ||
                                   getDisplayOrderId(order).toString().slice(-4)}
                               </span>
                               <span
-                                className={`text-sm font-black tabular-nums ${
+                                className={`text-sm font-black tabular-nums shrink-0 ${
                                   paymentPending
                                     ? "text-orange-600 dark:text-orange-400"
                                     : "text-gray-900 dark:text-white"
@@ -1933,12 +1933,24 @@ export default function OrderTakerPage() {
                                 Rs. {getOrderTotal(order).toLocaleString()}
                               </span>
                             </div>
-                            <p className="text-[10px] text-gray-500 dark:text-neutral-400">
-                              <span className="font-semibold">
-                                {itemCount} item{itemCount !== 1 ? "s" : ""}
-                              </span>
-                              {order.tableName ? ` · ${order.tableName}` : ""}
-                            </p>
+                            <div className="mt-1 flex items-center justify-between gap-2">
+                              <p className="min-w-0 text-[10px] text-gray-500 dark:text-neutral-400">
+                                <span className="font-semibold">
+                                  {itemCount} item{itemCount !== 1 ? "s" : ""}
+                                </span>
+                                {order.tableName ? ` · ${order.tableName}` : ""}
+                              </p>
+                              {(order.status === "DELIVERED" ||
+                                order.status === "COMPLETED") && (
+                                <button
+                                  type="button"
+                                  onClick={() => setBillOrder(order)}
+                                  className="shrink-0 text-[11px] font-semibold text-orange-500 hover:underline active:opacity-70 dark:text-orange-400"
+                                >
+                                  Show bill
+                                </button>
+                              )}
+                            </div>
                             {paymentPending && (
                               <p className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 mt-1.5">
                                 Collect at counter — still marked &quot;To be
@@ -1950,17 +1962,6 @@ export default function OrderTakerPage() {
                                 <User className="w-3 h-3" />
                                 {order.customerName}
                               </div>
-                            )}
-                            {(order.status === "DELIVERED" ||
-                              order.status === "COMPLETED") && (
-                              <button
-                                type="button"
-                                onClick={() => setBillOrder(order)}
-                                className="mt-3 w-full py-2.5 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
-                              >
-                                <Receipt className="w-3.5 h-3.5" />
-                                Show bill to customer
-                              </button>
                             )}
                           </div>
                         </div>
