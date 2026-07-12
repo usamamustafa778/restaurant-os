@@ -327,6 +327,45 @@ export default function DealsPage() {
     [dealCategories],
   );
 
+  const categoryOrderNormalizedRef = useRef(false);
+
+  useEffect(() => {
+    if (categoryOrderNormalizedRef.current || sortedDealCategories.length < 2) return;
+
+    const orders = sortedDealCategories.map((c) => c.displayOrder ?? 0);
+    const hasDuplicateOrders = new Set(orders).size !== orders.length;
+    if (!hasDuplicateOrders) return;
+
+    categoryOrderNormalizedRef.current = true;
+    const updates = sortedDealCategories.map((cat, index) => ({
+      id: cat.id,
+      displayOrder: index,
+    }));
+
+    (async () => {
+      try {
+        await Promise.all(
+          updates.map((u) => updateDealCategory(u.id, { displayOrder: u.displayOrder })),
+        );
+        const orderById = new Map(updates.map((u) => [u.id, u.displayOrder]));
+        setDealCategoriesData((prev) => {
+          if (!Array.isArray(prev)) return prev;
+          return prev
+            .map((c) =>
+              orderById.has(c.id) ? { ...c, displayOrder: orderById.get(c.id) } : c,
+            )
+            .sort(
+              (a, b) =>
+                (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+                a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+            );
+        });
+      } catch {
+        categoryOrderNormalizedRef.current = false;
+      }
+    })();
+  }, [sortedDealCategories, setDealCategoriesData]);
+
   const dealCountByCategoryId = useMemo(() => {
     const counts = new Map();
     for (const deal of dealsList) {
@@ -488,20 +527,42 @@ export default function DealsPage() {
   }
 
   async function moveDealCategory(categoryId, direction) {
-    const list = sortedDealCategories;
+    const list = [...sortedDealCategories];
     const index = list.findIndex((c) => c.id === categoryId);
+    if (index < 0) return;
     const targetIndex = index + direction;
-    if (index < 0 || targetIndex < 0 || targetIndex >= list.length) return;
-    const current = list[index];
-    const neighbor = list[targetIndex];
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+
+    const reordered = [...list];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    const updates = reordered.map((cat, order) => ({
+      id: cat.id,
+      displayOrder: order,
+    }));
+    const orderById = new Map(updates.map((u) => [u.id, u.displayOrder]));
+
     setCategorySavingId(categoryId);
+    setDealCategoriesData((prev) => {
+      if (!Array.isArray(prev)) return prev;
+      return prev
+        .map((c) =>
+          orderById.has(c.id) ? { ...c, displayOrder: orderById.get(c.id) } : c,
+        )
+        .sort(
+          (a, b) =>
+            (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+            a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+        );
+    });
+
     try {
-      await Promise.all([
-        updateDealCategory(current.id, { displayOrder: neighbor.displayOrder ?? targetIndex }),
-        updateDealCategory(neighbor.id, { displayOrder: current.displayOrder ?? index }),
-      ]);
-      await refetchDealCategories();
+      await Promise.all(
+        updates.map((u) => updateDealCategory(u.id, { displayOrder: u.displayOrder })),
+      );
     } catch (err) {
+      await refetchDealCategories();
       toast.error(err?.message || "Failed to reorder categories");
     } finally {
       setCategorySavingId(null);
