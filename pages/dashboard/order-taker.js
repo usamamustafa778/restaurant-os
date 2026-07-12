@@ -7,6 +7,7 @@ import {
   getOrders,
   getStoredAuth,
   clearStoredAuth,
+  getRestaurantInfo,
   SubscriptionInactiveError,
   updateOrder,
   updateOrderStatus,
@@ -49,9 +50,11 @@ import {
   Tag,
   CheckCircle,
   Lock,
+  Receipt,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
+import OrderBillReceiptModal from "../../components/order-taker/OrderBillReceiptModal";
 import PosDealCustomizeModal from "../../components/pos/PosDealCustomizeModal";
 import {
   buildDealSelectionsFingerprint,
@@ -170,6 +173,12 @@ export default function OrderTakerPage() {
   const [placing, setPlacing] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(null);
   const [userName, setUserName] = useState("");
+  const [billOrder, setBillOrder] = useState(null);
+  const [restaurantBranding, setRestaurantBranding] = useState({
+    name: "",
+    logoUrl: "",
+    primaryColor: "#F97316",
+  });
   const searchRef = useRef(null);
   const categoryScrollRef = useRef(null);
   const menuLoadSeqRef = useRef(0);
@@ -212,6 +221,30 @@ export default function OrderTakerPage() {
   useEffect(() => {
     const auth = getStoredAuth();
     setUserName(auth?.user?.name || auth?.user?.email || "");
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getRestaurantInfo()
+      .then((info) => {
+        if (cancelled || !info) return;
+        setRestaurantBranding({
+          name: info.name || info.restaurantName || "",
+          logoUrl:
+            info.logoUrl ||
+            info.settings?.restaurantLogoUrl ||
+            info.website?.logoUrl ||
+            "",
+          primaryColor:
+            info.themeColors?.primary ||
+            info.website?.themeColors?.primary ||
+            "#F97316",
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -847,6 +880,8 @@ export default function OrderTakerPage() {
       orderStatus === "READY" &&
       order.orderType !== "DELIVERY" &&
       order.type !== "delivery";
+    const canShowBill =
+      orderStatus === "DELIVERED" || orderStatus === "COMPLETED";
     const isMarkingServed = markingServedId === (order.id || order._id);
     const tokenLabel = `#${order.tokenNumber || getDisplayOrderId(order).toString().slice(-4)}`;
     const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
@@ -1035,6 +1070,17 @@ export default function OrderTakerPage() {
                 <PackageCheck className="w-4 h-4" />
               )}
               Mark as Served
+            </button>
+          )}
+
+          {canShowBill && (
+            <button
+              type="button"
+              onClick={() => setBillOrder(order)}
+              className={`${canMarkServed ? "mt-2" : ""} w-full py-2.5 rounded-xl border border-stone-200 bg-white text-stone-800 font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white`}
+            >
+              <Receipt className="w-4 h-4" />
+              Show bill to customer
             </button>
           )}
         </div>
@@ -1904,6 +1950,17 @@ export default function OrderTakerPage() {
                                 <User className="w-3 h-3" />
                                 {order.customerName}
                               </div>
+                            )}
+                            {(order.status === "DELIVERED" ||
+                              order.status === "COMPLETED") && (
+                              <button
+                                type="button"
+                                onClick={() => setBillOrder(order)}
+                                className="mt-3 w-full py-2.5 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+                              >
+                                <Receipt className="w-3.5 h-3.5" />
+                                Show bill to customer
+                              </button>
                             )}
                           </div>
                         </div>
@@ -2818,6 +2875,17 @@ export default function OrderTakerPage() {
           }
         }
       `}</style>
+
+      {/* ── Customer bill receipt ───────────────────────────────────────────── */}
+      {billOrder && (
+        <OrderBillReceiptModal
+          order={billOrder}
+          restaurantName={restaurantBranding.name}
+          logoUrl={restaurantBranding.logoUrl}
+          primaryColor={restaurantBranding.primaryColor}
+          onClose={() => setBillOrder(null)}
+        />
+      )}
 
       {/* ── Deal customize modal ────────────────────────────────────────────── */}
       {dealCustomizeTarget && (
