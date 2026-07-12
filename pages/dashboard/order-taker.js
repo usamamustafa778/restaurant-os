@@ -52,6 +52,12 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
+import PosDealCustomizeModal from "../../components/pos/PosDealCustomizeModal";
+import {
+  buildDealSelectionsFingerprint,
+  isDealConfigurable,
+} from "../../lib/dealComboItems";
+import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
 
 const STEPS = { TABLE: "table", MENU: "menu", CART: "cart" };
 const TABS = {
@@ -157,6 +163,7 @@ export default function OrderTakerPage() {
   const [cart, setCart] = useState([]);
   const [modifierPickerItem, setModifierPickerItem] = useState(null);
   const [modifierSelections, setModifierSelections] = useState({});
+  const [dealCustomizeTarget, setDealCustomizeTarget] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -365,6 +372,42 @@ export default function OrderTakerPage() {
     [cart],
   );
 
+  function addDealToCart(deal, qty = 1, selectionsBySlot = {}) {
+    if (appendTargetOrder && !appendCanModifyItems) {
+      toast.error("You don't have permission to edit this order.");
+      return;
+    }
+    const dealId = deal._id || deal.id;
+    const fingerprint = buildDealSelectionsFingerprint(deal, selectionsBySlot);
+    const cartKey = `deal-${dealId}${fingerprint ? `|${fingerprint}` : ""}`;
+    const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
+    setCart((prev) => {
+      const existing = prev.find((c) => (c._cartKey || c.id) === cartKey);
+      if (existing) {
+        return prev.map((c) =>
+          (c._cartKey || c.id) === cartKey
+            ? { ...c, quantity: c.quantity + quantity }
+            : c,
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: `deal-${dealId}`,
+          _cartKey: cartKey,
+          name: deal.name,
+          price: deal.comboPrice || 0,
+          quantity,
+          imageUrl: deal.imageUrl || "",
+          isDeal: true,
+          _dealId: dealId,
+          _dealSelections: selectionsBySlot,
+        },
+      ];
+    });
+    setDealCustomizeTarget(null);
+  }
+
   function addToCart(item, qty = 1) {
     if (appendTargetOrder && !appendCanModifyItems) {
       toast.error("You don't have permission to edit this order.");
@@ -377,6 +420,15 @@ export default function OrderTakerPage() {
     ) {
       toast.error(`${item.name} is out of stock`);
       return;
+    }
+    if (item.isDeal) {
+      const deal = availableDeals.find(
+        (d) => `deal-${d._id || d.id}` === item.id,
+      );
+      if (deal && isDealConfigurable(deal)) {
+        setDealCustomizeTarget({ deal, qty });
+        return;
+      }
     }
     // If item has modifiers, open picker instead of adding directly
     if (item.hasModifiers && item.modifierGroups?.length > 0) {
@@ -621,15 +673,7 @@ export default function OrderTakerPage() {
     setPlacing(true);
     try {
       const result = await createPosOrder({
-        items: cart.map((c) => ({
-          menuItemId: c.id,
-          quantity: c.quantity,
-          note: c.note?.trim() || undefined,
-          modifierSelections:
-            c._modifierSelectionsForOrder?.length > 0
-              ? c._modifierSelectionsForOrder
-              : undefined,
-        })),
+        items: cart.map((c) => mapPosCartLineToOrderUpdatePayload(c)),
         orderType: "DINE_IN",
         paymentMethod: "PENDING",
         tableName: selectedTable?.name || selectedTable?.label || "",
@@ -1086,16 +1130,7 @@ export default function OrderTakerPage() {
       if (cart.length > 0) {
         const existingItems = mapOrderItemsForUpdate(appendTargetOrder.items);
         const addedItems = cart.map((c) => ({
-          menuItemId: c.id,
-          name: c.name,
-          quantity: Math.max(1, Number(c.quantity) || 1),
-          unitPrice: Number(c.price) || 0,
-          note: c.note || "",
-          variantLabel: c.size || c.variantLabel || "",
-          modifierSelections:
-            c._modifierSelectionsForOrder?.length > 0
-              ? c._modifierSelectionsForOrder
-              : [],
+          ...mapPosCartLineToOrderUpdatePayload(c),
           isAddition: true,
         }));
         const lineIsNew = (item) =>
@@ -2409,6 +2444,23 @@ export default function OrderTakerPage() {
                                       </span>
                                     )}
                                   </p>
+                                  {item.isDeal && item._dealSelections ? (
+                                    <div className="mt-0.5 space-y-0.5">
+                                      {Object.values(item._dealSelections)
+                                        .flat()
+                                        .map((pick, pickIndex) => (
+                                          <p
+                                            key={`${pick.menuItemId}-${pickIndex}`}
+                                            className="text-[11px] text-gray-400 dark:text-neutral-500 leading-tight"
+                                          >
+                                            · {pick.name}
+                                            {(pick.qty || 1) > 1
+                                              ? ` ×${pick.qty}`
+                                              : ""}
+                                          </p>
+                                        ))}
+                                    </div>
+                                  ) : null}
                                   {item._modifierSelectionsForOrder
                                     ?.filter((s) => {
                                       const g = item.modifierGroups?.find(
@@ -2766,6 +2818,17 @@ export default function OrderTakerPage() {
           }
         }
       `}</style>
+
+      {/* ── Deal customize modal ────────────────────────────────────────────── */}
+      {dealCustomizeTarget && (
+        <PosDealCustomizeModal
+          deal={dealCustomizeTarget.deal}
+          menuItems={menu.items || []}
+          pendingQty={dealCustomizeTarget.qty}
+          onClose={() => setDealCustomizeTarget(null)}
+          onConfirm={addDealToCart}
+        />
+      )}
 
       {/* ── Modifier Picker Modal ───────────────────────────────────────────── */}
       {modifierPickerItem && (
