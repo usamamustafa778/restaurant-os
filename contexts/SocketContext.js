@@ -33,7 +33,7 @@ export function SocketProvider({ children }) {
     const socketUrl = API_BASE.replace(/\/$/, "");
     const newSocket = io(socketUrl, {
       auth: { token, branchId: branchId || undefined },
-      transports: ["websocket", "polling"],
+      transports: ["websocket"],
     });
 
     newSocket.on("connect", () => setConnected(true));
