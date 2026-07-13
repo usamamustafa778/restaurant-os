@@ -51,13 +51,16 @@ import {
   Circle,
   Film,
   BarChart2,
+  QrCode,
 } from "lucide-react";
+import DigitalMenuQrPanel from "../../components/website/DigitalMenuQrPanel";
 
 const SECTIONS = [
   { id: "template", label: "Template", icon: Layout },
   { id: "branding", label: "Branding", icon: Palette },
   { id: "seo", label: "SEO", icon: Search },
   { id: "domain", label: "Domain", icon: LinkIcon },
+  { id: "digital-menu", label: "Digital Menu", icon: QrCode },
   { id: "contact", label: "Contact", icon: Phone },
   { id: "hero", label: "Hero", icon: ImageIcon },
   { id: "atmosphere", label: "Atmosphere", icon: Film },
@@ -912,6 +915,9 @@ export default function WebsiteSettingsPage() {
       : stagingUrl || liveUrl;
   const displayWebsiteUrl =
     envView === "staging" ? stagingUrl || liveUrl : effectiveLiveWebsiteUrl;
+  const digitalMenuUrl = displayWebsiteUrl
+    ? `${String(displayWebsiteUrl).replace(/\/$/, "")}/menu`
+    : null;
   const galleryMedia = Array.isArray(ws.galleryMedia) ? ws.galleryMedia : [];
   const isLoungeTemplate =
     (ws.template || "classic") === "lounge" || (!ws.template && false);
@@ -1848,6 +1854,21 @@ export default function WebsiteSettingsPage() {
                 </div>
               )}
               {renderSectionSave("domain")}
+            </SectionCard>
+
+            {/* Digital Menu QR */}
+            <SectionCard
+              id="digital-menu"
+              icon={QrCode}
+              title="Digital Menu"
+              subtitle="QR code and link for dine-in & takeaway customers"
+              iconColor={iconAccentPrimary}
+              isActive={activeSection === "digital-menu"}
+            >
+              <DigitalMenuQrPanel
+                menuUrl={digitalMenuUrl}
+                restaurantName={ws.name || ""}
+              />
             </SectionCard>
 
             {/* Contact */}
