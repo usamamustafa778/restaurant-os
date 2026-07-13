@@ -19,7 +19,7 @@ import {
 } from "../../lib/apiClient";
 
 import { classifySessionReportPaymentLine } from "../../lib/sessionReportBreakdown";
-import { getBusinessDate } from "../../lib/businessDay";
+import { getBusinessDate, getBusinessDayRange } from "../../lib/businessDay";
 
 import { useBranch } from "../../contexts/BranchContext";
 
@@ -452,7 +452,7 @@ function getYesterdaySessionScope(sessions, cutoffHour = 4) {
   ).filter((s) => s?.startAt && s?.endAt);
 
   if (yesterdaySessions.length === 0) {
-    return getCalendarDates("yesterday");
+    return getBusinessPresetDates("yesterday", cutoffHour);
   }
 
   if (yesterdaySessions.length === 1) {
@@ -480,100 +480,102 @@ function getYesterdaySessionScope(sessions, cutoffHour = 4) {
   };
 }
 
-function getCalendarDates(preset) {
+function getMondayBusinessDateStr(businessToday) {
+  const [y, m, d] = businessToday.split("-").map(Number);
+  const bizDate = new Date(y, m - 1, d);
+  const dow = bizDate.getDay();
+  const diffToMonday = dow === 0 ? -6 : 1 - dow;
+  return shiftBusinessDateStr(businessToday, diffToMonday);
+}
+
+/** Business-day-aware presets (respects branch cutoff hour, calendar week Mon–Sun). */
+function getBusinessPresetDates(preset, cutoffHour = 4) {
   const safePreset = normalizeReportPreset(preset);
+  const businessToday = getBusinessDate(new Date(), cutoffHour);
+  const now = new Date();
+
+  switch (safePreset) {
+    case "today": {
+      const { from } = getBusinessDayRange(businessToday, cutoffHour);
+      return { from: from.toISOString(), to: now.toISOString() };
+    }
+    case "yesterday": {
+      const yStr = shiftBusinessDateStr(businessToday, -1);
+      const { from, to } = getBusinessDayRange(yStr, cutoffHour);
+      return { from: from.toISOString(), to: to.toISOString() };
+    }
+    case "this_week": {
+      const mondayStr = getMondayBusinessDateStr(businessToday);
+      const { from } = getBusinessDayRange(mondayStr, cutoffHour);
+      const { to } = getBusinessDayRange(businessToday, cutoffHour);
+      return { from: from.toISOString(), to: to.toISOString() };
+    }
+    case "this_month": {
+      const [y, m] = businessToday.split("-").map(Number);
+      const firstStr = `${y}-${String(m).padStart(2, "0")}-01`;
+      const { from } = getBusinessDayRange(firstStr, cutoffHour);
+      const { to } = getBusinessDayRange(businessToday, cutoffHour);
+      return { from: from.toISOString(), to: to.toISOString() };
+    }
+    default:
+      return null;
+  }
+}
+
+/** YYYY-MM-DD bounds for session list filters (same rules as report presets). */
+function getBusinessPresetDateStrings(preset, cutoffHour = 4) {
+  const businessToday = getBusinessDate(new Date(), cutoffHour);
+  switch (normalizeReportPreset(preset)) {
+    case "yesterday":
+      return {
+        from: shiftBusinessDateStr(businessToday, -1),
+        to: shiftBusinessDateStr(businessToday, -1),
+      };
+    case "last3days":
+      return {
+        from: shiftBusinessDateStr(businessToday, -2),
+        to: businessToday,
+      };
+    case "this_week":
+      return {
+        from: getMondayBusinessDateStr(businessToday),
+        to: businessToday,
+      };
+    case "this_month": {
+      const [y, m] = businessToday.split("-").map(Number);
+      return {
+        from: `${y}-${String(m).padStart(2, "0")}-01`,
+        to: businessToday,
+      };
+    }
+    default:
+      return { from: "", to: "" };
+  }
+}
+
+function getCalendarDates(preset, cutoffHour = 4) {
+  const safePreset = normalizeReportPreset(preset);
+  const businessPreset = getBusinessPresetDates(safePreset, cutoffHour);
+  if (businessPreset) return businessPreset;
 
   const today = new Date();
 
   switch (safePreset) {
-    case "today": {
-      const s = new Date(today);
-
-      s.setHours(0, 0, 0, 0);
-
-      const e = new Date(today);
-
-      e.setDate(e.getDate() + 1);
-
-      e.setHours(0, 0, 0, 0);
-
-      return { from: s.toISOString(), to: e.toISOString() };
-    }
-
-    case "yesterday": {
-      const s = new Date(today);
-
-      s.setDate(s.getDate() - 1);
-
-      s.setHours(0, 0, 0, 0);
-
-      const e = new Date(s);
-
-      e.setHours(23, 59, 59, 999);
-
-      return { from: s.toISOString(), to: e.toISOString() };
-    }
-
-    case "this_week": {
-      const dow = today.getDay();
-
-      const diff = dow === 0 ? -6 : 1 - dow;
-
-      const monday = new Date(today);
-
-      monday.setDate(today.getDate() + diff);
-
-      monday.setHours(0, 0, 0, 0);
-
-      const e = new Date(today);
-
-      e.setDate(e.getDate() + 1);
-
-      e.setHours(0, 0, 0, 0);
-
-      return { from: monday.toISOString(), to: e.toISOString() };
-    }
-
-    case "this_month": {
-      const first = new Date(today.getFullYear(), today.getMonth(), 1);
-
-      first.setHours(0, 0, 0, 0);
-
-      const e = new Date(today);
-
-      e.setDate(e.getDate() + 1);
-
-      e.setHours(0, 0, 0, 0);
-
-      return { from: first.toISOString(), to: e.toISOString() };
-    }
-
     case "last_month": {
       const firstThis = new Date(today.getFullYear(), today.getMonth(), 1);
-
       firstThis.setHours(0, 0, 0, 0);
-
       const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-
       firstLast.setHours(0, 0, 0, 0);
-
       return { from: firstLast.toISOString(), to: firstThis.toISOString() };
     }
-
     case "all": {
       const ALL_TIME_START = new Date(2020, 0, 1);
-
       ALL_TIME_START.setHours(0, 0, 0, 0);
-
       const e = new Date(today);
-
       e.setDate(e.getDate() + 1);
-
       e.setHours(0, 0, 0, 0);
-
       return { from: ALL_TIME_START.toISOString(), to: e.toISOString() };
     }
-
     default:
       return null;
   }
@@ -698,7 +700,7 @@ function getSmartDates(preset, sessions, cutoffHour = 4) {
     }
   }
 
-  return getCalendarDates(safePreset);
+  return getCalendarDates(safePreset, cutoffHour);
 }
 
 // Keep old name as alias so any remaining callers still work
@@ -6275,39 +6277,8 @@ export default function HistoryPage() {
                     { id: "this_month", label: "This Month" },
                     { id: "custom", label: "Custom" },
                   ];
-                  const getSessionPresetDates = (id) => {
-                    const today = new Date();
-                    const fmt = (d) => d.toISOString().slice(0, 10);
-                    switch (id) {
-                      case "yesterday": {
-                        const y = new Date(today);
-                        y.setDate(y.getDate() - 1);
-                        return { from: fmt(y), to: fmt(y) };
-                      }
-                      case "last3days": {
-                        const s = new Date(today);
-                        s.setDate(s.getDate() - 2);
-                        return { from: fmt(s), to: fmt(today) };
-                      }
-                      case "this_week": {
-                        const dow = today.getDay();
-                        const diff = dow === 0 ? -6 : 1 - dow;
-                        const mon = new Date(today);
-                        mon.setDate(today.getDate() + diff);
-                        return { from: fmt(mon), to: fmt(today) };
-                      }
-                      case "this_month": {
-                        const first = new Date(
-                          today.getFullYear(),
-                          today.getMonth(),
-                          1,
-                        );
-                        return { from: fmt(first), to: fmt(today) };
-                      }
-                      default:
-                        return { from: "", to: "" };
-                    }
-                  };
+                  const getSessionPresetDates = (id) =>
+                    getBusinessPresetDateStrings(id, cutoffHour);
                   const activePreset = SESSION_DATE_PRESETS.find(
                     (p) => p.id === sessionsDatePreset,
                   );
