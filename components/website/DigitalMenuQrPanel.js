@@ -19,7 +19,6 @@ export default function DigitalMenuQrPanel({
         setReady(false);
         return;
       }
-
       try {
         const QRCode = (await import("qrcode")).default;
         if (cancelled) return;
@@ -67,7 +66,8 @@ export default function DigitalMenuQrPanel({
   if (!menuUrl) {
     return (
       <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-5 text-sm text-gray-500 dark:border-neutral-700 dark:bg-neutral-900/40 dark:text-neutral-400">
-        Publish your website with a subdomain to get a digital menu link and QR code.
+        Publish your website with a subdomain to get a digital menu link and QR
+        code.
       </div>
     );
   }
@@ -128,8 +128,13 @@ export default function DigitalMenuQrPanel({
           </div>
           <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-gray-600 dark:text-neutral-400">
             <li>Print the QR and place it on tables or at the counter.</li>
-            <li>Customers scan to browse your menu on their phone — no app needed.</li>
-            <li>They can tap <strong>Order online</strong> if website ordering is enabled.</li>
+            <li>
+              Customers scan to browse your menu on their phone — no app needed.
+            </li>
+            <li>
+              They can tap <strong>Order online</strong> if website ordering is
+              enabled.
+            </li>
           </ul>
         </div>
       </div>
