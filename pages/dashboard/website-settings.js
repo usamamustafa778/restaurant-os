@@ -957,8 +957,11 @@ export default function WebsiteSettingsPage() {
   const galleryMedia = Array.isArray(ws.galleryMedia) ? ws.galleryMedia : [];
   const isLoungeTemplate =
     (ws.template || "classic") === "lounge" || (!ws.template && false);
+  const isMinimalTemplate = (ws.template || "classic") === "minimal";
   const isPosterTemplate = (ws.template || "classic") === "poster";
   const isOleaTemplate = (ws.template || "classic") === "olea";
+  const atmosphereApplies =
+    isLoungeTemplate || isMinimalTemplate;
 
   function updateGalleryMedia(next) {
     update("galleryMedia", next);
@@ -2600,24 +2603,59 @@ export default function WebsiteSettingsPage() {
               {renderSectionSave("hero")}
             </SectionCard>
 
-            {/* Atmosphere — Lounge About video + gallery */}
+            {/* Atmosphere — Lounge gallery/video + Minimal About collage */}
             <SectionCard
               id="atmosphere"
               icon={Film}
               title="Atmosphere"
-              subtitle="About video and gallery grid for the Lounge template"
+              subtitle={
+                isMinimalTemplate
+                  ? "Photos for the About / Our Story collage on the Minimal template"
+                  : "About video and gallery grid for the Lounge template"
+              }
               iconColor={iconAccentPrimary}
               isActive={activeSection === "atmosphere"}
             >
-              {!isLoungeTemplate ? (
+              <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-neutral-800 dark:bg-neutral-900/50">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Show on website
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
+                    {isMinimalTemplate
+                      ? "When off, the About / Our Story section and its nav links are hidden on Minimal."
+                      : "When off, the About section and its nav links are hidden on Lounge (gallery uploads are kept)."}
+                  </p>
+                </div>
+                <PreferenceSwitch
+                  enabled={ws.showAboutSection !== false}
+                  ariaLabel="Show atmosphere section on website"
+                  onToggle={() =>
+                    update("showAboutSection", ws.showAboutSection === false)
+                  }
+                />
+              </div>
+
+              {!atmosphereApplies ? (
                 <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-                  Select the <strong>Lounge</strong> template to show this media
-                  on your public site. You can upload now and switch templates
-                  anytime.
+                  Select the <strong>Minimal</strong> or <strong>Lounge</strong>{" "}
+                  template to show this media on your public site. You can upload
+                  now and switch templates anytime.
+                </p>
+              ) : isMinimalTemplate ? (
+                <p className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100">
+                  The first <strong>4 photos</strong> in this gallery fill the
+                  About / Our Story image collage on Minimal. Upload photos below
+                  and save — order matters (drag with the arrow buttons).
                 </p>
               ) : null}
 
-              <div className="space-y-8">
+              <div
+                className={`space-y-8 ${
+                  ws.showAboutSection === false ? "opacity-60" : ""
+                }`}
+              >
+                {isLoungeTemplate || !isMinimalTemplate ? (
                 <MediaField
                   label="About section video"
                   value={ws.aboutVideoUrl || ""}
@@ -2628,19 +2666,22 @@ export default function WebsiteSettingsPage() {
                   uploadLabel="Choose video"
                   successToast="Video uploaded"
                   previewClassName="aspect-video w-full max-h-52"
-                  hint="Optional cinematic clip for the About section (MP4/WebM, max 50 MB). Replaces the still photo when set."
+                  hint="Optional cinematic clip for the About section (MP4/WebM, max 50 MB). Replaces the still photo when set. Used by the Lounge template."
                 />
+                ) : null}
 
                 <div>
                   <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
                     <div>
                       <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                        Atmosphere gallery
+                        {isMinimalTemplate
+                          ? "About / Our Story photos"
+                          : "Atmosphere gallery"}
                       </h4>
                       <p className="mt-1 text-xs text-gray-500 dark:text-neutral-400">
-                        Add at least 3 photos or videos. When set, these replace
-                        the auto-generated gallery from hero slides and menu
-                        photos.
+                        {isMinimalTemplate
+                          ? "Add up to 4 photos for the collage next to “Welcome to …”. Extra items are ignored on Minimal; Lounge can use the full gallery."
+                          : "Add at least 3 photos or videos. When set, these replace the auto-generated gallery from hero slides and menu photos."}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -2654,6 +2695,7 @@ export default function WebsiteSettingsPage() {
                           onChange={(e) => handleGalleryFileUpload(e, "image")}
                         />
                       </label>
+                      {!isMinimalTemplate ? (
                       <label className={`${btnSecondary} cursor-pointer`}>
                         <Upload className="w-4 h-4" />
                         Add video
@@ -2664,13 +2706,15 @@ export default function WebsiteSettingsPage() {
                           onChange={(e) => handleGalleryFileUpload(e, "video")}
                         />
                       </label>
+                      ) : null}
                     </div>
                   </div>
 
                   {galleryMedia.length === 0 ? (
                     <div className="rounded-xl border-2 border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-neutral-700 dark:text-neutral-400">
-                      No gallery media yet. Upload photos or short ambience
-                      clips.
+                      {isMinimalTemplate
+                        ? "No About photos yet. Upload up to 4 images for the Our Story collage."
+                        : "No gallery media yet. Upload photos or short ambience clips."}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
