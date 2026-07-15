@@ -201,7 +201,7 @@ export default function AccountingHome() {
   if (checking) {
     return (
       <AdminLayout title="Accounts Board">
-        <PermissionGate permission="accounts.view_board">
+        <PermissionGate permission="accounting.access">
         <div className="flex items-center justify-center min-h-[50vh]">
           <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
         </div>
@@ -214,7 +214,7 @@ export default function AccountingHome() {
   if (!isSetup) {
     return (
       <AdminLayout title="Accounts Board">
-        <PermissionGate permission="accounts.view_board">
+        <PermissionGate permission="accounting.access">
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="max-w-sm w-full bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-8 text-center shadow-sm">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-400 to-orange-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-orange-500/25">
@@ -258,7 +258,7 @@ export default function AccountingHome() {
   // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <AdminLayout title="Accounts Board">
-      <PermissionGate permission="accounts.view_board">
+      <PermissionGate permission="accounting.access">
       <div className="space-y-5">
 
         {/* ── Header banner ──────────────────────────────────────────────── */}

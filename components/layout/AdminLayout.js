@@ -63,6 +63,9 @@ import {
   Bot,
   KeyRound,
   ScrollText,
+  QrCode,
+  Share2,
+  Search,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
 import WhatsAppNotificationBell from "../whatsapp/WhatsAppNotificationBell";
@@ -115,28 +118,49 @@ function getNavQueryParam(asPath, key) {
   return new URLSearchParams(query).get(key) || "";
 }
 
-function isNavChildActive(asPath, basePath, childPath, childHref) {
+function isNavChildActive(
+  asPath,
+  basePath,
+  childPath,
+  childHref,
+  siblingPaths = [],
+) {
   const navPath = getNavPath(asPath, "");
   const base = (basePath || "").split("?")[0];
   const childBase = (childHref || childPath || "").split("?")[0];
+  const currentSection = getNavQueryParam(asPath, "section");
+  const currentTab = getNavQueryParam(asPath, "tab");
 
   if (childPath.includes("section=")) {
     const section = childPath.split("section=")[1]?.split("&")[0] || "";
-    return navPath === base && getNavQueryParam(asPath, "section") === section;
+    return navPath === base && currentSection === section;
   }
 
   if (childPath.includes("tab=")) {
     const tab = childPath.split("tab=")[1]?.split("&")[0] || "";
     return (
-      navPath.includes(base.split("?")[0]) &&
-      getNavQueryParam(asPath, "tab") === tab
+      navPath.includes(base.split("?")[0]) && currentTab === tab
     );
   }
 
   if (navPath !== childBase && !navPath.startsWith(`${childBase}/`))
     return false;
-  if (getNavQueryParam(asPath, "section") === "analytics") return false;
-  return true;
+
+  // Default child (no section/tab in its path): inactive when a sibling
+  // claims the current section or tab query.
+  const claimedBySibling = siblingPaths.some((path) => {
+    const p = path || "";
+    if (currentSection && p.includes("section=")) {
+      const section = p.split("section=")[1]?.split("&")[0] || "";
+      return section === currentSection;
+    }
+    if (currentTab && p.includes("tab=")) {
+      const tab = p.split("tab=")[1]?.split("&")[0] || "";
+      return tab === currentTab;
+    }
+    return false;
+  });
+  return !claimedBySibling;
 }
 
 const HEADER_TOOLBAR_BTN =
@@ -218,7 +242,7 @@ const tenantNav = [
     label: "Deals",
     icon: Percent,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
-    permission: "menu.manage_deals",
+    permission: "deals_modifiers.manage",
   },
 
   { type: "section", label: "PEOPLE" },
@@ -288,7 +312,7 @@ const tenantNav = [
     icon: LayoutGrid,
     roles: ["restaurant_admin", "admin", "manager"],
     exact: true,
-    permission: "accounts.view_board",
+    permission: "accounting.access",
   },
   {
     path: "/sales-report",
@@ -407,6 +431,17 @@ const tenantNav = [
     permission: "settings.view",
     children: [
       { path: "/website-settings", label: "Content", icon: LayoutGrid },
+      {
+        path: "/website-settings?section=digital-menu",
+        label: "Digital Menu",
+        icon: QrCode,
+      },
+      {
+        path: "/website-settings?section=social",
+        label: "Social Links",
+        icon: Share2,
+      },
+      { path: "/website-settings?section=seo", label: "SEO", icon: Search },
       {
         path: "/website-settings?section=analytics",
         label: "Analytics",
@@ -725,7 +760,8 @@ export default function AdminLayout({
   const [pendingInvoiceAmount, setPendingInvoiceAmount] = useState(0);
   const [activeModuleKeys, setActiveModuleKeys] = useState(null);
   const { theme, toggleTheme } = useTheme();
-  const { hasPermission, hasViewOrManage, permissionsLoaded, roleName } = usePermissions();
+  const { hasPermission, hasViewOrManage, permissionsLoaded, roleName } =
+    usePermissions();
 
   // Load sidebar state from sessionStorage after mount (client-side only)
   useEffect(() => {
@@ -821,7 +857,9 @@ export default function AdminLayout({
             : [];
           setActiveModuleKeys(
             new Set(
-              modules.filter((module) => module.active).map((module) => module.key),
+              modules
+                .filter((module) => module.active)
+                .map((module) => module.key),
             ),
           );
         }
@@ -1113,156 +1151,245 @@ export default function AdminLayout({
                   />
                 ) : (
                   navItems.map((item, idx) => {
-                  if (item.type !== "section" && !canSeeNavItem(item)) {
-                    return null;
-                  }
-                  // Render section headers
-                  if (item.type === "section") {
-                    if (collapsed && !mobileSidebarOpen) return null; // Hide section headers when collapsed (or show when mobile sidebar open)
-                    return (
-                      <div
-                        key={`section-${idx}`}
-                        className="pt-5 pb-2 px-3 first:pt-2"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="h-px flex-1 bg-gradient-to-r from-gray-200 to-transparent dark:from-neutral-700"></div>
+                    if (item.type !== "section" && !canSeeNavItem(item)) {
+                      return null;
+                    }
+                    // Render section headers
+                    if (item.type === "section") {
+                      if (collapsed && !mobileSidebarOpen) return null; // Hide section headers when collapsed (or show when mobile sidebar open)
+                      return (
+                        <div
+                          key={`section-${idx}`}
+                          className="pt-5 pb-2 px-3 first:pt-2"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="h-px flex-1 bg-gradient-to-r from-gray-200 to-transparent dark:from-neutral-700"></div>
+                          </div>
+                          <p className="text-[10px] font-bold text-gray-500 dark:text-neutral-500 uppercase tracking-wider">
+                            {item.label}
+                          </p>
                         </div>
-                        <p className="text-[10px] font-bold text-gray-500 dark:text-neutral-500 uppercase tracking-wider">
-                          {item.label}
-                        </p>
-                      </div>
-                    );
-                  }
+                      );
+                    }
 
-                  const basePath = item.path || "";
-                  const href =
-                    isSuperDashboard
+                    const basePath = item.path || "";
+                    const href = isSuperDashboard
                       ? item.href
                       : getTenantRoute(
                           router.asPath || router.pathname,
                           basePath,
                         );
 
-                  const Icon = item.icon;
-                  const visibleChildren = getVisibleNavChildren(item.children);
-                  const hasChildren = visibleChildren.length > 0;
-                  const isExpanded = expandedGroups.includes(basePath);
-                  // For groups, check if any child path matches current route
-                  const navPath = getNavPath(router.asPath, router.pathname);
-                  const isActive = hasChildren
-                    ? visibleChildren.some((child) => {
-                        const cHref = getTenantRoute(
-                          router.asPath || router.pathname,
-                          child.path,
-                        );
-                        return isNavChildActive(
-                          router.asPath,
-                          basePath,
-                          child.path,
-                          cHref,
-                        );
-                      })
-                    : item.exact
-                      ? navPath === href
-                      : navPath === href ||
-                        navPath.startsWith(`${href}/`) ||
-                        (router.asPath || "").startsWith(`${href}?`);
+                    const Icon = item.icon;
+                    const visibleChildren = getVisibleNavChildren(
+                      item.children,
+                    );
+                    const hasChildren = visibleChildren.length > 0;
+                    const isExpanded = expandedGroups.includes(basePath);
+                    // For groups, check if any child path matches current route
+                    const navPath = getNavPath(router.asPath, router.pathname);
+                    const isActive = hasChildren
+                      ? visibleChildren.some((child) => {
+                          const cHref = getTenantRoute(
+                            router.asPath || router.pathname,
+                            child.path,
+                          );
+                          return isNavChildActive(
+                            router.asPath,
+                            basePath,
+                            child.path,
+                            cHref,
+                            visibleChildren.map((c) => c.path),
+                          );
+                        })
+                      : item.exact
+                        ? navPath === href
+                        : navPath === href ||
+                          navPath.startsWith(`${href}/`) ||
+                          (router.asPath || "").startsWith(`${href}?`);
 
-                  const effectivelyCollapsed = collapsed && !mobileSidebarOpen;
-                  if (suspended && role !== "super_admin") {
+                    const effectivelyCollapsed =
+                      collapsed && !mobileSidebarOpen;
+                    if (suspended && role !== "super_admin") {
+                      return (
+                        <NavItemWrapper
+                          key={href}
+                          collapsed={effectivelyCollapsed}
+                          label={item.label}
+                        >
+                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 dark:text-neutral-600 bg-bg-primary/60 dark:bg-neutral-900/60 cursor-not-allowed">
+                            <Icon className="w-4 h-4" />
+                            {(!collapsed || mobileSidebarOpen) && (
+                              <span>{item.label}</span>
+                            )}
+                          </div>
+                        </NavItemWrapper>
+                      );
+                    }
+
+                    if (item.comingSoon) {
+                      return (
+                        <NavItemWrapper
+                          key={`soon-${basePath || idx}`}
+                          collapsed={effectivelyCollapsed}
+                          label={`${item.label} (Coming soon)`}
+                        >
+                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 dark:text-neutral-500 bg-gray-50/90 dark:bg-neutral-900/50 cursor-not-allowed border border-dashed border-gray-200 dark:border-neutral-700">
+                            <Icon className="w-4 h-4 shrink-0 opacity-70" />
+                            {(!collapsed || mobileSidebarOpen) && (
+                              <>
+                                <span className="flex-1 truncate">
+                                  {item.label}
+                                </span>
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 bg-amber-100/90 dark:bg-amber-950/60 px-2 py-0.5 rounded-md shrink-0">
+                                  Soon
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </NavItemWrapper>
+                      );
+                    }
+
+                    {
+                      /* Items with children (e.g. Menu) */
+                    }
+                    if (hasChildren) {
+                      // Build structured dropdown items for collapsed hover
+                      const dropdownData =
+                        collapsed && !mobileSidebarOpen
+                          ? visibleChildren.map((child) => {
+                              const childHref = getTenantRoute(
+                                router.asPath || router.pathname,
+                                child.path,
+                              );
+                              // Generic active detection: tab-based or path-based
+                              const isChildActive = isNavChildActive(
+                                router.asPath,
+                                basePath,
+                                child.path,
+                                childHref,
+                                visibleChildren.map((c) => c.path),
+                              );
+                              return {
+                                path: child.path,
+                                href: childHref,
+                                label: child.label,
+                                icon: child.icon,
+                                isActive: isChildActive,
+                              };
+                            })
+                          : undefined;
+
+                      return (
+                        <NavItemWrapper
+                          key={href}
+                          collapsed={effectivelyCollapsed}
+                          label={item.label}
+                          dropdownItems={dropdownData}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!collapsed || mobileSidebarOpen) {
+                                setExpandedGroups((prev) => {
+                                  const next = prev.includes(basePath)
+                                    ? prev.filter((g) => g !== basePath)
+                                    : [...prev, basePath];
+                                  sessionStorage.setItem(
+                                    "sidebar_expanded_groups",
+                                    JSON.stringify(next),
+                                  );
+                                  return next;
+                                });
+                              }
+                            }}
+                            className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
+                              isActive
+                                ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/20"
+                                : "text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 hover:text-gray-900 dark:hover:text-white hover:shadow-sm"
+                            }`}
+                          >
+                            <Icon
+                              className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "" : "group-hover:scale-110"}`}
+                            />
+                            {(!collapsed || mobileSidebarOpen) && (
+                              <>
+                                <span className="flex-1 text-left">
+                                  {item.label}
+                                </span>
+                                <ChevronDown
+                                  className={`w-4 h-4 transition-transform duration-200 ${
+                                    isExpanded ? "rotate-180" : ""
+                                  }`}
+                                />
+                              </>
+                            )}
+                          </button>
+
+                          {/* Inline dropdown when sidebar is expanded — animated */}
+                          {(!collapsed || mobileSidebarOpen) && (
+                            <div
+                              className="grid transition-[grid-template-rows] duration-200 ease-in-out"
+                              style={{
+                                gridTemplateRows: isExpanded ? "1fr" : "0fr",
+                              }}
+                            >
+                              <div className="overflow-hidden">
+                                <div className="ml-4 mt-2 space-y-1 border-l-2 border-gray-200 dark:border-neutral-800 pl-3 pb-1">
+                                  {visibleChildren.map((child) => {
+                                    const childHref = getTenantRoute(
+                                      router.asPath || router.pathname,
+                                      child.path,
+                                    );
+                                    const isChildActive = isNavChildActive(
+                                      router.asPath,
+                                      basePath,
+                                      child.path,
+                                      childHref,
+                                      visibleChildren.map((c) => c.path),
+                                    );
+                                    const ChildIcon = child.icon;
+
+                                    return (
+                                      <Link
+                                        key={child.path}
+                                        href={childHref}
+                                        className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                                          isChildActive
+                                            ? "bg-primary/10 text-primary dark:text-primary shadow-sm"
+                                            : "text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900 hover:text-gray-900 dark:hover:text-white"
+                                        }`}
+                                      >
+                                        {ChildIcon && (
+                                          <ChildIcon
+                                            className={`w-4 h-4 ${isChildActive ? "" : "group-hover:scale-110 transition-transform"}`}
+                                          />
+                                        )}
+                                        {child.label}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </NavItemWrapper>
+                      );
+                    }
+
+                    {
+                      /* Regular nav items */
+                    }
                     return (
                       <NavItemWrapper
                         key={href}
                         collapsed={effectivelyCollapsed}
                         label={item.label}
                       >
-                        <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 dark:text-neutral-600 bg-bg-primary/60 dark:bg-neutral-900/60 cursor-not-allowed">
-                          <Icon className="w-4 h-4" />
-                          {(!collapsed || mobileSidebarOpen) && (
-                            <span>{item.label}</span>
-                          )}
-                        </div>
-                      </NavItemWrapper>
-                    );
-                  }
-
-                  if (item.comingSoon) {
-                    return (
-                      <NavItemWrapper
-                        key={`soon-${basePath || idx}`}
-                        collapsed={effectivelyCollapsed}
-                        label={`${item.label} (Coming soon)`}
-                      >
-                        <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 dark:text-neutral-500 bg-gray-50/90 dark:bg-neutral-900/50 cursor-not-allowed border border-dashed border-gray-200 dark:border-neutral-700">
-                          <Icon className="w-4 h-4 shrink-0 opacity-70" />
-                          {(!collapsed || mobileSidebarOpen) && (
-                            <>
-                              <span className="flex-1 truncate">
-                                {item.label}
-                              </span>
-                              <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 bg-amber-100/90 dark:bg-amber-950/60 px-2 py-0.5 rounded-md shrink-0">
-                                Soon
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </NavItemWrapper>
-                    );
-                  }
-
-                  {
-                    /* Items with children (e.g. Menu) */
-                  }
-                  if (hasChildren) {
-                    // Build structured dropdown items for collapsed hover
-                    const dropdownData =
-                      collapsed && !mobileSidebarOpen
-                        ? visibleChildren.map((child) => {
-                            const childHref = getTenantRoute(
-                              router.asPath || router.pathname,
-                              child.path,
-                            );
-                            // Generic active detection: tab-based or path-based
-                            const isChildActive = isNavChildActive(
-                              router.asPath,
-                              basePath,
-                              child.path,
-                              childHref,
-                            );
-                            return {
-                              path: child.path,
-                              href: childHref,
-                              label: child.label,
-                              icon: child.icon,
-                              isActive: isChildActive,
-                            };
-                          })
-                        : undefined;
-
-                    return (
-                      <NavItemWrapper
-                        key={href}
-                        collapsed={effectivelyCollapsed}
-                        label={item.label}
-                        dropdownItems={dropdownData}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!collapsed || mobileSidebarOpen) {
-                              setExpandedGroups((prev) => {
-                                const next = prev.includes(basePath)
-                                  ? prev.filter((g) => g !== basePath)
-                                  : [...prev, basePath];
-                                sessionStorage.setItem(
-                                  "sidebar_expanded_groups",
-                                  JSON.stringify(next),
-                                );
-                                return next;
-                              });
-                            }
-                          }}
-                          className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
+                        <Link
+                          href={href}
+                          className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
                             isActive
                               ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/20"
                               : "text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 hover:text-gray-900 dark:hover:text-white hover:shadow-sm"
@@ -1273,101 +1400,17 @@ export default function AdminLayout({
                           />
                           {(!collapsed || mobileSidebarOpen) && (
                             <>
-                              <span className="flex-1 text-left">
-                                {item.label}
-                              </span>
-                              <ChevronDown
-                                className={`w-4 h-4 transition-transform duration-200 ${
-                                  isExpanded ? "rotate-180" : ""
-                                }`}
-                              />
+                              <span className="flex-1">{item.label}</span>
+                              {item.path === "/whatsapp" &&
+                                whatsappNeedsHumanCount > 0 && (
+                                  <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-orange-500" />
+                                )}
                             </>
                           )}
-                        </button>
-
-                        {/* Inline dropdown when sidebar is expanded — animated */}
-                        {(!collapsed || mobileSidebarOpen) && (
-                          <div
-                            className="grid transition-[grid-template-rows] duration-200 ease-in-out"
-                            style={{
-                              gridTemplateRows: isExpanded ? "1fr" : "0fr",
-                            }}
-                          >
-                            <div className="overflow-hidden">
-                              <div className="ml-4 mt-2 space-y-1 border-l-2 border-gray-200 dark:border-neutral-800 pl-3 pb-1">
-                                {visibleChildren.map((child) => {
-                                  const childHref = getTenantRoute(
-                                    router.asPath || router.pathname,
-                                    child.path,
-                                  );
-                                  const isChildActive = isNavChildActive(
-                                    router.asPath,
-                                    basePath,
-                                    child.path,
-                                    childHref,
-                                  );
-                                  const ChildIcon = child.icon;
-
-                                  return (
-                                    <Link
-                                      key={child.path}
-                                      href={childHref}
-                                      className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                                        isChildActive
-                                          ? "bg-primary/10 text-primary dark:text-primary shadow-sm"
-                                          : "text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-900 hover:text-gray-900 dark:hover:text-white"
-                                      }`}
-                                    >
-                                      {ChildIcon && (
-                                        <ChildIcon
-                                          className={`w-4 h-4 ${isChildActive ? "" : "group-hover:scale-110 transition-transform"}`}
-                                        />
-                                      )}
-                                      {child.label}
-                                    </Link>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        </Link>
                       </NavItemWrapper>
                     );
-                  }
-
-                  {
-                    /* Regular nav items */
-                  }
-                  return (
-                    <NavItemWrapper
-                      key={href}
-                      collapsed={effectivelyCollapsed}
-                      label={item.label}
-                    >
-                      <Link
-                        href={href}
-                        className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
-                          isActive
-                            ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-primary/20"
-                            : "text-gray-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-900 hover:text-gray-900 dark:hover:text-white hover:shadow-sm"
-                        }`}
-                      >
-                        <Icon
-                          className={`w-4 h-4 shrink-0 transition-transform ${isActive ? "" : "group-hover:scale-110"}`}
-                        />
-                        {(!collapsed || mobileSidebarOpen) && (
-                          <>
-                            <span className="flex-1">{item.label}</span>
-                            {item.path === "/whatsapp" &&
-                              whatsappNeedsHumanCount > 0 && (
-                                <span className="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-orange-500" />
-                              )}
-                          </>
-                        )}
-                      </Link>
-                    </NavItemWrapper>
-                  );
-                })
+                  })
                 )}
               </nav>
               {/* Mobile: Account section at bottom of sidebar */}
@@ -1430,7 +1473,9 @@ export default function AdminLayout({
                 <button
                   type="button"
                   onClick={async () => {
-                    await endImpersonationAsSuperAdmin({ subdomain: actingAsSlug });
+                    await endImpersonationAsSuperAdmin({
+                      subdomain: actingAsSlug,
+                    });
                     setActingAsSlug(null);
                     window.location.href = "/super/overview";
                   }}
@@ -1548,7 +1593,9 @@ export default function AdminLayout({
                 <button
                   type="button"
                   onClick={async () => {
-                    await endImpersonationAsSuperAdmin({ subdomain: actingAsSlug });
+                    await endImpersonationAsSuperAdmin({
+                      subdomain: actingAsSlug,
+                    });
                     setActingAsSlug(null);
                     window.location.href = "/super/overview";
                   }}
@@ -1563,9 +1610,10 @@ export default function AdminLayout({
 
               {(role !== "super_admin" || actingAsSlug) && (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {role !== "super_admin" && whatsappNavRoles.includes(role) && (
-                    <WhatsAppNotificationBell />
-                  )}
+                  {role !== "super_admin" &&
+                    whatsappNavRoles.includes(role) && (
+                      <WhatsAppNotificationBell />
+                    )}
                   {pendingInvoiceCount > 0 &&
                     (onSubscriptionPage ? (
                       <span
@@ -1573,7 +1621,9 @@ export default function AdminLayout({
                         title={`Invoice pending — Rs ${pendingInvoiceAmount.toLocaleString("en-PK")}`}
                       >
                         <Receipt className="h-4 w-4 shrink-0" />
-                        <span className="hidden lg:inline">Invoice pending</span>
+                        <span className="hidden lg:inline">
+                          Invoice pending
+                        </span>
                         <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                           {pendingInvoiceCount > 9 ? "9+" : pendingInvoiceCount}
                         </span>
@@ -1585,7 +1635,9 @@ export default function AdminLayout({
                         title={`Invoice pending — Rs ${pendingInvoiceAmount.toLocaleString("en-PK")}`}
                       >
                         <Receipt className="h-4 w-4 shrink-0" />
-                        <span className="hidden lg:inline">Invoice pending</span>
+                        <span className="hidden lg:inline">
+                          Invoice pending
+                        </span>
                         <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                           {pendingInvoiceCount > 9 ? "9+" : pendingInvoiceCount}
                         </span>
@@ -1617,121 +1669,121 @@ export default function AdminLayout({
 
                   {!branchLoading && (
                     <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setBranchDropdownOpen((prev) => !prev)}
-                    className={`${HEADER_TOOLBAR_BTN} gap-2 border-gray-200 bg-white px-3 text-gray-900 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800`}
-                  >
-                    <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-secondary">
-                      <MapPin className="h-2.5 w-2.5 text-white" />
-                    </div>
-                    <span className="max-w-[160px] truncate">
-                      {currentBranch
-                        ? currentBranch.name
-                        : role === "restaurant_admin" || role === "admin"
-                          ? "All branches"
-                          : (branches?.[0]?.name ?? "Select branch")}
-                    </span>
-                    <ChevronDown
-                      className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-neutral-400 ${branchDropdownOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {branchDropdownOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        aria-hidden
-                        onClick={() => setBranchDropdownOpen(false)}
-                      />
-                      <div className="absolute right-0 top-full z-50 mt-2 min-w-[260px] overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
-                        <div className="border-b-2 border-gray-100 p-3 dark:border-neutral-800">
-                          <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                            Select Branch
-                          </p>
+                      <button
+                        type="button"
+                        onClick={() => setBranchDropdownOpen((prev) => !prev)}
+                        className={`${HEADER_TOOLBAR_BTN} gap-2 border-gray-200 bg-white px-3 text-gray-900 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800`}
+                      >
+                        <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-secondary">
+                          <MapPin className="h-2.5 w-2.5 text-white" />
                         </div>
-                        <div className="max-h-[300px] overflow-y-auto p-2">
-                          {(role === "restaurant_admin" ||
-                            role === "admin" ||
-                            (role === "super_admin" && actingAsSlug)) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCurrentBranch(null);
-                                setBranchDropdownOpen(false);
-                                window.location.reload();
-                              }}
-                              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
-                                !currentBranch
-                                  ? "border-2 border-primary/20 bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary"
-                                  : "text-gray-700 hover:bg-gray-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                              }`}
-                            >
-                              <div
-                                className={`flex h-8 w-8 items-center justify-center rounded-lg ${!currentBranch ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
-                              >
-                                <MapPin
-                                  className={`h-4 w-4 ${!currentBranch ? "text-white" : "text-gray-500"}`}
-                                />
+                        <span className="max-w-[160px] truncate">
+                          {currentBranch
+                            ? currentBranch.name
+                            : role === "restaurant_admin" || role === "admin"
+                              ? "All branches"
+                              : (branches?.[0]?.name ?? "Select branch")}
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-neutral-400 ${branchDropdownOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                      {branchDropdownOpen && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-40"
+                            aria-hidden
+                            onClick={() => setBranchDropdownOpen(false)}
+                          />
+                          <div className="absolute right-0 top-full z-50 mt-2 min-w-[260px] overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
+                            <div className="border-b-2 border-gray-100 p-3 dark:border-neutral-800">
+                              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                                Select Branch
+                              </p>
+                            </div>
+                            <div className="max-h-[300px] overflow-y-auto p-2">
+                              {(role === "restaurant_admin" ||
+                                role === "admin" ||
+                                (role === "super_admin" && actingAsSlug)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCurrentBranch(null);
+                                    setBranchDropdownOpen(false);
+                                    window.location.reload();
+                                  }}
+                                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
+                                    !currentBranch
+                                      ? "border-2 border-primary/20 bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary"
+                                      : "text-gray-700 hover:bg-gray-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                                  }`}
+                                >
+                                  <div
+                                    className={`flex h-8 w-8 items-center justify-center rounded-lg ${!currentBranch ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
+                                  >
+                                    <MapPin
+                                      className={`h-4 w-4 ${!currentBranch ? "text-white" : "text-gray-500"}`}
+                                    />
+                                  </div>
+                                  <span>All branches</span>
+                                </button>
+                              )}
+                              {(branches && branches.length > 0
+                                ? branches
+                                : [{ id: "none", name: "No branches yet" }]
+                              ).map((b) => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (b.id !== "none") {
+                                      setCurrentBranch(b);
+                                      setBranchDropdownOpen(false);
+                                      window.location.reload();
+                                    } else {
+                                      setBranchDropdownOpen(false);
+                                    }
+                                  }}
+                                  className={`mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
+                                    currentBranch?.id === b.id
+                                      ? "border-2 border-primary/20 bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary"
+                                      : "text-gray-700 hover:bg-gray-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                                  }`}
+                                  disabled={b.id === "none"}
+                                >
+                                  <div
+                                    className={`flex h-8 w-8 items-center justify-center rounded-lg ${currentBranch?.id === b.id ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
+                                  >
+                                    <MapPin
+                                      className={`h-4 w-4 ${currentBranch?.id === b.id ? "text-white" : "text-gray-500"}`}
+                                    />
+                                  </div>
+                                  <span className="truncate">{b.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                            {(role === "restaurant_admin" ||
+                              role === "admin" ||
+                              (role === "super_admin" && actingAsSlug)) && (
+                              <div className="border-t-2 border-gray-100 p-2 dark:border-neutral-800">
+                                <Link
+                                  href="/business-settings"
+                                  onClick={(e) => {
+                                    if (cleanPath === "/business-settings") {
+                                      e.preventDefault();
+                                      setBranchDropdownOpen(false);
+                                    }
+                                  }}
+                                  className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-primary transition-all hover:bg-primary/10 dark:text-primary"
+                                >
+                                  <PlusSquare className="h-4 w-4" />
+                                  Manage branches
+                                </Link>
                               </div>
-                              <span>All branches</span>
-                            </button>
-                          )}
-                          {(branches && branches.length > 0
-                            ? branches
-                            : [{ id: "none", name: "No branches yet" }]
-                          ).map((b) => (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={() => {
-                                if (b.id !== "none") {
-                                  setCurrentBranch(b);
-                                  setBranchDropdownOpen(false);
-                                  window.location.reload();
-                                } else {
-                                  setBranchDropdownOpen(false);
-                                }
-                              }}
-                              className={`mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
-                                currentBranch?.id === b.id
-                                  ? "border-2 border-primary/20 bg-gradient-to-r from-primary/10 to-secondary/10 text-primary dark:text-primary"
-                                  : "text-gray-700 hover:bg-gray-50 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                              }`}
-                              disabled={b.id === "none"}
-                            >
-                              <div
-                                className={`flex h-8 w-8 items-center justify-center rounded-lg ${currentBranch?.id === b.id ? "bg-gradient-to-br from-primary to-secondary" : "bg-gray-200 dark:bg-neutral-800"}`}
-                              >
-                                <MapPin
-                                  className={`h-4 w-4 ${currentBranch?.id === b.id ? "text-white" : "text-gray-500"}`}
-                                />
-                              </div>
-                              <span className="truncate">{b.name}</span>
-                            </button>
-                          ))}
-                        </div>
-                        {(role === "restaurant_admin" ||
-                          role === "admin" ||
-                          (role === "super_admin" && actingAsSlug)) && (
-                          <div className="border-t-2 border-gray-100 p-2 dark:border-neutral-800">
-                            <Link
-                              href="/business-settings"
-                              onClick={(e) => {
-                                if (cleanPath === "/business-settings") {
-                                  e.preventDefault();
-                                  setBranchDropdownOpen(false);
-                                }
-                              }}
-                              className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-primary transition-all hover:bg-primary/10 dark:text-primary"
-                            >
-                              <PlusSquare className="h-4 w-4" />
-                              Manage branches
-                            </Link>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </>
-                  )}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

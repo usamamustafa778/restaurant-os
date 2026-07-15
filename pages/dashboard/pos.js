@@ -433,14 +433,22 @@ export default function OrdersPage() {
   const router = useRouter();
   const { socket } = useSocket() || {};
   const { currentBranch, setCurrentBranch } = useBranch() || {};
-  const { hasPermission } = usePermissions();
+  const { hasPermission, hasPermissionOrRole } = usePermissions();
   const canViewClosedCount = hasPermission("orders.view_closed_count");
   const canViewClosedAmount = hasPermission("orders.view_closed_amount");
-  const canDownloadClosedReport = hasPermission("orders.download_closed_report");
+  const canDownloadClosedReport =
+    hasPermission("orders.download_closed_report") ||
+    hasPermission("orders.reprint");
   const canViewAwaitingPaymentSummary = hasPermission(
     "orders.view_awaiting_payment",
   );
-  const canViewSessionReport = hasPermission("orders.view_session_report");
+  const canViewSessionReport = hasPermissionOrRole("pos.view_session_report", [
+    "cashier",
+    "manager",
+    "admin",
+    "restaurant_admin",
+    "super_admin",
+  ]);
   const showClosedOrdersBar =
     canViewClosedCount || canViewClosedAmount;
   const [orders, setOrders] = useState([]);
@@ -511,7 +519,27 @@ export default function OrdersPage() {
   const isCashier = role === "cashier";
   const isAdmin = ["restaurant_admin", "admin", "super_admin", "manager"].includes(role);
   /** Session report: cashiers see only headline totals; owners/managers see full breakdown. */
-  const showFullSessionReport = !isCashier;
+  const showFullSessionReport =
+    !isCashier || hasPermissionOrRole("reports.view_all_staff_sales", [
+      "manager",
+      "admin",
+      "restaurant_admin",
+      "super_admin",
+    ]);
+  const canStartBusinessDay = hasPermissionOrRole("pos.start_business_day", [
+    "cashier",
+    "manager",
+    "admin",
+    "restaurant_admin",
+    "super_admin",
+  ]);
+  const canCloseBusinessDay = hasPermissionOrRole("pos.close_business_day", [
+    "cashier",
+    "manager",
+    "admin",
+    "restaurant_admin",
+    "super_admin",
+  ]);
 
   // POS view state (merged into orders page for instant switching)
   const [activeView, setActiveView] = useState("orders");
@@ -1666,6 +1694,7 @@ export default function OrdersPage() {
                   <Clock className="w-3.5 h-3.5" />
                 </button>
                 )}
+                {canCloseBusinessDay && (
                 <button
                   type="button"
                   onClick={openEndDayModal}
@@ -1674,6 +1703,7 @@ export default function OrdersPage() {
                 >
                   <Power className="w-3.5 h-3.5" />
                 </button>
+                )}
               </div>
             </div>
           </div>
@@ -3242,12 +3272,12 @@ export default function OrdersPage() {
                 Business Day Not Started
               </h2>
               <p className="text-sm text-gray-500 dark:text-neutral-400 leading-relaxed">
-                {isAdmin || isCashier
+                {canStartBusinessDay
                   ? "Open the business day to start accepting orders. No orders can be placed until the day is started."
                   : "The business day hasn't been opened yet. Ask your manager or admin to start it."}
               </p>
             </div>
-            {(isAdmin || isCashier) ? (
+            {canStartBusinessDay ? (
               <button
                 type="button"
                 onClick={handleStartSession}
@@ -3580,7 +3610,11 @@ function OrderCard({
     showTakePayment && hasPermission("orders.collect_payment");
   const showEarlyPaymentPerm =
     showEarlyPayment && hasPermission("orders.collect_payment");
-  const canCancelPerm = canCancel && hasPermission("orders.cancel");
+  const canCancelPerm =
+    canCancel &&
+    (hasPermission("pos.void_order") ||
+      hasPermission("orders.cancel") ||
+      isAdmin);
   const isServedUnpaid =
     paymentStatus === "unpaid" &&
     ["READY", "DELIVERED", "COMPLETED"].includes(status);

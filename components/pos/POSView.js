@@ -333,7 +333,9 @@ export default function POSView({
     "manager",
   ].includes(currentUser?.role);
   const canEditAfterServed =
-    isAdminRole || hasPermission("orders.edit_after_served");
+    isAdminRole ||
+    hasPermission("orders.edit_after_served") ||
+    hasPermission("pos.modify_paid_order");
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
@@ -4249,7 +4251,14 @@ export default function POSView({
                     <Printer className="w-4 h-4 text-gray-600 dark:text-neutral-400" />
                   </button>
                 )}
-                {hasPermission("orders.apply_discount") && (
+                {(hasPermission("orders.apply_discount") ||
+                  hasPermission("pos.apply_discount") ||
+                  [
+                    "restaurant_admin",
+                    "admin",
+                    "super_admin",
+                    "manager",
+                  ].includes(currentUser?.role)) && (
                   <button
                     type="button"
                     onClick={openDiscountModal}

@@ -209,6 +209,42 @@ function SectionCard({
   );
 }
 
+/** Labeled switch for website visibility / ordering preferences (default-on fields). */
+function PreferenceSwitch({
+  enabled,
+  onToggle,
+  onLabel = "On",
+  offLabel = "Off",
+  ariaLabel,
+  compact = false,
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={ariaLabel}
+      onClick={onToggle}
+      className={`relative inline-flex shrink-0 items-center rounded-full font-semibold transition-colors ${
+        compact
+          ? "h-7 gap-1.5 pl-1 pr-2.5 text-[11px]"
+          : "h-9 gap-2 pl-1.5 pr-3 text-xs"
+      } ${
+        enabled
+          ? "bg-emerald-500 text-white"
+          : "bg-gray-200 dark:bg-neutral-700 text-gray-700 dark:text-neutral-200"
+      }`}
+    >
+      <span
+        className={`inline-block rounded-full bg-white shadow-sm ${
+          compact ? "h-5 w-5" : "h-6 w-6"
+        }`}
+      />
+      <span>{enabled ? onLabel : offLabel}</span>
+    </button>
+  );
+}
+
 function MediaField({
   label,
   value,
@@ -1029,22 +1065,14 @@ export default function WebsiteSettingsPage() {
             <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
               Website visibility
             </span>
-            <button
-              type="button"
-              onClick={() => update("isPublic", !ws.isPublic)}
-              className={`relative flex items-center gap-2 h-7 px-2 rounded-full text-xs font-semibold transition-colors ${
-                ws.isPublic !== false
-                  ? "bg-emerald-500 text-white"
-                  : "bg-gray-300 dark:bg-neutral-700 text-gray-800 dark:text-neutral-100"
-              }`}
-            >
-              <span
-                className={`inline-block w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
-                  ws.isPublic !== false ? "translate-x-0" : "translate-x-0"
-                }`}
-              />
-              <span>{ws.isPublic !== false ? "Visible" : "Hidden"}</span>
-            </button>
+            <PreferenceSwitch
+              enabled={ws.isPublic !== false}
+              onLabel="Visible"
+              offLabel="Hidden"
+              ariaLabel="Website visibility"
+              compact
+              onToggle={() => update("isPublic", ws.isPublic === false)}
+            />
           </div>
         </div>
       </div>
@@ -3181,130 +3209,153 @@ export default function WebsiteSettingsPage() {
               title="Settings"
               subtitle="Visibility and ordering controls"
               iconColor={iconAccentPrimary}
-              bodyClassName="bg-primary/3 dark:bg-neutral-950"
               isActive={activeSection === "settings"}
             >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-neutral-900">
-                  <div className="flex items-center gap-3">
-                    {ws.isPublic !== false ? (
-                      <Eye className="w-5 h-5 text-primary" />
-                    ) : (
-                      <EyeOff className="w-5 h-5 text-gray-400" />
-                    )}
+              {(() => {
+                const isPublic = ws.isPublic !== false;
+                const ordersOn = ws.allowWebsiteOrders !== false;
+                const reservationsOn = ws.allowWebsiteReservations !== false;
+                return (
+                  <div className="space-y-5">
+                    <div
+                      className={`flex flex-col gap-4 rounded-2xl border-2 p-5 sm:flex-row sm:items-center sm:justify-between ${
+                        isPublic
+                          ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10"
+                          : "border-amber-200 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-500/10"
+                      }`}
+                    >
+                      <div className="flex min-w-0 items-start gap-3.5">
+                        <div
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                            isPublic
+                              ? "bg-emerald-500 text-white"
+                              : "bg-amber-500 text-white"
+                          }`}
+                        >
+                          {isPublic ? (
+                            <Eye className="h-5 w-5" />
+                          ) : (
+                            <EyeOff className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-bold text-gray-900 dark:text-white">
+                              Website visibility
+                            </p>
+                            <span
+                              className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                                isPublic
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
+                                  : "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100"
+                              }`}
+                            >
+                              {isPublic ? "Live" : "Hidden"}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-neutral-300">
+                            {isPublic
+                              ? "Your storefront is public and reachable from your website URL."
+                              : "Your storefront is hidden. Visitors will not see the live site until you turn this back on."}
+                          </p>
+                        </div>
+                      </div>
+                      <PreferenceSwitch
+                        enabled={isPublic}
+                        onLabel="Visible"
+                        offLabel="Hidden"
+                        ariaLabel="Website visibility"
+                        onToggle={() =>
+                          update("isPublic", ws.isPublic === false)
+                        }
+                      />
+                    </div>
+
                     <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        Website Visibility
+                      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                        Customer features
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-neutral-400">
-                        {ws.isPublic !== false
-                          ? "Your website is live and visible"
-                          : "Your website is hidden from the public"}
-                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div
+                          className={`flex flex-col gap-4 rounded-2xl border border-gray-200 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/50 ${
+                            !isPublic || !ordersOn ? "opacity-80" : ""
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div
+                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                                ordersOn
+                                  ? "bg-primary/10 text-primary"
+                                  : "bg-gray-200 text-gray-400 dark:bg-neutral-800 dark:text-neutral-500"
+                              }`}
+                            >
+                              <ShoppingCart className="h-[18px] w-[18px]" />
+                            </div>
+                            <PreferenceSwitch
+                              enabled={ordersOn}
+                              ariaLabel="Online ordering"
+                              onToggle={() =>
+                                update(
+                                  "allowWebsiteOrders",
+                                  ws.allowWebsiteOrders === false,
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                              Online ordering
+                            </p>
+                            <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
+                              {ordersOn
+                                ? "Customers can place orders from your website."
+                                : "Ordering is turned off on the storefront."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`flex flex-col gap-4 rounded-2xl border border-gray-200 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/50 ${
+                            !isPublic || !reservationsOn ? "opacity-80" : ""
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div
+                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                                reservationsOn
+                                  ? "bg-primary/10 text-primary"
+                                  : "bg-gray-200 text-gray-400 dark:bg-neutral-800 dark:text-neutral-500"
+                              }`}
+                            >
+                              <CalendarDays className="h-[18px] w-[18px]" />
+                            </div>
+                            <PreferenceSwitch
+                              enabled={reservationsOn}
+                              ariaLabel="Online reservations"
+                              onToggle={() =>
+                                update(
+                                  "allowWebsiteReservations",
+                                  ws.allowWebsiteReservations === false,
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                              Online reservations
+                            </p>
+                            <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
+                              {reservationsOn
+                                ? "Customers can request a table from your website."
+                                : "Table requests are turned off on the storefront."}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => update("isPublic", !ws.isPublic)}
-                    className={`relative w-12 h-7 rounded-full transition-colors ${
-                      ws.isPublic !== false
-                        ? "bg-emerald-500"
-                        : "bg-gray-300 dark:bg-neutral-700"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                        ws.isPublic !== false
-                          ? "translate-x-6"
-                          : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-neutral-900">
-                  <div className="flex items-center gap-3">
-                    <ShoppingCart
-                      className={`w-5 h-5 ${
-                        ws.allowWebsiteOrders !== false
-                          ? "text-primary"
-                          : "text-gray-400"
-                      }`}
-                    />
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        Online Ordering
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-neutral-400">
-                        {ws.allowWebsiteOrders !== false
-                          ? "Customers can place orders from your website"
-                          : "Online ordering is disabled"}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      update("allowWebsiteOrders", !ws.allowWebsiteOrders)
-                    }
-                    className={`relative w-12 h-7 rounded-full transition-colors ${
-                      ws.allowWebsiteOrders !== false
-                        ? "bg-emerald-500"
-                        : "bg-gray-300 dark:bg-neutral-700"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                        ws.allowWebsiteOrders !== false
-                          ? "translate-x-6"
-                          : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-neutral-900">
-                  <div className="flex items-center gap-3">
-                    <CalendarDays
-                      className={`w-5 h-5 ${
-                        ws.allowWebsiteReservations !== false
-                          ? "text-primary"
-                          : "text-gray-400"
-                      }`}
-                    />
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        Online Reservations
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-neutral-400">
-                        {ws.allowWebsiteReservations !== false
-                          ? "Customers can request a table from your website"
-                          : "Website reservations are disabled"}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      update(
-                        "allowWebsiteReservations",
-                        ws.allowWebsiteReservations === false,
-                      )
-                    }
-                    className={`relative w-12 h-7 rounded-full transition-colors ${
-                      ws.allowWebsiteReservations !== false
-                        ? "bg-emerald-500"
-                        : "bg-gray-300 dark:bg-neutral-700"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                        ws.allowWebsiteReservations !== false
-                          ? "translate-x-6"
-                          : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
+                );
+              })()}
               {renderSectionSave("settings")}
             </SectionCard>
 

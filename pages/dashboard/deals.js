@@ -1458,7 +1458,7 @@ export default function DealsPage() {
 
   return (
     <AdminLayout title="Deals" suspended={suspended}>
-      <PermissionGate permission="menu.manage_deals">
+      <PermissionGate permission="deals_modifiers.manage">
       <input
         ref={fileInputRef}
         type="file"
