@@ -387,12 +387,17 @@ function AddonPerformanceSection({ addons }) {
   );
 }
 
-export default function WebsiteAnalyticsPanel() {
+export default function WebsiteAnalyticsPanel({ onModuleLockedChange } = {}) {
   const [preset, setPreset] = useState("7d");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-  const [moduleLocked, setModuleLocked] = useState(false);
+  /** null until first response; then boolean */
+  const [moduleLocked, setModuleLocked] = useState(null);
   const [report, setReport] = useState(null);
+
+  useEffect(() => {
+    if (moduleLocked !== null) onModuleLockedChange?.(moduleLocked);
+  }, [moduleLocked, onModuleLockedChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -401,9 +406,11 @@ export default function WebsiteAnalyticsPanel() {
       try {
         setLoading(true);
         setErr("");
-        setModuleLocked(false);
         const data = await getWebsiteAnalytics({ preset });
-        if (!cancelled) setReport(data || null);
+        if (!cancelled) {
+          setModuleLocked(false);
+          setReport(data || null);
+        }
       } catch (e) {
         if (!cancelled) {
           const locked =
@@ -432,7 +439,7 @@ export default function WebsiteAnalyticsPanel() {
 
   return (
     <div className="space-y-6">
-      {moduleLocked ? (
+      {moduleLocked === true ? (
         <AnalyticsLockedPresentation />
       ) : (
         <>

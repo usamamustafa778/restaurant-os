@@ -185,9 +185,13 @@ function SectionCard({
   bodyClassName = "",
   isActive = true,
   headerAction = null,
+  bare = false,
   children,
 }) {
   if (!isActive) return null;
+  if (bare) {
+    return <div id={`section-${id}`}>{children}</div>;
+  }
   return (
     <div id={`section-${id}`} className={cardCls}>
       <div className="px-6 py-5 flex items-center gap-3 border-b border-gray-100 dark:border-neutral-800">
@@ -425,6 +429,8 @@ export default function WebsiteSettingsPage() {
   const [heroSlideLinkSearch, setHeroSlideLinkSearch] = useState({});
   const [activeSection, setActiveSection] = useState("template");
   const [envView, setEnvView] = useState("live");
+  /** null = unknown/loading; true = module not subscribed; false = unlocked */
+  const [analyticsModuleLocked, setAnalyticsModuleLocked] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3429,8 +3435,11 @@ export default function WebsiteSettingsPage() {
               subtitle="Traffic insights and add-on revenue from your public storefront"
               iconColor={iconAccentPrimary}
               isActive={activeSection === "analytics"}
+              bare={analyticsModuleLocked !== false}
             >
-              <WebsiteAnalyticsPanel />
+              <WebsiteAnalyticsPanel
+                onModuleLockedChange={setAnalyticsModuleLocked}
+              />
             </SectionCard>
           </div>
         </div>
