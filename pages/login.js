@@ -176,7 +176,7 @@ export default function LoginPage() {
       target = "/order-taker";
     } else if (user.role === "delivery_rider") {
       target = "/rider";
-    } else if (user.role === "cashier") {
+    } else if (user.role === "cashier" || user.role === "default_cashier") {
       target = "/pos";
     } else if (user.role === "kitchen_staff") {
       target = "/kitchen";
@@ -185,7 +185,7 @@ export default function LoginPage() {
     } else if (user.role === "super_admin") {
       target = "/super/overview";
     } else if (!SYSTEM_ROLES.includes(user.role)) {
-      // Custom role slug — operational template default
+      // Custom role slug — default to POS (cashiers / ops templates)
       target = "/pos";
     }
 

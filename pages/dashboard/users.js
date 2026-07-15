@@ -33,21 +33,19 @@ import { usePermissions } from "../../contexts/PermissionContext";
 import toast from "react-hot-toast";
 
 const ROLE_OPTIONS = [
-  { value: "manager", label: "Manager", tab: "manager", desc: "Full access except settings" },
-  { value: "cashier", label: "Cashier", tab: "cashier", desc: "Can process orders and take payments" },
   { value: "order_taker", label: "Waiter", tab: "waiter", desc: "Can take orders and manage table flow" },
   { value: "kitchen_staff", label: "Kitchen", tab: "kitchen", desc: "Can view and update kitchen order status" },
   { value: "delivery_rider", label: "Rider", tab: "rider", desc: "Access to rider app only" },
-  { value: "product_manager", label: "Manager", tab: "manager", desc: "Can manage menu and products" },
-  { value: "admin", label: "Manager", tab: "manager", desc: "Full operational admin access" },
+  { value: "product_manager", label: "Product Manager", tab: "manager", desc: "Can manage menu and products" },
+  { value: "admin", label: "Admin", tab: "manager", desc: "Full operational admin access" },
 ];
 
+/** App-bound fixed roles only — Cashier/Manager assigned via custom roles. */
 const SYSTEM_ROLE_DROPDOWN = [
-  { value: "manager", label: "Manager" },
   { value: "admin", label: "Admin" },
-  { value: "cashier", label: "Cashier" },
+  { value: "product_manager", label: "Product Manager" },
   { value: "kitchen_staff", label: "Kitchen Staff" },
-  { value: "order_taker", label: "Order Taker" },
+  { value: "order_taker", label: "Waiter" },
   { value: "delivery_rider", label: "Delivery Rider" },
 ];
 
@@ -57,6 +55,8 @@ const ROLE_LABELS = {
   product_manager: "Product Manager",
   cashier: "Cashier",
   manager: "Manager",
+  default_cashier: "Cashier",
+  default_manager: "Manager",
   kitchen_staff: "Kitchen",
   order_taker: "Waiter",
   delivery_rider: "Rider",
@@ -64,8 +64,18 @@ const ROLE_LABELS = {
 
 const ROLE_TAB_MAP = {
   all: () => true,
-  manager: (u) => ["manager", "product_manager", "admin", "restaurant_admin"].includes(u.role),
-  cashier: (u) => u.role === "cashier",
+  manager: (u, customRoles = []) => {
+    if (["manager", "product_manager", "admin", "restaurant_admin", "default_manager"].includes(u.role)) {
+      return true;
+    }
+    const custom = customRoles.find((r) => r.slug === u.role);
+    return custom?.baseRole === "manager" || custom?.baseRole === "admin";
+  },
+  cashier: (u, customRoles = []) => {
+    if (u.role === "cashier" || u.role === "default_cashier") return true;
+    const custom = customRoles.find((r) => r.slug === u.role);
+    return custom?.baseRole === "cashier";
+  },
   waiter: (u) => u.role === "order_taker",
   kitchen: (u) => u.role === "kitchen_staff",
   rider: (u) => u.role === "delivery_rider",
@@ -122,8 +132,8 @@ function getStaffLastActive(user) {
 function getRolePillClass(role) {
   switch (role) {
     case "restaurant_admin": return "bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400";
-    case "admin": case "manager": case "product_manager": return "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400";
-    case "cashier": return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400";
+    case "admin": case "manager": case "product_manager": case "default_manager": return "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400";
+    case "cashier": case "default_cashier": return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400";
     case "order_taker": return "bg-teal-100 text-teal-700 dark:bg-teal-500/10 dark:text-teal-400";
     case "kitchen_staff": return "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400";
     case "delivery_rider": return "bg-orange-100 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400";
@@ -135,9 +145,13 @@ export default function UsersPage() {
   const { branches = [], currentBranch } = useBranch() || {};
   const auth = getStoredAuth();
   const currentUserRole = auth?.user?.role;
-  const isManager = currentUserRole === "manager";
   const { confirm } = useConfirmDialog();
   const { hasPermission } = usePermissions();
+  const isManager =
+    currentUserRole === "manager" ||
+    currentUserRole === "default_manager" ||
+    (hasPermission("staff.manage") &&
+      !["restaurant_admin", "admin", "super_admin"].includes(currentUserRole));
 
   const [users, setUsers] = useState([]);
   const [suspended, setSuspended] = useState(false);
@@ -170,22 +184,35 @@ export default function UsersPage() {
     name: "",
     email: "",
     password: "",
-    role: "cashier",
+    role: "order_taker",
     branchIds: [],
     phone: "",
   });
 
   const [customRoles, setCustomRoles] = useState([]);
 
-  const roleOptions = useMemo(
-    () =>
-      isManager
-        ? SYSTEM_ROLE_DROPDOWN.filter((r) =>
-            ["cashier", "kitchen_staff", "order_taker", "delivery_rider"].includes(r.value),
-          )
-        : SYSTEM_ROLE_DROPDOWN,
-    [isManager],
-  );
+  const roleOptions = useMemo(() => {
+    const fixed = isManager
+      ? SYSTEM_ROLE_DROPDOWN.filter((r) =>
+          ["kitchen_staff", "order_taker", "delivery_rider", "product_manager"].includes(
+            r.value,
+          ),
+        )
+      : SYSTEM_ROLE_DROPDOWN;
+    const custom = (customRoles || []).map((r) => ({
+      value: r.slug,
+      label: r.name,
+      isCustom: true,
+    }));
+    return [...custom, ...fixed];
+  }, [isManager, customRoles]);
+
+  const defaultCreateRole = useMemo(() => {
+    const cashier = customRoles.find((r) => r.slug === "default_cashier");
+    if (cashier) return cashier.slug;
+    if (customRoles[0]?.slug) return customRoles[0].slug;
+    return "order_taker";
+  }, [customRoles]);
 
   useEffect(() => {
     (async () => {
@@ -214,7 +241,7 @@ export default function UsersPage() {
       name: "",
       email: "",
       password: "",
-      role: isManager ? "cashier" : "manager",
+      role: defaultCreateRole,
       branchIds: currentBranch?.id ? [currentBranch.id] : [],
       phone: "",
     });
@@ -244,7 +271,7 @@ export default function UsersPage() {
   async function openDetail(u) {
     setSelectedUser(u);
     setSelectedStats({ ordersToday: 0, ordersThisWeek: 0 });
-    if (["cashier", "order_taker"].includes(u.role)) {
+    if (["cashier", "default_cashier", "order_taker"].includes(u.role) || customRoles.find((r) => r.slug === u.role)?.baseRole === "cashier") {
       setStatsLoading(true);
       try {
         const s = await getUserOrderStats(u.id);
@@ -349,17 +376,20 @@ export default function UsersPage() {
         const b = (u.branches || []).map((x) => String(x.branchId));
         if (!b.includes(String(currentBranch.id))) return false;
       }
-      if (!ROLE_TAB_MAP[roleTab]?.(u)) return false;
+      if (!ROLE_TAB_MAP[roleTab]?.(u, customRoles)) return false;
       if (!showInactive && u.isActive === false) return false;
       return true;
     });
-  }, [users, search, showAllBranches, currentBranch, roleTab, showInactive]);
+  }, [users, search, showAllBranches, currentBranch, roleTab, showInactive, customRoles]);
 
   const topStats = useMemo(() => {
     const total = users.length;
     const neverLoggedIn = users.filter((u) => !getStaffLastActive(u) && u.isActive !== false).length;
     const riders = users.filter((u) => u.role === "delivery_rider" && u.isActive !== false).length;
-    const managers = users.filter((u) => ["manager", "admin", "restaurant_admin", "product_manager"].includes(u.role) && u.isActive !== false).length;
+    const managers = users.filter(
+      (u) =>
+        ROLE_TAB_MAP.manager(u, customRoles) && u.isActive !== false,
+    ).length;
     const inactive = users.filter((u) => u.isActive === false).length;
     return { total, neverLoggedIn, riders, managers, inactive };
   }, [users]);
@@ -755,7 +785,10 @@ export default function UsersPage() {
                   </div>
                 ))}
               </div>
-              {["cashier", "order_taker"].includes(selectedUser.role) && (
+              {(
+                ["cashier", "default_cashier", "order_taker"].includes(selectedUser.role) ||
+                customRoles.find((r) => r.slug === selectedUser.role)?.baseRole === "cashier"
+              ) && (
                 <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
                   <p className="text-xs font-semibold text-gray-600 dark:text-neutral-300 mb-2">Orders handled</p>
                   {statsLoading ? (

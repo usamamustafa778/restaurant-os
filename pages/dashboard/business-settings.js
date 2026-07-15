@@ -27,6 +27,7 @@ import {
   setStoredCurrencyCode,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
+import { usePermissions } from "../../contexts/PermissionContext";
 import {
   MapPin,
   Loader2,
@@ -291,6 +292,7 @@ export default function BusinessSettingsPage() {
     refreshBranches,
     loading: contextLoading,
   } = useBranch() || {};
+  const { hasPermission } = usePermissions();
   const [activeSection, setActiveSection] = useState("branding");
 
   // Branches
@@ -1030,10 +1032,9 @@ export default function BusinessSettingsPage() {
 
   const canManagePosDiscountPin = useMemo(() => {
     const role = String(getStoredAuth()?.user?.role || "");
-    return ["restaurant_admin", "admin", "super_admin", "manager"].includes(
-      role,
-    );
-  }, []);
+    if (["restaurant_admin", "admin", "super_admin"].includes(role)) return true;
+    return hasPermission("settings.manage");
+  }, [hasPermission]);
 
   async function handleDiscountSettingsSave() {
     setDiscountSettingsSaving(true);

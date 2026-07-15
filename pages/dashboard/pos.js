@@ -433,7 +433,7 @@ export default function OrdersPage() {
   const router = useRouter();
   const { socket } = useSocket() || {};
   const { currentBranch, setCurrentBranch } = useBranch() || {};
-  const { hasPermission, hasPermissionOrRole } = usePermissions();
+  const { hasPermission } = usePermissions();
   const canViewClosedCount = hasPermission("orders.view_closed_count");
   const canViewClosedAmount = hasPermission("orders.view_closed_amount");
   const canDownloadClosedReport =
@@ -442,13 +442,7 @@ export default function OrdersPage() {
   const canViewAwaitingPaymentSummary = hasPermission(
     "orders.view_awaiting_payment",
   );
-  const canViewSessionReport = hasPermissionOrRole("pos.view_session_report", [
-    "cashier",
-    "manager",
-    "admin",
-    "restaurant_admin",
-    "super_admin",
-  ]);
+  const canViewSessionReport = hasPermission("pos.view_session_report");
   const showClosedOrdersBar =
     canViewClosedCount || canViewClosedAmount;
   const [orders, setOrders] = useState([]);
@@ -516,30 +510,17 @@ export default function OrdersPage() {
 
   const [role] = useState(() => getStoredAuth()?.user?.role);
   const isOrderTaker = role === "order_taker";
-  const isCashier = role === "cashier";
-  const isAdmin = ["restaurant_admin", "admin", "super_admin", "manager"].includes(role);
-  /** Session report: cashiers see only headline totals; owners/managers see full breakdown. */
-  const showFullSessionReport =
-    !isCashier || hasPermissionOrRole("reports.view_all_staff_sales", [
-      "manager",
-      "admin",
-      "restaurant_admin",
-      "super_admin",
-    ]);
-  const canStartBusinessDay = hasPermissionOrRole("pos.start_business_day", [
-    "cashier",
-    "manager",
-    "admin",
-    "restaurant_admin",
-    "super_admin",
-  ]);
-  const canCloseBusinessDay = hasPermissionOrRole("pos.close_business_day", [
-    "cashier",
-    "manager",
-    "admin",
-    "restaurant_admin",
-    "super_admin",
-  ]);
+  // Phase 4: permission-based cashiers (custom default_cashier, not literal role)
+  const isCashier =
+    !hasPermission("reports.view_all_staff_sales") &&
+    !hasPermission("pos.void_order") &&
+    hasPermission("orders.create");
+  const isAdmin =
+    ["restaurant_admin", "admin", "super_admin"].includes(role) ||
+    hasPermission("pos.void_order");
+  const showFullSessionReport = hasPermission("reports.view_all_staff_sales");
+  const canStartBusinessDay = hasPermission("pos.start_business_day");
+  const canCloseBusinessDay = hasPermission("pos.close_business_day");
 
   // POS view state (merged into orders page for instant switching)
   const [activeView, setActiveView] = useState("orders");
@@ -3611,10 +3592,7 @@ function OrderCard({
   const showEarlyPaymentPerm =
     showEarlyPayment && hasPermission("orders.collect_payment");
   const canCancelPerm =
-    canCancel &&
-    (hasPermission("pos.void_order") ||
-      hasPermission("orders.cancel") ||
-      isAdmin);
+    canCancel && (hasPermission("pos.void_order") || hasPermission("orders.cancel"));
   const isServedUnpaid =
     paymentStatus === "unpaid" &&
     ["READY", "DELIVERED", "COMPLETED"].includes(status);

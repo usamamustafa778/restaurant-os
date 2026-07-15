@@ -330,7 +330,6 @@ export default function POSView({
     "restaurant_admin",
     "admin",
     "super_admin",
-    "manager",
   ].includes(currentUser?.role);
   const canEditAfterServed =
     isAdminRole ||
@@ -4252,13 +4251,7 @@ export default function POSView({
                   </button>
                 )}
                 {(hasPermission("orders.apply_discount") ||
-                  hasPermission("pos.apply_discount") ||
-                  [
-                    "restaurant_admin",
-                    "admin",
-                    "super_admin",
-                    "manager",
-                  ].includes(currentUser?.role)) && (
+                  hasPermission("pos.apply_discount")) && (
                   <button
                     type="button"
                     onClick={openDiscountModal}

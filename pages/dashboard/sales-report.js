@@ -2093,7 +2093,7 @@ export default function HistoryPage() {
       filtered = filtered.filter(
         (o) =>
           (o.orderTakerName || "") === ordersCashierFilter &&
-          o.createdByRole === "cashier",
+          o.createdByRole === "cashier" || o.createdByRole === "default_cashier",
       );
     }
 
@@ -2290,7 +2290,7 @@ export default function HistoryPage() {
     for (const o of dateFilteredOrders) {
       const name = o.orderTakerName;
 
-      if (!name || o.createdByRole !== "cashier") continue;
+      if (!name || (o.createdByRole !== "cashier" && o.createdByRole !== "default_cashier")) continue;
 
       // Prevent overlap with Riders Overview:
 
@@ -3470,7 +3470,7 @@ export default function HistoryPage() {
       ...new Set(
         dateFiltered
 
-          .filter((o) => o.orderTakerName && o.createdByRole === "cashier")
+          .filter((o) => o.orderTakerName && (o.createdByRole === "cashier" || o.createdByRole === "default_cashier"))
 
           .map((o) => o.orderTakerName),
       ),

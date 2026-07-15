@@ -825,6 +825,7 @@ export default function AdminLayout({
       role === "restaurant_admin" ||
       role === "admin" ||
       role === "manager" ||
+      role === "default_manager" ||
       (role === "super_admin" && Boolean(actingAsSlug));
     if (!canFetchSubscriptionSummary) {
       setPendingInvoiceCount(0);
@@ -880,9 +881,9 @@ export default function AdminLayout({
     };
   }, [role, actingAsSlug]);
 
-  // Restrict cashier to POS – redirect away from the analytics dashboard
+  // Restrict legacy/default cashier-like roles away from analytics overview
   useEffect(() => {
-    if (role !== "cashier") return;
+    if (role !== "cashier" && role !== "default_cashier") return;
     const path =
       (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
     if (path === "/overview") {
@@ -1964,20 +1965,31 @@ export default function AdminLayout({
                   "restaurant_admin",
                   "admin",
                   "manager",
+                  "default_manager",
                   "product_manager",
                 ].includes(role) && {
                   path: "/overview",
                   label: "Home",
                   icon: LayoutDashboard,
                 },
-                ["restaurant_admin", "admin", "manager", "cashier"].includes(
-                  role,
-                ) && {
+                [
+                  "restaurant_admin",
+                  "admin",
+                  "manager",
+                  "default_manager",
+                  "cashier",
+                  "default_cashier",
+                ].includes(role) && {
                   path: "/pos",
                   label: "Orders",
                   icon: ClipboardList,
                 },
-                ["restaurant_admin", "admin", "manager"].includes(role) && {
+                [
+                  "restaurant_admin",
+                  "admin",
+                  "manager",
+                  "default_manager",
+                ].includes(role) && {
                   path: "/sales-report",
                   label: "Sales",
                   icon: BarChart3,
