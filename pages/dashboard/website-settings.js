@@ -184,6 +184,7 @@ function SectionCard({
   iconColor,
   bodyClassName = "",
   isActive = true,
+  headerAction = null,
   children,
 }) {
   if (!isActive) return null;
@@ -195,7 +196,7 @@ function SectionCard({
         >
           <Icon className="w-4 h-4 text-white" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h3 className="text-base font-bold text-gray-900 dark:text-white">
             {title}
           </h3>
@@ -203,6 +204,11 @@ function SectionCard({
             {subtitle}
           </p>
         </div>
+        {headerAction ? (
+          <div className="ml-auto flex shrink-0 items-center gap-3">
+            {headerAction}
+          </div>
+        ) : null}
       </div>
       <div className={`p-6 ${bodyClassName}`}>{children}</div>
     </div>
@@ -280,7 +286,7 @@ function MediaField({
 
   return (
     <div
-      className={`flex h-full min-h-0 flex-col rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/40 ${className}`.trim()}
+      className={`flex min-h-0 flex-col rounded-xl border border-gray-100 bg-gray-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/40 ${className}`.trim()}
     >
       <div className="mb-3 flex min-h-[2.25rem] items-center justify-between gap-3">
         <label className={`${labelCls} mb-0 shrink-0`}>{label}</label>
@@ -580,9 +586,13 @@ export default function WebsiteSettingsPage() {
     analytics: true,
   };
 
-  function renderSectionSave(sectionId) {
+  function renderSectionSave(sectionId, { inHeader = false } = {}) {
     return (
-      <div className="mt-5 flex items-center justify-end gap-3">
+      <div
+        className={`flex items-center gap-3 ${
+          inHeader ? "justify-end" : "mt-5 justify-end"
+        }`}
+      >
         {savedSectionId === sectionId ? (
           <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
             ✓ Saved
@@ -1150,8 +1160,9 @@ export default function WebsiteSettingsPage() {
               subtitle="Choose the design template for your restaurant website"
               iconColor={iconAccentPrimary}
               isActive={activeSection === "template"}
+              headerAction={renderSectionSave("template", { inHeader: true })}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {STOREFRONT_TEMPLATES.map((t) => {
                   const isSelected =
                     ws.template === t.id ||
@@ -1160,74 +1171,80 @@ export default function WebsiteSettingsPage() {
                   return (
                     <div
                       key={t.id}
-                      className={`relative text-left p-4 rounded-xl border-2 transition-all ${
+                      className={`relative flex flex-col rounded-xl border-2 p-2.5 transition-all ${
                         isSelected
-                          ? "border-primary ring-4 ring-primary/10"
+                          ? "border-primary ring-2 ring-primary/10"
                           : "border-gray-200 dark:border-neutral-700 hover:border-gray-300"
                       } ${t.isComingSoon ? "opacity-50" : ""}`}
                     >
-                      <button
-                        type="button"
-                        disabled={t.isComingSoon}
-                        onClick={() => update("template", t.id)}
-                        className={`w-full text-left ${
-                          t.isComingSoon
-                            ? "cursor-not-allowed"
-                            : "cursor-pointer"
-                        }`}
-                      >
-                        <div className="mb-3 overflow-hidden rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-100 dark:bg-neutral-900">
-                          {t.thumbnail ? (
-                            <img
-                              src={t.thumbnail}
-                              alt={`${t.name} template preview`}
-                              className="aspect-[16/10] w-full object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="p-2">
-                              <div className="h-2 rounded bg-gray-200 dark:bg-neutral-700 mb-2" />
-                              <div className="h-8 rounded mb-2 bg-gray-200 dark:bg-neutral-700" />
-                              <div className="grid grid-cols-3 gap-1">
-                                <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                                <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                                <div className="h-6 rounded bg-gray-100 dark:bg-neutral-800" />
-                              </div>
+                      <div className="mb-2 overflow-hidden rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-100 dark:bg-neutral-900">
+                        {t.thumbnail ? (
+                          <img
+                            src={t.thumbnail}
+                            alt={`${t.name} template preview`}
+                            className="aspect-[16/10] w-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="p-1.5">
+                            <div className="mb-1.5 h-1.5 rounded bg-gray-200 dark:bg-neutral-700" />
+                            <div className="mb-1.5 h-5 rounded bg-gray-200 dark:bg-neutral-700" />
+                            <div className="grid grid-cols-3 gap-1">
+                              <div className="h-4 rounded bg-gray-100 dark:bg-neutral-800" />
+                              <div className="h-4 rounded bg-gray-100 dark:bg-neutral-800" />
+                              <div className="h-4 rounded bg-gray-100 dark:bg-neutral-800" />
                             </div>
-                          )}
-                        </div>
-                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                          {t.name}
-                        </h4>
-                        <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
-                          {t.description}
-                        </p>
-                      </button>
+                          </div>
+                        )}
+                      </div>
 
-                      {displayWebsiteUrl ? (
+                      <h4 className="truncate text-xs font-bold text-gray-900 dark:text-white">
+                        {t.name}
+                      </h4>
+                      <p className="mt-0.5 line-clamp-2 min-h-[2rem] text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+                        {t.description}
+                      </p>
+
+                      <div className="mt-2.5 grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
-                          className={`${btnSecondary} mt-3 w-full justify-center text-xs h-9`}
-                          onClick={() =>
+                          disabled={t.isComingSoon || isSelected}
+                          onClick={() => update("template", t.id)}
+                          className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                            isSelected
+                              ? "bg-primary text-white"
+                              : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-900"
+                          }`}
+                        >
+                          {isSelected ? (
+                            <>
+                              <Check className="h-3 w-3" />
+                              Selected
+                            </>
+                          ) : (
+                            "Select"
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!displayWebsiteUrl || t.isComingSoon}
+                          onClick={() => {
+                            if (!displayWebsiteUrl) return;
                             window.open(
                               `${displayWebsiteUrl}?previewTemplate=${encodeURIComponent(t.id)}`,
                               "_blank",
                               "noopener,noreferrer",
-                            )
-                          }
+                            );
+                          }}
+                          className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white text-[11px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-900"
                         >
                           Preview
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          <ExternalLink className="h-3 w-3" />
                         </button>
-                      ) : null}
+                      </div>
 
-                      {isSelected && (
-                        <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 text-white" />
-                        </div>
-                      )}
                       {t.isComingSoon && (
-                        <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-neutral-800 text-gray-500">
+                        <span className="absolute top-2 right-2 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500 dark:bg-neutral-800">
                           SOON
                         </span>
                       )}
@@ -1235,7 +1252,6 @@ export default function WebsiteSettingsPage() {
                   );
                 })}
               </div>
-              {renderSectionSave("template")}
             </SectionCard>
 
             {/* Branding */}
@@ -2055,106 +2071,109 @@ export default function WebsiteSettingsPage() {
                 {ws.heroType === "banner" ||
                 isPosterTemplate ||
                 isOleaTemplate ? (
-                  <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-                    <div className="xl:col-span-3 space-y-4">
-                      <MediaField
-                        label="Banner image"
-                        value={ws.bannerUrl}
-                        onChange={(v) => update("bannerUrl", v)}
-                        hint="Wide image works best (1200×400 px or larger). Also used as fallback for social previews."
-                        previewClassName="aspect-[2.4/1] w-full max-h-44"
-                      />
-                      <div className={`${subCardCls} space-y-4`}>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                          Hero text &amp; CTA
-                        </h4>
-                        <p className="text-xs text-gray-500 dark:text-neutral-500">
-                          These fields drive the hero
-                          eyebrow/headline/sub-headline/CTA on supported
-                          templates (including Poster and Olea). If left blank,
-                          defaults are used.
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className={labelCls}>Headline</label>
-                            <input
-                              type="text"
-                              value={ws.heroHeadline || ""}
-                              onChange={(e) =>
-                                update("heroHeadline", e.target.value)
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-5">
+                      <div className="xl:col-span-3">
+                        <MediaField
+                          label="Banner image"
+                          value={ws.bannerUrl}
+                          onChange={(v) => update("bannerUrl", v)}
+                          hint="Wide image works best (1200×400 px or larger). Also used as fallback for social previews."
+                          previewClassName="aspect-[2.4/1] w-full max-h-44"
+                        />
+                      </div>
+
+                      <div className="xl:col-span-2">
+                        <div className={subCardCls}>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400 mb-3">
+                            Live preview
+                          </h4>
+                          <div className="relative rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={
+                                ws.bannerUrl ||
+                                "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80&auto=format&fit=crop"
                               }
-                              placeholder="Fresh, Fast &amp; Flavourful"
-                              className={inp}
+                              alt="Hero preview"
+                              className="w-full aspect-[2.4/1] object-cover"
                             />
-                          </div>
-                          <div>
-                            <label className={labelCls}>Sub-headline</label>
-                            <input
-                              type="text"
-                              value={ws.heroSubheadline || ""}
-                              onChange={(e) =>
-                                update("heroSubheadline", e.target.value)
-                              }
-                              placeholder="Order your favourite meal in minutes"
-                              className={inp}
-                            />
-                          </div>
-                          <div>
-                            <label className={labelCls}>CTA Button Text</label>
-                            <input
-                              type="text"
-                              value={ws.heroCtaText || ""}
-                              onChange={(e) =>
-                                update("heroCtaText", e.target.value)
-                              }
-                              placeholder="Order Now"
-                              className={inp}
-                            />
-                          </div>
-                          <div>
-                            <label className={labelCls}>CTA Button Link</label>
-                            <input
-                              type="text"
-                              value={ws.heroCtaLink || ""}
-                              onChange={(e) =>
-                                update("heroCtaLink", e.target.value)
-                              }
-                              placeholder="#menu"
-                              className={inp}
-                            />
+                            <div className="absolute inset-0 bg-black/55 p-4 flex flex-col justify-end gap-1">
+                              <p className="text-white text-lg font-bold leading-snug">
+                                {ws.heroHeadline || ws.name || "Your Headline"}
+                              </p>
+                              <p className="text-white/85 text-sm">
+                                {ws.heroSubheadline || "Your sub-headline"}
+                              </p>
+                              {ws.heroCtaText || ws.heroCtaLink ? (
+                                <span className="mt-1 inline-flex w-fit items-center rounded-full bg-primary px-4 py-1.5 text-xs font-bold text-white">
+                                  {ws.heroCtaText || "Order Now"}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="xl:col-span-2">
-                      <div className={subCardCls}>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400 mb-3">
-                          Live preview
-                        </h4>
-                        <div className="relative rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={
-                              ws.bannerUrl ||
-                              "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80&auto=format&fit=crop"
+                    <div className={`${subCardCls} space-y-4`}>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                        Hero text &amp; CTA
+                      </h4>
+                      <p className="text-xs text-gray-500 dark:text-neutral-500">
+                        These fields drive the hero
+                        eyebrow/headline/sub-headline/CTA on supported
+                        templates (including Poster and Olea). If left blank,
+                        defaults are used.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelCls}>Headline</label>
+                          <input
+                            type="text"
+                            value={ws.heroHeadline || ""}
+                            onChange={(e) =>
+                              update("heroHeadline", e.target.value)
                             }
-                            alt="Hero preview"
-                            className="w-full aspect-[2.4/1] object-cover"
+                            placeholder="Fresh, Fast &amp; Flavourful"
+                            className={inp}
                           />
-                          <div className="absolute inset-0 bg-black/55 p-4 flex flex-col justify-end gap-1">
-                            <p className="text-white text-lg font-bold leading-snug">
-                              {ws.heroHeadline || ws.name || "Your Headline"}
-                            </p>
-                            <p className="text-white/85 text-sm">
-                              {ws.heroSubheadline || "Your sub-headline"}
-                            </p>
-                            {ws.heroCtaText || ws.heroCtaLink ? (
-                              <span className="mt-1 inline-flex w-fit items-center rounded-full bg-primary px-4 py-1.5 text-xs font-bold text-white">
-                                {ws.heroCtaText || "Order Now"}
-                              </span>
-                            ) : null}
-                          </div>
+                        </div>
+                        <div>
+                          <label className={labelCls}>Sub-headline</label>
+                          <input
+                            type="text"
+                            value={ws.heroSubheadline || ""}
+                            onChange={(e) =>
+                              update("heroSubheadline", e.target.value)
+                            }
+                            placeholder="Order your favourite meal in minutes"
+                            className={inp}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>CTA Button Text</label>
+                          <input
+                            type="text"
+                            value={ws.heroCtaText || ""}
+                            onChange={(e) =>
+                              update("heroCtaText", e.target.value)
+                            }
+                            placeholder="Order Now"
+                            className={inp}
+                          />
+                        </div>
+                        <div>
+                          <label className={labelCls}>CTA Button Link</label>
+                          <input
+                            type="text"
+                            value={ws.heroCtaLink || ""}
+                            onChange={(e) =>
+                              update("heroCtaLink", e.target.value)
+                            }
+                            placeholder="#menu"
+                            className={inp}
+                          />
                         </div>
                       </div>
                     </div>
