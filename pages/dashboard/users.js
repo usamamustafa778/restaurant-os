@@ -62,18 +62,22 @@ const ROLE_LABELS = {
   delivery_rider: "Rider",
 };
 
+function asCustomRoles(customRoles) {
+  return Array.isArray(customRoles) ? customRoles : [];
+}
+
 const ROLE_TAB_MAP = {
   all: () => true,
   manager: (u, customRoles = []) => {
     if (["manager", "product_manager", "admin", "restaurant_admin", "default_manager"].includes(u.role)) {
       return true;
     }
-    const custom = customRoles.find((r) => r.slug === u.role);
+    const custom = asCustomRoles(customRoles).find((r) => r.slug === u.role);
     return custom?.baseRole === "manager" || custom?.baseRole === "admin";
   },
   cashier: (u, customRoles = []) => {
     if (u.role === "cashier" || u.role === "default_cashier") return true;
-    const custom = customRoles.find((r) => r.slug === u.role);
+    const custom = asCustomRoles(customRoles).find((r) => r.slug === u.role);
     return custom?.baseRole === "cashier";
   },
   waiter: (u) => u.role === "order_taker",
@@ -82,13 +86,13 @@ const ROLE_TAB_MAP = {
 };
 
 function getRoleLabel(role, customRoles = []) {
-  const custom = customRoles.find((r) => r.slug === role);
+  const custom = asCustomRoles(customRoles).find((r) => r.slug === role);
   if (custom) return custom.name;
   return ROLE_LABELS[role] || role;
 }
 
 function getRoleDescription(role, customRoles = []) {
-  const custom = customRoles.find((r) => r.slug === role);
+  const custom = asCustomRoles(customRoles).find((r) => r.slug === role);
   if (custom) return custom.description || `Custom role (base: ${custom.baseRole || "cashier"})`;
   return ROLE_OPTIONS.find((r) => r.value === role)?.desc || "";
 }
@@ -392,7 +396,7 @@ export default function UsersPage() {
     ).length;
     const inactive = users.filter((u) => u.isActive === false).length;
     return { total, neverLoggedIn, riders, managers, inactive };
-  }, [users]);
+  }, [users, customRoles]);
 
   const tabCounts = useMemo(() => {
     const base = users.filter((u) => {
@@ -404,13 +408,13 @@ export default function UsersPage() {
     });
     return {
       all: base.length,
-      manager: base.filter(ROLE_TAB_MAP.manager).length,
-      cashier: base.filter(ROLE_TAB_MAP.cashier).length,
+      manager: base.filter((u) => ROLE_TAB_MAP.manager(u, customRoles)).length,
+      cashier: base.filter((u) => ROLE_TAB_MAP.cashier(u, customRoles)).length,
       waiter: base.filter(ROLE_TAB_MAP.waiter).length,
       kitchen: base.filter(ROLE_TAB_MAP.kitchen).length,
       rider: base.filter(ROLE_TAB_MAP.rider).length,
     };
-  }, [users, showAllBranches, currentBranch]);
+  }, [users, showAllBranches, currentBranch, customRoles]);
 
   const neverLoggedInCount = useMemo(
     () => users.filter((u) => !getStaffLastActive(u) && u.isActive !== false).length,
