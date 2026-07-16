@@ -16,6 +16,8 @@ import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { usePermissions } from "../../contexts/PermissionContext";
+import { useOrderNotifications } from "../../contexts/OrderNotificationContext";
+import WhatsAppNotificationBell from "../../components/whatsapp/WhatsAppNotificationBell";
 import {
   ShoppingCart,
   Plus,
@@ -149,6 +151,7 @@ export default function OrderTakerPage() {
     loading: branchLoading,
   } = useBranch() || {};
   const { socket } = useSocket() || {};
+  const { setOrderClickHandler } = useOrderNotifications();
   const { theme, toggleTheme } = useTheme() || {
     theme: "light",
     toggleTheme: () => {},
@@ -222,6 +225,14 @@ export default function OrderTakerPage() {
     const auth = getStoredAuth();
     setUserName(auth?.user?.name || auth?.user?.email || "");
   }, []);
+
+  useEffect(() => {
+    setOrderClickHandler(() => {
+      setActiveTab(TABS.HOME);
+      setActiveFilter("ready");
+    });
+    return () => setOrderClickHandler(null);
+  }, [setOrderClickHandler]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1511,6 +1522,10 @@ export default function OrderTakerPage() {
                   />
                 </button>
               )}
+              <WhatsAppNotificationBell
+                showWhatsApp={false}
+                showOrders={true}
+              />
               <button
                 onClick={toggleTheme}
                 className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"

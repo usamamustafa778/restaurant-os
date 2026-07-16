@@ -798,6 +798,28 @@ export default function AdminLayout({
     "manager",
     "kitchen_staff",
   ];
+  const orderNotifyRoles = [
+    "restaurant_admin",
+    "admin",
+    "manager",
+    "default_manager",
+    "cashier",
+    "default_cashier",
+    "order_taker",
+  ];
+  const showNotificationBell =
+    Boolean(role) &&
+    role !== "super_admin" &&
+    (whatsappNavRoles.includes(role) ||
+      orderNotifyRoles.includes(role) ||
+      // Custom tenant roles (e.g. cashiers) still get order-ready alerts
+      (!["kitchen_staff", "delivery_rider", "super_admin"].includes(role) &&
+        Boolean(role)));
+  const showWhatsAppInBell = whatsappNavRoles.includes(role);
+  const showOrdersInBell =
+    orderNotifyRoles.includes(role) ||
+    (!whatsappNavRoles.includes(role) &&
+      !["kitchen_staff", "delivery_rider", "super_admin"].includes(role));
   useEffect(() => {
     if (!role || role === "super_admin" || !whatsappNavRoles.includes(role)) {
       setWhatsappNeedsHumanCount(0);
@@ -1529,9 +1551,12 @@ export default function AdminLayout({
 
             {/* Right — notifications + user avatar */}
             <div className="ml-auto z-10 flex items-center gap-2">
-              {role &&
-                whatsappNavRoles.includes(role) &&
-                role !== "super_admin" && <WhatsAppNotificationBell />}
+              {showNotificationBell && (
+                <WhatsAppNotificationBell
+                  showWhatsApp={showWhatsAppInBell}
+                  showOrders={showOrdersInBell}
+                />
+              )}
               {pendingInvoiceCount > 0 &&
                 (onSubscriptionPage ? (
                   <span
@@ -1611,10 +1636,12 @@ export default function AdminLayout({
 
               {(role !== "super_admin" || actingAsSlug) && (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {role !== "super_admin" &&
-                    whatsappNavRoles.includes(role) && (
-                      <WhatsAppNotificationBell />
-                    )}
+                  {showNotificationBell && (
+                    <WhatsAppNotificationBell
+                      showWhatsApp={showWhatsAppInBell}
+                      showOrders={showOrdersInBell}
+                    />
+                  )}
                   {pendingInvoiceCount > 0 &&
                     (onSubscriptionPage ? (
                       <span
