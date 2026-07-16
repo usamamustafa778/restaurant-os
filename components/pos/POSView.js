@@ -66,6 +66,11 @@ import {
 } from "../../lib/dealComboItems";
 import PosDealCustomizeModal from "./PosDealCustomizeModal";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
+import {
+  POS_ADD_SOUND_PRESETS,
+  normalizePosAddSoundId,
+  playPosAddTone,
+} from "../../lib/posAddSounds";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
 import { useSocket } from "../../contexts/SocketContext";
@@ -107,8 +112,45 @@ import {
   MapPin,
   Search,
   Wallet,
+  Volume2,
+  PanelRight,
+  PanelLeft,
 } from "lucide-react";
 import toast from "react-hot-toast";
+
+function PosSettingsToggle({ checked, onChange, label, description }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-start gap-3 rounded-xl px-1 py-2.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900/60"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          {label}
+        </p>
+        {description ? (
+          <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      <span
+        className={`relative mt-0.5 h-6 w-10 shrink-0 rounded-full transition-colors ${
+          checked ? "bg-primary" : "bg-gray-200 dark:bg-neutral-700"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+            checked ? "translate-x-4" : "translate-x-0"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
 
 function isBranchRequiredError(msg) {
   return (
@@ -451,8 +493,10 @@ export default function POSView({
   /** `scroll` (default) = horizontal category strip; `show_all` = wrap all categories */
   const [categoryDisplayMode, setCategoryDisplayMode] = useState("scroll");
   const [showItemImages, setShowItemImages] = useState(true);
-  const [cartPosition, setCartPosition] = useState("right"); // right | bottom
+  const [cartPosition, setCartPosition] = useState("right"); // right | left
   const [soundOnAdd, setSoundOnAdd] = useState(false);
+  const [soundVolume, setSoundVolume] = useState(70);
+  const [soundBeep, setSoundBeep] = useState("chime");
   const [showPosTableSettingsModal, setShowPosTableSettingsModal] =
     useState(false);
   const [posTableSettingsDraft, setPosTableSettingsDraft] = useState(true);
@@ -466,6 +510,9 @@ export default function POSView({
   const [posShowItemImagesDraft, setPosShowItemImagesDraft] = useState(true);
   const [posCartPositionDraft, setPosCartPositionDraft] = useState("right");
   const [posSoundOnAddDraft, setPosSoundOnAddDraft] = useState(false);
+  const [posSoundVolumeDraft, setPosSoundVolumeDraft] = useState(70);
+  const [posSoundBeepDraft, setPosSoundBeepDraft] = useState("chime");
+  const posAudioCtxRef = useRef(null);
   const [posOrderTypesDraft, setPosOrderTypesDraft] = useState({
     DINE_IN: true,
     TAKEAWAY: true,
@@ -742,8 +789,15 @@ export default function POSView({
           );
           setFlattenVariations(b?.posFlattenVariations !== false);
           setShowItemImages(b?.posShowItemImages !== false);
-          setCartPosition(b?.posCartPosition === "bottom" ? "bottom" : "right");
+          setCartPosition(b?.posCartPosition === "left" ? "left" : "right");
           setSoundOnAdd(b?.posSoundOnAdd === true);
+          {
+            const n = Number(b?.posSoundVolume);
+            setSoundVolume(
+              Number.isFinite(n) ? Math.min(100, Math.max(1, Math.round(n))) : 70,
+            );
+          }
+          setSoundBeep(normalizePosAddSoundId(b?.posSoundBeep));
           // Order types are a per-terminal preference stored in localStorage,
           // not a branch-wide restriction — read from localStorage, not the API.
           try {
@@ -770,6 +824,8 @@ export default function POSView({
           setShowItemImages(true);
           setCartPosition("right");
           setSoundOnAdd(false);
+          setSoundVolume(70);
+          setSoundBeep("chime");
           setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
           setPosOptionsLoaded(true);
         }
@@ -1822,31 +1878,50 @@ export default function POSView({
     [itemNotes],
   );
 
-  const playPosAddSound = useCallback(() => {
-    if (!soundOnAdd) return;
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = 880;
-      gain.gain.value = 0.07;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-      osc.stop(ctx.currentTime + 0.1);
-      osc.onended = () => {
-        try {
-          ctx.close();
-        } catch {}
-      };
-    } catch {
-      /* ignore audio errors */
-    }
-  }, [soundOnAdd]);
+  const playPosAddSound = useCallback(
+    (force = false, volumeOverride, beepOverride) => {
+      if (!force && !soundOnAdd) return;
+      if (typeof window === "undefined") return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+
+        let ctx = posAudioCtxRef.current;
+        if (!ctx || ctx.state === "closed") {
+          ctx = new AudioCtx();
+          posAudioCtxRef.current = ctx;
+        }
+
+        const raw =
+          volumeOverride !== undefined && volumeOverride !== null
+            ? Number(volumeOverride)
+            : Number(soundVolume);
+        const volPct = Number.isFinite(raw)
+          ? Math.min(100, Math.max(1, Math.round(raw)))
+          : 70;
+        const peak = Math.max(0.02, (volPct / 100) * 0.42);
+        const beepId = normalizePosAddSoundId(
+          beepOverride !== undefined && beepOverride !== null
+            ? beepOverride
+            : soundBeep,
+        );
+
+        const startTone = () => playPosAddTone(ctx, beepId, peak);
+
+        if (ctx.state === "suspended") {
+          ctx
+            .resume()
+            .then(() => startTone())
+            .catch(() => {});
+          return;
+        }
+        startTone();
+      } catch {
+        /* ignore audio errors */
+      }
+    },
+    [soundOnAdd, soundVolume, soundBeep],
+  );
 
   const addDealToCart = (deal, qty = 1, selectionsBySlot = {}) => {
     const dealId = deal._id || deal.id;
@@ -3227,12 +3302,16 @@ export default function POSView({
     <>
       <div
         className={`grid gap-4 lg:h-[calc(100vh-110px)] ${
-          cartPosition === "bottom"
-            ? "grid-cols-1"
+          cartPosition === "left"
+            ? "lg:grid-cols-[400px_1fr]"
             : "lg:grid-cols-[1fr_400px]"
         }`}
       >
-        <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
+        <div
+          className={`flex flex-col gap-5 min-w-0 overflow-x-hidden ${
+            cartPosition === "left" ? "lg:order-2" : ""
+          }`}
+        >
           {/* Menu Items Section */}
           <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1">
             {/* Header: title + search (one row) + dietary chips */}
@@ -3679,9 +3758,7 @@ export default function POSView({
         {/* Cart Section - Compact Style */}
         <div
           className={`flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden ${
-            cartPosition === "bottom"
-              ? "max-h-[min(42vh,420px)] lg:max-h-[min(46vh,480px)]"
-              : ""
+            cartPosition === "left" ? "lg:order-1" : ""
           }`}
         >
           {editingOrderId && (
@@ -3754,6 +3831,8 @@ export default function POSView({
                     setPosShowItemImagesDraft(showItemImages);
                     setPosCartPositionDraft(cartPosition);
                     setPosSoundOnAddDraft(soundOnAdd);
+                    setPosSoundVolumeDraft(soundVolume);
+                    setPosSoundBeepDraft(soundBeep);
                     setPosOrderTypesDraft({
                       DINE_IN: posAllowedOrderTypes.includes("DINE_IN"),
                       TAKEAWAY: posAllowedOrderTypes.includes("TAKEAWAY"),
@@ -3762,7 +3841,7 @@ export default function POSView({
                     setShowPosTableSettingsModal(true);
                   }}
                   className="p-2 rounded-lg bg-gray-100 dark:bg-neutral-900 text-gray-500 dark:text-neutral-400 hover:text-gray-700 hover:bg-gray-200 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 transition-colors flex-shrink-0"
-                  title="POS options"
+                  title="POS settings"
                 >
                   <Settings className="w-4 h-4" />
                 </button>
@@ -5588,161 +5667,147 @@ export default function POSView({
         </div>
       )}
 
-      {/* POS options modal (table, waiter, customer visibility per branch) */}
+      {/* POS options — right sidebar */}
       {showPosTableSettingsModal && currentBranch?.id && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/60 p-4 backdrop-blur-[1px]">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-black/5 dark:ring-white/10">
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 dark:border-neutral-800">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Settings className="w-[18px] h-[18px]" />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="text-base font-bold text-gray-900 dark:text-white leading-tight">
-                    POS options
-                  </h2>
-                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 truncate">
-                    {currentBranch.name}
-                  </p>
-                </div>
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <button
+            type="button"
+            aria-label="Close POS settings"
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity"
+            onClick={() => setShowPosTableSettingsModal(false)}
+          />
+          <aside
+            className="relative flex h-full w-full max-w-[400px] flex-col bg-white shadow-2xl dark:bg-neutral-950 dark:shadow-black/50 animate-[posSettingsSlideIn_0.22s_ease-out]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pos-settings-title"
+          >
+            <style jsx>{`
+              @keyframes posSettingsSlideIn {
+                from {
+                  transform: translateX(100%);
+                  opacity: 0.85;
+                }
+                to {
+                  transform: translateX(0);
+                  opacity: 1;
+                }
+              }
+            `}</style>
+
+            <header className="flex shrink-0 items-start gap-3 border-b border-gray-100 px-5 py-4 dark:border-neutral-800">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Settings className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <h2
+                  id="pos-settings-title"
+                  className="text-base font-bold text-gray-900 dark:text-white"
+                >
+                  POS settings
+                </h2>
+                <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-neutral-400">
+                  {currentBranch.name}
+                  <span className="text-gray-300 dark:text-neutral-600">
+                    {" "}
+                    · this terminal & branch
+                  </span>
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPosTableSettingsModal(false)}
-                className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors"
+                className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
                 aria-label="Close"
               >
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
               </button>
-            </div>
+            </header>
 
-            <div className="p-4 space-y-5 max-h-[min(70vh,520px)] overflow-y-auto">
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
-                  Order types
-                </h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    {
-                      key: "DINE_IN",
-                      label: "Dine in",
-                      Icon: Utensils,
-                    },
-                    {
-                      key: "TAKEAWAY",
-                      label: "Take Away",
-                      Icon: Package,
-                    },
-                    {
-                      key: "DELIVERY",
-                      label: "Delivery",
-                      Icon: Truck,
-                    },
-                  ].map(({ key, label, Icon }) => {
-                    const on = posOrderTypesDraft[key];
-                    return (
-                      <button
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5">
+              <div className="space-y-7">
+                <section>
+                  <h3 className="mb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-neutral-500">
+                    Order types
+                  </h3>
+                  <p className="mb-2 text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+                    Buttons shown on this terminal only — not shared across
+                    devices.
+                  </p>
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    {[
+                      { key: "DINE_IN", label: "Dine in" },
+                      { key: "TAKEAWAY", label: "Takeaway" },
+                      { key: "DELIVERY", label: "Delivery" },
+                    ].map(({ key, label }) => (
+                      <label
                         key={key}
-                        type="button"
-                        onClick={() => {
-                          setPosOrderTypesDraft((prev) => {
-                            const next = { ...prev, [key]: !prev[key] };
-                            const n = ALL_POS_ORDER_TYPES.filter(
-                              (t) => next[t],
-                            ).length;
-                            if (n === 0) return prev;
-                            return next;
-                          });
-                        }}
-                        className={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 px-1.5 py-2.5 text-[11px] font-semibold leading-tight transition-all min-h-[4.5rem] ${
-                          on
-                            ? "border-primary bg-primary/10 text-primary shadow-sm dark:bg-primary/15"
-                            : "border-gray-200 bg-gray-50/90 text-gray-500 hover:border-gray-300 hover:bg-gray-100 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:bg-neutral-800/80"
-                        }`}
+                        className="flex cursor-pointer items-center justify-between gap-3 py-2.5"
                       >
-                        <Icon
-                          className={`w-4 h-4 shrink-0 ${on ? "" : "opacity-70"}`}
-                          strokeWidth={2}
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {label}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(posOrderTypesDraft[key])}
+                          onChange={() => {
+                            setPosOrderTypesDraft((prev) => {
+                              const next = { ...prev, [key]: !prev[key] };
+                              const n = ALL_POS_ORDER_TYPES.filter(
+                                (t) => next[t],
+                              ).length;
+                              if (n === 0) return prev;
+                              return next;
+                            });
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 dark:border-neutral-600"
                         />
-                        <span className="text-center">{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+                      </label>
+                    ))}
+                  </div>
+                </section>
 
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
-                  Sidebar fields
-                </h3>
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden divide-y divide-gray-100 dark:divide-neutral-800 bg-gray-50/40 dark:bg-neutral-900/25">
-                  <label className="flex items-center justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      Table
-                    </span>
-                    <input
-                      type="checkbox"
+                <section>
+                  <h3 className="mb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-neutral-500">
+                    Cart fields
+                  </h3>
+                  <p className="mb-2 text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+                    Fields available when taking an order on this branch.
+                  </p>
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    <PosSettingsToggle
+                      label="Table"
+                      description="Show table picker for dine-in"
                       checked={posTableSettingsDraft}
-                      onChange={(e) =>
-                        setPosTableSettingsDraft(e.target.checked)
-                      }
-                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                      onChange={setPosTableSettingsDraft}
                     />
-                  </label>
-                  <label className="flex items-center justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      Waiter
-                    </span>
-                    <input
-                      type="checkbox"
+                    <PosSettingsToggle
+                      label="Waiter"
+                      description="Show order-taker / waiter selector"
                       checked={posWaiterSettingsDraft}
-                      onChange={(e) =>
-                        setPosWaiterSettingsDraft(e.target.checked)
-                      }
-                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                      onChange={setPosWaiterSettingsDraft}
                     />
-                  </label>
-                  <label className="flex items-center justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      Customer
-                    </span>
-                    <input
-                      type="checkbox"
+                    <PosSettingsToggle
+                      label="Customer"
+                      description="Attach a customer to the order"
                       checked={posCustomerSettingsDraft}
-                      onChange={(e) =>
-                        setPosCustomerSettingsDraft(e.target.checked)
-                      }
-                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                      onChange={setPosCustomerSettingsDraft}
                     />
-                  </label>
-                </div>
-              </section>
+                  </div>
+                </section>
 
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
-                  Menu display
-                </h3>
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden divide-y divide-gray-100 dark:divide-neutral-800 bg-gray-50/40 dark:bg-neutral-900/25">
-                  <div className="px-3.5 py-3">
-                    <span className="text-sm font-medium text-gray-900 dark:text-white block">
+                <section>
+                  <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-neutral-500">
+                    Menu
+                  </h3>
+                  <div className="mb-3">
+                    <p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
                       Categories
-                    </span>
-                    <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5 mb-2.5">
-                      Choose how category tabs appear above the menu for this
-                      branch.
-                    </span>
-                    <div className="grid grid-cols-2 gap-2">
+                    </p>
+                    <div className="flex rounded-xl bg-gray-100 p-1 dark:bg-neutral-900">
                       {[
-                        {
-                          id: "scroll",
-                          label: "Scroll",
-                          desc: "One row, swipe to see more",
-                        },
-                        {
-                          id: "show_all",
-                          label: "Show all",
-                          desc: "Wrap so every category is visible",
-                        },
+                        { id: "scroll", label: "Scroll" },
+                        { id: "show_all", label: "Show all" },
                       ].map((opt) => {
                         const on = posCategoryDisplayDraft === opt.id;
                         return (
@@ -5750,107 +5815,81 @@ export default function POSView({
                             key={opt.id}
                             type="button"
                             onClick={() => setPosCategoryDisplayDraft(opt.id)}
-                            className={`rounded-xl border-2 px-2.5 py-2.5 text-left transition-all ${
+                            className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${
                               on
-                                ? "border-primary bg-primary/10 shadow-sm dark:bg-primary/15"
-                                : "border-gray-200 bg-white hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-950 dark:hover:border-neutral-600"
+                                ? "bg-white text-gray-900 shadow-sm dark:bg-neutral-800 dark:text-white"
+                                : "text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
                             }`}
                           >
-                            <span
-                              className={`block text-xs font-bold ${
-                                on
-                                  ? "text-primary"
-                                  : "text-gray-900 dark:text-white"
-                              }`}
-                            >
-                              {opt.label}
-                            </span>
-                            <span className="mt-0.5 block text-[10px] leading-snug text-gray-500 dark:text-neutral-400">
-                              {opt.desc}
-                            </span>
+                            {opt.label}
                           </button>
                         );
                       })}
                     </div>
+                    <p className="mt-1.5 text-[11px] text-gray-400 dark:text-neutral-500">
+                      {posCategoryDisplayDraft === "scroll"
+                        ? "One row — swipe for more categories."
+                        : "Wrap so every category stays visible."}
+                    </p>
                   </div>
-                  <label className="flex items-start justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
-                    <div className="min-w-0">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white block">
-                        Show variations as separate items
-                      </span>
-                      <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5">
-                        Items with size variations appear as individual cards.
-                        Faster for cashiers who search by name.
-                      </span>
-                    </div>
-                    <input
-                      type="checkbox"
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                    <PosSettingsToggle
+                      label="Variations as separate items"
+                      description="Size options appear as individual cards for faster search."
                       checked={posFlattenVariationsDraft}
-                      onChange={(e) =>
-                        setPosFlattenVariationsDraft(e.target.checked)
-                      }
-                      className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                      onChange={setPosFlattenVariationsDraft}
                     />
-                  </label>
-                  <label className="flex items-start justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
-                    <div className="min-w-0">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white block">
-                        Show item images
-                      </span>
-                      <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5">
-                        Display photos on menu cards. Turn off for a denser
-                        text-only grid.
-                      </span>
-                    </div>
-                    <input
-                      type="checkbox"
+                    <PosSettingsToggle
+                      label="Item images"
+                      description="Photos on menu cards. Off = denser text grid."
                       checked={posShowItemImagesDraft}
-                      onChange={(e) =>
-                        setPosShowItemImagesDraft(e.target.checked)
-                      }
-                      className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                      onChange={setPosShowItemImagesDraft}
                     />
-                  </label>
-                </div>
-              </section>
+                  </div>
+                </section>
 
-              <section>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
-                  Layout &amp; feedback
-                </h3>
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden divide-y divide-gray-100 dark:divide-neutral-800 bg-gray-50/40 dark:bg-neutral-900/25">
-                  <div className="px-3.5 py-3">
-                    <span className="text-sm font-medium text-gray-900 dark:text-white block">
-                      Cart position
-                    </span>
-                    <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5 mb-2.5">
-                      Where the order cart sits on this branch&apos;s POS.
-                    </span>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        {
-                          id: "right",
-                          label: "Right",
-                          desc: "Sidebar next to the menu",
-                        },
-                        {
-                          id: "bottom",
-                          label: "Bottom",
-                          desc: "Full-width under the menu",
-                        },
-                      ].map((opt) => {
-                        const on = posCartPositionDraft === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => setPosCartPositionDraft(opt.id)}
-                            className={`rounded-xl border-2 px-2.5 py-2.5 text-left transition-all ${
+                <section>
+                  <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-neutral-500">
+                    Layout
+                  </h3>
+                  <p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
+                    Cart position
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      {
+                        id: "left",
+                        label: "Left",
+                        desc: "Cart on the left",
+                        Icon: PanelLeft,
+                      },
+                      {
+                        id: "right",
+                        label: "Right",
+                        desc: "Cart on the right",
+                        Icon: PanelRight,
+                      },
+                    ].map((opt) => {
+                      const on = posCartPositionDraft === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setPosCartPositionDraft(opt.id)}
+                          className={`flex flex-col items-start gap-2 rounded-2xl border px-3.5 py-3 text-left transition-all ${
+                            on
+                              ? "border-primary/40 bg-primary/10 ring-1 ring-primary/20"
+                              : "border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
+                          }`}
+                        >
+                          <opt.Icon
+                            className={`h-4 w-4 ${
                               on
-                                ? "border-primary bg-primary/10 shadow-sm dark:bg-primary/15"
-                                : "border-gray-200 bg-white hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-950 dark:hover:border-neutral-600"
+                                ? "text-primary"
+                                : "text-gray-400 dark:text-neutral-500"
                             }`}
-                          >
+                          />
+                          <div>
                             <span
                               className={`block text-xs font-bold ${
                                 on
@@ -5860,39 +5899,158 @@ export default function POSView({
                             >
                               {opt.label}
                             </span>
-                            <span className="mt-0.5 block text-[10px] leading-snug text-gray-500 dark:text-neutral-400">
+                            <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-neutral-400">
                               {opt.desc}
                             </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <label className="flex items-start justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
-                    <div className="min-w-0">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white block">
-                        Sound on add
-                      </span>
-                      <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5">
-                        Play a short beep when an item is added to the cart.
-                      </span>
+                </section>
+
+                <section>
+                  <h3 className="mb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-neutral-500">
+                    Sound
+                  </h3>
+                  <PosSettingsToggle
+                    label="Sound on add"
+                    description="Beep when an item is added to the cart."
+                    checked={posSoundOnAddDraft}
+                    onChange={(on) => {
+                      setPosSoundOnAddDraft(on);
+                      if (on) {
+                        playPosAddSound(
+                          true,
+                          posSoundVolumeDraft,
+                          posSoundBeepDraft,
+                        );
+                      }
+                    }}
+                  />
+                  {posSoundOnAddDraft && (
+                    <div className="mt-2 space-y-3 rounded-2xl border border-gray-100 bg-gray-50/80 px-3.5 py-3 dark:border-neutral-800 dark:bg-neutral-900/50">
+                      <div>
+                        <p className="mb-2 text-[11px] font-semibold text-gray-600 dark:text-neutral-300">
+                          Beep style
+                        </p>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {POS_ADD_SOUND_PRESETS.map((preset) => {
+                            const on = posSoundBeepDraft === preset.id;
+                            return (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => {
+                                  setPosSoundBeepDraft(preset.id);
+                                  playPosAddSound(
+                                    true,
+                                    posSoundVolumeDraft,
+                                    preset.id,
+                                  );
+                                }}
+                                className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                                  on
+                                    ? "border-primary/40 bg-primary/10 ring-1 ring-primary/20"
+                                    : "border-transparent bg-white hover:border-gray-200 dark:bg-neutral-950 dark:hover:border-neutral-700"
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <span
+                                    className={`block text-xs font-bold ${
+                                      on
+                                        ? "text-primary"
+                                        : "text-gray-900 dark:text-white"
+                                    }`}
+                                  >
+                                    {preset.label}
+                                  </span>
+                                  <span className="mt-0.5 block text-[10px] leading-snug text-gray-500 dark:text-neutral-400">
+                                    {preset.description}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                    on
+                                      ? "bg-primary"
+                                      : "bg-gray-200 dark:bg-neutral-700"
+                                  }`}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 dark:text-neutral-300">
+                            <Volume2 className="h-3.5 w-3.5" />
+                            Volume
+                          </span>
+                          <span className="text-[11px] font-bold tabular-nums text-gray-900 dark:text-white">
+                            {posSoundVolumeDraft}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={10}
+                          max={100}
+                          step={5}
+                          value={posSoundVolumeDraft}
+                          onChange={(e) => {
+                            setPosSoundVolumeDraft(Number(e.target.value) || 70);
+                          }}
+                          onMouseUp={(e) =>
+                            playPosAddSound(
+                              true,
+                              Number(e.target.value) || 70,
+                              posSoundBeepDraft,
+                            )
+                          }
+                          onTouchEnd={(e) =>
+                            playPosAddSound(
+                              true,
+                              Number(e.currentTarget.value) || 70,
+                              posSoundBeepDraft,
+                            )
+                          }
+                          className="w-full cursor-pointer accent-primary"
+                          aria-label="Beep volume"
+                        />
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                            Quiet
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              playPosAddSound(
+                                true,
+                                posSoundVolumeDraft,
+                                posSoundBeepDraft,
+                              )
+                            }
+                            className="text-[11px] font-semibold text-primary hover:underline"
+                          >
+                            Test sound
+                          </button>
+                          <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                            Loud
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={posSoundOnAddDraft}
-                      onChange={(e) => setPosSoundOnAddDraft(e.target.checked)}
-                      className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
-                    />
-                  </label>
-                </div>
-              </section>
+                  )}
+                </section>
+              </div>
             </div>
 
-            <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/40 flex gap-2">
+            <footer className="flex shrink-0 gap-2 border-t border-gray-100 bg-white px-5 py-4 dark:border-neutral-800 dark:bg-neutral-950">
               <button
                 type="button"
                 onClick={() => setShowPosTableSettingsModal(false)}
-                className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-300 hover:bg-white dark:hover:bg-neutral-800 transition-colors"
+                className="flex-1 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-900"
               >
                 Cancel
               </button>
@@ -5918,6 +6076,8 @@ export default function POSView({
                     posShowItemImages: posShowItemImagesDraft,
                     posCartPosition: posCartPositionDraft,
                     posSoundOnAdd: posSoundOnAddDraft,
+                    posSoundVolume: posSoundVolumeDraft,
+                    posSoundBeep: posSoundBeepDraft,
                   })
                     .then((b) => {
                       setShowTablePos(posTableSettingsDraft);
@@ -5931,10 +6091,11 @@ export default function POSView({
                       setFlattenVariations(posFlattenVariationsDraft);
                       setShowItemImages(posShowItemImagesDraft);
                       setCartPosition(
-                        posCartPositionDraft === "bottom" ? "bottom" : "right",
+                        posCartPositionDraft === "left" ? "left" : "right",
                       );
                       setSoundOnAdd(posSoundOnAddDraft);
-                      // Save order types to localStorage (per-terminal, not per-branch)
+                      setSoundVolume(posSoundVolumeDraft);
+                      setSoundBeep(posSoundBeepDraft);
                       try {
                         localStorage.setItem(
                           POS_ORDER_TYPES_KEY,
@@ -5952,7 +6113,7 @@ export default function POSView({
                       ) {
                         setCurrentBranch({ ...currentBranch, ...b });
                       }
-                      toast.success("POS options saved");
+                      toast.success("POS settings saved");
                       setShowPosTableSettingsModal(false);
                     })
                     .catch((err) =>
@@ -5960,12 +6121,19 @@ export default function POSView({
                     )
                     .finally(() => setPosTableSettingsSaving(false));
                 }}
-                className="flex-1 px-3 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 shadow-sm transition-colors"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                {posTableSettingsSaving ? "Saving…" : "Save"}
+                {posTableSettingsSaving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  "Save changes"
+                )}
               </button>
-            </div>
-          </div>
+            </footer>
+          </aside>
         </div>
       )}
 
