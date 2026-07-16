@@ -7,26 +7,32 @@ import {
   useRef,
   useState,
 } from "react";
+import toast from "react-hot-toast";
 import { useSocket } from "./SocketContext";
 import { playOrderReadySound } from "../lib/playNotificationSound";
-import { getStoredAuth } from "../lib/apiClient";
+import { getStoredAuth, getActingAsSlug } from "../lib/apiClient";
 
 const OrderNotificationContext = createContext(null);
 
 const MAX_ALERTS = 40;
 const MAX_POPUPS = 3;
-const POPUP_DURATION_MS = 5500;
+const POPUP_DURATION_MS = 8000;
 
-/** Roles that should hear/see order-ready alerts (front-of-house). */
-const ORDER_READY_SKIP_ROLES = new Set([
-  "kitchen_staff",
-  "delivery_rider",
-  "super_admin",
-]);
+/** Roles that should not hear FOH order-ready alerts. */
+const ORDER_READY_SKIP_ROLES = new Set(["kitchen_staff", "delivery_rider"]);
 
 function shouldNotifyCurrentUser() {
-  const role = getStoredAuth()?.user?.role;
+  const auth = getStoredAuth();
+  const role = auth?.user?.role;
   if (!role) return false;
+
+  // Platform staff acting as a tenant should still get ready alerts.
+  if (role === "super_admin") {
+    const slug =
+      getActingAsSlug() || auth?.user?.tenantSlug || auth?.tenantSlug || null;
+    return Boolean(slug);
+  }
+
   return !ORDER_READY_SKIP_ROLES.has(role);
 }
 
@@ -115,24 +121,28 @@ export function OrderNotificationProvider({ children }) {
   }, []);
 
   const showBrowserNotification = useCallback(({ title, body, orderId }) => {
-    if (typeof document !== "undefined" && !document.hidden) return;
     if (
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     ) {
       return;
     }
-    const notif = new Notification(title, {
-      body,
-      icon: "/favicon.ico",
-      badge: "/favicon.ico",
-      tag: `order-ready-${orderId}`,
-    });
-    notif.onclick = () => {
-      window.focus();
-      notif.close();
-      orderClickRef.current?.(orderId);
-    };
+    // Show even when tab is focused — order ready is high priority for FOH.
+    try {
+      const notif = new Notification(title, {
+        body,
+        icon: "/favicon.ico",
+        badge: "/favicon.ico",
+        tag: `order-ready-${orderId}`,
+      });
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+        orderClickRef.current?.(orderId);
+      };
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const openOrder = useCallback(
@@ -161,6 +171,7 @@ export function OrderNotificationProvider({ children }) {
         return;
       }
 
+      // Only skip if we know it was already ready (re-broadcast).
       if (previousStatus === "READY") return;
       if (notifiedReadyRef.current.has(orderId)) return;
       notifiedReadyRef.current.add(orderId);
@@ -186,6 +197,9 @@ export function OrderNotificationProvider({ children }) {
       upsertAlert(alert);
       pushPopup(alert);
       playOrderReadySound();
+      toast.success(`${token} is ready to serve`, {
+        duration: 5000,
+      });
       showBrowserNotification({
         title: `Order ${token} ready`,
         body: alert.body,
@@ -194,8 +208,10 @@ export function OrderNotificationProvider({ children }) {
     };
 
     socket.on("order:updated", onOrderUpdated);
+    socket.on("order:ready", onOrderUpdated);
     return () => {
       socket.off("order:updated", onOrderUpdated);
+      socket.off("order:ready", onOrderUpdated);
     };
   }, [socket, upsertAlert, pushPopup, showBrowserNotification]);
 

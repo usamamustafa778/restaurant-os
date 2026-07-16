@@ -1,6 +1,10 @@
 import { createContext, useContext, useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
-import { getStoredAuth, getCurrentBranchId } from "../lib/apiClient";
+import {
+  getStoredAuth,
+  getCurrentBranchId,
+  getActingAsSlug,
+} from "../lib/apiClient";
 import { useBranch } from "./BranchContext";
 
 const SocketContext = createContext(null);
@@ -20,7 +24,18 @@ export function SocketProvider({ children }) {
     const auth = getStoredAuth();
     const token = auth?.token;
     const restaurantId = auth?.user?.restaurant || auth?.user?.restaurantId;
-    if (!token || !restaurantId) {
+    const tenantSlug =
+      getActingAsSlug() ||
+      auth?.user?.tenantSlug ||
+      auth?.tenantSlug ||
+      null;
+    const role = auth?.user?.role;
+    const canConnect =
+      Boolean(token) &&
+      (Boolean(restaurantId) ||
+        (role === "super_admin" && Boolean(tenantSlug)));
+
+    if (!canConnect) {
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -32,7 +47,11 @@ export function SocketProvider({ children }) {
 
     const socketUrl = API_BASE.replace(/\/$/, "");
     const newSocket = io(socketUrl, {
-      auth: { token, branchId: branchId || undefined },
+      auth: {
+        token,
+        branchId: branchId || undefined,
+        tenantSlug: tenantSlug || undefined,
+      },
       transports: ["websocket"],
     });
 
@@ -49,7 +68,7 @@ export function SocketProvider({ children }) {
       setSocket(null);
       setConnected(false);
     };
-  }, [branchId]); // Reconnect when branch changes (same tab or storage from another tab)
+  }, [branchId]);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>

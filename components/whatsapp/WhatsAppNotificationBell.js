@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/router";
 import {
   Bell,
@@ -239,30 +240,33 @@ export default function WhatsAppNotificationBell({
         ) : null}
       </button>
 
-      {mergedPopups.length > 0 && (
-        <div
-          className="pointer-events-none absolute right-0 top-full z-50 mt-2 flex w-72 flex-col gap-2"
-          aria-live="polite"
-        >
-          {mergedPopups.map((popup) => (
-            <PopupToast
-              key={`${popup._source}-${popup.popupId}`}
-              popup={popup}
-              source={popup._source}
-              onOpen={
-                popup._source === "order"
-                  ? handleOrderClick
-                  : handleWhatsAppClick
-              }
-              onDismiss={
-                popup._source === "order"
-                  ? orders.dismissPopup
-                  : wa.dismissPopup
-              }
-            />
-          ))}
-        </div>
-      )}
+      {mergedPopups.length > 0 &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed right-4 top-16 z-[100] flex w-80 flex-col gap-2 sm:right-6"
+            aria-live="polite"
+          >
+            {mergedPopups.map((popup) => (
+              <PopupToast
+                key={`${popup._source}-${popup.popupId}`}
+                popup={popup}
+                source={popup._source}
+                onOpen={
+                  popup._source === "order"
+                    ? handleOrderClick
+                    : handleWhatsAppClick
+                }
+                onDismiss={
+                  popup._source === "order"
+                    ? orders.dismissPopup
+                    : wa.dismissPopup
+                }
+              />
+            ))}
+          </div>,
+          document.body,
+        )}
 
       {open && (
         <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">

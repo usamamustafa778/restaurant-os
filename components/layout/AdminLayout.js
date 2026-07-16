@@ -809,17 +809,20 @@ export default function AdminLayout({
   ];
   const showNotificationBell =
     Boolean(role) &&
-    role !== "super_admin" &&
-    (whatsappNavRoles.includes(role) ||
-      orderNotifyRoles.includes(role) ||
-      // Custom tenant roles (e.g. cashiers) still get order-ready alerts
-      (!["kitchen_staff", "delivery_rider", "super_admin"].includes(role) &&
-        Boolean(role)));
-  const showWhatsAppInBell = whatsappNavRoles.includes(role);
+    (role !== "super_admin" || Boolean(actingAsSlug)) &&
+    (role === "super_admin"
+      ? Boolean(actingAsSlug)
+      : whatsappNavRoles.includes(role) ||
+        orderNotifyRoles.includes(role) ||
+        !["kitchen_staff", "delivery_rider", "super_admin"].includes(role));
+  const showWhatsAppInBell =
+    role !== "super_admin" && whatsappNavRoles.includes(role);
   const showOrdersInBell =
-    orderNotifyRoles.includes(role) ||
-    (!whatsappNavRoles.includes(role) &&
-      !["kitchen_staff", "delivery_rider", "super_admin"].includes(role));
+    role === "super_admin"
+      ? Boolean(actingAsSlug)
+      : orderNotifyRoles.includes(role) ||
+        (!whatsappNavRoles.includes(role) &&
+          !["kitchen_staff", "delivery_rider", "super_admin"].includes(role));
   useEffect(() => {
     if (!role || role === "super_admin" || !whatsappNavRoles.includes(role)) {
       setWhatsappNeedsHumanCount(0);
