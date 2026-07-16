@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import {
   buildModifierSelectionsFromPicks,
   buildPickFromDealOption,
@@ -114,6 +115,7 @@ function VariationPickerPanel({
 function ChoiceSlotBlock({
   slot,
   slotIndex,
+  pickNumber,
   selections,
   onChangeSelections,
   onConfigureOption,
@@ -121,66 +123,104 @@ function ChoiceSlotBlock({
   const { min, max } = getSlotPickBounds(slot);
   const currentCount = countSlotPicks(selections);
   const isSinglePick = min === 1 && max === 1;
+  const [open, setOpen] = useState(true);
 
   function trySelectOption(opt) {
     if (choiceOptionNeedsVariation(opt, slot._menuItemById)) {
+      setOpen(false);
       onConfigureOption({ slotIndex, option: opt, mode: "replace" });
       return;
     }
     const pick = buildPickFromDealOption(opt, slot._menuItemById);
     if (!pick) return;
     onChangeSelections(slotIndex, [pick]);
+    setOpen(false);
   }
 
+  const selectedLabel =
+    isSinglePick && selections[0]?.name
+      ? selections[0].name
+      : currentCount > 0
+        ? `${currentCount} selected`
+        : "";
+
   return (
-    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-neutral-700 dark:bg-neutral-800/60">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-          {slot.label || "Choose item"}
-        </h4>
-        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-orange-700 dark:bg-orange-500/20 dark:text-orange-300">
-          {isSinglePick ? "Pick 1" : `Pick ${min}${min !== max ? `–${max}` : ""}`}
-        </span>
-      </div>
-      <div className="space-y-2">
-        {(slot.options || []).map((opt, optionIndex) => {
-          const label = formatChoiceOptionLabel(opt, slot._menuItemById);
-          const normalized = normalizeChoiceOption(opt);
-          const pickKey = `${normalized?.menuItemId}|${optionIndex}`;
-          const selected =
-            isSinglePick &&
-            selections.some(
-              (p) =>
-                String(p.menuItemId) === String(normalized?.menuItemId) &&
-                JSON.stringify(p.modifierSelections || []) ===
-                  JSON.stringify(normalized?.modifierSelections || []),
+    <div className="rounded-xl border border-gray-200 bg-gray-50 dark:border-neutral-700 dark:bg-neutral-800/60">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+              {slot.label || "Choose item"}
+            </h4>
+            <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-orange-700 dark:bg-orange-500/20 dark:text-orange-300">
+              {isSinglePick
+                ? `Pick ${pickNumber}`
+                : `Pick ${min}${min !== max ? `–${max}` : ""}`}
+            </span>
+          </div>
+          {selectedLabel ? (
+            <p className="mt-1 truncate text-xs font-medium text-gray-800 dark:text-neutral-200">
+              {selectedLabel}
+            </p>
+          ) : null}
+        </div>
+        <ChevronDown
+          className={`h-6 w-6 shrink-0 text-gray-500 transition-transform dark:text-neutral-400 ${
+            open ? "rotate-180" : ""
+          }`}
+          aria-hidden
+        />
+      </button>
+
+      {open ? (
+        <div className="space-y-2 border-t border-gray-200 px-4 pb-4 pt-3 dark:border-neutral-700">
+          {(slot.options || []).map((opt, optionIndex) => {
+            const label = formatChoiceOptionLabel(opt, slot._menuItemById);
+            const normalized = normalizeChoiceOption(opt);
+            const pickKey = `${normalized?.menuItemId}|${optionIndex}`;
+            const selected = isSinglePick
+              ? selections.some(
+                  (p) =>
+                    String(p.menuItemId) === String(normalized?.menuItemId),
+                )
+              : selections.some(
+                  (p) =>
+                    String(p.menuItemId) === String(normalized?.menuItemId) &&
+                    JSON.stringify(p.modifierSelections || []) ===
+                      JSON.stringify(normalized?.modifierSelections || []),
+                );
+            return (
+              <button
+                key={pickKey}
+                type="button"
+                onClick={() => trySelectOption(opt)}
+                disabled={!isSinglePick && currentCount >= max}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
+                  selected
+                    ? "border-orange-400 bg-orange-50 text-orange-900 dark:border-orange-500 dark:bg-orange-500/10 dark:text-orange-100"
+                    : "border-gray-200 bg-white text-gray-800 hover:border-orange-300 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                }`}
+              >
+                <span className="font-medium">{label}</span>
+                {isSinglePick ? (
+                  <span
+                    className={`h-4 w-4 rounded-full border-2 ${
+                      selected
+                        ? "border-orange-500 bg-orange-500"
+                        : "border-gray-300 bg-white dark:border-neutral-600"
+                    }`}
+                  />
+                ) : null}
+              </button>
             );
-          return (
-            <button
-              key={pickKey}
-              type="button"
-              onClick={() => trySelectOption(opt)}
-              disabled={!isSinglePick && currentCount >= max}
-              className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
-                selected
-                  ? "border-orange-400 bg-orange-50 text-orange-900 dark:border-orange-500 dark:bg-orange-500/10 dark:text-orange-100"
-                  : "border-gray-200 bg-white text-gray-800 hover:border-orange-300 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-              }`}
-            >
-              <span className="font-medium">{label}</span>
-              {isSinglePick ? (
-                <span
-                  className={`h-4 w-4 rounded-full border-2 ${
-                    selected
-                      ? "border-orange-500 bg-orange-500"
-                      : "border-gray-300 bg-white dark:border-neutral-600"
-                  }`}
-                />
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -339,7 +379,7 @@ export default function PosDealCustomizeModal({
                   ))}
                 </div>
               ) : null}
-              {choiceSlots.map((slot) => {
+              {choiceSlots.map((slot, choiceIndex) => {
                 const picks =
                   selectionsBySlot[slot.slotIndex] ||
                   selectionsBySlot[String(slot.slotIndex)] ||
@@ -349,6 +389,7 @@ export default function PosDealCustomizeModal({
                     key={`slot-${slot.slotIndex}`}
                     slot={slot}
                     slotIndex={slot.slotIndex}
+                    pickNumber={choiceIndex + 1}
                     selections={picks}
                     onChangeSelections={updateSlotSelections}
                     onConfigureOption={openVariationFlow}

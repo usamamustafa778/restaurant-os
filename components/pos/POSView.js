@@ -1843,6 +1843,11 @@ export default function POSView({
       return;
     }
 
+    if (menuSearchQuery.trim()) {
+      setMenuSearchQuery("");
+      setFocusedItemIndex(0);
+    }
+
     if (item._preselectedRequired) {
       if (itemNeedsModifierPicker(item)) {
         openModifierPicker(item, qty);
