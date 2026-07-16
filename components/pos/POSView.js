@@ -48,7 +48,6 @@ import {
   buildInitialModifierSelections,
   buildPosCartLine,
   buildCartItemAfterVariationChange,
-  computeItemUnitPrice,
   getPickerGroupsForItem,
   hasAttachedModifierGroups,
   isModifierSelectionComplete as isItemModifierSelectionComplete,
@@ -448,22 +447,25 @@ export default function POSView({
   const [showCustomerPos, setShowCustomerPos] = useState(true);
   const [posOptionsLoaded, setPosOptionsLoaded] = useState(false);
   // Local display preference: flatten required-variation items into individual cards
-  const [flattenVariations, setFlattenVariations] = useState(() => {
-    try {
-      const v =
-        typeof window !== "undefined" &&
-        localStorage.getItem("pos_flatten_variations");
-      return v === null ? true : v !== "false";
-    } catch {
-      return true;
-    }
-  });
+  const [flattenVariations, setFlattenVariations] = useState(true);
+  /** `scroll` (default) = horizontal category strip; `show_all` = wrap all categories */
+  const [categoryDisplayMode, setCategoryDisplayMode] = useState("scroll");
+  const [showItemImages, setShowItemImages] = useState(true);
+  const [cartPosition, setCartPosition] = useState("right"); // right | bottom
+  const [soundOnAdd, setSoundOnAdd] = useState(false);
   const [showPosTableSettingsModal, setShowPosTableSettingsModal] =
     useState(false);
   const [posTableSettingsDraft, setPosTableSettingsDraft] = useState(true);
   const [posWaiterSettingsDraft, setPosWaiterSettingsDraft] = useState(true);
   const [posCustomerSettingsDraft, setPosCustomerSettingsDraft] =
     useState(true);
+  const [posCategoryDisplayDraft, setPosCategoryDisplayDraft] =
+    useState("scroll");
+  const [posFlattenVariationsDraft, setPosFlattenVariationsDraft] =
+    useState(true);
+  const [posShowItemImagesDraft, setPosShowItemImagesDraft] = useState(true);
+  const [posCartPositionDraft, setPosCartPositionDraft] = useState("right");
+  const [posSoundOnAddDraft, setPosSoundOnAddDraft] = useState(false);
   const [posOrderTypesDraft, setPosOrderTypesDraft] = useState({
     DINE_IN: true,
     TAKEAWAY: true,
@@ -712,12 +714,17 @@ export default function POSView({
     };
   }, [socket]);
 
-  // Load POS options (table/waiter/customer visibility) for current branch; don't show until loaded to avoid flash
+  // Load POS options (table/waiter/customer + menu display) for current branch
   useEffect(() => {
     if (!currentBranch?.id) {
       setShowTablePos(true);
       setShowWaiterPos(true);
       setShowCustomerPos(true);
+      setCategoryDisplayMode("scroll");
+      setFlattenVariations(true);
+      setShowItemImages(true);
+      setCartPosition("right");
+      setSoundOnAdd(false);
       setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
       setPosOptionsLoaded(true);
       return;
@@ -730,6 +737,13 @@ export default function POSView({
           setShowTablePos(b?.showTablePos !== false);
           setShowWaiterPos(b?.showWaiterPos !== false);
           setShowCustomerPos(b?.showCustomerPos !== false);
+          setCategoryDisplayMode(
+            b?.posCategoryDisplay === "show_all" ? "show_all" : "scroll",
+          );
+          setFlattenVariations(b?.posFlattenVariations !== false);
+          setShowItemImages(b?.posShowItemImages !== false);
+          setCartPosition(b?.posCartPosition === "bottom" ? "bottom" : "right");
+          setSoundOnAdd(b?.posSoundOnAdd === true);
           // Order types are a per-terminal preference stored in localStorage,
           // not a branch-wide restriction — read from localStorage, not the API.
           try {
@@ -751,6 +765,11 @@ export default function POSView({
           setShowTablePos(true);
           setShowWaiterPos(true);
           setShowCustomerPos(true);
+          setCategoryDisplayMode("scroll");
+          setFlattenVariations(true);
+          setShowItemImages(true);
+          setCartPosition("right");
+          setSoundOnAdd(false);
           setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
           setPosOptionsLoaded(true);
         }
@@ -1803,6 +1822,32 @@ export default function POSView({
     [itemNotes],
   );
 
+  const playPosAddSound = useCallback(() => {
+    if (!soundOnAdd) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.value = 0.07;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+      osc.stop(ctx.currentTime + 0.1);
+      osc.onended = () => {
+        try {
+          ctx.close();
+        } catch {}
+      };
+    } catch {
+      /* ignore audio errors */
+    }
+  }, [soundOnAdd]);
+
   const addDealToCart = (deal, qty = 1, selectionsBySlot = {}) => {
     const dealId = deal._id || deal.id;
     const fingerprint = buildDealSelectionsFingerprint(deal, selectionsBySlot);
@@ -1835,6 +1880,7 @@ export default function POSView({
     }
     setDealCustomizeTarget(null);
     setBulkAddQtyInput("1");
+    playPosAddSound();
   };
 
   const addToCart = (item, qty = 1) => {
@@ -1884,6 +1930,7 @@ export default function POSView({
         ]);
       }
       setBulkAddQtyInput("1");
+      playPosAddSound();
       return;
     }
 
@@ -1924,6 +1971,7 @@ export default function POSView({
       ]);
     }
     setBulkAddQtyInput("1");
+    playPosAddSound();
   };
 
   const updateQuantity = (cartKey, change) => {
@@ -2046,18 +2094,20 @@ export default function POSView({
     });
   };
 
-  const confirmModifierSelection = () => {
+  const confirmModifierSelection = (selectionsOverride) => {
     const item = modifierPickerItem;
     if (!item) return;
 
     const qty = Math.max(1, Math.floor(Number(item._pendingQty)) || 1);
-    const fullSelections = { ...modifierSelections };
+    const fullSelections = { ...(selectionsOverride ?? modifierSelections) };
     if (
       item._preselectedRequired &&
       !(fullSelections[item._preselectedRequired.groupId] || []).length
     ) {
       Object.assign(fullSelections, buildInitialModifierSelections(item));
     }
+
+    if (!isItemModifierSelectionComplete(item, fullSelections)) return;
 
     const line = buildPosCartLine(item, qty, fullSelections);
     const existingItem = cart.find((i) => i._cartKey === line.cartKey);
@@ -2086,19 +2136,66 @@ export default function POSView({
 
     setModifierPickerItem(null);
     setModifierSelections({});
+    setBulkAddQtyInput("1");
+    playPosAddSound();
   };
 
-  const isModifierSelectionComplete = () => {
-    if (!modifierPickerItem) return false;
-    const fullSelections = { ...modifierSelections };
+  const applyModifierOptionSelection = (group, option, isSelected, maxSelections) => {
+    const existing = modifierSelections[group.id] || [];
+    let nextGroupSel = existing;
+    let didSelect = false;
+
+    if (maxSelections === 1) {
+      if (isSelected) {
+        nextGroupSel = [];
+      } else {
+        nextGroupSel = [
+          {
+            optionId: option.id,
+            name: option.name,
+            price: option.price,
+          },
+        ];
+        didSelect = true;
+      }
+    } else if (isSelected) {
+      nextGroupSel = existing.filter((s) => s.optionId !== option.id);
+    } else if (existing.length < maxSelections) {
+      nextGroupSel = [
+        ...existing,
+        {
+          optionId: option.id,
+          name: option.name,
+          price: option.price,
+        },
+      ];
+      didSelect = true;
+    } else {
+      return;
+    }
+
+    const nextSelections = {
+      ...modifierSelections,
+      [group.id]: nextGroupSel,
+    };
+    setModifierSelections(nextSelections);
+
+    if (!didSelect || !modifierPickerItem) return;
+
+    const fullSelections = { ...nextSelections };
     if (
       modifierPickerItem._preselectedRequired &&
       !(fullSelections[modifierPickerItem._preselectedRequired.groupId] || [])
         .length
     ) {
-      Object.assign(fullSelections, buildInitialModifierSelections(modifierPickerItem));
+      Object.assign(
+        fullSelections,
+        buildInitialModifierSelections(modifierPickerItem),
+      );
     }
-    return isItemModifierSelectionComplete(modifierPickerItem, fullSelections);
+    if (isItemModifierSelectionComplete(modifierPickerItem, fullSelections)) {
+      confirmModifierSelection(nextSelections);
+    }
   };
 
   const clearCart = () => {
@@ -3128,14 +3225,26 @@ export default function POSView({
 
   return (
     <>
-      <div className="grid gap-4 lg:grid-cols-[1fr_400px] lg:h-[calc(100vh-110px)]">
+      <div
+        className={`grid gap-4 lg:h-[calc(100vh-110px)] ${
+          cartPosition === "bottom"
+            ? "grid-cols-1"
+            : "lg:grid-cols-[1fr_400px]"
+        }`}
+      >
         <div className="flex flex-col gap-5 min-w-0 overflow-x-hidden">
           {/* Menu Items Section */}
           <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden flex-1">
             {/* Header: title + search (one row) + dietary chips */}
             <div className="border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-b from-gray-50 to-white dark:from-neutral-900 dark:to-neutral-950">
               {/* Category tabs */}
-              <div className="flex gap-2 overflow-x-auto border-t border-gray-100/80 bg-white/60 px-3 pb-2 pt-2 scrollbar-hide dark:border-neutral-800/80 dark:bg-neutral-950/40">
+              <div
+                className={`flex gap-2 border-t border-gray-100/80 bg-white/60 px-3 pb-2 pt-2 dark:border-neutral-800/80 dark:bg-neutral-950/40 ${
+                  categoryDisplayMode === "show_all"
+                    ? "flex-wrap"
+                    : "overflow-x-auto scrollbar-hide"
+                }`}
+              >
                 <button
                   onClick={() => setSelectedCategory("all")}
                   className={`category-tab flex-shrink-0 px-3 py-2 rounded-lg border text-xs font-semibold transition-all text-left ${
@@ -3401,62 +3510,76 @@ export default function POSView({
                           } ${menuSearchQuery.trim() && idx === focusedItemIndex ? "ring-2 ring-primary ring-offset-2 shadow-lg" : ""}`}
                         >
                           {/* Image - Compact */}
-                          <div
-                            className="relative h-32 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800"
-                            onClick={() =>
-                              !outOfStock &&
-                              !inCart &&
-                              canModifyServedOrderItems &&
-                              addToCart(item, bulkAddQty)
-                            }
-                          >
-                            {/* Badges */}
-                            {!outOfStock && (
-                              <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
-                                {isTrending && (
-                                  <span className="px-1.5 py-0.5 rounded bg-red-500 text-white text-[9px] font-bold flex items-center gap-0.5">
-                                    <Flame className="w-2.5 h-2.5" />
-                                    Trending
+                          {showItemImages ? (
+                            <div
+                              className="relative h-32 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-neutral-900 dark:to-neutral-800"
+                              onClick={() =>
+                                !outOfStock &&
+                                !inCart &&
+                                canModifyServedOrderItems &&
+                                addToCart(item, bulkAddQty)
+                              }
+                            >
+                              {/* Badges */}
+                              {!outOfStock && (
+                                <div className="absolute top-1 left-1 flex flex-col gap-0.5 z-10">
+                                  {isTrending && (
+                                    <span className="px-1.5 py-0.5 rounded bg-red-500 text-white text-[9px] font-bold flex items-center gap-0.5">
+                                      <Flame className="w-2.5 h-2.5" />
+                                      Trending
+                                    </span>
+                                  )}
+                                  {isMustTry && (
+                                    <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white text-[9px] font-bold flex items-center gap-0.5">
+                                      <Star className="w-2.5 h-2.5" />
+                                      Must Try
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {item.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-3xl">
+                                  🍽️
+                                </div>
+                              )}
+
+                              {outOfStock && (
+                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                  <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">
+                                    Out of Stock
                                   </span>
-                                )}
-                                {isMustTry && (
-                                  <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white text-[9px] font-bold flex items-center gap-0.5">
-                                    <Star className="w-2.5 h-2.5" />
-                                    Must Try
-                                  </span>
-                                )}
-                              </div>
-                            )}
+                                </div>
+                              )}
 
-                            {item.imageUrl ? (
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-3xl">
-                                🍽️
-                              </div>
-                            )}
-
-                            {outOfStock && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">
-                                  Out of Stock
-                                </span>
-                              </div>
-                            )}
-
-                            {inCart && !outOfStock && (
-                              <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">
-                                {inCart.quantity}
-                              </div>
-                            )}
-                          </div>
+                              {inCart && !outOfStock && (
+                                <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">
+                                  {inCart.quantity}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
 
                           {/* Content - Compact */}
-                          <div className="p-2 flex flex-col">
+                          <div
+                            className="p-2 flex flex-col"
+                            onClick={() => {
+                              if (
+                                !showItemImages &&
+                                !outOfStock &&
+                                !inCart &&
+                                canModifyServedOrderItems
+                              ) {
+                                addToCart(item, bulkAddQty);
+                              }
+                            }}
+                          >
                             {/* Category and Dietary Info */}
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-[10px] text-gray-500 dark:text-neutral-500 truncate">
@@ -3554,7 +3677,13 @@ export default function POSView({
         </div>
 
         {/* Cart Section - Compact Style */}
-        <div className="flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+        <div
+          className={`flex flex-col bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-xl overflow-hidden ${
+            cartPosition === "bottom"
+              ? "max-h-[min(42vh,420px)] lg:max-h-[min(46vh,480px)]"
+              : ""
+          }`}
+        >
           {editingOrderId && (
             <div className="px-3 py-2 bg-amber-500/15 dark:bg-amber-500/20 border-b border-amber-500/30 flex items-center justify-between">
               <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">
@@ -3620,6 +3749,11 @@ export default function POSView({
                     setPosTableSettingsDraft(showTablePos);
                     setPosWaiterSettingsDraft(showWaiterPos);
                     setPosCustomerSettingsDraft(showCustomerPos);
+                    setPosCategoryDisplayDraft(categoryDisplayMode);
+                    setPosFlattenVariationsDraft(flattenVariations);
+                    setPosShowItemImagesDraft(showItemImages);
+                    setPosCartPositionDraft(cartPosition);
+                    setPosSoundOnAddDraft(soundOnAdd);
                     setPosOrderTypesDraft({
                       DINE_IN: posAllowedOrderTypes.includes("DINE_IN"),
                       TAKEAWAY: posAllowedOrderTypes.includes("TAKEAWAY"),
@@ -5588,7 +5722,57 @@ export default function POSView({
                 <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
                   Menu display
                 </h3>
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden bg-gray-50/40 dark:bg-neutral-900/25">
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden divide-y divide-gray-100 dark:divide-neutral-800 bg-gray-50/40 dark:bg-neutral-900/25">
+                  <div className="px-3.5 py-3">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white block">
+                      Categories
+                    </span>
+                    <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5 mb-2.5">
+                      Choose how category tabs appear above the menu for this
+                      branch.
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        {
+                          id: "scroll",
+                          label: "Scroll",
+                          desc: "One row, swipe to see more",
+                        },
+                        {
+                          id: "show_all",
+                          label: "Show all",
+                          desc: "Wrap so every category is visible",
+                        },
+                      ].map((opt) => {
+                        const on = posCategoryDisplayDraft === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setPosCategoryDisplayDraft(opt.id)}
+                            className={`rounded-xl border-2 px-2.5 py-2.5 text-left transition-all ${
+                              on
+                                ? "border-primary bg-primary/10 shadow-sm dark:bg-primary/15"
+                                : "border-gray-200 bg-white hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-950 dark:hover:border-neutral-600"
+                            }`}
+                          >
+                            <span
+                              className={`block text-xs font-bold ${
+                                on
+                                  ? "text-primary"
+                                  : "text-gray-900 dark:text-white"
+                              }`}
+                            >
+                              {opt.label}
+                            </span>
+                            <span className="mt-0.5 block text-[10px] leading-snug text-gray-500 dark:text-neutral-400">
+                              {opt.desc}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <label className="flex items-start justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
                     <div className="min-w-0">
                       <span className="text-sm font-medium text-gray-900 dark:text-white block">
@@ -5601,17 +5785,102 @@ export default function POSView({
                     </div>
                     <input
                       type="checkbox"
-                      checked={flattenVariations}
-                      onChange={(e) => {
-                        const v = e.target.checked;
-                        setFlattenVariations(v);
-                        try {
-                          localStorage.setItem(
-                            "pos_flatten_variations",
-                            String(v),
-                          );
-                        } catch {}
-                      }}
+                      checked={posFlattenVariationsDraft}
+                      onChange={(e) =>
+                        setPosFlattenVariationsDraft(e.target.checked)
+                      }
+                      className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                    />
+                  </label>
+                  <label className="flex items-start justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white block">
+                        Show item images
+                      </span>
+                      <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5">
+                        Display photos on menu cards. Turn off for a denser
+                        text-only grid.
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={posShowItemImagesDraft}
+                      onChange={(e) =>
+                        setPosShowItemImagesDraft(e.target.checked)
+                      }
+                      className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2.5">
+                  Layout &amp; feedback
+                </h3>
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 overflow-hidden divide-y divide-gray-100 dark:divide-neutral-800 bg-gray-50/40 dark:bg-neutral-900/25">
+                  <div className="px-3.5 py-3">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white block">
+                      Cart position
+                    </span>
+                    <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5 mb-2.5">
+                      Where the order cart sits on this branch&apos;s POS.
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        {
+                          id: "right",
+                          label: "Right",
+                          desc: "Sidebar next to the menu",
+                        },
+                        {
+                          id: "bottom",
+                          label: "Bottom",
+                          desc: "Full-width under the menu",
+                        },
+                      ].map((opt) => {
+                        const on = posCartPositionDraft === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setPosCartPositionDraft(opt.id)}
+                            className={`rounded-xl border-2 px-2.5 py-2.5 text-left transition-all ${
+                              on
+                                ? "border-primary bg-primary/10 shadow-sm dark:bg-primary/15"
+                                : "border-gray-200 bg-white hover:border-gray-300 dark:border-neutral-700 dark:bg-neutral-950 dark:hover:border-neutral-600"
+                            }`}
+                          >
+                            <span
+                              className={`block text-xs font-bold ${
+                                on
+                                  ? "text-primary"
+                                  : "text-gray-900 dark:text-white"
+                              }`}
+                            >
+                              {opt.label}
+                            </span>
+                            <span className="mt-0.5 block text-[10px] leading-snug text-gray-500 dark:text-neutral-400">
+                              {opt.desc}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <label className="flex items-start justify-between gap-4 px-3.5 py-3 cursor-pointer hover:bg-white/80 dark:hover:bg-neutral-950/50 transition-colors">
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white block">
+                        Sound on add
+                      </span>
+                      <span className="text-[11px] text-gray-400 dark:text-neutral-500 leading-snug block mt-0.5">
+                        Play a short beep when an item is added to the cart.
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={posSoundOnAddDraft}
+                      onChange={(e) => setPosSoundOnAddDraft(e.target.checked)}
                       className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 shrink-0"
                     />
                   </label>
@@ -5644,11 +5913,27 @@ export default function POSView({
                     showTablePos: posTableSettingsDraft,
                     showWaiterPos: posWaiterSettingsDraft,
                     showCustomerPos: posCustomerSettingsDraft,
+                    posCategoryDisplay: posCategoryDisplayDraft,
+                    posFlattenVariations: posFlattenVariationsDraft,
+                    posShowItemImages: posShowItemImagesDraft,
+                    posCartPosition: posCartPositionDraft,
+                    posSoundOnAdd: posSoundOnAddDraft,
                   })
                     .then((b) => {
                       setShowTablePos(posTableSettingsDraft);
                       setShowWaiterPos(posWaiterSettingsDraft);
                       setShowCustomerPos(posCustomerSettingsDraft);
+                      setCategoryDisplayMode(
+                        posCategoryDisplayDraft === "show_all"
+                          ? "show_all"
+                          : "scroll",
+                      );
+                      setFlattenVariations(posFlattenVariationsDraft);
+                      setShowItemImages(posShowItemImagesDraft);
+                      setCartPosition(
+                        posCartPositionDraft === "bottom" ? "bottom" : "right",
+                      );
+                      setSoundOnAdd(posSoundOnAddDraft);
                       // Save order types to localStorage (per-terminal, not per-branch)
                       try {
                         localStorage.setItem(
@@ -7028,50 +7313,18 @@ export default function POSView({
                           const isAttached = group.source === "attached";
 
                           const toggleOption = () => {
-                            setModifierSelections((prev) => {
-                              const existing = prev[group.id] || [];
-                              if (maxSelections === 1) {
-                                return {
-                                  ...prev,
-                                  [group.id]: isSelected
-                                    ? []
-                                    : [
-                                        {
-                                          optionId: option.id,
-                                          name: option.name,
-                                          price: option.price,
-                                        },
-                                      ],
-                                };
-                              }
-                              if (isSelected) {
-                                return {
-                                  ...prev,
-                                  [group.id]: existing.filter(
-                                    (s) => s.optionId !== option.id,
-                                  ),
-                                };
-                              }
-                              if (existing.length < maxSelections) {
-                                return {
-                                  ...prev,
-                                  [group.id]: [
-                                    ...existing,
-                                    {
-                                      optionId: option.id,
-                                      name: option.name,
-                                      price: option.price,
-                                    },
-                                  ],
-                                };
-                              }
-                              return prev;
-                            });
+                            applyModifierOptionSelection(
+                              group,
+                              option,
+                              isSelected,
+                              maxSelections,
+                            );
                           };
 
                           return (
                             <button
                               key={option.id}
+                              type="button"
                               onClick={toggleOption}
                               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all ${
                                 isSelected
@@ -7124,52 +7377,6 @@ export default function POSView({
                     </div>
                   </div>
                 ))}
-            </div>
-
-            {/* Footer — live total + add button */}
-            <div className="sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-gray-100 dark:border-neutral-800 p-5">
-              {(() => {
-                const fullSelections = { ...modifierSelections };
-                if (
-                  modifierPickerItem._preselectedRequired &&
-                  !(fullSelections[modifierPickerItem._preselectedRequired.groupId] || [])
-                    .length
-                ) {
-                  Object.assign(
-                    fullSelections,
-                    buildInitialModifierSelections(modifierPickerItem),
-                  );
-                }
-                const displayTotal = computeItemUnitPrice(
-                  modifierPickerItem,
-                  fullSelections,
-                );
-
-                return (
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm text-gray-500 dark:text-neutral-400">
-                      Total
-                    </span>
-                    <span className="text-lg font-bold text-gray-900 dark:text-white">
-                      Rs {displayTotal.toLocaleString()}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              <button
-                onClick={confirmModifierSelection}
-                disabled={!isModifierSelectionComplete()}
-                className={`w-full py-3.5 rounded-xl text-base font-bold transition-all ${
-                  isModifierSelectionComplete()
-                    ? "bg-orange-500 hover:bg-orange-600 text-white"
-                    : "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-600 cursor-not-allowed"
-                }`}
-              >
-                {isModifierSelectionComplete()
-                  ? "Add to Order"
-                  : "Select required options"}
-              </button>
             </div>
           </div>
         </div>
