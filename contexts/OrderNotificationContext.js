@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import toast from "react-hot-toast";
 import { useSocket } from "./SocketContext";
 import { playOrderReadySound } from "../lib/playNotificationSound";
 import { getStoredAuth, getActingAsSlug } from "../lib/apiClient";
@@ -197,9 +196,6 @@ export function OrderNotificationProvider({ children }) {
       upsertAlert(alert);
       pushPopup(alert);
       playOrderReadySound();
-      toast.success(`${token} is ready to serve`, {
-        duration: 5000,
-      });
       showBrowserNotification({
         title: `Order ${token} ready`,
         body: alert.body,

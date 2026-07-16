@@ -1353,6 +1353,7 @@ export default function POSView({
     }
     setPaymentLoading(true);
     setPaymentError("");
+    playPosAddSound();
     const toastId = toast.loading("Processing...");
     try {
       let orderNum = "";
@@ -2545,6 +2546,7 @@ export default function POSView({
       }
     }
 
+    playPosAddSound();
     setLoading(true);
     const toastId = toast.loading("Processing order...");
 
@@ -2681,6 +2683,7 @@ export default function POSView({
       return;
     }
     if (!validatePosDiscountForSubmit()) return;
+    playPosAddSound();
     setLoading(true);
     const toastId = toast.loading("Updating order...");
     try {
@@ -2848,6 +2851,7 @@ export default function POSView({
 
     try {
       setPrintingMenu(true);
+      playPosAddSound();
       const result = await createPosOrder({
         items: cart.map(mapCartLineToPosOrderItem),
         orderType,
@@ -5914,8 +5918,8 @@ export default function POSView({
                     Sound
                   </h3>
                   <PosSettingsToggle
-                    label="Sound on add"
-                    description="Beep when an item is added to the cart."
+                    label="Sound on actions"
+                    description="Beep when adding items to the cart and when using order board buttons (Start Cooking, Mark Served, payment, etc.)."
                     checked={posSoundOnAddDraft}
                     onChange={(on) => {
                       setPosSoundOnAddDraft(on);

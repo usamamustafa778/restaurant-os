@@ -17,6 +17,8 @@ import { getStoredAuth } from "../../lib/apiClient";
 const HEADER_TOOLBAR_BTN =
   "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold leading-none shadow-sm transition-all";
 
+const POPUP_WIDTH = 320; // w-80
+
 function formatAlertTime(timestamp) {
   if (!timestamp) return "";
   try {
@@ -118,18 +120,36 @@ function PopupToast({ popup, source, onOpen, onDismiss }) {
 
 /**
  * Unified notification bell: Orders (ready) + optional WhatsApp tab.
+ * @param {'mobile'|'desktop'|'always'} [popupHost] - only the visible header instance should host popups
  */
 export default function WhatsAppNotificationBell({
   className = "",
   showWhatsApp = true,
   showOrders = true,
+  popupHost = "always",
 }) {
   const router = useRouter();
   const wa = useWhatsAppNotifications();
   const orders = useOrderNotifications();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState(showOrders ? "orders" : "whatsapp");
+  const [popupPos, setPopupPos] = useState(null);
+  const [hostPopups, setHostPopups] = useState(popupHost === "always");
   const ref = useRef(null);
+
+  useEffect(() => {
+    if (popupHost === "always") {
+      setHostPopups(true);
+      return;
+    }
+    const mq = window.matchMedia("(min-width: 768px)");
+    const sync = () => {
+      setHostPopups(popupHost === "desktop" ? mq.matches : !mq.matches);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [popupHost]);
 
   useEffect(() => {
     function onDocClick(e) {
@@ -147,6 +167,44 @@ export default function WhatsAppNotificationBell({
   const totalUnread =
     (showOrders ? orders.unreadCount : 0) +
     (showWhatsApp ? wa.unreadCount : 0);
+
+  const mergedPopups = [
+    ...(showOrders
+      ? orders.popups.map((p) => ({ ...p, _source: "order" }))
+      : []),
+    ...(showWhatsApp
+      ? wa.popups.map((p) => ({ ...p, _source: "whatsapp" }))
+      : []),
+  ].slice(0, 4);
+
+  useEffect(() => {
+    if (!hostPopups || mergedPopups.length === 0) {
+      setPopupPos(null);
+      return;
+    }
+
+    function updatePos() {
+      const el = ref.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const left = Math.min(
+        Math.max(8, rect.right - POPUP_WIDTH),
+        window.innerWidth - POPUP_WIDTH - 8,
+      );
+      setPopupPos({
+        top: rect.bottom + 8,
+        left,
+      });
+    }
+
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    window.addEventListener("scroll", updatePos, true);
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+    };
+  }, [hostPopups, mergedPopups.length]);
 
   const Icon =
     wa.permission === "denied"
@@ -183,15 +241,6 @@ export default function WhatsAppNotificationBell({
   const activeAlerts = tab === "orders" ? orders.alerts : wa.alerts;
   const clearActive =
     tab === "orders" ? orders.clearAlerts : wa.clearAlerts;
-
-  const mergedPopups = [
-    ...(showOrders
-      ? orders.popups.map((p) => ({ ...p, _source: "order" }))
-      : []),
-    ...(showWhatsApp
-      ? wa.popups.map((p) => ({ ...p, _source: "whatsapp" }))
-      : []),
-  ].slice(0, 4);
 
   return (
     <div className={`relative shrink-0 ${className}`} ref={ref}>
@@ -240,11 +289,14 @@ export default function WhatsAppNotificationBell({
         ) : null}
       </button>
 
-      {mergedPopups.length > 0 &&
+      {hostPopups &&
+        mergedPopups.length > 0 &&
+        popupPos &&
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="pointer-events-none fixed right-4 top-16 z-[100] flex w-80 flex-col gap-2 sm:right-6"
+            className="pointer-events-none fixed z-[100] flex w-80 flex-col gap-2"
+            style={{ top: popupPos.top, left: popupPos.left }}
             aria-live="polite"
           >
             {mergedPopups.map((popup) => (

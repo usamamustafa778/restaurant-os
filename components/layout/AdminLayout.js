@@ -1558,6 +1558,7 @@ export default function AdminLayout({
                 <WhatsAppNotificationBell
                   showWhatsApp={showWhatsAppInBell}
                   showOrders={showOrdersInBell}
+                  popupHost="mobile"
                 />
               )}
               {pendingInvoiceCount > 0 &&
@@ -1643,6 +1644,7 @@ export default function AdminLayout({
                     <WhatsAppNotificationBell
                       showWhatsApp={showWhatsAppInBell}
                       showOrders={showOrdersInBell}
+                      popupHost="desktop"
                     />
                   )}
                   {pendingInvoiceCount > 0 &&

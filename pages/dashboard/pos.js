@@ -41,6 +41,9 @@ import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
+import {
+  playPosFeedbackSound,
+} from "../../lib/posAddSounds";
 import toast from "react-hot-toast";
 import {
   Loader2,
@@ -533,11 +536,12 @@ export default function OrdersPage() {
         toast.error("You don't have permission to edit orders");
         return;
       }
+      playPosFeedbackSound(currentBranch);
       setPosEditOrderId(editId);
       setPosInitialTableName(tableName || "");
       setActiveView("pos");
     },
-    [hasPermission],
+    [hasPermission, currentBranch],
   );
 
   const closePOS = useCallback(() => {
@@ -673,20 +677,20 @@ export default function OrdersPage() {
   // ── Handlers (preserved exactly) ───────────────────────────────────────
 
   async function handleUpdateStatus(orderId, newStatus, extra = {}) {
+    playPosFeedbackSound(currentBranch);
     setUpdatingId(orderId);
-    const toastId = toast.loading(`Updating order to ${newStatus}...`);
     try {
       const updated = await updateOrderStatus(orderId, newStatus, extra);
       updateOrderInList(orderId, updated);
-      toast.success(`Order updated to ${newStatus}!`, { id: toastId });
     } catch (err) {
-      toast.error(err.message || "Failed to update status", { id: toastId });
+      toast.error(err.message || "Failed to update status");
     } finally {
       setUpdatingId(null);
     }
   }
 
   function openCancelModal(order) {
+    playPosFeedbackSound(currentBranch);
     setCancelTargetOrder(order);
     setCancelReason("");
     setShowCancelModal(true);
@@ -719,6 +723,7 @@ export default function OrdersPage() {
   }
 
   function openPaymentModal(order) {
+    playPosFeedbackSound(currentBranch);
     setPaymentModalMode("record");
     setPaymentOrder(order);
     setPaymentMethod("CASH");
@@ -745,6 +750,7 @@ export default function OrdersPage() {
 
   async function handleInlineAssignRider(order, riderId) {
     if (!riderId) return;
+    playPosFeedbackSound(currentBranch);
     const orderId = getOrderId(order);
     setAssigningOrderId(orderId);
     const toastId = toast.loading("Assigning rider...");
@@ -781,6 +787,7 @@ export default function OrdersPage() {
   }
 
   function openCollectPaymentModal(order) {
+    playPosFeedbackSound(currentBranch);
     setPaymentModalMode("riderCollect");
     setPaymentOrder(order);
     setPaymentMethod("CASH");
@@ -833,6 +840,7 @@ export default function OrdersPage() {
     }
     setPaymentLoading(true);
     setPaymentError("");
+    playPosFeedbackSound(currentBranch);
     const toastId = toast.loading("Collecting payment...");
     try {
       const payload = { paymentMethod };
@@ -985,6 +993,7 @@ export default function OrdersPage() {
     }
     setPaymentLoading(true);
     setPaymentError("");
+    playPosFeedbackSound(currentBranch);
     const toastId = toast.loading("Recording payment...");
     try {
       const payload = { paymentMethod };
