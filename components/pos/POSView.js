@@ -5740,33 +5740,38 @@ export default function POSView({
                   </p>
                   <div className="divide-y divide-gray-100 dark:divide-neutral-800">
                     {[
-                      { key: "DINE_IN", label: "Dine in" },
-                      { key: "TAKEAWAY", label: "Takeaway" },
-                      { key: "DELIVERY", label: "Delivery" },
-                    ].map(({ key, label }) => (
-                      <label
+                      {
+                        key: "DINE_IN",
+                        label: "Dine in",
+                        description: "Table service orders in the restaurant",
+                      },
+                      {
+                        key: "TAKEAWAY",
+                        label: "Takeaway",
+                        description: "Pickup orders for customers to go",
+                      },
+                      {
+                        key: "DELIVERY",
+                        label: "Delivery",
+                        description: "Orders sent out to a delivery address",
+                      },
+                    ].map(({ key, label, description }) => (
+                      <PosSettingsToggle
                         key={key}
-                        className="flex cursor-pointer items-center justify-between gap-3 py-2.5"
-                      >
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {label}
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(posOrderTypesDraft[key])}
-                          onChange={() => {
-                            setPosOrderTypesDraft((prev) => {
-                              const next = { ...prev, [key]: !prev[key] };
-                              const n = ALL_POS_ORDER_TYPES.filter(
-                                (t) => next[t],
-                              ).length;
-                              if (n === 0) return prev;
-                              return next;
-                            });
-                          }}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 dark:border-neutral-600"
-                        />
-                      </label>
+                        label={label}
+                        description={description}
+                        checked={Boolean(posOrderTypesDraft[key])}
+                        onChange={(nextChecked) => {
+                          setPosOrderTypesDraft((prev) => {
+                            const next = { ...prev, [key]: nextChecked };
+                            const n = ALL_POS_ORDER_TYPES.filter(
+                              (t) => next[t],
+                            ).length;
+                            if (n === 0) return prev;
+                            return next;
+                          });
+                        }}
+                      />
                     ))}
                   </div>
                 </section>
