@@ -180,10 +180,10 @@ function getStatusConfig(status) {
     case "OUT_FOR_DELIVERY":
       return {
         label: "Out for Delivery",
-        bg: "bg-violet-500",
-        bgLight: "bg-violet-50 dark:bg-violet-500/10",
-        text: "text-violet-600 dark:text-violet-400",
-        border: "border-violet-200 dark:border-violet-500/20",
+        bg: "bg-[#25343F]",
+        bgLight: "bg-[#25343F]/10 dark:bg-[#25343F]/20",
+        text: "text-[#25343F] dark:text-[#25343F]",
+        border: "border-[#25343F]/20 dark:border-[#25343F]/30",
         icon: Truck,
         pulse: false,
       };
@@ -1849,11 +1849,46 @@ export default function RiderPortalPage() {
                             </div>
 
                             <div className="flex gap-2 mb-1 items-stretch">
+                              {orderStatus === "READY" &&
+                                (!order.assignedRiderId ||
+                                  (riderId && order.assignedRiderId === riderId)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCollectOrder(order)}
+                                  disabled={collectingId === orderId}
+                                  className="min-w-0 flex-[1.6] py-2.5 px-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-[11px] flex items-center justify-center gap-1 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
+                                >
+                                  {collectingId === orderId ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                  ) : (
+                                    <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+                                  )}
+                                  <span className="truncate">Collect from Kitchen</span>
+                                </button>
+                              )}
+                              {orderStatus === "OUT_FOR_DELIVERY" &&
+                                order.assignedRiderId &&
+                                riderId &&
+                                order.assignedRiderId === riderId && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDelivered(order)}
+                                  disabled={deliveringId === orderId}
+                                  className="min-w-0 flex-[1.6] py-2.5 px-2 rounded-xl bg-[#25343F] hover:bg-[#25343F]/90 text-white font-bold text-[11px] flex items-center justify-center gap-1 disabled:opacity-50 shadow-sm active:scale-[0.98] transition-transform"
+                                >
+                                  {deliveringId === orderId ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5 shrink-0" />
+                                  )}
+                                  <span className="truncate">Mark Delivered</span>
+                                </button>
+                              )}
                               {canAppend && (
                                 <button
                                   type="button"
                                   onClick={() => startAppendItems(order)}
-                                  className={`min-w-0 flex-[1.4] py-2 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform ${
+                                  className={`min-w-0 flex-1 py-2 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform ${
                                     isPreparing
                                       ? "border-blue-500/30 bg-blue-500/5 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
                                       : "border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500"
@@ -1870,7 +1905,7 @@ export default function RiderPortalPage() {
                                   className="min-w-0 flex-1 py-2 px-2 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
                                 >
                                   <Receipt className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="truncate">Bill</span>
+                                  <span className="truncate">Receipt</span>
                                 </button>
                               )}
                               <button
@@ -1880,9 +1915,11 @@ export default function RiderPortalPage() {
                                 aria-label={isExpanded ? "Hide details" : "Show details"}
                                 className={`w-10 shrink-0 py-2 rounded-xl text-[11px] font-bold flex items-center justify-center border transition-colors ${
                                   isExpanded
-                                    ? isPreparing
-                                      ? "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
-                                      : "bg-orange-500/10 border-orange-500/30 text-orange-500"
+                                    ? orderStatus === "OUT_FOR_DELIVERY"
+                                      ? "bg-[#25343F]/10 border-[#25343F]/30 text-[#25343F]"
+                                      : isPreparing
+                                        ? "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
+                                        : "bg-orange-500/10 border-orange-500/30 text-orange-500"
                                     : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
                                 }`}
                               >
@@ -1966,43 +2003,12 @@ export default function RiderPortalPage() {
                                 </div>
                               </>
                             )}
-
-                            {orderStatus === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
-                              <button
-                                onClick={() => handleCollectOrder(order)}
-                                disabled={collectingId === orderId}
-                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
-                              >
-                                {collectingId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
-                                Collect from Kitchen
-                              </button>
-                            )}
-                            {orderStatus === "OUT_FOR_DELIVERY" && order.assignedRiderId && riderId && order.assignedRiderId === riderId && (
-                              <button
-                                onClick={() => handleMarkDelivered(order)}
-                                disabled={deliveringId === orderId}
-                                className="w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-violet-600/20 active:scale-[0.98] transition-transform"
-                              >
-                                {deliveringId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                Mark as Delivered
-                              </button>
-                            )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 )}
-              </div>
-
-              {/* D) My Pay Today — bottom of Home */}
-              <div className="mx-4 mt-4 rounded-xl border border-dashed border-gray-400/60 dark:border-neutral-600 bg-neutral-100/40 dark:bg-neutral-900/50 p-3">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-600 dark:text-neutral-400">
-                  My pay today
-                </p>
-                <p className="text-xs font-bold text-gray-600 dark:text-neutral-400 mt-1.5 leading-snug">
-                  Pay details not set up yet — ask your manager
-                </p>
               </div>
             </div>
           )}

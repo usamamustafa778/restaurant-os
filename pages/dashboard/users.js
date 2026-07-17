@@ -33,20 +33,29 @@ import { usePermissions } from "../../contexts/PermissionContext";
 import toast from "react-hot-toast";
 
 const ROLE_OPTIONS = [
+  { value: "restaurant_admin", label: "Owner", tab: "manager", desc: "Restaurant owner with full access" },
   { value: "order_taker", label: "Waiter", tab: "waiter", desc: "Can take orders and manage table flow" },
-  { value: "kitchen_staff", label: "Kitchen", tab: "kitchen", desc: "Can view and update kitchen order status" },
-  { value: "delivery_rider", label: "Rider", tab: "rider", desc: "Access to rider app only" },
-  { value: "product_manager", label: "Product Manager", tab: "manager", desc: "Can manage menu and products" },
-  { value: "admin", label: "Admin", tab: "manager", desc: "Full operational admin access" },
+  { value: "kitchen_staff", label: "Kitchen Staff", tab: "kitchen", desc: "Can view and update kitchen order status" },
+  { value: "delivery_rider", label: "Delivery Rider", tab: "rider", desc: "Access to rider app only" },
 ];
 
-/** App-bound fixed roles only — Cashier/Manager assigned via custom roles. */
+/**
+ * App-bound system roles only (owner + operational apps).
+ * Cashier / Manager / Admin / Product Manager are assigned via Custom Roles.
+ */
 const SYSTEM_ROLE_DROPDOWN = [
-  { value: "admin", label: "Admin" },
-  { value: "product_manager", label: "Product Manager" },
+  { value: "restaurant_admin", label: "Owner" },
   { value: "kitchen_staff", label: "Kitchen Staff" },
   { value: "order_taker", label: "Waiter" },
   { value: "delivery_rider", label: "Delivery Rider" },
+];
+
+/** Legacy fixed roles still on some users — keep selectable when editing those accounts. */
+const LEGACY_FIXED_ROLE_DROPDOWN = [
+  { value: "admin", label: "Admin" },
+  { value: "product_manager", label: "Product Manager" },
+  { value: "manager", label: "Manager" },
+  { value: "cashier", label: "Cashier" },
 ];
 
 const ROLE_LABELS = {
@@ -57,9 +66,9 @@ const ROLE_LABELS = {
   manager: "Manager",
   default_cashier: "Cashier",
   default_manager: "Manager",
-  kitchen_staff: "Kitchen",
+  kitchen_staff: "Kitchen Staff",
   order_taker: "Waiter",
-  delivery_rider: "Rider",
+  delivery_rider: "Delivery Rider",
 };
 
 function asCustomRoles(customRoles) {
@@ -195,21 +204,21 @@ export default function UsersPage() {
 
   const [customRoles, setCustomRoles] = useState([]);
 
-  const roleOptions = useMemo(() => {
+  const systemRoleOptions = useMemo(() => {
     const fixed = isManager
       ? SYSTEM_ROLE_DROPDOWN.filter((r) =>
-          ["kitchen_staff", "order_taker", "delivery_rider", "product_manager"].includes(
-            r.value,
-          ),
+          ["kitchen_staff", "order_taker", "delivery_rider"].includes(r.value),
         )
       : SYSTEM_ROLE_DROPDOWN;
-    const custom = (customRoles || []).map((r) => ({
-      value: r.slug,
-      label: r.name,
-      isCustom: true,
-    }));
-    return [...custom, ...fixed];
-  }, [isManager, customRoles]);
+    // When editing a legacy fixed role (admin / PM / old cashier), keep it selectable.
+    const legacy =
+      form.role &&
+      LEGACY_FIXED_ROLE_DROPDOWN.find((r) => r.value === form.role) &&
+      !fixed.some((r) => r.value === form.role)
+        ? LEGACY_FIXED_ROLE_DROPDOWN.filter((r) => r.value === form.role)
+        : [];
+    return [...fixed, ...legacy];
+  }, [isManager, form.role]);
 
   const defaultCreateRole = useMemo(() => {
     const cashier = customRoles.find((r) => r.slug === "default_cashier");
@@ -847,7 +856,7 @@ export default function UsersPage() {
                 <input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Phone (required for riders)" className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm" />
                 <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))} className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm">
                   <optgroup label="System Roles">
-                    {roleOptions.map((r) => (
+                    {systemRoleOptions.map((r) => (
                       <option key={r.value} value={r.value}>{r.label}</option>
                     ))}
                   </optgroup>
