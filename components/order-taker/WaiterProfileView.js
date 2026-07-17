@@ -7,6 +7,7 @@ import {
   removeAvatar,
   getStoredAuth,
   setStoredAuth,
+  clearStoredAuth,
 } from "../../lib/apiClient";
 import {
   User,
@@ -17,6 +18,7 @@ import {
   EyeOff,
   Loader2,
   ChevronLeft,
+  LogOut,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../SEO";
@@ -26,6 +28,7 @@ import SEO from "../SEO";
  */
 export default function WaiterProfileView({
   backHref = "/order-taker",
+  roleLabel = "Waiter",
 }) {
   const [profile, setProfile] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -47,6 +50,7 @@ export default function WaiterProfileView({
   const fileInputRef = useRef(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState({ type: "", text: "" });
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -159,32 +163,46 @@ export default function WaiterProfileView({
     }
   }
 
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* still clear local session */
+    }
+    clearStoredAuth();
+    window.location.href = "/login";
+  }
+
   return (
     <>
       <SEO title="My Profile - Eats Desk" noindex />
-      <div className="min-h-[100dvh] bg-[#f9fafb] dark:bg-neutral-950 text-gray-900 dark:text-white flex flex-col">
-        <header className="flex-shrink-0 bg-white dark:bg-neutral-950 border-b border-gray-200 dark:border-neutral-800 sticky top-0 z-20">
-          <div className="flex items-center gap-2 px-3 h-14">
+      <div className="min-h-[100dvh] bg-gray-50 dark:bg-neutral-950 text-gray-900 dark:text-white flex flex-col">
+        <header className="flex-shrink-0 bg-white/95 dark:bg-neutral-950/95 backdrop-blur-md border-b border-gray-100 dark:border-neutral-800 sticky top-0 z-20">
+          <div className="flex items-center gap-2.5 px-4 h-14">
             <button
               type="button"
               onClick={() => {
                 window.location.href = backHref;
               }}
-              className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
+              className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center active:scale-95 transition-transform"
               aria-label="Back"
             >
               <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-neutral-300" />
             </button>
             <div className="min-w-0 flex-1">
-              <h1 className="text-[15px] font-extrabold truncate">My Profile</h1>
-              <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate">
-                Account details & password
+              <h1 className="text-[15px] font-extrabold truncate leading-tight">
+                My Profile
+              </h1>
+              <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate leading-tight">
+                Account · password · logout
               </p>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 py-4 pb-8 space-y-4 max-w-lg mx-auto w-full">
+        <main className="flex-1 overflow-y-auto px-4 py-4 pb-10 space-y-3 max-w-lg mx-auto w-full">
           {pageLoading ? (
             <div className="flex items-center justify-center py-20 gap-2 text-gray-500">
               <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
@@ -193,30 +211,31 @@ export default function WaiterProfileView({
           ) : (
             <>
               <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
-                <div className="flex flex-col items-center text-center">
-                  <div className="relative mb-3">
+                <div className="flex items-center gap-3.5">
+                  <div className="relative shrink-0">
                     {profile?.profileImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={profile.profileImageUrl}
                         alt={profile.name}
-                        className="w-20 h-20 rounded-full object-cover border-2 border-orange-500"
+                        className="w-16 h-16 rounded-2xl object-cover border border-orange-200 dark:border-orange-500/30"
                       />
                     ) : (
-                      <div className="w-20 h-20 rounded-full bg-orange-500/15 flex items-center justify-center border-2 border-orange-500/30">
-                        <User className="w-9 h-9 text-orange-500" />
+                      <div className="w-16 h-16 rounded-2xl bg-orange-500/15 flex items-center justify-center border border-orange-500/25">
+                        <User className="w-7 h-7 text-orange-500" />
                       </div>
                     )}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={avatarUploading}
-                      className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center shadow"
+                      className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-orange-500 text-white flex items-center justify-center shadow"
                       aria-label="Change photo"
                     >
                       {avatarUploading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        <Camera className="w-4 h-4" />
+                        <Camera className="w-3.5 h-3.5" />
                       )}
                     </button>
                     <input
@@ -227,25 +246,32 @@ export default function WaiterProfileView({
                       onChange={handleAvatarUpload}
                     />
                   </div>
-                  <p className="text-base font-extrabold">{profile?.name}</p>
-                  <p className="text-xs font-semibold text-orange-500 mt-0.5">
-                    Waiter
-                  </p>
-                  {avatarMsg.text && (
-                    <p
-                      className={`mt-2 text-xs font-medium ${
-                        avatarMsg.type === "error"
-                          ? "text-red-500"
-                          : "text-emerald-500"
-                      }`}
-                    >
-                      {avatarMsg.text}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-base font-extrabold truncate">
+                      {profile?.name}
                     </p>
-                  )}
+                    <p className="text-xs font-bold text-orange-500 mt-0.5">
+                      {roleLabel}
+                    </p>
+                    <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate mt-0.5">
+                      {profile?.email}
+                    </p>
+                    {avatarMsg.text ? (
+                      <p
+                        className={`mt-1 text-xs font-medium ${
+                          avatarMsg.type === "error"
+                            ? "text-red-500"
+                            : "text-emerald-500"
+                        }`}
+                      >
+                        {avatarMsg.text}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+              <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4">
                 <h2 className="text-sm font-extrabold mb-3">Personal details</h2>
                 {infoMsg.text && (
                   <div
@@ -271,7 +297,7 @@ export default function WaiterProfileView({
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm outline-none focus:border-orange-500"
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/15"
                     />
                   </div>
                   <div>
@@ -282,7 +308,7 @@ export default function WaiterProfileView({
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm outline-none focus:border-orange-500"
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/15"
                     />
                   </div>
                   <button
@@ -300,7 +326,7 @@ export default function WaiterProfileView({
                 </form>
               </div>
 
-              <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-5">
+              <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4">
                 <h2 className="text-sm font-extrabold mb-3">Change password</h2>
                 {pwMsg.text && (
                   <div
@@ -350,7 +376,7 @@ export default function WaiterProfileView({
                           type={field.show ? "text" : "password"}
                           value={field.value}
                           onChange={(e) => field.set(e.target.value)}
-                          className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm outline-none focus:border-orange-500"
+                          className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/15"
                         />
                         <button
                           type="button"
@@ -381,7 +407,21 @@ export default function WaiterProfileView({
                 </form>
               </div>
 
-              <p className="text-center text-[10px] text-gray-400 dark:text-neutral-600 pt-2">
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-sm font-bold disabled:opacity-50"
+              >
+                {loggingOut ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <LogOut className="w-4 h-4" />
+                )}
+                Logout
+              </button>
+
+              <p className="text-center text-[10px] text-gray-400 dark:text-neutral-600 pt-1">
                 Powered by{" "}
                 <span className="font-semibold text-gray-500 dark:text-neutral-500">
                   EatsDesk
