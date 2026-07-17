@@ -15,6 +15,11 @@ import {
   sortKitchenOrders,
 } from "../../lib/kdsSettings";
 import {
+  formatReceiptItemsForBill,
+  formatOrderItemDisplayName,
+  getDealDisplayItems,
+} from "../../lib/orderDisplay.js";
+import {
   User, ChefHat, Loader2, CheckCircle2, RefreshCw,
   Package, UtensilsCrossed, Headset, ShoppingBag, Truck, MapPin,
   Trash2, EyeOff, Settings, VolumeX,
@@ -214,12 +219,23 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
   const { AdvIcon } = column;
   const hasAdditions = (order.items || []).some((i) => i.isAddition);
   const itemsToShow = order.items || [];
+  // Same aggregation as POS / order-taker so deal qty + choices match.
+  const displayItems = formatReceiptItemsForBill(order);
   const showAdditionBadge = hasAdditions;
   const statuses = itemsToShow.map((i) => getItemStatus(i, order.status));
   const hasNew = statuses.includes("NEW");
   const hasNonNew = statuses.some((s) => s !== "NEW");
   const hasMixed = hasNew && hasNonNew;
-  const totalQty = itemsToShow.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
+  const totalQty = displayItems.reduce((sum, i) => {
+    if (i.isDealLine) {
+      const choiceQty = (i.dealChoices || []).reduce(
+        (s, c) => s + (Number(c.qty) || 1),
+        0,
+      );
+      return sum + (choiceQty || Number(i.qty ?? i.quantity) || 1);
+    }
+    return sum + (Number(i.qty ?? i.quantity) || 1);
+  }, 0);
   const stale = isStaleReady(order);
 
   const metaBits = [];
@@ -253,6 +269,105 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
       <span className="text-[10px] leading-tight text-orange-500/90 dark:text-orange-400/90 font-medium truncate">
         {parts.join(" · ")}
       </span>
+    );
+  }
+
+  function renderKitchenItemLine(item, idx) {
+    const st = getItemStatus(item, order.status);
+    const qty = item.qty ?? item.quantity ?? 1;
+    const extras = itemExtrasInline(item);
+    const isCookedMixed = hasMixed && st === "COOKED";
+    const isNewMixed = hasMixed && st === "NEW";
+
+    return (
+      <li
+        key={idx}
+        className={`flex gap-1.5 items-start rounded ${
+          isNewMixed ? "bg-orange-500/10 px-1 py-0.5 -mx-1" : ""
+        } ${isCookedMixed ? "opacity-45" : ""}`}
+      >
+        <span
+          className={`text-[11px] font-black tabular-nums shrink-0 w-5 text-right leading-snug ${
+            isNewMixed
+              ? "text-orange-500"
+              : isCookedMixed
+                ? "text-gray-400"
+                : "text-primary"
+          }`}
+        >
+          {isCookedMixed ? "✓" : `${qty}×`}
+        </span>
+        <div className="min-w-0 flex-1 leading-snug">
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span
+              className={`text-[12px] font-semibold min-w-0 ${
+                isNewMixed
+                  ? "text-orange-400"
+                  : isCookedMixed
+                    ? "text-gray-500 line-through"
+                    : "text-gray-900 dark:text-neutral-100"
+              }`}
+            >
+              {formatOrderItemDisplayName(item)}
+            </span>
+            {isNewMixed && (
+              <span className="text-[9px] font-black text-orange-500 shrink-0 uppercase">
+                new{item.addedAt ? ` ${timeAgoShort(item.addedAt)}` : ""}
+              </span>
+            )}
+          </div>
+          {extras}
+        </div>
+      </li>
+    );
+  }
+
+  function renderDealLine(item, idx) {
+    const qty = item.qty ?? item.quantity ?? 1;
+    const children = getDealDisplayItems(item);
+    return (
+      <li key={idx} className="text-[11px]">
+        <div className="flex items-center justify-between gap-2 mb-0.5">
+          <span className="min-w-0 truncate font-semibold text-gray-900 dark:text-neutral-100">
+            {item.name}
+            <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-primary">
+              Deal
+            </span>
+          </span>
+          <span className="shrink-0 font-bold tabular-nums text-gray-500 dark:text-neutral-500">
+            ×{qty}
+          </span>
+        </div>
+        {children.length > 0 ? (
+          <ul className="mt-0.5 space-y-0.5 border-l-2 border-primary/30 pl-2.5">
+            {children.map((choice, ci) => (
+              <li
+                key={`${choice.name}-${ci}`}
+                className="flex gap-1.5 items-start"
+              >
+                <span className="w-4 shrink-0 text-right text-[11px] font-black tabular-nums text-primary leading-snug">
+                  {choice.qty || 1}×
+                </span>
+                <div className="min-w-0 flex flex-wrap items-center gap-1 leading-snug">
+                  <span className="text-[11px] font-medium text-gray-700 dark:text-neutral-300">
+                    {choice.name}
+                  </span>
+                  {choice.isChoice ? (
+                    <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wide bg-primary/15 text-primary">
+                      Choice
+                    </span>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {item.note ? (
+          <p className="mt-1 text-[10px] font-medium italic text-orange-500 dark:text-orange-400">
+            📝 {item.note}
+          </p>
+        ) : null}
+      </li>
     );
   }
 
@@ -311,56 +426,12 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
             {totalQty} item{totalQty !== 1 ? "s" : ""}
           </span>
         </div>
-        <ul className={`${compact ? "space-y-0.5" : "space-y-1"}`}>
-          {itemsToShow.map((item, idx) => {
-            const st = getItemStatus(item, order.status);
-            const qty = item.qty ?? item.quantity ?? 1;
-            const extras = itemExtrasInline(item);
-            const isCookedMixed = hasMixed && st === "COOKED";
-            const isNewMixed = hasMixed && st === "NEW";
-
-            return (
-              <li
-                key={idx}
-                className={`flex gap-1.5 items-start rounded ${
-                  isNewMixed ? "bg-orange-500/10 px-1 py-0.5 -mx-1" : ""
-                } ${isCookedMixed ? "opacity-45" : ""}`}
-              >
-                <span
-                  className={`text-[11px] font-black tabular-nums shrink-0 w-5 text-right leading-snug ${
-                    isNewMixed
-                      ? "text-orange-500"
-                      : isCookedMixed
-                        ? "text-gray-400"
-                        : "text-primary"
-                  }`}
-                >
-                  {isCookedMixed ? "✓" : `${qty}×`}
-                </span>
-                <div className="min-w-0 flex-1 leading-snug">
-                  <div className="flex items-baseline gap-1.5 min-w-0">
-                    <span
-                      className={`text-[12px] font-semibold min-w-0 ${
-                        isNewMixed
-                          ? "text-orange-400"
-                          : isCookedMixed
-                            ? "text-gray-500 line-through"
-                            : "text-gray-900 dark:text-neutral-100"
-                      }`}
-                    >
-                      {item.name}
-                    </span>
-                    {isNewMixed && (
-                      <span className="text-[9px] font-black text-orange-500 shrink-0 uppercase">
-                        new{item.addedAt ? ` ${timeAgoShort(item.addedAt)}` : ""}
-                      </span>
-                    )}
-                  </div>
-                  {extras}
-                </div>
-              </li>
-            );
-          })}
+        <ul className={`${compact ? "space-y-1" : "space-y-1.5"}`}>
+          {displayItems.map((item, idx) =>
+            item.isDealLine
+              ? renderDealLine(item, idx)
+              : renderKitchenItemLine(item, idx),
+          )}
         </ul>
       </div>
 

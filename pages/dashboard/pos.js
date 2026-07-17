@@ -31,7 +31,7 @@ import {
   auditSessionReportPayments,
 } from "../../lib/sessionReportBreakdown";
 import { printBillReceipt } from "../../lib/printBillReceipt";
-import { formatReceiptItemsForBill, formatOrderItemDisplayName, getOrderItemModifierSubtexts } from "../../lib/orderDisplay.js";
+import { formatReceiptItemsForBill, formatOrderItemDisplayName, getOrderItemModifierSubtexts, getDealDisplayItems } from "../../lib/orderDisplay.js";
 import {
   getBusinessDate,
   getBusinessDayRange,
@@ -3414,7 +3414,7 @@ function OrderItemRow({ item }) {
   const qty = item.qty ?? item.quantity ?? 1;
 
   if (item.isDealLine) {
-    const choices = item.dealChoices || [];
+    const children = getDealDisplayItems(item);
     return (
       <div className="text-[11px]">
         <button
@@ -3427,9 +3427,9 @@ function OrderItemRow({ item }) {
             <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-primary">
               Deal
             </span>
-            {!dealOpen && choices.length > 0 ? (
+            {!dealOpen && children.length > 0 ? (
               <span className="mt-0.5 block truncate text-[10px] font-normal text-gray-500 dark:text-neutral-400">
-                {choices
+                {children
                   .map((choice) =>
                     choice.qty > 1 ? `${choice.name} ×${choice.qty}` : choice.name,
                   )
@@ -3446,16 +3446,28 @@ function OrderItemRow({ item }) {
         </button>
         {dealOpen ? (
           <div className="mt-1 space-y-0.5 border-l-2 border-primary/30 pl-2.5">
-            {choices.map((choice, ci) => (
+            {children.map((choice, ci) => (
               <div
                 key={`${choice.name}-${ci}`}
-                className="text-[10px] leading-tight text-gray-500 dark:text-neutral-400"
+                className="flex flex-wrap items-center gap-1 text-[10px] leading-tight text-gray-500 dark:text-neutral-400"
               >
-                · {choice.name}
-                {choice.qty > 1 ? ` ×${choice.qty}` : ""}
+                <span>
+                  · {choice.name}
+                  {choice.qty > 1 ? ` ×${choice.qty}` : ""}
+                </span>
+                {choice.isChoice ? (
+                  <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wide bg-primary/15 text-primary">
+                    Choice
+                  </span>
+                ) : null}
               </div>
             ))}
           </div>
+        ) : null}
+        {item.note ? (
+          <p className="mt-1 text-[10px] italic text-amber-700 dark:text-amber-400">
+            📝 {item.note}
+          </p>
         ) : null}
       </div>
     );

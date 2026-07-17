@@ -2,6 +2,7 @@ import net from "net";
 import {
   formatOrderItemDisplayName,
   formatReceiptItemsForBill,
+  getDealDisplayItems,
   getOrderItemBillModifierLines,
 } from "../../lib/orderDisplay.js";
 const ESC = "\x1B";
@@ -86,8 +87,9 @@ function buildEscPos(o) {
     const detail = `${unit.toFixed(2)}  ${String(qty).padStart(3)}  ${lineTotal.toFixed(2)}`;
     ln(pad("", detail));
     if (it.isDealLine) {
-      for (const choice of it.dealChoices || []) {
-        ln(`  - ${choice.name} x${choice.qty}`);
+      for (const choice of getDealDisplayItems(it)) {
+        const tag = choice.isChoice ? " [choice]" : "";
+        ln(`  - ${choice.name} x${choice.qty}${tag}`);
       }
     } else {
       for (const opt of getOrderItemBillModifierLines(it)) {

@@ -55,6 +55,7 @@ import {
   Receipt,
   UserCircle2,
   MoreVertical,
+  Pencil,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -65,6 +66,16 @@ import {
   isDealConfigurable,
 } from "../../lib/dealComboItems";
 import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
+import {
+  formatReceiptItemsForBill,
+  formatOrderItemDisplayName,
+  getOrderItemModifierSubtexts,
+  isDealComponentItem,
+  getDealMetadataNote,
+  getDealCustomerNote,
+  joinDealNote,
+  getDealDisplayItems,
+} from "../../lib/orderDisplay.js";
 
 const STEPS = { TABLE: "table", MENU: "menu", CART: "cart" };
 const TABS = {
@@ -129,6 +140,45 @@ function canEditOrderNotes(order) {
   return true;
 }
 
+/** Full edit of existing lines (qty / remove) — only while still a new order. */
+function canFullyEditExistingItems(order) {
+  if (!order || isOrderLocked(order)) return false;
+  return String(order.status || "").toUpperCase() === "NEW_ORDER";
+}
+
+/** Group raw order lines into deal cards + regular items for the edit cart. */
+function groupItemsForEditCart(order) {
+  const items = order?.items || [];
+  const dealLines = formatReceiptItemsForBill(order).filter((d) => d.isDealLine);
+  const used = new Set();
+  const groups = [];
+
+  for (const deal of dealLines) {
+    const dealName = String(deal.name || "").trim();
+    if (!dealName) continue;
+    const indices = [];
+    items.forEach((it, idx) => {
+      if (!isDealComponentItem(it, dealName) || used.has(idx)) return;
+      used.add(idx);
+      indices.push(idx);
+    });
+    if (!indices.length) continue;
+    groups.push({
+      kind: "deal",
+      dealName,
+      display: deal,
+      indices,
+    });
+  }
+
+  items.forEach((it, idx) => {
+    if (used.has(idx)) return;
+    groups.push({ kind: "item", item: it, indices: [idx] });
+  });
+
+  return groups;
+}
+
 function mapOrderItemsForUpdate(items = []) {
   return items.map((item) => ({
     menuItemId: item.menuItemId || item.menuItem || null,
@@ -143,6 +193,160 @@ function mapOrderItemsForUpdate(items = []) {
     addedAt: item.addedAt || null,
     itemStatus: item.itemStatus ?? null,
   }));
+}
+
+function findOriginalItemIndexForNote(order, displayItem) {
+  if (!displayItem || displayItem.isDealLine) return -1;
+  const targetKey = [
+    displayItem.menuItemId || displayItem.menuItem || displayItem.name,
+    displayItem.variantLabel || "",
+    (displayItem.note || "").trim(),
+  ].join("|");
+  return (order?.items || []).findIndex((it) => {
+    if (it.lineSource === "deal" || it.isDealLine) return false;
+    const key = [
+      it.menuItemId || it.menuItem || it.name,
+      it.variantLabel || "",
+      (it.note || "").trim(),
+    ].join("|");
+    return key === targetKey;
+  });
+}
+
+/** Match POS board card deal/item rows on the waiter home card. */
+function WaiterOrderItemRow({
+  item,
+  canEditNote,
+  isSavingNote,
+  onEditNote,
+}) {
+  const [dealOpen, setDealOpen] = useState(false);
+  const qty = item.qty ?? item.quantity ?? 1;
+
+  if (item.isDealLine) {
+    const children = getDealDisplayItems(item);
+    return (
+      <div className="text-[11px]">
+        <button
+          type="button"
+          onClick={() => setDealOpen((open) => !open)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="min-w-0 truncate pr-2 font-semibold text-gray-900 dark:text-neutral-100">
+            {item.name}
+            <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-orange-500">
+              Deal
+            </span>
+            {!dealOpen && children.length > 0 ? (
+              <span className="mt-0.5 block truncate text-[10px] font-normal text-gray-500 dark:text-neutral-400">
+                {children
+                  .map((choice) =>
+                    choice.qty > 1
+                      ? `${choice.name} ×${choice.qty}`
+                      : choice.name,
+                  )
+                  .join(" · ")}
+              </span>
+            ) : null}
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-gray-500 dark:text-neutral-500">
+            <span className="font-bold tabular-nums">×{qty}</span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform ${dealOpen ? "rotate-180" : ""}`}
+            />
+          </span>
+        </button>
+        {dealOpen ? (
+          <div className="mt-1 space-y-0.5 border-l-2 border-orange-500/30 pl-2.5">
+            {children.map((choice, ci) => (
+              <div
+                key={`${choice.name}-${ci}`}
+                className="flex flex-wrap items-center gap-1 text-[10px] leading-tight text-gray-500 dark:text-neutral-400"
+              >
+                <span>
+                  · {choice.name}
+                  {choice.qty > 1 ? ` ×${choice.qty}` : ""}
+                </span>
+                {choice.isChoice ? (
+                  <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wide bg-orange-500/15 text-orange-500">
+                    Choice
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-1 flex items-start justify-between gap-2">
+          {item.note ? (
+            <p className="min-w-0 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
+              📝 {item.note}
+            </p>
+          ) : (
+            <span />
+          )}
+          {canEditNote ? (
+            <button
+              type="button"
+              onClick={onEditNote}
+              disabled={isSavingNote}
+              className="flex-shrink-0 text-[10px] font-semibold text-orange-500 hover:underline disabled:opacity-50"
+            >
+              {isSavingNote ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : item.note ? (
+                "Edit note"
+              ) : (
+                "Add note"
+              )}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  const subtexts = getOrderItemModifierSubtexts(item);
+  return (
+    <div className="text-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate pr-2 font-medium text-gray-800 dark:text-neutral-200">
+          <span className="font-bold text-gray-900 dark:text-white">
+            {qty}x
+          </span>{" "}
+          {formatOrderItemDisplayName(item)}
+        </span>
+        {canEditNote ? (
+          <button
+            type="button"
+            onClick={onEditNote}
+            disabled={isSavingNote}
+            className="flex-shrink-0 text-[10px] font-semibold text-orange-500 hover:underline disabled:opacity-50"
+          >
+            {isSavingNote ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : item.note ? (
+              "Edit note"
+            ) : (
+              "Add note"
+            )}
+          </button>
+        ) : null}
+      </div>
+      {subtexts.map((line, si) => (
+        <div
+          key={si}
+          className="ml-2 text-[10px] leading-tight text-gray-400 dark:text-neutral-500"
+        >
+          {line}
+        </div>
+      ))}
+      {item.note ? (
+        <p className="mt-0.5 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
+          📝 {item.note}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export default function OrderTakerPage() {
@@ -666,17 +870,208 @@ export default function OrderTakerPage() {
     const items = appendTargetOrder.items || [];
     const item = items[itemIndex];
     if (!item) return;
-    const existing = item.note || "";
+    const dealName =
+      item.lineSource === "deal"
+        ? getDealMetadataNote(item.note).split(" · ")[0] || ""
+        : "";
+    const isDealComp = Boolean(
+      dealName && isDealComponentItem(item, dealName),
+    );
+    const existing = isDealComp
+      ? getDealCustomerNote(item.note)
+      : item.note || "";
     const note = window.prompt("Add special instructions for this item:", existing);
     if (note === null) return;
     const trimmed = note.trim();
     setAppendTargetOrder((prev) => {
       if (!prev) return prev;
-      const nextItems = (prev.items || []).map((it, idx) =>
-        idx === itemIndex ? { ...it, note: trimmed } : it,
-      );
+      const nextItems = (prev.items || []).map((it, idx) => {
+        if (idx !== itemIndex) return it;
+        if (!isDealComp) return { ...it, note: trimmed };
+        const meta = getDealMetadataNote(it.note) || dealName;
+        return { ...it, note: joinDealNote(meta, trimmed) };
+      });
       return { ...prev, items: nextItems };
     });
+  }
+
+  function updateExistingOrderItemQty(itemIndex, delta) {
+    if (!appendTargetOrder || !canFullyEditExistingItems(appendTargetOrder)) {
+      return;
+    }
+    setAppendTargetOrder((prev) => {
+      if (!prev) return prev;
+      const nextItems = [];
+      (prev.items || []).forEach((it, idx) => {
+        if (idx !== itemIndex) {
+          nextItems.push(it);
+          return;
+        }
+        const nextQty =
+          Math.max(0, Number(it.quantity ?? it.qty) || 1) + delta;
+        if (nextQty <= 0) return;
+        nextItems.push({
+          ...it,
+          quantity: nextQty,
+          qty: nextQty,
+        });
+      });
+      if (nextItems.length === 0) {
+        toast.error("Order must keep at least one item.");
+        return prev;
+      }
+      return { ...prev, items: nextItems };
+    });
+  }
+
+  function removeExistingOrderItem(itemIndex) {
+    if (!appendTargetOrder || !canFullyEditExistingItems(appendTargetOrder)) {
+      return;
+    }
+    setAppendTargetOrder((prev) => {
+      if (!prev) return prev;
+      const nextItems = (prev.items || []).filter((_, idx) => idx !== itemIndex);
+      if (nextItems.length === 0) {
+        toast.error("Order must keep at least one item.");
+        return prev;
+      }
+      return { ...prev, items: nextItems };
+    });
+  }
+
+  function updateExistingDealQty(dealName, delta) {
+    const name = String(dealName || "").trim();
+    if (
+      !name ||
+      !appendTargetOrder ||
+      !canFullyEditExistingItems(appendTargetOrder)
+    ) {
+      return;
+    }
+    setAppendTargetOrder((prev) => {
+      if (!prev) return prev;
+      const dealLine = formatReceiptItemsForBill(prev).find(
+        (d) => d.isDealLine && String(d.name || "").trim() === name,
+      );
+      const currentQty = Math.max(1, Number(dealLine?.qty ?? dealLine?.quantity) || 1);
+      const nextQty = currentQty + delta;
+      if (nextQty <= 0) {
+        const nextItems = (prev.items || []).filter(
+          (it) => !isDealComponentItem(it, name),
+        );
+        if (nextItems.length === 0) {
+          toast.error("Order must keep at least one item.");
+          return prev;
+        }
+        return { ...prev, items: nextItems };
+      }
+      const scale = nextQty / currentQty;
+      return {
+        ...prev,
+        items: (prev.items || []).map((it) => {
+          if (!isDealComponentItem(it, name)) return it;
+          const q = Math.max(
+            1,
+            Math.round((Number(it.quantity ?? it.qty) || 1) * scale),
+          );
+          return { ...it, quantity: q, qty: q };
+        }),
+      };
+    });
+  }
+
+  function removeExistingDeal(dealName) {
+    const name = String(dealName || "").trim();
+    if (
+      !name ||
+      !appendTargetOrder ||
+      !canFullyEditExistingItems(appendTargetOrder)
+    ) {
+      return;
+    }
+    setAppendTargetOrder((prev) => {
+      if (!prev) return prev;
+      const nextItems = (prev.items || []).filter(
+        (it) => !isDealComponentItem(it, name),
+      );
+      if (nextItems.length === 0) {
+        toast.error("Order must keep at least one item.");
+        return prev;
+      }
+      return { ...prev, items: nextItems };
+    });
+  }
+
+  function addNoteToExistingDeal(dealName) {
+    if (!appendTargetOrder) return;
+    const name = String(dealName || "").trim();
+    if (!name) return;
+    const items = appendTargetOrder.items || [];
+    const existing =
+      items
+        .filter((it) => isDealComponentItem(it, name))
+        .map((it) => getDealCustomerNote(it.note))
+        .find(Boolean) || "";
+    const note = window.prompt(
+      "Add special instructions for this deal:",
+      existing,
+    );
+    if (note === null) return;
+    const trimmed = note.trim();
+    setAppendTargetOrder((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: (prev.items || []).map((it) => {
+          if (!isDealComponentItem(it, name)) return it;
+          const meta = getDealMetadataNote(it.note) || name;
+          return { ...it, note: joinDealNote(meta, trimmed) };
+        }),
+      };
+    });
+  }
+
+  async function saveDealNote(order, dealName) {
+    const orderId = order?._id || order?.id;
+    const name = String(dealName || "").trim();
+    if (!orderId || !name || !canEditOrderNotes(order)) return;
+    const items = order.items || [];
+    const existing =
+      items
+        .filter((it) => isDealComponentItem(it, name))
+        .map((it) => getDealCustomerNote(it.note))
+        .find(Boolean) || "";
+    const note = window.prompt(
+      "Add special instructions for this deal:",
+      existing,
+    );
+    if (note === null) return;
+    const trimmed = note.trim();
+    const noteKey = `${orderId}-deal-${name}`;
+    setSavingItemNoteKey(noteKey);
+    try {
+      const payloadItems = mapOrderItemsForUpdate(items).map((it) => {
+        if (!isDealComponentItem(it, name)) return it;
+        const meta = getDealMetadataNote(it.note) || name;
+        return { ...it, note: joinDealNote(meta, trimmed) };
+      });
+      const updated = await updateOrder(orderId, { items: payloadItems });
+      setActiveOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id || o._id === order._id ? { ...o, ...updated } : o,
+        ),
+      );
+      setAppendTargetOrder((prev) => {
+        if (!prev) return prev;
+        if (prev.id !== order.id && prev._id !== order._id) return prev;
+        return { ...prev, ...updated };
+      });
+      toast.success(trimmed ? "Note saved" : "Note removed");
+    } catch (err) {
+      toast.error(err.message || "Could not save note");
+    } finally {
+      setSavingItemNoteKey(null);
+    }
   }
 
   async function saveOrderItemNote(order, itemIndex) {
@@ -685,6 +1080,13 @@ export default function OrderTakerPage() {
     const items = order.items || [];
     const item = items[itemIndex];
     if (!item) return;
+    const dealMeta = getDealMetadataNote(item.note);
+    const dealName =
+      item.lineSource === "deal" ? dealMeta.split(" · ")[0] || "" : "";
+    if (dealName && isDealComponentItem(item, dealName)) {
+      await saveDealNote(order, dealName);
+      return;
+    }
     const existing = item.note || "";
     const note = window.prompt("Add special instructions for this item:", existing);
     if (note === null) return;
@@ -720,20 +1122,67 @@ export default function OrderTakerPage() {
 
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
   const existingOrderTotal = appendTargetOrder
-    ? Math.round(
-        Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0,
-      )
+    ? (() => {
+        // Prefer live deal combo prices so review matches configured deal price
+        // (combo can be higher than the sum of component menu prices).
+        const groups = groupItemsForEditCart(appendTargetOrder);
+        let food = 0;
+        let usedDealPricing = false;
+        for (const group of groups) {
+          if (group.kind === "deal") {
+            const dealDoc = (availableDeals || []).find(
+              (d) =>
+                String(d.name || "").trim() === group.dealName ||
+                String(d._id || d.id) ===
+                  String(group.display?.dealId || ""),
+            );
+            const dealQty =
+              Number(group.display?.qty ?? group.display?.quantity) || 1;
+            if (dealDoc && dealDoc.comboPrice != null) {
+              food += Number(dealDoc.comboPrice) * dealQty;
+              usedDealPricing = true;
+              continue;
+            }
+            food += (group.indices || []).reduce((sum, idx) => {
+              const it = appendTargetOrder.items?.[idx];
+              if (!it) return sum;
+              return (
+                sum +
+                (Number(it.lineTotal) ||
+                  Number(it.unitPrice || 0) *
+                    (Number(it.quantity ?? it.qty) || 1))
+              );
+            }, 0);
+            continue;
+          }
+          const it = group.item;
+          food +=
+            Number(it?.lineTotal) ||
+            Number(it?.unitPrice || 0) *
+              (Number(it?.quantity ?? it?.qty) || 1);
+        }
+        if (usedDealPricing || groups.length > 0) {
+          return Math.round(food);
+        }
+        return Math.round(
+          Number(appendTargetOrder.grandTotal ?? appendTargetOrder.total) || 0,
+        );
+      })()
     : 0;
   const newItemsSubtotal = subtotal;
   const appendCombinedTotal = appendTargetOrder
     ? existingOrderTotal + newItemsSubtotal
     : subtotal;
   const existingItemCount = appendTargetOrder
-    ? (appendTargetOrder.items || []).reduce(
-        (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
-        0,
-      )
+    ? groupItemsForEditCart(appendTargetOrder).reduce((sum, group) => {
+        if (group.kind === "deal") {
+          return sum + (Number(group.display?.qty ?? group.display?.quantity) || 1);
+        }
+        const it = group.item;
+        return sum + (Number(it?.quantity ?? it?.qty) || 1);
+      }, 0)
     : 0;
+  const reviewItemCount = existingItemCount + cartBadge;
 
   async function handlePlaceOrder() {
     if (cart.length === 0) return;
@@ -904,12 +1353,13 @@ export default function OrderTakerPage() {
       (!isServedUnpaidOrder(order) ||
         canEditAfterServed ||
         canAddItemsAfterServed);
+    const canFullyEdit = canFullyEditExistingItems(order);
     const orderStatus = String(order.status || "").toUpperCase();
     const appendProminent =
       orderStatus === "READY" ||
       (orderStatus === "DELIVERED" && getPaymentStatus(order) === "unpaid");
     const appendSubtle =
-      orderStatus === "NEW_ORDER" || orderStatus === "PROCESSING";
+      orderStatus === "PROCESSING" && !canFullyEdit;
     const canMarkServed =
       orderStatus === "READY" &&
       order.orderType !== "DELIVERY" &&
@@ -935,7 +1385,7 @@ export default function OrderTakerPage() {
 
     const statusLabel =
       orderStatus === "NEW_ORDER"
-        ? "In Kitchen"
+        ? "New Order"
         : orderStatus === "PROCESSING"
           ? "Preparing"
           : sc.label;
@@ -1000,91 +1450,99 @@ export default function OrderTakerPage() {
             )}
           </div>
 
-          <div className="flex gap-2 mb-1">
+          <div className="flex gap-2 mb-1 items-stretch">
             {canAddItems && (
               <button
                 type="button"
                 onClick={() => startAppendItems(order)}
-                title={appendSubtle ? "Order still being prepared" : undefined}
-                className="flex-1 py-2 rounded-xl border border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500 text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                title={
+                  canFullyEdit
+                    ? "Edit order"
+                    : appendSubtle
+                      ? "Order still being prepared"
+                      : "Add items"
+                }
+                className="min-w-0 flex-[1.4] py-2 px-2 rounded-xl border border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform"
               >
-                <Plus className="w-3.5 h-3.5" />
-                Add items
+                {canFullyEdit ? (
+                  <>
+                    <Pencil className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Edit order</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Add items</span>
+                  </>
+                )}
+              </button>
+            )}
+            {canShowBill && (
+              <button
+                type="button"
+                onClick={() => setBillOrder(order)}
+                title="Receipt"
+                className="min-w-0 flex-1 py-2 px-2 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+              >
+                <Receipt className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Receipt</span>
               </button>
             )}
             <button
               type="button"
               onClick={() => toggleOrderDetails(orderKey)}
-              className={`${canAddItems ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+              title={isExpanded ? "Hide details" : "Show details"}
+              aria-label={isExpanded ? "Hide details" : "Show details"}
+              className={`w-10 shrink-0 py-2 rounded-xl text-[11px] font-bold flex items-center justify-center border transition-colors ${
                 isExpanded
                   ? "bg-orange-500/10 border-orange-500/30 text-orange-500"
                   : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
               }`}
             >
-              {isExpanded ? "Hide" : "Details"}
               <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
               />
             </button>
           </div>
 
           {isExpanded && (
             <>
-              {order.customerName && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
-                  <User className="w-3 h-3 shrink-0" />
-                  {order.customerName}
-                </div>
-              )}
               {(order.customerPhone || order.phone) && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
+                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
                   <Phone className="w-3 h-3 shrink-0" />
                   {order.customerPhone || order.phone}
                 </div>
               )}
-              {order.tableName && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
-                  <Utensils className="w-3 h-3 shrink-0" />
-                  {order.tableName}
-                </div>
-              )}
 
-              <div className="space-y-1.5 mb-2">
-                {order.items?.map((item, idx) => {
-                  const noteKey = `${orderKey}-${idx}`;
-                  const isSavingNote = savingItemNoteKey === noteKey;
+              <div className="mb-2 space-y-1.5 rounded-lg bg-gray-50 px-2.5 py-2 dark:bg-neutral-900/80">
+                {formatReceiptItemsForBill(order).map((item, idx) => {
+                  const originalIdx = findOriginalItemIndexForNote(order, item);
+                  const dealNoteKey = item.isDealLine
+                    ? `${orderKey}-deal-${item.name}`
+                    : null;
+                  const noteKey = item.isDealLine
+                    ? dealNoteKey
+                    : originalIdx >= 0
+                      ? `${orderKey}-${originalIdx}`
+                      : null;
+                  const isSavingNote =
+                    noteKey != null && savingItemNoteKey === noteKey;
                   return (
-                    <div key={idx} className="text-[11px]">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
-                          <span className="font-bold text-gray-900 dark:text-white">
-                            {item.quantity || item.qty}x
-                          </span>{" "}
-                          {item.name}
-                        </span>
-                        {canEditOrderNotes(order) && (
-                          <button
-                            type="button"
-                            onClick={() => saveOrderItemNote(order, idx)}
-                            disabled={isSavingNote}
-                            className="flex-shrink-0 text-[10px] font-semibold text-orange-500 hover:underline disabled:opacity-50"
-                          >
-                            {isSavingNote ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : item.note ? (
-                              "Edit note"
-                            ) : (
-                              "Add note"
-                            )}
-                          </button>
-                        )}
-                      </div>
-                      {item.note ? (
-                        <p className="mt-0.5 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-400">
-                          📝 {item.note}
-                        </p>
-                      ) : null}
-                    </div>
+                    <WaiterOrderItemRow
+                      key={idx}
+                      item={item}
+                      canEditNote={
+                        canEditOrderNotes(order) &&
+                        (item.isDealLine || originalIdx >= 0)
+                      }
+                      isSavingNote={isSavingNote}
+                      onEditNote={() =>
+                        item.isDealLine
+                          ? saveDealNote(order, item.name)
+                          : originalIdx >= 0 &&
+                            saveOrderItemNote(order, originalIdx)
+                      }
+                    />
                   );
                 })}
               </div>
@@ -1104,17 +1562,6 @@ export default function OrderTakerPage() {
                 <PackageCheck className="w-4 h-4" />
               )}
               Mark as Served
-            </button>
-          )}
-
-          {canShowBill && (
-            <button
-              type="button"
-              onClick={() => setBillOrder(order)}
-              className={`${canMarkServed ? "mt-2" : ""} w-full py-2.5 rounded-xl border border-stone-200 bg-white text-stone-800 font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white`}
-            >
-              <Receipt className="w-4 h-4" />
-              Show bill to customer
             </button>
           )}
         </div>
@@ -1163,7 +1610,8 @@ export default function OrderTakerPage() {
     setOtTableName(String(order.tableName || "").trim());
     setSearchQuery("");
     setSelectedCategory("all");
-    setStep(STEPS.MENU);
+    // Full edit (new orders): open cart with existing items; otherwise go to menu to add.
+    setStep(canFullyEditExistingItems(order) ? STEPS.CART : STEPS.MENU);
     setActiveTab(TABS.NEW_ORDER);
   }
 
@@ -1188,6 +1636,22 @@ export default function OrderTakerPage() {
     setOtCustomerName("");
     setOtCustomerPhone("");
     setOtTableName("");
+    setSearchQuery("");
+    setSelectedCategory("all");
+    setStep(STEPS.TABLE);
+    setActiveTab(TABS.HOME);
+  }
+
+  /** Abandon a new-order draft (not an existing-order edit). */
+  function cancelNewOrderDraft() {
+    setCart([]);
+    setSelectedTable(null);
+    setSearchQuery("");
+    setSelectedCategory("all");
+    setOtCustomerName("");
+    setOtCustomerPhone("");
+    setOtTableName("");
+    setStep(STEPS.TABLE);
   }
 
   async function handleAppendOrUpdateOrder() {
@@ -1250,8 +1714,6 @@ export default function OrderTakerPage() {
         ),
       );
       cancelAppendFlow();
-      setStep(STEPS.MENU);
-      setActiveTab(TABS.HOME);
       fetchActiveOrders();
       toast.success(
         hadNewItems
@@ -1304,11 +1766,11 @@ export default function OrderTakerPage() {
         };
       case "NEW_ORDER":
         return {
-          label: "In Kitchen",
-          bg: "bg-blue-500",
-          bgLight: "bg-blue-50 dark:bg-blue-500/10",
-          text: "text-blue-600 dark:text-blue-400",
-          border: "border-blue-200 dark:border-blue-500/20",
+          label: "New Order",
+          bg: "bg-orange-500",
+          bgLight: "bg-orange-50 dark:bg-orange-500/10",
+          text: "text-orange-600 dark:text-orange-400",
+          border: "border-orange-200 dark:border-orange-500/20",
           icon: Send,
           pulse: false,
         };
@@ -1449,12 +1911,17 @@ export default function OrderTakerPage() {
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
               {activeTab === TABS.NEW_ORDER && step !== STEPS.TABLE ? (
                 <button
-                  onClick={() =>
-                    step === STEPS.CART
-                      ? setStep(STEPS.MENU)
-                      : setStep(STEPS.TABLE)
-                  }
+                  type="button"
+                  onClick={() => {
+                    if (appendTargetOrder) {
+                      cancelAppendFlow();
+                      return;
+                    }
+                    if (step === STEPS.CART) setStep(STEPS.MENU);
+                    else setStep(STEPS.TABLE);
+                  }}
                   className="w-9 h-9 -ml-1 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 active:scale-90 transition-all shrink-0"
+                  aria-label={appendTargetOrder ? "Cancel edit" : "Go back"}
                 >
                   <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-neutral-300" />
                 </button>
@@ -1495,7 +1962,13 @@ export default function OrderTakerPage() {
                         ? userName || "Order Taker"
                         : step === STEPS.MENU
                           ? `${filteredItems.length} item${filteredItems.length !== 1 ? "s" : ""} available`
-                          : `${selectedTable?.name || "Walk-in"} · ${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
+                          : `${
+                              appendTargetOrder
+                                ? otTableName ||
+                                  appendTargetOrder.tableName ||
+                                  "Walk-in"
+                                : selectedTable?.name || "Walk-in"
+                            } · ${reviewItemCount} item${reviewItemCount !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </div>
@@ -1519,13 +1992,17 @@ export default function OrderTakerPage() {
                     <ShoppingCart className="w-4 h-4" />
                   </div>
                 )}
-              {activeTab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
+              {activeTab === TABS.NEW_ORDER &&
+                appendTargetOrder &&
+                step === STEPS.MENU && (
                 <button
-                  onClick={() => setCart([])}
-                  className="h-9 px-3 rounded-full flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs font-semibold"
+                  type="button"
+                  onClick={() => cancelAppendFlow()}
+                  className="h-9 px-3 rounded-full flex items-center gap-1.5 text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 transition-colors text-xs font-semibold"
+                  title="Cancel editing this order"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Clear
+                  <X className="w-3.5 h-3.5" />
+                  Cancel edit
                 </button>
               )}
 
@@ -2017,7 +2494,7 @@ export default function OrderTakerPage() {
                                   onClick={() => setBillOrder(order)}
                                   className="shrink-0 text-[11px] font-semibold text-orange-500 hover:underline active:opacity-70 dark:text-orange-400"
                                 >
-                                  Show bill
+                                  Receipt
                                 </button>
                               )}
                             </div>
@@ -2164,9 +2641,9 @@ export default function OrderTakerPage() {
                         <button
                           type="button"
                           onClick={() => cancelAppendFlow()}
-                          className="text-[10px] font-bold text-orange-600/80 dark:text-orange-400/80 hover:text-orange-600 dark:hover:text-orange-400"
+                          className="flex-shrink-0 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold text-gray-700 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-gray-50 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-800"
                         >
-                          Cancel
+                          Cancel edit
                         </button>
                       </div>
                     </div>
@@ -2389,7 +2866,7 @@ export default function OrderTakerPage() {
               {step === STEPS.CART && (
                 <div className="p-4 pb-44">
                   {appendTargetOrder && (
-                    <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 dark:bg-orange-500/10 px-3 py-2.5 mb-4">
+                    <div className="mb-3 rounded-xl border border-orange-500/20 bg-orange-500/5 px-3 py-2 dark:bg-orange-500/10">
                       <p className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
                         Update order #
                         {appendTargetOrder.tokenNumber ||
@@ -2397,27 +2874,63 @@ export default function OrderTakerPage() {
                             .toString()
                             .slice(-4)}
                       </p>
-                      <p className="text-[10px] text-orange-600/80 dark:text-orange-400/80 mt-0.5">
+                      <p className="mt-0.5 text-[10px] text-orange-600/80 dark:text-orange-400/80">
                         {appendEditDetailsOnly
                           ? "Update guest or table below, then save."
-                          : "Add items from the menu or edit notes on existing items, then save."}
+                          : canFullyEditExistingItems(appendTargetOrder)
+                            ? "Change quantities, remove items, add more from the menu, then save."
+                            : "Add items from the menu or edit notes on existing items, then save."}
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => cancelAppendFlow()}
-                        className="mt-2 text-[10px] font-bold text-orange-600/80 dark:text-orange-400/80 hover:text-orange-600 dark:hover:text-orange-400"
-                      >
-                        Cancel
-                      </button>
                     </div>
                   )}
 
-                  {!appendTargetOrder && selectedTable && (
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 mb-4">
-                      <Utensils className="w-3 h-3 text-orange-500" />
-                      <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
-                        {selectedTable.name || selectedTable.label}
-                      </span>
+                  {(appendTargetOrder ||
+                    selectedTable ||
+                    cart.length > 0) && (
+                    <div className="mb-4 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-neutral-200">
+                        {appendTargetOrder
+                          ? otTableName ||
+                            appendTargetOrder.tableName ||
+                            "Walk-in"
+                          : selectedTable?.name ||
+                            selectedTable?.label ||
+                            "Walk-in"}
+                      </p>
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        {cart.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setCart([])}
+                            className="flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                            title="Clear cart items"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Clear
+                          </button>
+                        ) : null}
+                        {appendTargetOrder ? (
+                          <button
+                            type="button"
+                            onClick={() => cancelAppendFlow()}
+                            className="flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-orange-600 transition-colors hover:bg-orange-500/10 dark:text-orange-400"
+                            title="Cancel editing this order"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Cancel edit
+                          </button>
+                        ) : cart.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => cancelNewOrderDraft()}
+                            className="flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-orange-600 transition-colors hover:bg-orange-500/10 dark:text-orange-400"
+                            title="Cancel this order and go back"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Cancel
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   )}
 
@@ -2443,6 +2956,11 @@ export default function OrderTakerPage() {
                     <>
                       {appendTargetOrder && (
                         <div className="mb-3">
+                          {(() => {
+                            const canEditExisting =
+                              canFullyEditExistingItems(appendTargetOrder);
+                            return (
+                              <>
                           <button
                             type="button"
                             onClick={() =>
@@ -2451,10 +2969,16 @@ export default function OrderTakerPage() {
                             className="w-full flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-100 px-3 py-2.5 text-left dark:border-neutral-800 dark:bg-neutral-900 active:scale-[0.99] transition-transform"
                           >
                             <div className="flex min-w-0 items-center gap-2">
-                              <Lock className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                              {canEditExisting ? (
+                                <Pencil className="h-3.5 w-3.5 flex-shrink-0 text-orange-500" />
+                              ) : (
+                                <Lock className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                              )}
                               <div className="min-w-0">
                                 <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
-                                  Already in order
+                                  {canEditExisting
+                                    ? "Items in order"
+                                    : "Already in order"}
                                 </p>
                                 {!existingItemsOpen && (
                                   <p className="text-[11px] text-gray-500 dark:text-neutral-500 truncate">
@@ -2484,51 +3008,325 @@ export default function OrderTakerPage() {
 
                           {existingItemsOpen && (
                             <div className="mt-1.5 space-y-1.5">
-                              {(appendTargetOrder.items || []).map(
-                                (item, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="rounded-xl border border-gray-200 bg-gray-100 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900"
-                                  >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex min-w-0 items-center gap-2">
-                                        <Lock className="h-3 w-3 flex-shrink-0 text-gray-400" />
-                                        <span className="truncate text-sm text-gray-600 dark:text-neutral-400">
-                                          {item.name}
-                                          {(item.variantLabel || item.size) && (
-                                            <span className="ml-1 text-xs text-gray-400">
-                                              ({item.variantLabel || item.size})
-                                            </span>
+                              {groupItemsForEditCart(appendTargetOrder).map(
+                                (group, gIdx) => {
+                                  if (group.kind === "deal") {
+                                    const dealQty =
+                                      Number(
+                                        group.display?.qty ??
+                                          group.display?.quantity,
+                                      ) || 1;
+                                    const children = getDealDisplayItems(
+                                      group.display,
+                                    );
+                                    const dealNote =
+                                      group.display?.note ||
+                                      (appendTargetOrder.items || [])
+                                        .filter((it) =>
+                                          isDealComponentItem(
+                                            it,
+                                            group.dealName,
+                                          ),
+                                        )
+                                        .map((it) =>
+                                          getDealCustomerNote(it.note),
+                                        )
+                                        .find(Boolean) ||
+                                      "";
+                                    const dealDoc = (availableDeals || []).find(
+                                      (d) =>
+                                        String(d.name || "").trim() ===
+                                          group.dealName ||
+                                        String(d._id || d.id) ===
+                                          String(group.display?.dealId || ""),
+                                    );
+                                    const dealImage = dealDoc?.imageUrl || "";
+                                    const unitPrice = Math.round(
+                                      Number(
+                                        dealDoc?.comboPrice ??
+                                          group.display?.unitPrice ??
+                                          group.display?.price ??
+                                          0,
+                                      ) || 0,
+                                    );
+                                    const lineTotal = unitPrice * dealQty;
+                                    return (
+                                      <div
+                                        key={`deal-${group.dealName}-${gIdx}`}
+                                        className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900"
+                                      >
+                                        <div className="flex gap-3">
+                                          {dealImage ? (
+                                            <img
+                                              src={dealImage}
+                                              alt={group.dealName}
+                                              className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
+                                            />
+                                          ) : (
+                                            <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+                                              <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
+                                            </div>
                                           )}
-                                        </span>
-                                      </div>
-                                      <span className="flex-shrink-0 text-sm font-medium tabular-nums text-gray-500 dark:text-neutral-500">
-                                        ×{item.qty ?? item.quantity ?? 1}
-                                      </span>
-                                    </div>
-                                    {!appendEditDetailsOnly &&
-                                      canEditOrderNotes(appendTargetOrder) && (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              addNoteToExistingOrderItem(idx)
-                                            }
-                                            className="mt-1.5 text-xs font-medium text-orange-500 hover:underline"
-                                          >
-                                            {item.note ? "Edit note" : "Add note"}
-                                          </button>
-                                          {item.note ? (
-                                            <div className="mt-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 dark:border-blue-500/20 dark:bg-blue-500/10">
-                                              <p className="text-xs text-blue-700 dark:text-blue-400">
-                                                📝 {item.note}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="min-w-0">
+                                                <p className="truncate text-[15px] font-bold leading-tight text-gray-900 dark:text-white">
+                                                  {group.dealName}
+                                                  <span className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-orange-500">
+                                                    Deal
+                                                  </span>
+                                                  {!canEditExisting ? (
+                                                    <Lock className="ml-1.5 inline h-3.5 w-3.5 align-middle text-gray-400" />
+                                                  ) : null}
+                                                </p>
+                                                {children.length > 0 ? (
+                                                  <div className="mt-0.5 space-y-0.5">
+                                                    {children.map((choice, ci) => (
+                                                      <p
+                                                        key={`${choice.name}-${ci}`}
+                                                        className="truncate text-[12px] leading-snug text-gray-500 dark:text-neutral-400"
+                                                      >
+                                                        + {choice.name}
+                                                        {choice.qty > 1
+                                                          ? ` ×${choice.qty}`
+                                                          : ""}
+                                                      </p>
+                                                    ))}
+                                                  </div>
+                                                ) : null}
+                                              </div>
+                                            </div>
+
+                                            <div className="mt-2.5 flex items-center gap-2">
+                                              <p className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
+                                                Rs. {unitPrice.toLocaleString()}
+                                              </p>
+                                              {canEditExisting ? (
+                                                <div className="mx-auto flex h-8 flex-shrink-0 items-stretch overflow-hidden rounded-full border border-gray-200 dark:border-neutral-700">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      updateExistingDealQty(
+                                                        group.dealName,
+                                                        -1,
+                                                      )
+                                                    }
+                                                    className="flex w-8 items-center justify-center text-gray-700 transition-colors hover:bg-gray-50 active:scale-95 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                                    aria-label={
+                                                      dealQty <= 1
+                                                        ? "Remove deal"
+                                                        : "Decrease quantity"
+                                                    }
+                                                  >
+                                                    {dealQty <= 1 ? (
+                                                      <Trash2 className="h-3.5 w-3.5" />
+                                                    ) : (
+                                                      <Minus className="h-3.5 w-3.5" />
+                                                    )}
+                                                  </button>
+                                                  <span className="flex min-w-[1.75rem] items-center justify-center border-x border-gray-200 px-1 text-sm font-bold tabular-nums text-gray-900 dark:border-neutral-700 dark:text-white">
+                                                    {dealQty}
+                                                  </span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      updateExistingDealQty(
+                                                        group.dealName,
+                                                        1,
+                                                      )
+                                                    }
+                                                    className="flex w-8 items-center justify-center text-gray-700 transition-colors hover:bg-gray-50 active:scale-95 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                                    aria-label="Increase quantity"
+                                                  >
+                                                    <Plus className="h-3.5 w-3.5" />
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <span className="mx-auto text-sm font-bold tabular-nums text-gray-500">
+                                                  ×{dealQty}
+                                                </span>
+                                              )}
+                                              <p className="min-w-0 flex-shrink-0 text-right text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
+                                                Rs. {lineTotal.toLocaleString()}
                                               </p>
                                             </div>
+
+                                            {!appendEditDetailsOnly &&
+                                            canEditOrderNotes(
+                                              appendTargetOrder,
+                                            ) ? (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  addNoteToExistingDeal(
+                                                    group.dealName,
+                                                  )
+                                                }
+                                                className="mt-2 text-left text-[12px] font-medium text-orange-500 hover:underline"
+                                              >
+                                                {dealNote
+                                                  ? "Edit Special Instructions"
+                                                  : "Add Special Instructions"}
+                                              </button>
+                                            ) : null}
+                                            {dealNote ? (
+                                              <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+                                                {dealNote}
+                                              </p>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  const item = group.item;
+                                  const idx = group.indices[0];
+                                  const customerNote = String(
+                                    item.note || "",
+                                  ).trim();
+                                  const lineQty =
+                                    Number(item.quantity ?? item.qty) || 1;
+                                  const menuMatch = (menu.items || []).find(
+                                    (m) =>
+                                      String(m.id || m._id) ===
+                                      String(
+                                        item.menuItemId ||
+                                          item.menuItem?._id ||
+                                          item.menuItem ||
+                                          "",
+                                      ),
+                                  );
+                                  const itemImage =
+                                    item.imageUrl || menuMatch?.imageUrl || "";
+                                  const unitPrice = Math.round(
+                                    Number(
+                                      item.unitPrice ??
+                                        item.price ??
+                                        (Number(item.lineTotal) || 0) /
+                                          lineQty,
+                                    ) || 0,
+                                  );
+                                  const lineTotal =
+                                    Number(item.lineTotal) ||
+                                    unitPrice * lineQty;
+                                  const variant =
+                                    item.variantLabel || item.size || "";
+                                  return (
+                                    <div
+                                      key={`item-${idx}`}
+                                      className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900"
+                                    >
+                                      <div className="flex gap-3">
+                                        {itemImage ? (
+                                          <img
+                                            src={itemImage}
+                                            alt={item.name}
+                                            className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
+                                          />
+                                        ) : (
+                                          <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+                                            <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
+                                          </div>
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                          <div className="min-w-0">
+                                              <p className="truncate text-[15px] font-bold leading-tight text-gray-900 dark:text-white">
+                                                {item.name}
+                                                {!canEditExisting ? (
+                                                  <Lock className="ml-1.5 inline h-3.5 w-3.5 align-middle text-gray-400" />
+                                                ) : null}
+                                              </p>
+                                              {variant ? (
+                                                <p className="mt-0.5 truncate text-[12px] leading-snug text-gray-500 dark:text-neutral-400">
+                                                  + {variant}
+                                                </p>
+                                              ) : null}
+                                          </div>
+
+                                          <div className="mt-2.5 flex items-center gap-2">
+                                            <p className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
+                                              Rs. {unitPrice.toLocaleString()}
+                                            </p>
+                                            {canEditExisting ? (
+                                              <div className="mx-auto flex h-8 flex-shrink-0 items-stretch overflow-hidden rounded-full border border-gray-200 dark:border-neutral-700">
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    updateExistingOrderItemQty(
+                                                      idx,
+                                                      -1,
+                                                    )
+                                                  }
+                                                  className="flex w-8 items-center justify-center text-gray-700 transition-colors hover:bg-gray-50 active:scale-95 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                                  aria-label={
+                                                    lineQty <= 1
+                                                      ? "Remove item"
+                                                      : "Decrease quantity"
+                                                  }
+                                                >
+                                                  {lineQty <= 1 ? (
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                  ) : (
+                                                    <Minus className="h-3.5 w-3.5" />
+                                                  )}
+                                                </button>
+                                                <span className="flex min-w-[1.75rem] items-center justify-center border-x border-gray-200 px-1 text-sm font-bold tabular-nums text-gray-900 dark:border-neutral-700 dark:text-white">
+                                                  {lineQty}
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    updateExistingOrderItemQty(
+                                                      idx,
+                                                      1,
+                                                    )
+                                                  }
+                                                  className="flex w-8 items-center justify-center text-gray-700 transition-colors hover:bg-gray-50 active:scale-95 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                                  aria-label="Increase quantity"
+                                                >
+                                                  <Plus className="h-3.5 w-3.5" />
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <span className="mx-auto text-sm font-bold tabular-nums text-gray-500">
+                                                ×{lineQty}
+                                              </span>
+                                            )}
+                                            <p className="min-w-0 flex-shrink-0 text-right text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
+                                              Rs.{" "}
+                                              {Math.round(
+                                                lineTotal,
+                                              ).toLocaleString()}
+                                            </p>
+                                          </div>
+
+                                          {!appendEditDetailsOnly &&
+                                          canEditOrderNotes(
+                                            appendTargetOrder,
+                                          ) ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                addNoteToExistingOrderItem(idx)
+                                              }
+                                              className="mt-2 text-left text-[12px] font-medium text-orange-500 hover:underline"
+                                            >
+                                              {customerNote
+                                                ? "Edit Special Instructions"
+                                                : "Add Special Instructions"}
+                                            </button>
                                           ) : null}
-                                        </>
-                                      )}
-                                  </div>
-                                ),
+                                          {customerNote ? (
+                                            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+                                              {customerNote}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                },
                               )}
                             </div>
                           )}
@@ -2541,124 +3339,162 @@ export default function OrderTakerPage() {
                               </p>
                             </>
                           )}
+                              </>
+                            );
+                          })()}
                         </div>
                       )}
 
                       {cart.length > 0 ? (
-                        <div className="space-y-2.5 mb-4">
-                          {cart.map((item) => (
-                            <div
-                              key={item._cartKey || item.id}
-                              className="bg-white dark:bg-neutral-900 rounded-2xl p-3 border border-gray-200 dark:border-neutral-800"
-                            >
-                              <div className="flex items-center gap-3">
-                                {item.imageUrl ? (
-                                  <img
-                                    src={item.imageUrl}
-                                    alt={item.name}
-                                    className="w-14 h-14 rounded-xl object-cover flex-shrink-0"
-                                  />
-                                ) : (
-                                  <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
-                                    <Utensils className="w-5 h-5 text-gray-300 dark:text-neutral-700" />
-                                  </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold truncate leading-tight">
-                                    {item.name}
-                                    {item.size && (
-                                      <span className="text-xs font-normal text-gray-500 ml-1">
-                                        ({item.size})
-                                      </span>
-                                    )}
-                                  </p>
-                                  {item.isDeal && item._dealSelections ? (
-                                    <div className="mt-0.5 space-y-0.5">
-                                      {Object.values(item._dealSelections)
-                                        .flat()
-                                        .map((pick, pickIndex) => (
-                                          <p
-                                            key={`${pick.menuItemId}-${pickIndex}`}
-                                            className="text-[11px] text-gray-400 dark:text-neutral-500 leading-tight"
-                                          >
-                                            · {pick.name}
-                                            {(pick.qty || 1) > 1
-                                              ? ` ×${pick.qty}`
-                                              : ""}
-                                          </p>
-                                        ))}
+                        <div className="mb-4 space-y-3">
+                          {cart.map((item) => {
+                            const cartKey = item._cartKey || item.id;
+                            const unitPrice = Number(item.price) || 0;
+                            const lineTotal = unitPrice * item.quantity;
+                            const canChangeQty =
+                              !appendTargetOrder || appendCanModifyItems;
+                            const optionLines = [];
+                            if (item.size && !item.isDeal) {
+                              optionLines.push(`+ ${item.size}`);
+                            }
+                            if (item.isDeal && item._dealSelections) {
+                              Object.values(item._dealSelections)
+                                .flat()
+                                .forEach((pick) => {
+                                  optionLines.push(
+                                    `+ ${pick.name}${
+                                      (pick.qty || 1) > 1 ? ` ×${pick.qty}` : ""
+                                    }`,
+                                  );
+                                });
+                            }
+                            (item._modifierSelectionsForOrder || [])
+                              .filter((s) => {
+                                const g = item.modifierGroups?.find(
+                                  (grp) => grp.id === s.groupId,
+                                );
+                                return g && !g.required;
+                              })
+                              .flatMap((s) => s.options || [])
+                              .forEach((o) => {
+                                optionLines.push(
+                                  `+ ${o.name}${
+                                    o.price > 0
+                                      ? ` (Rs ${Number(o.price).toLocaleString()})`
+                                      : ""
+                                  }`,
+                                );
+                              });
+
+                            return (
+                              <div
+                                key={cartKey}
+                                className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900"
+                              >
+                                <div className="flex gap-3">
+                                  {item.imageUrl ? (
+                                    <img
+                                      src={item.imageUrl}
+                                      alt={item.name}
+                                      className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+                                      <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
                                     </div>
-                                  ) : null}
-                                  {item._modifierSelectionsForOrder
-                                    ?.filter((s) => {
-                                      const g = item.modifierGroups?.find(
-                                        (g) => g.id === s.groupId,
-                                      );
-                                      return g && !g.required;
-                                    })
-                                    .flatMap((s) => s.options)
-                                    .map((o, i) => (
-                                      <p
-                                        key={i}
-                                        className="text-[11px] text-gray-400 dark:text-neutral-500 leading-tight"
-                                      >
-                                        + {o.name}
-                                        {o.price > 0 && ` (Rs ${o.price})`}
-                                      </p>
-                                    ))}
-                                  <p className="text-xs font-bold text-orange-500 mt-0.5">
-                                    Rs.{" "}
-                                    {(item.price * item.quantity).toLocaleString()}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="mt-2 flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-0 bg-gray-100 dark:bg-neutral-900 rounded-xl">
-                                  {(!appendTargetOrder || appendCanModifyItems) && (
-                                    <>
-                                      <button
-                                        onClick={() =>
-                                          updateQty(item._cartKey || item.id, -1)
-                                        }
-                                        className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
-                                      >
-                                        {item.quantity === 1 ? (
-                                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                        ) : (
-                                          <Minus className="w-3.5 h-3.5 text-gray-500" />
-                                        )}
-                                      </button>
-                                      <span className="w-7 text-center text-sm font-black">
-                                        {item.quantity}
-                                      </span>
-                                      <button
-                                        onClick={() =>
-                                          updateQty(item._cartKey || item.id, 1)
-                                        }
-                                        className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
-                                      >
-                                        <Plus className="w-3.5 h-3.5 text-orange-500" />
-                                      </button>
-                                    </>
                                   )}
+
+                                  <div className="min-w-0 flex-1">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-[15px] font-bold leading-tight text-gray-900 dark:text-white">
+                                          {item.name}
+                                          {item.isDeal ? (
+                                            <span className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-orange-500">
+                                              Deal
+                                            </span>
+                                          ) : null}
+                                        </p>
+                                        {optionLines.length > 0 ? (
+                                          <div className="mt-0.5 space-y-0.5">
+                                            {optionLines.map((line, i) => (
+                                              <p
+                                                key={`${cartKey}-opt-${i}`}
+                                                className="truncate text-[12px] leading-snug text-gray-500 dark:text-neutral-400"
+                                              >
+                                                {line}
+                                              </p>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                    </div>
+
+                                    <div className="mt-2.5 flex items-center gap-2">
+                                      <p className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
+                                        Rs. {unitPrice.toLocaleString()}
+                                      </p>
+                                      {canChangeQty ? (
+                                        <div className="mx-auto flex h-8 flex-shrink-0 items-stretch overflow-hidden rounded-full border border-gray-200 dark:border-neutral-700">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              updateQty(cartKey, -1)
+                                            }
+                                            className="flex w-8 items-center justify-center text-gray-700 transition-colors hover:bg-gray-50 active:scale-95 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                            aria-label={
+                                              item.quantity <= 1
+                                                ? "Remove item"
+                                                : "Decrease quantity"
+                                            }
+                                          >
+                                            {item.quantity <= 1 ? (
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            ) : (
+                                              <Minus className="h-3.5 w-3.5" />
+                                            )}
+                                          </button>
+                                          <span className="flex min-w-[1.75rem] items-center justify-center border-x border-gray-200 px-1 text-sm font-bold tabular-nums text-gray-900 dark:border-neutral-700 dark:text-white">
+                                            {item.quantity}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              updateQty(cartKey, 1)
+                                            }
+                                            className="flex w-8 items-center justify-center text-gray-700 transition-colors hover:bg-gray-50 active:scale-95 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                            aria-label="Increase quantity"
+                                          >
+                                            <Plus className="h-3.5 w-3.5" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <span className="mx-auto text-sm font-bold tabular-nums text-gray-500">
+                                          ×{item.quantity}
+                                        </span>
+                                      )}
+                                      <p className="min-w-0 flex-shrink-0 text-right text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
+                                        Rs. {lineTotal.toLocaleString()}
+                                      </p>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => addNoteToItem(cartKey)}
+                                      className="mt-2 text-left text-[12px] font-medium text-orange-500 hover:underline"
+                                    >
+                                      {item.note
+                                        ? "Edit Special Instructions"
+                                        : "Add Special Instructions"}
+                                    </button>
+                                    {item.note ? (
+                                      <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+                                        {item.note}
+                                      </p>
+                                    ) : null}
+                                  </div>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => addNoteToItem(item._cartKey || item.id)}
-                                  className="text-xs font-medium text-orange-500 hover:underline"
-                                >
-                                  {item.note ? "Edit note" : "Add note"}
-                                </button>
                               </div>
-                              {item.note ? (
-                                <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 dark:border-blue-500/20 dark:bg-blue-500/10">
-                                  <p className="text-xs text-blue-700 dark:text-blue-400">
-                                    📝 {item.note}
-                                  </p>
-                                </div>
-                              ) : null}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : (
                         appendTargetOrder &&
@@ -2733,15 +3569,15 @@ export default function OrderTakerPage() {
           step === STEPS.CART &&
           (cart.length > 0 || !!appendTargetOrder) && (
             <div className="fixed bottom-16 inset-x-0 z-20">
-              <div className="bg-white dark:bg-neutral-900 border-t border-gray-200 dark:border-neutral-800 px-4 pt-3 pb-3">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
+              <div className="border-t border-gray-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+                <div className="mb-1.5 flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
                       {appendTargetOrder && cart.length > 0
                         ? "Total (after adding)"
                         : "Total"}
                     </p>
-                    <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
+                    <p className="text-base font-black leading-tight tracking-tight text-gray-900 dark:text-white">
                       Rs.{" "}
                       {appendTargetOrder
                         ? (cart.length > 0
@@ -2751,31 +3587,31 @@ export default function OrderTakerPage() {
                         : subtotal.toLocaleString()}
                     </p>
                     {appendTargetOrder && cart.length > 0 && (
-                      <p className="text-[10px] leading-tight text-gray-500 dark:text-neutral-400">
+                      <p className="text-[9px] leading-tight text-gray-500 dark:text-neutral-400">
                         Existing Rs. {existingOrderTotal.toLocaleString()}
                         {" + New Rs. "}
                         {newItemsSubtotal.toLocaleString()}
                       </p>
                     )}
                   </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
                       Items
                     </p>
-                    <p className="text-xl font-black text-gray-900 dark:text-white tracking-tight">
+                    <p className="text-base font-black leading-tight tracking-tight text-gray-900 dark:text-white">
                       {appendTargetOrder
                         ? existingItemCount + cartBadge
                         : cartBadge}
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2.5">
+                <div className="flex gap-2">
                   {(!appendTargetOrder || appendCanModifyItems) && (
                     <button
                       onClick={() => setStep(STEPS.MENU)}
-                      className="flex-1 py-3.5 rounded-2xl bg-gray-100 dark:bg-neutral-900 font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5 text-gray-700 dark:text-neutral-300"
+                      className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gray-100 py-2.5 text-sm font-bold text-gray-700 transition-transform active:scale-[0.98] dark:bg-neutral-800 dark:text-neutral-300"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="h-4 w-4" />
                       {appendTargetOrder ? "Menu" : "Add"}
                     </button>
                   )}
@@ -2786,26 +3622,28 @@ export default function OrderTakerPage() {
                         : handlePlaceOrder
                     }
                     disabled={placing || !!appendingOrderId}
-                    className="flex-[2.5] min-h-[48px] py-3.5 rounded-2xl bg-emerald-600 text-white font-bold text-sm active:scale-[0.98] transition-transform flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="flex min-h-[40px] flex-[2.5] items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
                   >
                     {placing || appendingOrderId ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin" />
                         {appendTargetOrder ? "Updating..." : "Sending..."}
                       </>
                     ) : appendTargetOrder ? (
                       <>
                         {appendEditDetailsOnly && cart.length === 0
                           ? "Save details"
-                          : cart.length === 0
-                            ? "Save notes"
-                            : "Update order"}
-                        <Check className="w-4 h-4" />
+                          : canFullyEditExistingItems(appendTargetOrder)
+                            ? "Update order"
+                            : cart.length === 0
+                              ? "Save notes"
+                              : "Update order"}
+                        <Check className="h-4 w-4" />
                       </>
                     ) : (
                       <>
                         Send to Kitchen
-                        <Send className="w-4 h-4" />
+                        <Send className="h-4 w-4" />
                       </>
                     )}
                   </button>

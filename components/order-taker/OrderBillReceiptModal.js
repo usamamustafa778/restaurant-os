@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { X, User, Phone, MapPin, ChevronDown } from "lucide-react";
 import { formatPrice } from "../../lib/api";
-import { formatReceiptItemsForBill } from "../../lib/orderDisplay";
+import { formatReceiptItemsForBill, getDealDisplayItems } from "../../lib/orderDisplay";
 import { formatPaymentMethod, getOrderTotals } from "../../lib/order-totals";
 
 function formatReceiptDate(iso) {
@@ -44,7 +44,7 @@ function statusLabel(status, orderType) {
 function DealItemRow({ item, primaryColor = "#F97316" }) {
   const [open, setOpen] = useState(false);
   const qty = item.quantity ?? item.qty ?? 1;
-  const choices = item.dealChoices || [];
+  const children = getDealDisplayItems(item);
 
   return (
     <tr className="border-b border-stone-100">
@@ -64,9 +64,9 @@ function DealItemRow({ item, primaryColor = "#F97316" }) {
                 Deal
               </span>
             </div>
-            {!open && choices.length > 0 ? (
+            {!open && children.length > 0 ? (
               <p className="mt-1 text-xs text-stone-500">
-                {choices
+                {children
                   .map((choice) =>
                     choice.qty > 1 ? `${choice.name} ×${choice.qty}` : choice.name,
                   )
@@ -83,13 +83,29 @@ function DealItemRow({ item, primaryColor = "#F97316" }) {
             className="mt-2 space-y-1 border-l-2 pl-3"
             style={{ borderColor: `${primaryColor}55` }}
           >
-            {choices.map((choice, index) => (
-              <p key={`${choice.name}-${index}`} className="text-xs text-stone-600">
-                · {choice.name}
-                {choice.qty > 1 ? ` ×${choice.qty}` : ""}
+            {children.map((choice, index) => (
+              <p
+                key={`${choice.name}-${index}`}
+                className="flex flex-wrap items-center gap-1.5 text-xs text-stone-600"
+              >
+                <span>
+                  · {choice.name}
+                  {choice.qty > 1 ? ` ×${choice.qty}` : ""}
+                </span>
+                {choice.isChoice ? (
+                  <span
+                    className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Choice
+                  </span>
+                ) : null}
               </p>
             ))}
           </div>
+        ) : null}
+        {item.note ? (
+          <p className="mt-2 text-xs italic text-stone-500">📝 {item.note}</p>
         ) : null}
       </td>
       <td className="py-2.5 text-center align-top tabular-nums text-stone-600">
@@ -219,10 +235,19 @@ export default function OrderBillReceiptModal({
   if (!order) return null;
 
   const isDeliveryOrder = String(order?.orderType || "").toUpperCase() === "DELIVERY";
-  const orderNumber =
-    order?.orderNumber ||
-    order?.tokenNumber ||
-    String(order?.id || order?._id || "").slice(-6);
+  const rawNumber =
+    order?.tokenNumber != null && order.tokenNumber !== ""
+      ? String(order.tokenNumber).padStart(4, "0")
+      : order?.orderNumber ||
+        String(order?.id || order?._id || "").slice(-6);
+  const orderNumber = String(rawNumber).replace(/^#/, "");
+  // Prefer short display (…-0001 → 0001) when the full ORD-… id is used
+  const displayNumber = (() => {
+    const parts = orderNumber.split(/[-_/]/).filter(Boolean);
+    const tail = parts[parts.length - 1];
+    if (parts.length > 1 && /^\d+$/.test(tail)) return tail.padStart(4, "0");
+    return orderNumber;
+  })();
 
   return (
     <div
@@ -230,44 +255,55 @@ export default function OrderBillReceiptModal({
       onClick={onClose}
     >
       <div
-        className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-stone-100 shadow-2xl sm:rounded-3xl"
+        className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 z-10 rounded-full bg-white/95 p-2 text-stone-500 shadow-md hover:bg-white"
-          aria-label="Close bill"
+          className="absolute right-3 top-3 z-10 rounded-full bg-stone-100 p-2 text-stone-500 transition hover:bg-stone-200 hover:text-stone-700"
+          aria-label="Close receipt"
         >
           <X className="h-4 w-4" />
         </button>
 
         <div className="overflow-y-auto">
-          <div className="flex items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
+          <div className="flex items-start gap-3 border-b border-stone-100 px-4 py-4 pr-12">
             {logoUrl ? (
               <img
                 src={logoUrl}
                 alt=""
-                className="h-10 w-10 shrink-0 rounded-xl object-cover ring-1 ring-stone-200"
+                className="h-11 w-11 shrink-0 rounded-2xl object-cover ring-1 ring-stone-200"
               />
-            ) : null}
-            <div className="min-w-0 flex-1 pr-8">
+            ) : (
+              <div
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black text-white"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {(restaurantName || "ED").slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
               {restaurantName ? (
-                <p className="truncate text-xs font-semibold uppercase tracking-wide text-stone-500">
+                <p className="truncate text-[10px] font-bold uppercase tracking-[0.08em] text-stone-400">
                   {restaurantName}
                 </p>
               ) : null}
-              <p className="truncate text-sm font-bold text-stone-900">#{orderNumber}</p>
+              <p className="mt-0.5 text-lg font-black tabular-nums text-stone-900">
+                #{displayNumber}
+              </p>
               <p className="mt-0.5 text-xs text-stone-500">
                 {formatReceiptDate(order?.createdAt)}
               </p>
-              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">
-                {orderTypeLabel(order?.orderType || order?.type)}
-              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-600">
+                  {orderTypeLabel(order?.orderType || order?.type)}
+                </span>
+                <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                  {statusLabel(order?.status, order?.orderType || order?.type)}
+                </span>
+              </div>
             </div>
-            <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-              {statusLabel(order?.status, order?.orderType || order?.type)}
-            </span>
           </div>
 
           {(order?.customerName ||
@@ -315,16 +351,8 @@ export default function OrderBillReceiptModal({
             </p>
           </section>
 
-          <div className="border-t border-stone-200 bg-white px-4 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex w-full items-center justify-center rounded-xl py-3 text-sm font-bold text-white active:scale-[0.99]"
-              style={{ backgroundColor: primaryColor }}
-            >
-              Close
-            </button>
-            <p className="mt-3 text-center text-[10px] text-stone-400">
+          <div className="border-t border-stone-200 bg-white px-4 py-3">
+            <p className="text-center text-[10px] text-stone-400">
               Powered by{" "}
               <a
                 href="https://eatsdesk.com"
