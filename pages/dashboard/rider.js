@@ -17,6 +17,7 @@ import {
   getCurrentDaySession,
   getDeals,
   getRiderPayouts,
+  getRiderMe,
 } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -58,13 +59,86 @@ import {
   AlertTriangle,
   Lock,
   Receipt,
+  MoreVertical,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
 import OrderBillReceiptModal from "../../components/order-taker/OrderBillReceiptModal";
+import WhatsAppNotificationBell from "../../components/whatsapp/WhatsAppNotificationBell";
+import PosDealCustomizeModal from "../../components/pos/PosDealCustomizeModal";
+import {
+  buildDealSelectionsFingerprint,
+  getComboItemType,
+  isDealConfigurable,
+} from "../../lib/dealComboItems";
+import {
+  formatReceiptItemsForBill,
+  formatOrderItemDisplayName,
+  getDealDisplayItems,
+} from "../../lib/orderDisplay.js";
+import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
 
 const TABS = { NEW_ORDER: "new_order", HOME: "home", HISTORY: "history" };
 const STEPS = { MENU: "menu", CART: "cart" };
+
+function menuItemUnitPrice(menuItem) {
+  if (!menuItem) return 0;
+  return (
+    Number(
+      menuItem.effectivePrice ??
+        menuItem.finalPrice ??
+        menuItem.price ??
+        0,
+    ) || 0
+  );
+}
+
+/** À-la-carte sum for one deal instance (choices + fixed), for price comparison UI. */
+function estimateDealAlaCarteUnit(deal, selectionsBySlot = {}, menuItems = []) {
+  if (!deal) return 0;
+  const byId = new Map(
+    (menuItems || []).map((m) => [String(m.id || m._id), m]),
+  );
+  let sum = 0;
+  for (const ci of deal.comboItems || []) {
+    if (getComboItemType(ci) !== "fixed") continue;
+    const mid = String(
+      ci.menuItem?._id || ci.menuItem?.id || ci.menuItem || "",
+    );
+    const menu = byId.get(mid) || ci.menuItem;
+    sum += menuItemUnitPrice(menu) * (Number(ci.quantity) || 1);
+  }
+  for (const picks of Object.values(selectionsBySlot || {})) {
+    for (const pick of picks || []) {
+      const mid = String(pick.menuItemId || "");
+      const menu = byId.get(mid);
+      const base = menuItemUnitPrice(menu) || Number(pick.price) || 0;
+      const modExtra = (pick.modifierSelections || [])
+        .flatMap((s) => s.options || [])
+        .reduce((a, o) => a + (Number(o.price) || 0), 0);
+      sum += (base + modExtra) * (Number(pick.qty) || 1);
+    }
+  }
+  return Math.round(sum);
+}
+
+function DealPriceLabels({ unitPrice, alaCarteUnit }) {
+  const deal = Math.round(Number(unitPrice) || 0);
+  const ala = Math.round(Number(alaCarteUnit) || 0);
+  const showDiff = ala > 0 && ala !== deal;
+  return (
+    <span className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
+      <span className={showDiff ? "font-bold text-orange-600 dark:text-orange-400" : ""}>
+        Rs. {deal.toLocaleString()}
+      </span>
+      {showDiff ? (
+        <span className="ml-1.5 text-[10px] font-medium text-gray-400 line-through dark:text-neutral-500">
+          Rs. {ala.toLocaleString()}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 function isBranchRequiredError(msg) {
   return typeof msg === "string" && msg.toLowerCase().includes("branchid") && msg.toLowerCase().includes("required");
@@ -73,29 +147,77 @@ function isBranchRequiredError(msg) {
 function getStatusConfig(status) {
   switch (status) {
     case "READY":
-      return { label: "Ready to Collect", bg: "bg-emerald-500", bgLight: "bg-emerald-50 dark:bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-500/20", icon: PackageCheck, pulse: true };
+      return {
+        label: "Ready to Collect",
+        bg: "bg-emerald-500",
+        bgLight: "bg-emerald-50 dark:bg-emerald-500/10",
+        text: "text-emerald-600 dark:text-emerald-400",
+        border: "border-emerald-200 dark:border-emerald-500/20",
+        icon: PackageCheck,
+        pulse: true,
+      };
     case "PROCESSING":
     case "PREPARING":
-      return { label: "Processing", bg: "bg-amber-500", bgLight: "bg-amber-50 dark:bg-amber-500/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-200 dark:border-amber-500/20", icon: ChefHat, pulse: false };
+      return {
+        label: "Processing",
+        bg: "bg-blue-500",
+        bgLight: "bg-blue-50 dark:bg-blue-500/10",
+        text: "text-blue-600 dark:text-blue-400",
+        border: "border-blue-200 dark:border-blue-500/20",
+        icon: ChefHat,
+        pulse: false,
+      };
     case "NEW_ORDER":
-      return { label: "In Kitchen", bg: "bg-blue-500", bgLight: "bg-blue-50 dark:bg-blue-500/10", text: "text-blue-600 dark:text-blue-400", border: "border-blue-200 dark:border-blue-500/20", icon: Send, pulse: false };
+      return {
+        label: "New Order",
+        bg: "bg-orange-500",
+        bgLight: "bg-orange-50 dark:bg-orange-500/10",
+        text: "text-orange-600 dark:text-orange-400",
+        border: "border-orange-200 dark:border-orange-500/20",
+        icon: Send,
+        pulse: false,
+      };
     case "OUT_FOR_DELIVERY":
       return {
         label: "Out for Delivery",
-        bg: "bg-primary",
-        bgLight: "bg-primary/10 dark:bg-primary/20",
-        text: "text-primary dark:text-primary",
-        border: "border-primary/20 dark:border-primary/30",
+        bg: "bg-violet-500",
+        bgLight: "bg-violet-50 dark:bg-violet-500/10",
+        text: "text-violet-600 dark:text-violet-400",
+        border: "border-violet-200 dark:border-violet-500/20",
         icon: Truck,
-        pulse: false
+        pulse: false,
       };
     case "DELIVERED":
     case "COMPLETED":
-      return { label: "Delivered", bg: "bg-gray-400", bgLight: "bg-gray-50 dark:bg-neutral-900/50", text: "text-gray-500 dark:text-neutral-400", border: "border-gray-200 dark:border-neutral-800", icon: Check, pulse: false };
+      return {
+        label: "Delivered",
+        bg: "bg-gray-400",
+        bgLight: "bg-gray-50 dark:bg-neutral-900/50",
+        text: "text-gray-500 dark:text-neutral-400",
+        border: "border-gray-200 dark:border-neutral-800",
+        icon: Check,
+        pulse: false,
+      };
     case "CANCELLED":
-      return { label: "Cancelled", bg: "bg-red-400", bgLight: "bg-red-50 dark:bg-red-500/10", text: "text-red-500 dark:text-red-400", border: "border-red-200 dark:border-red-500/20", icon: X, pulse: false };
+      return {
+        label: "Cancelled",
+        bg: "bg-red-400",
+        bgLight: "bg-red-50 dark:bg-red-500/10",
+        text: "text-red-500 dark:text-red-400",
+        border: "border-red-200 dark:border-red-500/20",
+        icon: X,
+        pulse: false,
+      };
     default:
-      return { label: status, bg: "bg-gray-500", bgLight: "bg-gray-50 dark:bg-neutral-900", text: "text-gray-600 dark:text-neutral-400", border: "border-gray-200 dark:border-neutral-800", icon: Clock, pulse: false };
+      return {
+        label: status,
+        bg: "bg-gray-500",
+        bgLight: "bg-gray-50 dark:bg-neutral-900",
+        text: "text-gray-600 dark:text-neutral-400",
+        border: "border-gray-200 dark:border-neutral-800",
+        icon: Clock,
+        pulse: false,
+      };
   }
 }
 
@@ -238,6 +360,8 @@ export default function RiderPortalPage() {
     toggleTheme: () => {},
   };
   const searchRef = useRef(null);
+  const headerMenuRef = useRef(null);
+  const knownAssignedIdsRef = useRef(new Set());
   /** Ignore stale menu responses if branch changes quickly or an early unscoped request finishes late. */
   const menuLoadSeqRef = useRef(0);
   const dealsLoadSeqRef = useRef(0);
@@ -245,7 +369,10 @@ export default function RiderPortalPage() {
   // Auth
   const [userName, setUserName] = useState("");
   const [riderId, setRiderId] = useState(null);
+  const [canTakeOrders, setCanTakeOrders] = useState(true);
   const [billOrder, setBillOrder] = useState(null);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [dealCustomizeTarget, setDealCustomizeTarget] = useState(null);
   const [restaurantBranding, setRestaurantBranding] = useState({
     name: "",
     logoUrl: "",
@@ -327,7 +454,40 @@ export default function RiderPortalPage() {
     const auth = getStoredAuth();
     setUserName(auth?.user?.name || auth?.user?.email || "");
     setRiderId(auth?.user?.id || auth?.user?._id || null);
+    if (auth?.user?.canTakeOrders === false) setCanTakeOrders(false);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadMe = async () => {
+      try {
+        const me = await getRiderMe();
+        if (cancelled || !me) return;
+        if (me.name) setUserName(me.name);
+        if (me.id) setRiderId(me.id);
+        setCanTakeOrders(me.canTakeOrders !== false);
+      } catch {
+        /* keep last known */
+      }
+    };
+    loadMe();
+    const onFocus = () => loadMe();
+    window.addEventListener("focus", onFocus);
+    const interval = setInterval(loadMe, 30000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canTakeOrders && tab === TABS.NEW_ORDER && !appendTargetOrder) {
+      setTab(TABS.HOME);
+      setStep(STEPS.MENU);
+      setCart([]);
+    }
+  }, [canTakeOrders, tab, appendTargetOrder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -499,8 +659,57 @@ export default function RiderPortalPage() {
   }, [currentBranch?.id]);
 
   useEffect(() => {
+    if (!headerMenuOpen) return;
+    const onDoc = (e) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target)) {
+        setHeaderMenuOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setHeaderMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [headerMenuOpen]);
+
+  useEffect(() => {
+    if (!riderId || !orders?.length) return;
+    for (const o of orders) {
+      if (
+        o.assignedRiderId &&
+        String(o.assignedRiderId) === String(riderId)
+      ) {
+        knownAssignedIdsRef.current.add(String(o.id || o._id));
+      }
+    }
+  }, [orders, riderId]);
+
+  useEffect(() => {
     if (!socket) return;
-    const onOrderEvent = () => {
+    const onOrderEvent = (payload) => {
+      const orderId = String(payload?.id || payload?._id || "");
+      const assignedTo =
+        payload?.assignedRiderId != null
+          ? String(payload.assignedRiderId)
+          : "";
+      if (
+        riderId &&
+        orderId &&
+        assignedTo &&
+        assignedTo === String(riderId) &&
+        !knownAssignedIdsRef.current.has(orderId)
+      ) {
+        knownAssignedIdsRef.current.add(orderId);
+        const token =
+          payload.tokenNumber ||
+          String(payload.orderNumber || orderId).slice(-4);
+        toast.success(`New delivery assigned · #${token}`, { duration: 5000 });
+        triggerHaptic([40, 80, 40]);
+      }
       loadOrders(getCurrentOrdersParams());
       if (tab === TABS.HISTORY) loadHistoryBreakdown();
     };
@@ -510,7 +719,7 @@ export default function RiderPortalPage() {
       socket.off("order:updated", onOrderEvent);
       socket.off("order:created", onOrderEvent);
     };
-  }, [socket, getCurrentOrdersParams, tab, loadHistoryBreakdown]);
+  }, [socket, getCurrentOrdersParams, tab, loadHistoryBreakdown, riderId]);
 
   useEffect(() => {
     if (tab !== TABS.HISTORY) return;
@@ -847,13 +1056,68 @@ export default function RiderPortalPage() {
     : 0;
 
   // ── Cart helpers ──────────────────────────────────────────────────────
+  function addDealToCart(deal, qty = 1, selectionsBySlot = {}) {
+    const dealId = deal._id || deal.id;
+    const fingerprint = buildDealSelectionsFingerprint(deal, selectionsBySlot);
+    const cartKey = `deal-${dealId}${fingerprint ? `|${fingerprint}` : ""}`;
+    const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
+    const alaCarteUnit = estimateDealAlaCarteUnit(
+      deal,
+      selectionsBySlot,
+      menu.items || [],
+    );
+    setCart((prev) => {
+      const existing = prev.find((c) => (c._cartKey || c.id) === cartKey);
+      if (existing) {
+        return prev.map((c) =>
+          (c._cartKey || c.id) === cartKey
+            ? { ...c, quantity: c.quantity + quantity }
+            : c,
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: `deal-${dealId}`,
+          _cartKey: cartKey,
+          name: deal.name,
+          price: deal.comboPrice || 0,
+          _alaCartePrice: alaCarteUnit,
+          quantity,
+          imageUrl: deal.imageUrl || "",
+          isDeal: true,
+          _dealId: dealId,
+          _dealSelections: selectionsBySlot,
+        },
+      ];
+    });
+    setDealCustomizeTarget(null);
+  }
+
   function addToCart(item, qty = 1) {
-    if (!item.isDeal && (item.inventorySufficient === false || item.inventorySufficient === "false")) {
+    if (
+      !item.isDeal &&
+      (item.inventorySufficient === false ||
+        item.inventorySufficient === "false")
+    ) {
       toast.error(`${item.name} is out of stock`);
       return;
     }
+    if (item.isDeal) {
+      const deal = availableDeals.find(
+        (d) => `deal-${d._id || d.id}` === item.id,
+      );
+      if (deal && isDealConfigurable(deal)) {
+        setDealCustomizeTarget({ deal, qty });
+        return;
+      }
+      if (deal) {
+        addDealToCart(deal, qty, {});
+        return;
+      }
+    }
     setCart((prev) => {
-      const idx = prev.findIndex((c) => c.id === item.id);
+      const idx = prev.findIndex((c) => (c._cartKey || c.id) === item.id);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = { ...next[idx], quantity: next[idx].quantity + qty };
@@ -863,6 +1127,7 @@ export default function RiderPortalPage() {
         ...prev,
         {
           id: item.id,
+          _cartKey: item.id,
           name: item.name,
           price: item.finalPrice ?? item.price ?? 0,
           quantity: qty,
@@ -874,7 +1139,13 @@ export default function RiderPortalPage() {
   }
   function updateQty(id, delta) {
     setCart((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, quantity: Math.max(0, c.quantity + delta) } : c)).filter((c) => c.quantity > 0)
+      prev
+        .map((c) =>
+          (c._cartKey || c.id) === id
+            ? { ...c, quantity: Math.max(0, c.quantity + delta) }
+            : c,
+        )
+        .filter((c) => c.quantity > 0),
     );
   }
 
@@ -886,6 +1157,11 @@ export default function RiderPortalPage() {
   }
 
   async function handlePlaceOrder() {
+    if (!canTakeOrders) {
+      toast.error("You are not allowed to take new orders");
+      setTab(TABS.HOME);
+      return;
+    }
     if (cart.length === 0) return;
     if (!customerName.trim() || !customerPhone.trim()) {
       toast.error("Customer name and phone are required");
@@ -902,7 +1178,7 @@ export default function RiderPortalPage() {
     setPlacing(true);
     try {
       await createPosOrder({
-        items: cart.map((c) => ({ menuItemId: c.id, quantity: c.quantity })),
+        items: cart.map((c) => mapPosCartLineToOrderUpdatePayload(c)),
         orderType: "DELIVERY",
         paymentMethod: "PENDING",
         customerName: customerName.trim(),
@@ -984,10 +1260,7 @@ export default function RiderPortalPage() {
           itemStatus: item.itemStatus ?? null,
         }));
         const addedItems = cart.map((c) => ({
-          menuItemId: c.id,
-          name: c.name,
-          quantity: Math.max(1, Number(c.quantity) || 1),
-          unitPrice: Number(c.price) || 0,
+          ...mapPosCartLineToOrderUpdatePayload(c),
           isAddition: true,
         }));
 
@@ -1203,23 +1476,33 @@ export default function RiderPortalPage() {
       <div className="h-[100dvh] flex flex-col bg-gray-50 dark:bg-black text-gray-900 dark:text-white overflow-hidden">
 
         {/* ── Header ─────────────────────────────────────────────────── */}
-        <header className="flex-shrink-0 bg-white dark:bg-neutral-950 rider-safe-top">
-          <div className="flex items-center justify-between px-4 h-14">
-            <div className="flex items-center gap-3 min-w-0">
+        <header className={`relative flex-shrink-0 bg-white/95 dark:bg-neutral-950/95 backdrop-blur-md border-b border-gray-100 dark:border-neutral-800/80 rider-safe-top ${headerMenuOpen ? "z-50" : "z-30"}`}>
+          <div className="flex items-center justify-between gap-3 px-4 h-[56px]">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
               {tab === TABS.NEW_ORDER && step === STEPS.CART ? (
                 <button
+                  type="button"
                   onClick={() => setStep(STEPS.MENU)}
-                  className="w-9 h-9 -ml-1.5 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 active:scale-90 transition-all"
+                  className="w-9 h-9 -ml-1 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 active:scale-90 transition-all shrink-0"
                 >
                   <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-neutral-300" />
                 </button>
               ) : (
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-md shadow-primary/20">
-                  <Bike className="w-[18px] h-[18px] text-white" />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (tab === TABS.HOME || tab === TABS.HISTORY) {
+                      window.location.href = "/profile";
+                    }
+                  }}
+                  className="w-9 h-9 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-sm shadow-orange-500/25"
+                  title="Profile"
+                >
+                  <Bike className="w-[16px] h-[16px] text-white" />
+                </button>
               )}
               <div className="min-w-0">
-                <h1 className="text-[15px] font-extrabold truncate leading-tight tracking-tight">
+                <h1 className="text-[15px] font-extrabold truncate leading-tight tracking-tight text-gray-900 dark:text-white">
                   {tab === TABS.HOME
                     ? (userName ? `Hi, ${userName.split(" ")[0]}` : "Home")
                     : tab === TABS.HISTORY
@@ -1230,74 +1513,125 @@ export default function RiderPortalPage() {
                           ? "New Order"
                           : "Review Order"}
                 </h1>
-                <p className="text-[11px] text-gray-400 dark:text-neutral-500 truncate leading-tight">
+                <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate leading-tight">
                   {tab === TABS.HOME
-                    ? activeOrders.length > 0
-                      ? `${activeOrders.length} active · ${readyOrders.length} ready to collect`
-                      : "All clear today 🎉"
+                    ? restaurantBranding.name ||
+                      (activeOrders.length > 0
+                        ? `${activeOrders.length} active · ${readyOrders.length} ready`
+                        : "All clear today")
                     : tab === TABS.HISTORY
                       ? "Today's summary"
                       : step === STEPS.MENU
                         ? appendTargetOrder
                           ? `Appending to #${appendTargetOrder.tokenNumber || getOrderId(appendTargetOrder).toString().slice(-4)}`
-                          : userName ? `Hi, ${userName.split(" ")[0]}` : "Rider Portal"
+                          : userName
+                            ? `Hi, ${userName.split(" ")[0]}`
+                            : "Rider Portal"
                         : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 shrink-0">
               {tab === TABS.NEW_ORDER && step === STEPS.MENU && cartBadge > 0 && (
                 <button
                   onClick={() => setStep(STEPS.CART)}
-                  className="relative h-9 pl-3 pr-3.5 rounded-full bg-primary text-white flex items-center gap-1.5 active:scale-95 transition-transform shadow-md shadow-primary/20"
+                  className="relative h-9 pl-3 pr-3.5 rounded-full bg-orange-500 text-white flex items-center gap-1.5 active:scale-95 transition-transform"
                 >
                   <ShoppingCart className="w-4 h-4" />
                   <span className="text-xs font-extrabold">{cartBadge}</span>
                 </button>
               )}
               {tab === TABS.NEW_ORDER && step === STEPS.MENU && cartBadge === 0 && (
-                <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center">
-                  <ShoppingCart className="w-4 h-4 text-gray-400 dark:text-neutral-600" />
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-gray-300 dark:text-neutral-600">
+                  <ShoppingCart className="w-4 h-4" />
                 </div>
               )}
               {tab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
                 <button
                   onClick={() => setCart([])}
-                  className="h-9 px-3 rounded-full flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs font-semibold"
+                  className="h-9 px-3 rounded-full flex items-center gap-1.5 text-gray-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors text-xs font-semibold"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Clear
                 </button>
               )}
-              {(tab === TABS.HOME || tab === TABS.HISTORY) && (
-                <button
-                  onClick={() => { setOrdersLoading(true); loadOrders(getCurrentOrdersParams()); }}
-                  className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
-                >
-                  <RefreshCw className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
-                </button>
-              )}
-              <button
-                onClick={toggleTheme}
-                className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
-                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-                aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-              >
-                {theme === "light" ? (
-                  <Moon className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
-                ) : (
-                  <Sun className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
-                )}
-              </button>
-              {tab !== TABS.NEW_ORDER && (
-                <button
-                  onClick={handleLogout}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              )}
+
+              <div className="flex items-center rounded-full bg-gray-50 dark:bg-neutral-900/80 p-0.5 border border-gray-100 dark:border-neutral-800">
+                <WhatsAppNotificationBell
+                  showWhatsApp={false}
+                  showOrders={true}
+                  variant="ghost"
+                  popupPlacement="top-center"
+                />
+                <div className="relative" ref={headerMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setHeaderMenuOpen((v) => !v)}
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-gray-500 dark:text-neutral-400 hover:bg-white dark:hover:bg-neutral-800 transition-colors"
+                    title="More"
+                    aria-label="More options"
+                    aria-expanded={headerMenuOpen}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                  {headerMenuOpen && (
+                    <div className="absolute right-0 top-full z-[60] mt-2 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+                      {(tab === TABS.HOME || tab === TABS.HISTORY) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false);
+                            setOrdersLoading(true);
+                            loadOrders(getCurrentOrdersParams());
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          Refresh
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHeaderMenuOpen(false);
+                          window.location.href = "/profile";
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        <User className="h-4 w-4" />
+                        Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHeaderMenuOpen(false);
+                          toggleTheme();
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        {theme === "light" ? (
+                          <Moon className="h-4 w-4" />
+                        ) : (
+                          <Sun className="h-4 w-4" />
+                        )}
+                        {theme === "light" ? "Dark mode" : "Light mode"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHeaderMenuOpen(false);
+                          handleLogout();
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Log out
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1308,7 +1642,9 @@ export default function RiderPortalPage() {
                 <div
                   key={s}
                   className={`h-[3px] flex-1 rounded-full transition-all duration-300 ${
-                    i <= [STEPS.MENU, STEPS.CART].indexOf(step) ? "bg-primary" : "bg-gray-200 dark:bg-neutral-800"
+                    i <= [STEPS.MENU, STEPS.CART].indexOf(step)
+                      ? "bg-orange-500"
+                      : "bg-gray-200 dark:bg-neutral-800"
                   }`}
                 />
               ))}
@@ -1426,9 +1762,8 @@ export default function RiderPortalPage() {
                 ) : (
                   <div className="space-y-2">
                     {filteredActiveOrders.map((order) => {
-                      const effectiveStatus =
-                        activeFilter === "preparing" && order.status === "NEW_ORDER" ? "PROCESSING" : order.status;
-                      const sc = getStatusConfig(effectiveStatus);
+                      const orderStatus = String(order.status || "").toUpperCase();
+                      const sc = getStatusConfig(orderStatus);
                       const StatusIcon = sc.icon;
                       const orderId = order.id || order._id;
                       const orderKey = String(orderId);
@@ -1439,21 +1774,30 @@ export default function RiderPortalPage() {
                         0,
                       );
                       const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
-                        String(order.status || "").toUpperCase(),
+                        orderStatus,
                       );
                       const canShowBill =
-                        order.status === "OUT_FOR_DELIVERY" &&
+                        orderStatus === "OUT_FOR_DELIVERY" &&
                         order.assignedRiderId &&
                         riderId &&
                         String(order.assignedRiderId) === String(riderId);
                       const tokenLabel = `#${order.tokenNumber || getOrderId(order).toString().slice(-4)}`;
                       const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
+                      const statusLabel =
+                        orderStatus === "NEW_ORDER"
+                          ? "New Order"
+                          : orderStatus === "PROCESSING" || orderStatus === "PREPARING"
+                            ? "Preparing"
+                            : sc.label;
+                      const isPreparing =
+                        orderStatus === "PROCESSING" || orderStatus === "PREPARING";
+                      const displayItems = formatReceiptItemsForBill(order);
                       return (
-                        <div key={orderKey} className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-neutral-800">
+                        <div key={orderKey} className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden border border-gray-200 dark:border-neutral-800">
                           <div className={`px-3.5 py-2 flex items-center justify-between ${sc.bgLight}`}>
                             <div className="flex items-center gap-1.5 min-w-0">
                               <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${sc.text}`} />
-                              <span className={`text-[11px] font-bold truncate ${sc.text}`}>{sc.label}</span>
+                              <span className={`text-[11px] font-bold truncate ${sc.text}`}>{statusLabel}</span>
                             </div>
                             <div className={`flex items-center gap-1 text-[10px] shrink-0 ${sc.text} opacity-85`}>
                               <Clock className="w-3 h-3" />
@@ -1496,7 +1840,7 @@ export default function RiderPortalPage() {
                                 <button
                                   type="button"
                                   onClick={() => startEditCustomerDetails(order)}
-                                  className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 underline underline-offset-2 decoration-gray-300 dark:decoration-neutral-600 hover:text-primary dark:hover:text-primary transition-colors inline-flex items-center gap-1 shrink-0"
+                                  className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 underline underline-offset-2 decoration-gray-300 dark:decoration-neutral-600 hover:text-orange-500 dark:hover:text-orange-400 transition-colors inline-flex items-center gap-1 shrink-0"
                                 >
                                   <User className="w-3 h-3" />
                                   Edit customer
@@ -1504,28 +1848,47 @@ export default function RiderPortalPage() {
                               )}
                             </div>
 
-                            <div className="flex gap-2 mb-1">
+                            <div className="flex gap-2 mb-1 items-stretch">
                               {canAppend && (
                                 <button
                                   type="button"
                                   onClick={() => startAppendItems(order)}
-                                  className="flex-1 py-2 rounded-xl border border-primary/30 bg-primary/5 dark:bg-primary/10 text-primary text-[11px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+                                  className={`min-w-0 flex-[1.4] py-2 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform ${
+                                    isPreparing
+                                      ? "border-blue-500/30 bg-blue-500/5 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                      : "border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500"
+                                  }`}
                                 >
-                                  <Plus className="w-3.5 h-3.5" />
-                                  Add items
+                                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">Add items</span>
+                                </button>
+                              )}
+                              {canShowBill && (
+                                <button
+                                  type="button"
+                                  onClick={() => setBillOrder(order)}
+                                  className="min-w-0 flex-1 py-2 px-2 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                                >
+                                  <Receipt className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">Bill</span>
                                 </button>
                               )}
                               <button
                                 type="button"
                                 onClick={() => toggleOrderDetails(orderKey)}
-                                className={`${canAppend ? "flex-1" : "w-full"} py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+                                title={isExpanded ? "Hide details" : "Show details"}
+                                aria-label={isExpanded ? "Hide details" : "Show details"}
+                                className={`w-10 shrink-0 py-2 rounded-xl text-[11px] font-bold flex items-center justify-center border transition-colors ${
                                   isExpanded
-                                    ? "bg-primary/10 border-primary/30 text-primary"
+                                    ? isPreparing
+                                      ? "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
+                                      : "bg-orange-500/10 border-orange-500/30 text-orange-500"
                                     : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
                                 }`}
                               >
-                                {isExpanded ? "Hide" : "Details"}
-                                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                <ChevronDown
+                                  className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                />
                               </button>
                             </div>
 
@@ -1549,20 +1912,62 @@ export default function RiderPortalPage() {
                                     <span className="line-clamp-2">{order.deliveryAddress}</span>
                                   </div>
                                 )}
-                                <div className="space-y-0.5 mb-2">
-                                  {order.items?.map((item, idx) => (
-                                    <div key={idx} className="flex items-center justify-between text-[11px]">
-                                      <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
-                                        <span className="font-bold text-gray-900 dark:text-white">{item.quantity || item.qty}x</span>{" "}
-                                        {item.name}
-                                      </span>
-                                    </div>
-                                  ))}
+                                <div className="space-y-1.5 mb-2">
+                                  {displayItems.map((item, idx) => {
+                                    const qty = item.qty ?? item.quantity ?? 1;
+                                    if (item.isDealLine) {
+                                      const children = getDealDisplayItems(item);
+                                      return (
+                                        <div key={`deal-${idx}`} className="text-[11px]">
+                                          <div className="flex items-center gap-1.5 font-medium text-gray-800 dark:text-neutral-200">
+                                            <span className="font-bold tabular-nums">{qty}×</span>
+                                            <span className="truncate">{formatOrderItemDisplayName(item)}</span>
+                                            <span className="text-[9px] font-bold uppercase tracking-wide text-orange-500">
+                                              Deal
+                                            </span>
+                                          </div>
+                                          {children.length > 0 ? (
+                                            <div className="mt-0.5 space-y-0.5 border-l-2 border-orange-500/30 pl-2 ml-1">
+                                              {children.map((choice, ci) => (
+                                                <div
+                                                  key={`${choice.name}-${ci}`}
+                                                  className="flex flex-wrap items-center gap-1 text-gray-500 dark:text-neutral-400"
+                                                >
+                                                  <span>
+                                                    + {choice.name}
+                                                    {choice.qty > 1 ? ` ×${choice.qty}` : ""}
+                                                  </span>
+                                                  {choice.isChoice ? (
+                                                    <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wide bg-orange-500/15 text-orange-500">
+                                                      Choice
+                                                    </span>
+                                                  ) : null}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div
+                                        key={`item-${idx}`}
+                                        className="flex items-center justify-between text-[11px]"
+                                      >
+                                        <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
+                                          <span className="font-bold text-gray-900 dark:text-white">
+                                            {qty}x
+                                          </span>{" "}
+                                          {formatOrderItemDisplayName(item)}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </>
                             )}
 
-                            {order.status === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
+                            {orderStatus === "READY" && (!order.assignedRiderId || (riderId && order.assignedRiderId === riderId)) && (
                               <button
                                 onClick={() => handleCollectOrder(order)}
                                 disabled={collectingId === orderId}
@@ -1572,24 +1977,14 @@ export default function RiderPortalPage() {
                                 Collect from Kitchen
                               </button>
                             )}
-                            {order.status === "OUT_FOR_DELIVERY" && order.assignedRiderId && riderId && order.assignedRiderId === riderId && (
+                            {orderStatus === "OUT_FOR_DELIVERY" && order.assignedRiderId && riderId && order.assignedRiderId === riderId && (
                               <button
                                 onClick={() => handleMarkDelivered(order)}
                                 disabled={deliveringId === orderId}
-                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
+                                className="w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-violet-600/20 active:scale-[0.98] transition-transform"
                               >
                                 {deliveringId === orderId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                                 Mark as Delivered
-                              </button>
-                            )}
-                            {canShowBill && (
-                              <button
-                                type="button"
-                                onClick={() => setBillOrder(order)}
-                                className={`${order.status === "OUT_FOR_DELIVERY" ? "mt-2" : ""} w-full py-2.5 rounded-xl border border-stone-200 bg-white text-stone-800 font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white`}
-                              >
-                                <Receipt className="w-4 h-4" />
-                                Show bill to customer
                               </button>
                             )}
                           </div>
@@ -2335,33 +2730,112 @@ export default function RiderPortalPage() {
                         </div>
                       )}
 
-                      {/* Compact cart items (new additions) */}
+                      {/* Cart items */}
                       {cart.length > 0 ? (
-                        <div className="mb-3 space-y-1.5">
-                          {cart.map((item) => (
-                            <div key={item.id} className="flex items-center gap-2.5 bg-white dark:bg-neutral-950 rounded-xl p-1.5">
-                              {item.imageUrl ? (
-                                <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-neutral-900 flex items-center justify-center flex-shrink-0">
-                                  <Utensils className="w-4 h-4 text-gray-300 dark:text-neutral-700" />
+                        <div className="mb-3 space-y-3">
+                          {cart.map((item) => {
+                            const cartKey = item._cartKey || item.id;
+                            const unitPrice = Number(item.price) || 0;
+                            const lineTotal = unitPrice * item.quantity;
+                            const alaCarteUnit = Number(item._alaCartePrice) || 0;
+                            const optionLines = [];
+                            if (item.isDeal && item._dealSelections) {
+                              Object.values(item._dealSelections)
+                                .flat()
+                                .forEach((pick) => {
+                                  optionLines.push(
+                                    `+ ${pick.name}${
+                                      (pick.qty || 1) > 1 ? ` ×${pick.qty}` : ""
+                                    }`,
+                                  );
+                                });
+                            }
+                            return (
+                              <div
+                                key={cartKey}
+                                className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900"
+                              >
+                                <div className="flex gap-3">
+                                  {item.imageUrl ? (
+                                    <img
+                                      src={item.imageUrl}
+                                      alt={item.name}
+                                      className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+                                      <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-[15px] font-bold leading-tight text-gray-900 dark:text-white">
+                                      {item.name}
+                                      {item.isDeal ? (
+                                        <span className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-orange-500">
+                                          Deal
+                                        </span>
+                                      ) : null}
+                                    </p>
+                                    {optionLines.length > 0 ? (
+                                      <div className="mt-0.5 space-y-0.5">
+                                        {optionLines.map((line, i) => (
+                                          <p
+                                            key={`${cartKey}-opt-${i}`}
+                                            className="truncate text-[12px] leading-snug text-gray-500 dark:text-neutral-400"
+                                          >
+                                            {line}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                    <div className="mt-2.5 flex items-center gap-2">
+                                      {item.isDeal ? (
+                                        <DealPriceLabels
+                                          unitPrice={unitPrice}
+                                          alaCarteUnit={alaCarteUnit}
+                                        />
+                                      ) : (
+                                        <p className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
+                                          {sym} {unitPrice.toLocaleString()}
+                                        </p>
+                                      )}
+                                      <div className="mx-auto flex h-8 flex-shrink-0 items-stretch overflow-hidden rounded-full border border-gray-200 dark:border-neutral-700">
+                                        <button
+                                          type="button"
+                                          onClick={() => updateQty(cartKey, -1)}
+                                          className="flex w-8 items-center justify-center text-gray-700 dark:text-neutral-200"
+                                          aria-label={
+                                            item.quantity <= 1
+                                              ? "Remove item"
+                                              : "Decrease quantity"
+                                          }
+                                        >
+                                          {item.quantity <= 1 ? (
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          ) : (
+                                            <Minus className="h-3.5 w-3.5" />
+                                          )}
+                                        </button>
+                                        <span className="flex min-w-[1.75rem] items-center justify-center border-x border-gray-200 px-1 text-sm font-bold tabular-nums dark:border-neutral-700">
+                                          {item.quantity}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateQty(cartKey, 1)}
+                                          className="flex w-8 items-center justify-center text-gray-700 dark:text-neutral-200"
+                                        >
+                                          <Plus className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                      <p className="min-w-0 flex-shrink-0 text-right text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
+                                        {sym} {lineTotal.toLocaleString()}
+                                      </p>
+                                    </div>
+                                  </div>
                                 </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[13px] font-bold truncate leading-tight">{item.name}</p>
-                                <p className="text-xs font-bold text-primary">{sym} {(item.price * item.quantity).toLocaleString()}</p>
                               </div>
-                              <div className="flex items-center bg-gray-100 dark:bg-neutral-900 rounded-lg">
-                                <button onClick={() => updateQty(item.id, -1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
-                                  {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-400" /> : <Minus className="w-3 h-3 text-gray-500" />}
-                                </button>
-                                <span className="w-6 text-center text-sm font-black">{item.quantity}</span>
-                                <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform">
-                                  <Plus className="w-3 h-3 text-primary" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="mb-3 px-3 py-2 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[11px] text-gray-500 dark:text-neutral-400">
@@ -2704,7 +3178,14 @@ export default function RiderPortalPage() {
         )}
 
         {/* ── Bottom Tab Bar ─────────────────────────────────────────── */}
-        <nav className="flex-shrink-0 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex rider-safe-bottom">
+        <div className="flex-shrink-0">
+          <p className="pb-1 text-center text-[10px] font-medium text-gray-400 dark:text-neutral-600 select-none">
+            Powered by{" "}
+            <span className="font-semibold text-gray-500 dark:text-neutral-500">
+              EatsDesk
+            </span>
+          </p>
+          <nav className="bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex rider-safe-bottom">
           <button
             onClick={() => setTab(TABS.HOME)}
             className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
@@ -2721,17 +3202,19 @@ export default function RiderPortalPage() {
             </div>
             <span className="text-[10px] font-bold">Home</span>
           </button>
-          <button
-            onClick={() => {
-              setAppendTargetOrder(null);
-              setExistingItemsOpen(false);
-              setTab(TABS.NEW_ORDER);
-            }}
-            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.NEW_ORDER ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
-          >
-            <Utensils className="w-5 h-5" />
-            <span className="text-[10px] font-bold">New Order</span>
-          </button>
+          {canTakeOrders ? (
+            <button
+              onClick={() => {
+                setAppendTargetOrder(null);
+                setExistingItemsOpen(false);
+                setTab(TABS.NEW_ORDER);
+              }}
+              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.NEW_ORDER ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
+            >
+              <Utensils className="w-5 h-5" />
+              <span className="text-[10px] font-bold">New Order</span>
+            </button>
+          ) : null}
           <button
             onClick={() => setTab(TABS.HISTORY)}
             className={`relative flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${tab === TABS.HISTORY ? "text-primary" : "text-gray-400 dark:text-neutral-500"}`}
@@ -2746,7 +3229,8 @@ export default function RiderPortalPage() {
             </span>
             <span className="text-[10px] font-bold">History</span>
           </button>
-        </nav>
+          </nav>
+        </div>
       </div>
 
       {/* Customer bill receipt */}
@@ -2757,6 +3241,16 @@ export default function RiderPortalPage() {
           logoUrl={restaurantBranding.logoUrl}
           primaryColor={restaurantBranding.primaryColor}
           onClose={() => setBillOrder(null)}
+        />
+      )}
+
+      {dealCustomizeTarget?.deal && (
+        <PosDealCustomizeModal
+          deal={dealCustomizeTarget.deal}
+          menuItems={menu.items || []}
+          pendingQty={dealCustomizeTarget.qty}
+          onConfirm={addDealToCart}
+          onClose={() => setDealCustomizeTarget(null)}
         />
       )}
 

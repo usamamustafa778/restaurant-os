@@ -22,9 +22,11 @@ import toast from "react-hot-toast";
 import SEO from "../SEO";
 
 /**
- * Mobile profile screen for order_taker (waiter) role.
+ * Mobile profile screen for order_taker (waiter) and delivery_rider roles.
  */
-export default function WaiterProfileView() {
+export default function WaiterProfileView({
+  backHref = "/order-taker",
+}) {
   const [profile, setProfile] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
 
@@ -166,7 +168,7 @@ export default function WaiterProfileView() {
             <button
               type="button"
               onClick={() => {
-                window.location.href = "/order-taker";
+                window.location.href = backHref;
               }}
               className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
               aria-label="Back"

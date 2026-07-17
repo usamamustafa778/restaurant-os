@@ -9,6 +9,7 @@ import {
   getRiderPayouts,
   postRiderPayout,
   getRiders,
+  updateUser,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
@@ -28,6 +29,10 @@ import {
   FileDown,
   Printer,
   FileText,
+  ToggleLeft,
+  ToggleRight,
+  Search,
+  Wallet,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -37,6 +42,22 @@ const PRESETS = [
   { id: "this_week", label: "This week" },
   { id: "this_month", label: "This month" },
   { id: "custom", label: "Custom" },
+];
+
+const ROSTER_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "active", label: "On delivery" },
+  { id: "idle", label: "Idle" },
+  { id: "blocked", label: "Take orders off" },
+  { id: "cod", label: "COD owed" },
+];
+
+const ROSTER_SORTS = [
+  { id: "status", label: "Live status" },
+  { id: "delivered", label: "Most delivered" },
+  { id: "fees", label: "Highest fees" },
+  { id: "cod", label: "COD owed" },
+  { id: "name", label: "Name A–Z" },
 ];
 
 const DEFAULT_RIDER_EXPENSE_ACCOUNT_CODE = "602";
@@ -212,6 +233,7 @@ export default function RidersPage() {
   const [sessions, setSessions] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
   const [staffRiders, setStaffRiders] = useState([]);
+  const [togglingTakeOrdersId, setTogglingTakeOrdersId] = useState(null);
   const [payouts, setPayouts] = useState([]);
   const [recentPayouts, setRecentPayouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -220,6 +242,9 @@ export default function RidersPage() {
   const [sidebarRiderKey, setSidebarRiderKey] = useState(null);
   const [detailTab, setDetailTab] = useState("orders");
   const [pipelineFilter, setPipelineFilter] = useState(null);
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterFilter, setRosterFilter] = useState("all");
+  const [rosterSort, setRosterSort] = useState("status");
   const [codExpandId, setCodExpandId] = useState(null);
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
   const [modalRiderId, setModalRiderId] = useState("");
@@ -327,6 +352,35 @@ export default function RidersPage() {
       setStaffRiders([]);
     }
   }, []);
+
+  async function handleToggleCanTakeOrders(rider) {
+    const riderId = rider?.riderId;
+    if (!riderId) {
+      toast.error("This rider has no staff account to update.");
+      return;
+    }
+    const next = !(rider.canTakeOrders !== false);
+    setTogglingTakeOrdersId(riderId);
+    try {
+      await updateUser(riderId, { canTakeOrders: next });
+      setStaffRiders((prev) =>
+        prev.map((u) =>
+          String(u.id || u._id) === String(riderId)
+            ? { ...u, canTakeOrders: next }
+            : u,
+        ),
+      );
+      toast.success(
+        next
+          ? `${rider.riderName} can take new orders`
+          : `${rider.riderName} cannot take new orders`,
+      );
+    } catch (err) {
+      toast.error(err?.message || "Failed to update rider");
+    } finally {
+      setTogglingTakeOrdersId(null);
+    }
+  }
 
   const loadAll = useCallback(
     async (presetId, customRange) => {
@@ -522,28 +576,40 @@ export default function RidersPage() {
   const mergedRiders = useMemo(() => {
     const { from: rangeFrom, to: rangeTo } = activeDateRange;
     const byKey = new Map();
-    const addBucket = (key, riderId, riderName, phone) => {
+    const addBucket = (key, riderId, riderName, phone, canTakeOrders = true) => {
       if (!byKey.has(key)) {
         byKey.set(key, {
           key,
           riderId,
           riderName: riderName || "Unknown",
           phone: phone || "",
+          canTakeOrders: canTakeOrders !== false,
           orders: [],
         });
+      } else if (riderId) {
+        const existing = byKey.get(key);
+        if (existing.canTakeOrders === undefined) {
+          existing.canTakeOrders = canTakeOrders !== false;
+        }
       }
       return byKey.get(key);
     };
     for (const u of staffRiders) {
       const id = String(u.id || u._id || "");
-      addBucket(id || `staff:${u.name}`, id || null, u.name, u.phone);
+      addBucket(
+        id || `staff:${u.name}`,
+        id || null,
+        u.name,
+        u.phone,
+        u.canTakeOrders !== false,
+      );
     }
     for (const o of deliveryOrders) {
       const id = o.assignedRiderId ? String(o.assignedRiderId) : "";
       const name = String(o.assignedRiderName || "").trim() || "Unknown";
       const phone = String(o.assignedRiderPhone || "").trim();
       const key = id || `name:${name.toLowerCase()}`;
-      const b = addBucket(key, id || null, name, phone);
+      const b = addBucket(key, id || null, name, phone, true);
       b.orders.push(o);
     }
     const list = [...byKey.values()].map((b) => {
@@ -650,6 +716,44 @@ export default function RidersPage() {
     cutoffHour,
   ]);
 
+  const rosterFilterCounts = useMemo(() => {
+    const counts = { all: mergedRiders.length, active: 0, idle: 0, blocked: 0, cod: 0 };
+    for (const r of mergedRiders) {
+      if (r.status === "active") counts.active += 1;
+      if (r.status === "idle") counts.idle += 1;
+      if (r.riderId && r.canTakeOrders === false) counts.blocked += 1;
+      if (r.codOwed > 0) counts.cod += 1;
+    }
+    return counts;
+  }, [mergedRiders]);
+
+  const filteredRiders = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    let list = mergedRiders.filter((r) => {
+      if (rosterFilter === "active" && r.status !== "active") return false;
+      if (rosterFilter === "idle" && r.status !== "idle") return false;
+      if (rosterFilter === "blocked" && !(r.riderId && r.canTakeOrders === false))
+        return false;
+      if (rosterFilter === "cod" && !(r.codOwed > 0)) return false;
+      if (!q) return true;
+      const hay = `${r.riderName || ""} ${r.phone || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+    list = [...list];
+    list.sort((a, b) => {
+      if (rosterSort === "delivered") return b.delivered - a.delivered;
+      if (rosterSort === "fees") return b.delFeesEarned - a.delFeesEarned;
+      if (rosterSort === "cod") return b.codOwed - a.codOwed;
+      if (rosterSort === "name")
+        return String(a.riderName || "").localeCompare(String(b.riderName || ""));
+      const rank = { active: 0, idle: 1, off: 2 };
+      if (rank[a.status] !== rank[b.status])
+        return rank[a.status] - rank[b.status];
+      return b.delivered - a.delivered;
+    });
+    return list;
+  }, [mergedRiders, rosterSearch, rosterFilter, rosterSort]);
+
   const sidebarRider = useMemo(
     () =>
       sidebarRiderKey
@@ -744,7 +848,8 @@ export default function RidersPage() {
         [
           "Rider",
           "Rider ID",
-          "Status",
+          "Live status",
+          "Take orders",
           "Assigned",
           "Delivered",
           "Cancelled",
@@ -757,6 +862,7 @@ export default function RidersPage() {
           r.riderName,
           r.riderId || "",
           r.status,
+          r.canTakeOrders === false ? "Off" : "On",
           r.assigned,
           r.delivered,
           r.cancelled,
@@ -916,144 +1022,133 @@ export default function RidersPage() {
   return (
     <AdminLayout title="Riders">
       <div
-        className={`space-y-6 pb-16 text-gray-900 dark:text-white ${
+        className={`space-y-5 pb-16 text-gray-900 dark:text-white ${
           sidebarRiderKey
             ? "lg:mr-[min(28rem,calc(100vw-2rem))] transition-[margin] duration-200 ease-out"
             : ""
         }`}
       >
-        {/* Section 1 — Header */}
-        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 dark:border-neutral-800">
-          <div>
-            <p className="text-sm text-gray-700 dark:text-neutral-400 font-medium">
-              Live tracking · Performance · Payouts
-            </p>
-            <p className="text-xs text-gray-400 dark:text-neutral-500 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>
-                Last updated: {secAgo === "—" ? "—" : `${secAgo}s ago`} · Auto-refresh every 60s
-              </span>
-              {refreshing && !loading && (
-                <span className="inline-flex items-center gap-1.5 text-primary font-semibold">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
-                  Updating…
+        {/* Toolbar */}
+        <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 md:p-4 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                Fleet overview
+              </p>
+              <p className="text-xs text-gray-500 dark:text-neutral-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>
+                  {periodLabel || "Select a period"}
+                  {secAgo !== "—" ? ` · Updated ${secAgo}s ago` : ""}
                 </span>
-              )}
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
-            <div className="flex flex-wrap gap-1.5">
-              {["today", "yesterday", "this_week", "this_month"].map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => {
-                    setSidebarRiderKey(null);
-                    setPreset(id);
-                  }}
-                  className={`h-9 px-3 rounded-lg text-xs font-bold border transition-colors ${
-                    preset === id
-                      ? "border-primary bg-primary text-white shadow-sm shadow-primary/25"
-                      : "border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
-                  }`}
-                >
-                  {PRESETS.find((p) => p.id === id)?.label}
-                </button>
-              ))}
-              <div className="relative">
-                <select
-                  value={preset}
-                  onChange={(e) => {
-                    setSidebarRiderKey(null);
-                    setPreset(e.target.value);
-                  }}
-                  className={selectCls}
-                >
-                  {PRESETS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              </div>
+                {refreshing && !loading && (
+                  <span className="inline-flex items-center gap-1 text-primary font-semibold">
+                    <Loader2 className="w-3 h-3 animate-spin shrink-0" aria-hidden />
+                    Updating…
+                  </span>
+                )}
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => openPayoutModal("")}
-              className="h-10 px-4 rounded-xl bg-primary text-white text-sm font-bold shadow-md shadow-primary/25 hover:opacity-95"
-            >
-              Record payout
-            </button>
-            <button
-              type="button"
-              onClick={exportFleetCsv}
-              className="h-10 px-4 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
-            >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              disabled={refreshing}
-              onClick={() => {
-                setLoading(true);
-                if (preset === "custom" && customFrom && customTo) {
-                  loadAll("custom", { from: customFrom, to: customTo });
-                } else if (preset !== "custom") loadAll(preset, null);
-                else toast.error("Pick custom dates and Apply");
-              }}
-              className="h-10 w-10 rounded-xl border border-gray-200 dark:border-neutral-700 flex items-center justify-center disabled:opacity-50"
-              title="Refresh"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openPayoutModal("")}
+                className="h-9 px-3.5 rounded-xl bg-primary text-white text-xs font-bold shadow-sm shadow-primary/25 hover:opacity-95 inline-flex items-center gap-1.5"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                Record payout
+              </button>
+              <button
+                type="button"
+                onClick={exportFleetCsv}
+                className="h-9 px-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 inline-flex items-center gap-1.5"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Export CSV
+              </button>
+              <button
+                type="button"
+                disabled={refreshing}
+                onClick={() => {
+                  setLoading(true);
+                  if (preset === "custom" && customFrom && customTo) {
+                    loadAll("custom", { from: customFrom, to: customTo });
+                  } else if (preset !== "custom") loadAll(preset, null);
+                  else toast.error("Pick custom dates and Apply");
+                }}
+                className="h-9 w-9 rounded-xl border border-gray-200 dark:border-neutral-700 flex items-center justify-center disabled:opacity-50"
+                title="Refresh"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+                />
+              </button>
+            </div>
           </div>
-        </div>
 
-        {preset === "custom" && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!customFrom || !customTo) {
-                toast.error("Choose both dates");
-                return;
-              }
-              setLoading(true);
-              loadAll("custom", { from: customFrom, to: customTo });
-            }}
-            className="flex flex-wrap items-end gap-2 p-4 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950"
-          >
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">
-                From
-              </label>
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="h-9 px-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">
-                To
-              </label>
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="h-9 px-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
-              />
-            </div>
-            <button
-              type="submit"
-              className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-bold"
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setSidebarRiderKey(null);
+                  setPreset(p.id);
+                }}
+                className={`h-8 px-3 rounded-full text-xs font-bold transition-colors ${
+                  preset === p.id
+                    ? "bg-primary text-white shadow-sm shadow-primary/25"
+                    : "bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 hover:bg-gray-200/80 dark:hover:bg-neutral-800"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {preset === "custom" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!customFrom || !customTo) {
+                  toast.error("Choose both dates");
+                  return;
+                }
+                setLoading(true);
+                loadAll("custom", { from: customFrom, to: customTo });
+              }}
+              className="flex flex-wrap items-end gap-2 pt-1 border-t border-gray-100 dark:border-neutral-800"
             >
-              Apply
-            </button>
-          </form>
-        )}
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">
+                  From
+                </label>
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="h-9 px-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">
+                  To
+                </label>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="h-9 px-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-bold"
+              >
+                Apply
+              </button>
+            </form>
+          )}
+        </div>
 
         <div
           className="relative min-h-[min(50vh,24rem)]"
@@ -1073,14 +1168,15 @@ export default function RidersPage() {
             </div>
           )}
           <>
-            {/* Section 2 — Fleet */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3">
+            {/* KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3 mb-5">
               {[
                 {
                   label: "Riders",
-                  sub: "With orders in period",
+                  sub: "In roster",
                   val: fleetStats.riderCount,
                   tone: "neutral",
+                  filter: "all",
                 },
                 {
                   label: "Deliveries",
@@ -1105,65 +1201,180 @@ export default function RidersPage() {
                   sub: `${fleetStats.codOrders} unpaid`,
                   val: fmtRs(fleetStats.codOwed),
                   tone: "amber",
+                  filter: "cod",
                 },
-              ].map((c) => (
-                <div
-                  key={c.label}
-                  className={`rounded-xl border p-3 md:p-4 ${
-                    c.tone === "amber"
-                      ? "border-amber-300/60 dark:border-amber-500/30 bg-amber-50/80 dark:bg-amber-950/30"
-                      : c.tone === "emerald"
-                        ? "border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-950/25"
-                        : c.tone === "primary"
-                          ? "border-primary/25 bg-primary/5 dark:bg-primary/10"
-                          : "border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950"
-                  }`}
-                >
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
-                    {c.label}
-                  </p>
-                  <p
-                    className={`text-lg md:text-xl font-black tabular-nums mt-1 ${
+              ].map((c) => {
+                const clickable = !!c.filter;
+                const Comp = clickable ? "button" : "div";
+                return (
+                  <Comp
+                    key={c.label}
+                    type={clickable ? "button" : undefined}
+                    onClick={
+                      clickable
+                        ? () => {
+                            setRosterFilter(c.filter);
+                            setSidebarRiderKey(null);
+                          }
+                        : undefined
+                    }
+                    className={`rounded-xl border p-3 md:p-4 text-left transition-colors ${
                       c.tone === "amber"
-                        ? "text-amber-800 dark:text-amber-200"
+                        ? "border-amber-300/60 dark:border-amber-500/30 bg-amber-50/80 dark:bg-amber-950/30"
                         : c.tone === "emerald"
-                          ? "text-emerald-800 dark:text-emerald-200"
+                          ? "border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-950/25"
                           : c.tone === "primary"
-                            ? "text-primary"
-                            : "text-gray-900 dark:text-white"
+                            ? "border-primary/25 bg-primary/5 dark:bg-primary/10"
+                            : "border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950"
+                    } ${clickable ? "hover:ring-1 hover:ring-primary/30 cursor-pointer" : ""} ${
+                      clickable && rosterFilter === c.filter
+                        ? "ring-1 ring-primary/40"
+                        : ""
                     }`}
                   >
-                    {c.val}
-                  </p>
-                  <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-0.5">
-                    {c.sub}
-                  </p>
-                </div>
-              ))}
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                      {c.label}
+                    </p>
+                    <p
+                      className={`text-lg md:text-xl font-black tabular-nums mt-1 ${
+                        c.tone === "amber"
+                          ? "text-amber-800 dark:text-amber-200"
+                          : c.tone === "emerald"
+                            ? "text-emerald-800 dark:text-emerald-200"
+                            : c.tone === "primary"
+                              ? "text-primary"
+                              : "text-gray-900 dark:text-white"
+                      }`}
+                    >
+                      {c.val}
+                    </p>
+                    <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-0.5">
+                      {c.sub}
+                    </p>
+                  </Comp>
+                );
+              })}
             </div>
 
-            {/* Section 3 — Riders table */}
-            <div>
-              <h2 className="text-sm font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">
-                Rider roster
-              </h2>
+            {/* Roster */}
+            <div className="mb-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                <h2 className="text-sm font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+                  Rider roster
+                  <span className="ml-2 text-[11px] font-semibold normal-case tracking-normal text-gray-400">
+                    {filteredRiders.length}
+                    {filteredRiders.length !== mergedRiders.length
+                      ? ` of ${mergedRiders.length}`
+                      : ""}
+                  </span>
+                </h2>
+              </div>
+
               <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-hidden">
+                <div className="p-3 border-b border-gray-100 dark:border-neutral-800 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1 min-w-0">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      <input
+                        type="search"
+                        value={rosterSearch}
+                        onChange={(e) => setRosterSearch(e.target.value)}
+                        placeholder="Search rider name or phone…"
+                        className="w-full h-9 pl-9 pr-9 rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-sm font-medium placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                      />
+                      {rosterSearch ? (
+                        <button
+                          type="button"
+                          onClick={() => setRosterSearch("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-200/80 dark:hover:bg-neutral-800"
+                          aria-label="Clear search"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="relative shrink-0">
+                      <select
+                        value={rosterSort}
+                        onChange={(e) => setRosterSort(e.target.value)}
+                        className={selectCls}
+                        aria-label="Sort roster"
+                      >
+                        {ROSTER_SORTS.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            Sort: {s.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                    {ROSTER_FILTERS.map((f) => {
+                      const count = rosterFilterCounts[f.id] ?? 0;
+                      const active = rosterFilter === f.id;
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setRosterFilter(f.id)}
+                          className={`flex-shrink-0 h-8 px-3 rounded-full text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                            active
+                              ? "bg-primary text-white shadow-sm shadow-primary/20"
+                              : "bg-gray-100 dark:bg-neutral-900 text-gray-600 dark:text-neutral-300 hover:bg-gray-200/80 dark:hover:bg-neutral-800"
+                          }`}
+                        >
+                          {f.label}
+                          <span
+                            className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center ${
+                              active
+                                ? "bg-white/20"
+                                : "bg-white dark:bg-neutral-800 text-gray-500 dark:text-neutral-400"
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {mergedRiders.length === 0 ? (
                   <p className="p-8 text-center text-sm text-gray-500 dark:text-neutral-400">
                     No riders or delivery assignments in this period.
                   </p>
+                ) : filteredRiders.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <p className="text-sm font-bold text-gray-600 dark:text-neutral-300">
+                      No riders match these filters
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRosterSearch("");
+                        setRosterFilter("all");
+                      }}
+                      className="mt-2 text-xs font-bold text-primary hover:underline"
+                    >
+                      Clear search & filters
+                    </button>
+                  </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm min-w-[900px]">
+                    <table className="w-full text-sm min-w-[920px]">
                       <thead>
                         <tr className="text-left text-[10px] uppercase tracking-wider text-gray-500 dark:text-neutral-400 border-b border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50">
-                          <th className="px-3 py-3 font-bold">Status</th>
-                          <th className="px-3 py-3 font-bold text-right w-[1%] whitespace-nowrap">
-                            Actions
-                          </th>
                           <th className="px-3 py-3 font-bold">Rider</th>
                           <th className="px-3 py-3 font-bold hidden md:table-cell">
                             Phone
+                          </th>
+                          <th className="px-3 py-3 font-bold">Live</th>
+                          <th
+                            className="px-3 py-3 font-bold"
+                            title="Allow this rider to place new orders in the rider app"
+                          >
+                            Take orders
                           </th>
                           <th className="px-3 py-3 font-bold text-right">
                             Delivered
@@ -1172,7 +1383,7 @@ export default function RidersPage() {
                             Del fees
                           </th>
                           <th className="px-3 py-3 font-bold text-right hidden sm:table-cell">
-                            Delivered value
+                            Value
                           </th>
                           <th className="px-3 py-3 font-bold text-right">
                             COD owed
@@ -1182,17 +1393,17 @@ export default function RidersPage() {
                             title="Kitchen · Ready · Out for delivery"
                           >
                             Pipeline
-                            <span className="block text-[9px] font-semibold normal-case tracking-normal text-gray-400 dark:text-neutral-500 mt-0.5">
-                              K · R · O
-                            </span>
                           </th>
                           <th className="px-3 py-3 font-bold hidden xl:table-cell">
                             Payout
                           </th>
+                          <th className="px-3 py-3 font-bold text-right w-[1%] whitespace-nowrap">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {mergedRiders.map((r) => (
+                        {filteredRiders.map((r) => (
                           <tr
                             key={r.key}
                             className={`border-b border-gray-100 dark:border-neutral-800/80 transition-colors ${
@@ -1202,10 +1413,28 @@ export default function RidersPage() {
                             }`}
                           >
                             <td className="px-3 py-3 align-middle">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                  <Truck className="w-4 h-4 text-primary" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-gray-900 dark:text-white truncate">
+                                    {r.riderName}
+                                  </p>
+                                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 md:hidden truncate">
+                                    {r.phone || "—"}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 align-middle text-gray-600 dark:text-neutral-400 hidden md:table-cell whitespace-nowrap">
+                              {r.phone || "—"}
+                            </td>
+                            <td className="px-3 py-3 align-middle">
                               {r.status === "active" && (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">
                                   <Circle className="w-2 h-2 fill-current" />
-                                  Active
+                                  On delivery
                                 </span>
                               )}
                               {r.status === "idle" && (
@@ -1221,37 +1450,42 @@ export default function RidersPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-3 py-3 align-middle text-right">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSidebarRiderKey((k) =>
-                                    k === r.key ? null : r.key,
-                                  );
-                                  setDetailTab("orders");
-                                  setCodExpandId(null);
-                                }}
-                                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-bold text-gray-800 dark:text-neutral-200 hover:border-primary/50 hover:bg-primary/5 dark:hover:bg-primary/10 transition-colors"
-                              >
-                                <PanelRight className="w-3.5 h-3.5" />
-                                {sidebarRiderKey === r.key ? "Close" : "View"}
-                              </button>
-                            </td>
                             <td className="px-3 py-3 align-middle">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Truck className="w-4 h-4 text-primary shrink-0" />
-                                <div className="min-w-0">
-                                  <p className="font-bold text-gray-900 dark:text-white truncate">
-                                    {r.riderName}
-                                  </p>
-                                  <p className="text-[11px] text-gray-500 dark:text-neutral-500 md:hidden truncate">
-                                    {r.phone || "—"}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 align-middle text-gray-600 dark:text-neutral-400 hidden md:table-cell whitespace-nowrap">
-                              {r.phone || "—"}
+                              {r.riderId ? (
+                                <button
+                                  type="button"
+                                  disabled={togglingTakeOrdersId === r.riderId}
+                                  onClick={() => handleToggleCanTakeOrders(r)}
+                                  className="inline-flex items-center gap-1.5 disabled:opacity-50"
+                                  title={
+                                    r.canTakeOrders !== false
+                                      ? "New orders enabled — click to disable"
+                                      : "New orders disabled — click to enable"
+                                  }
+                                  aria-label={`Toggle take orders for ${r.riderName}`}
+                                >
+                                  {togglingTakeOrdersId === r.riderId ? (
+                                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                                  ) : r.canTakeOrders !== false ? (
+                                    <ToggleRight className="w-7 h-7 text-emerald-500" />
+                                  ) : (
+                                    <ToggleLeft className="w-7 h-7 text-gray-400" />
+                                  )}
+                                  <span
+                                    className={`text-[10px] font-black uppercase ${
+                                      r.canTakeOrders !== false
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : "text-gray-400"
+                                    }`}
+                                  >
+                                    {r.canTakeOrders !== false ? "On" : "Off"}
+                                  </span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] font-bold text-gray-400">
+                                  —
+                                </span>
+                              )}
                             </td>
                             <td className="px-3 py-3 align-middle text-right font-bold tabular-nums">
                               {r.delivered}
@@ -1273,9 +1507,20 @@ export default function RidersPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-3 py-3 align-middle text-center text-[11px] text-gray-600 dark:text-neutral-400 hidden lg:table-cell tabular-nums whitespace-nowrap">
-                              <span title="Kitchen · Ready · Out for delivery">
-                                K·{r.kitchen} R·{r.ready} O·{r.out}
+                            <td className="px-3 py-3 align-middle text-center hidden lg:table-cell">
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-bold tabular-nums text-gray-600 dark:text-neutral-400"
+                                title="Kitchen · Ready · Out"
+                              >
+                                <span className="px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300">
+                                  {r.kitchen}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                                  {r.ready}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded-md bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300">
+                                  {r.out}
+                                </span>
                               </span>
                             </td>
                             <td className="px-3 py-3 align-middle hidden xl:table-cell max-w-[140px]">
@@ -1292,6 +1537,22 @@ export default function RidersPage() {
                                   —
                                 </span>
                               )}
+                            </td>
+                            <td className="px-3 py-3 align-middle text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSidebarRiderKey((k) =>
+                                    k === r.key ? null : r.key,
+                                  );
+                                  setDetailTab("orders");
+                                  setCodExpandId(null);
+                                }}
+                                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 dark:border-neutral-700 text-xs font-bold text-gray-800 dark:text-neutral-200 hover:border-primary/50 hover:bg-primary/5 dark:hover:bg-primary/10 transition-colors"
+                              >
+                                <PanelRight className="w-3.5 h-3.5" />
+                                {sidebarRiderKey === r.key ? "Close" : "View"}
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1326,7 +1587,27 @@ export default function RidersPage() {
                           {sidebarRider.phone}
                         </p>
                       ) : null}
-                      <div className="mt-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {sidebarRider.riderId ? (
+                          <button
+                            type="button"
+                            disabled={togglingTakeOrdersId === sidebarRider.riderId}
+                            onClick={() => handleToggleCanTakeOrders(sidebarRider)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 px-2 py-1 disabled:opacity-50"
+                          >
+                            {togglingTakeOrdersId === sidebarRider.riderId ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                            ) : sidebarRider.canTakeOrders !== false ? (
+                              <ToggleRight className="w-5 h-5 text-emerald-500" />
+                            ) : (
+                              <ToggleLeft className="w-5 h-5 text-gray-400" />
+                            )}
+                            <span className="text-[10px] font-black uppercase text-gray-600 dark:text-neutral-300">
+                              Take orders{" "}
+                              {sidebarRider.canTakeOrders !== false ? "On" : "Off"}
+                            </span>
+                          </button>
+                        ) : null}
                         {sidebarRider.status === "active" && (
                           <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">
                             <Circle className="w-2 h-2 fill-current" />
@@ -1873,34 +2154,61 @@ export default function RidersPage() {
               </>
             )}
 
-            {/* Section 6 — Pipeline */}
+            {/* Live pipeline */}
             <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 md:p-5">
-              <h2 className="text-sm font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider mb-3">
-                Live pipeline (all riders)
-              </h2>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                <h2 className="text-sm font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
+                  Live pipeline
+                </h2>
+                {pipelineFilter != null && (
+                  <button
+                    type="button"
+                    onClick={() => setPipelineFilter(null)}
+                    className="text-xs font-bold text-primary hover:underline self-start sm:self-auto"
+                  >
+                    Clear pipeline filter
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
                   {
                     key: "kitchen",
                     label: "In kitchen",
                     n: pipelineCounts.kitchen,
+                    tone: "blue",
                   },
                   {
                     key: "ready",
                     label: "Ready to pick",
                     n: pipelineCounts.ready,
+                    tone: "emerald",
                   },
                   {
                     key: "out",
                     label: "Out for delivery",
                     n: pipelineCounts.out,
+                    tone: "violet",
                   },
                   {
                     key: "active",
                     label: "Total active",
                     n: pipelineCounts.total,
+                    tone: "primary",
                   },
-                ].map((c) => (
+                ].map((c) => {
+                  const selected =
+                    (c.key === "active" && pipelineFilter === "active") ||
+                    (c.key !== "active" && pipelineFilter === c.key);
+                  const toneCls =
+                    c.tone === "blue"
+                      ? "border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20"
+                      : c.tone === "emerald"
+                        ? "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20"
+                        : c.tone === "violet"
+                          ? "border-violet-200 dark:border-violet-500/30 bg-violet-50/50 dark:bg-violet-950/20"
+                          : "border-primary/25 bg-primary/5 dark:bg-primary/10";
+                  return (
                   <button
                     key={c.key}
                     type="button"
@@ -1914,10 +2222,9 @@ export default function RidersPage() {
                       )
                     }
                     className={`rounded-xl border p-4 text-center transition-colors ${
-                      (c.key === "active" && pipelineFilter === "active") ||
-                      (c.key !== "active" && pipelineFilter === c.key)
+                      selected
                         ? "border-primary bg-primary/10 ring-1 ring-primary/30"
-                        : "border-gray-200 dark:border-neutral-800 hover:border-primary/40"
+                        : `${toneCls} hover:border-primary/40`
                     }`}
                   >
                     <p className="text-[10px] font-bold text-gray-400 uppercase">
@@ -1927,7 +2234,8 @@ export default function RidersPage() {
                       {c.n}
                     </p>
                   </button>
-                ))}
+                  );
+                })}
               </div>
               {pipelineFilter != null && (
                 <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 dark:border-neutral-800">

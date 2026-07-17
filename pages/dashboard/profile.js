@@ -68,7 +68,8 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const auth = getStoredAuth();
-    setIsWaiter(auth?.user?.role === "order_taker");
+    const role = auth?.user?.role;
+    setIsWaiter(role === "order_taker" || role === "delivery_rider");
   }, []);
 
   useEffect(() => {
@@ -170,7 +171,12 @@ export default function ProfilePage() {
   }
 
   if (isWaiter) {
-    return <WaiterProfileView />;
+    const role = getStoredAuth()?.user?.role;
+    return (
+      <WaiterProfileView
+        backHref={role === "delivery_rider" ? "/rider" : "/order-taker"}
+      />
+    );
   }
 
   return (

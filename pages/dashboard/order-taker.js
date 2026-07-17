@@ -63,6 +63,7 @@ import OrderBillReceiptModal from "../../components/order-taker/OrderBillReceipt
 import PosDealCustomizeModal from "../../components/pos/PosDealCustomizeModal";
 import {
   buildDealSelectionsFingerprint,
+  getComboItemType,
   isDealConfigurable,
 } from "../../lib/dealComboItems";
 import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
@@ -84,6 +85,86 @@ const TABS = {
   ACTIVE: "active",
   HISTORY: "history",
 };
+
+function menuItemUnitPrice(menuItem) {
+  if (!menuItem) return 0;
+  return (
+    Number(
+      menuItem.effectivePrice ??
+        menuItem.finalPrice ??
+        menuItem.price ??
+        0,
+    ) || 0
+  );
+}
+
+/** À-la-carte sum for one deal instance (choices + fixed), for price comparison UI. */
+function estimateDealAlaCarteUnit(deal, selectionsBySlot = {}, menuItems = []) {
+  if (!deal) return 0;
+  const byId = new Map(
+    (menuItems || []).map((m) => [String(m.id || m._id), m]),
+  );
+  let sum = 0;
+  for (const ci of deal.comboItems || []) {
+    if (getComboItemType(ci) !== "fixed") continue;
+    const mid = String(
+      ci.menuItem?._id || ci.menuItem?.id || ci.menuItem || "",
+    );
+    const menu = byId.get(mid) || ci.menuItem;
+    sum += menuItemUnitPrice(menu) * (Number(ci.quantity) || 1);
+  }
+  for (const picks of Object.values(selectionsBySlot || {})) {
+    for (const pick of picks || []) {
+      const mid = String(pick.menuItemId || "");
+      const menu = byId.get(mid);
+      const base = menuItemUnitPrice(menu) || Number(pick.price) || 0;
+      const modExtra = (pick.modifierSelections || [])
+        .flatMap((s) => s.options || [])
+        .reduce((a, o) => a + (Number(o.price) || 0), 0);
+      sum += (base + modExtra) * (Number(pick.qty) || 1);
+    }
+  }
+  return Math.round(sum);
+}
+
+function snapshotOrderEditState(order, cartItems, details = {}) {
+  return JSON.stringify({
+    items: (order?.items || []).map((it) => ({
+      key: String(it.menuItemId || it.menuItem || it.name || ""),
+      qty: Number(it.quantity ?? it.qty) || 1,
+      note: String(it.note || "").trim(),
+      lineSource: it.lineSource || "",
+    })),
+    cart: (cartItems || []).map((c) => ({
+      key: String(c._cartKey || c.id || ""),
+      qty: Number(c.quantity) || 1,
+      note: String(c.note || "").trim(),
+      price: Number(c.price) || 0,
+    })),
+    customerName: String(details.customerName || "").trim(),
+    customerPhone: String(details.customerPhone || "").trim(),
+    tableName: String(details.tableName || "").trim(),
+  });
+}
+
+/** Unit + optional struck-through à-la-carte when deal combo price differs. */
+function DealPriceLabels({ unitPrice, alaCarteUnit }) {
+  const deal = Math.round(Number(unitPrice) || 0);
+  const ala = Math.round(Number(alaCarteUnit) || 0);
+  const showDiff = ala > 0 && ala !== deal;
+  return (
+    <span className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
+      <span className={showDiff ? "font-bold text-orange-600 dark:text-orange-400" : ""}>
+        Rs. {deal.toLocaleString()}
+      </span>
+      {showDiff ? (
+        <span className="ml-1.5 text-[10px] font-medium text-gray-400 line-through dark:text-neutral-500">
+          Rs. {ala.toLocaleString()}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 function isBranchRequiredError(msg) {
   return (
@@ -420,6 +501,7 @@ export default function OrderTakerPage() {
   const [otCustomerName, setOtCustomerName] = useState("");
   const [otCustomerPhone, setOtCustomerPhone] = useState("");
   const [otTableName, setOtTableName] = useState("");
+  const editBaselineRef = useRef(null);
 
   const appendCanModifyItems =
     !appendTargetOrder || canAppendItemsToOrder(appendTargetOrder);
@@ -617,8 +699,7 @@ export default function OrderTakerPage() {
 
   const filteredItems = useMemo(() => {
     return allMenuItems.filter((item) => {
-      if (item.available === false || item.finalAvailable === false)
-        return false;
+      // Keep unavailable / out-of-stock tiles visible (flagged), so waiters see them.
       const matchCat =
         selectedCategory === "all" ||
         (selectedCategory === "deals"
@@ -627,8 +708,7 @@ export default function OrderTakerPage() {
       const matchSearch =
         !searchQuery ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const isAvailable = item.finalAvailable ?? item.available;
-      return matchCat && matchSearch && isAvailable !== false;
+      return matchCat && matchSearch;
     });
   }, [allMenuItems, selectedCategory, searchQuery]);
 
@@ -652,6 +732,11 @@ export default function OrderTakerPage() {
     const fingerprint = buildDealSelectionsFingerprint(deal, selectionsBySlot);
     const cartKey = `deal-${dealId}${fingerprint ? `|${fingerprint}` : ""}`;
     const quantity = Math.max(1, Math.floor(Number(qty)) || 1);
+    const alaCarteUnit = estimateDealAlaCarteUnit(
+      deal,
+      selectionsBySlot,
+      menu.items || [],
+    );
     setCart((prev) => {
       const existing = prev.find((c) => (c._cartKey || c.id) === cartKey);
       if (existing) {
@@ -668,6 +753,7 @@ export default function OrderTakerPage() {
           _cartKey: cartKey,
           name: deal.name,
           price: deal.comboPrice || 0,
+          _alaCartePrice: alaCarteUnit,
           quantity,
           imageUrl: deal.imageUrl || "",
           isDeal: true,
@@ -684,11 +770,17 @@ export default function OrderTakerPage() {
       toast.error("You don't have permission to edit this order.");
       return;
     }
-    if (
+    const unavailable =
+      item.available === false || item.finalAvailable === false;
+    const outOfStock =
       !item.isDeal &&
       (item.inventorySufficient === false ||
-        item.inventorySufficient === "false")
-    ) {
+        item.inventorySufficient === "false");
+    if (unavailable) {
+      toast.error(`${item.name} is unavailable`);
+      return;
+    }
+    if (outOfStock) {
       toast.error(`${item.name} is out of stock`);
       return;
     }
@@ -698,6 +790,10 @@ export default function OrderTakerPage() {
       );
       if (deal && isDealConfigurable(deal)) {
         setDealCustomizeTarget({ deal, qty });
+        return;
+      }
+      if (deal) {
+        addDealToCart(deal, qty, {});
         return;
       }
     }
@@ -736,6 +832,17 @@ export default function OrderTakerPage() {
     if (!item) return;
     if (appendTargetOrder && !appendCanModifyItems) {
       toast.error("You don't have permission to edit this order.");
+      return;
+    }
+    if (item.available === false || item.finalAvailable === false) {
+      toast.error(`${item.name} is unavailable`);
+      return;
+    }
+    if (
+      item.inventorySufficient === false ||
+      item.inventorySufficient === "false"
+    ) {
+      toast.error(`${item.name} is out of stock`);
       return;
     }
     const qty = Math.max(1, Math.floor(Number(item._pendingQty)) || 1);
@@ -1607,15 +1714,23 @@ export default function OrderTakerPage() {
       toast.error("You don't have permission to add items to this order.");
       return;
     }
+    const customerName = String(order.customerName || "").trim();
+    const customerPhone = String(order.customerPhone || order.phone || "").trim();
+    const tableName = String(order.tableName || "").trim();
     setAppendEditDetailsOnly(false);
     setAppendTargetOrder(order);
     setCart([]);
     setExistingItemsOpen(true);
-    setOtCustomerName(String(order.customerName || "").trim());
-    setOtCustomerPhone(String(order.customerPhone || order.phone || "").trim());
-    setOtTableName(String(order.tableName || "").trim());
+    setOtCustomerName(customerName);
+    setOtCustomerPhone(customerPhone);
+    setOtTableName(tableName);
     setSearchQuery("");
     setSelectedCategory("all");
+    editBaselineRef.current = snapshotOrderEditState(order, [], {
+      customerName,
+      customerPhone,
+      tableName,
+    });
     // Full edit (new orders): open cart with existing items; otherwise go to menu to add.
     setStep(canFullyEditExistingItems(order) ? STEPS.CART : STEPS.MENU);
     setActiveTab(TABS.NEW_ORDER);
@@ -1623,17 +1738,37 @@ export default function OrderTakerPage() {
 
   function startEditCustomerDetails(order) {
     if (!order || !orderCanAppend(order)) return;
+    const customerName = String(order.customerName || "").trim();
+    const customerPhone = String(order.customerPhone || order.phone || "").trim();
+    const tableName = String(order.tableName || "").trim();
     setAppendEditDetailsOnly(true);
     setAppendTargetOrder(order);
     setCart([]);
-    setOtCustomerName(String(order.customerName || "").trim());
-    setOtCustomerPhone(String(order.customerPhone || order.phone || "").trim());
-    setOtTableName(String(order.tableName || "").trim());
+    setOtCustomerName(customerName);
+    setOtCustomerPhone(customerPhone);
+    setOtTableName(tableName);
+    editBaselineRef.current = snapshotOrderEditState(order, [], {
+      customerName,
+      customerPhone,
+      tableName,
+    });
     setStep(STEPS.CART);
     setActiveTab(TABS.NEW_ORDER);
   }
 
+  function isAppendEditDirty() {
+    if (!appendTargetOrder) return false;
+    if (!editBaselineRef.current) return cart.length > 0;
+    const current = snapshotOrderEditState(appendTargetOrder, cart, {
+      customerName: otCustomerName,
+      customerPhone: otCustomerPhone,
+      tableName: otTableName,
+    });
+    return current !== editBaselineRef.current;
+  }
+
   function cancelAppendFlow() {
+    editBaselineRef.current = null;
     setAppendTargetOrder(null);
     setAppendEditDetailsOnly(false);
     setAppendingOrderId(null);
@@ -1646,6 +1781,16 @@ export default function OrderTakerPage() {
     setSelectedCategory("all");
     setStep(STEPS.TABLE);
     setActiveTab(TABS.HOME);
+  }
+
+  function requestCancelAppendFlow() {
+    if (isAppendEditDirty()) {
+      const ok = window.confirm(
+        "Discard changes? Unsaved edits to this order will be lost.",
+      );
+      if (!ok) return;
+    }
+    cancelAppendFlow();
   }
 
   /** Abandon a new-order draft (not an existing-order edit). */
@@ -1920,7 +2065,7 @@ export default function OrderTakerPage() {
                   type="button"
                   onClick={() => {
                     if (appendTargetOrder) {
-                      cancelAppendFlow();
+                      requestCancelAppendFlow();
                       return;
                     }
                     if (step === STEPS.CART) setStep(STEPS.MENU);
@@ -2003,7 +2148,7 @@ export default function OrderTakerPage() {
                 step === STEPS.MENU && (
                 <button
                   type="button"
-                  onClick={() => cancelAppendFlow()}
+                  onClick={() => requestCancelAppendFlow()}
                   className="h-9 px-3 rounded-full flex items-center gap-1.5 text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 transition-colors text-xs font-semibold"
                   title="Cancel editing this order"
                 >
@@ -2646,7 +2791,7 @@ export default function OrderTakerPage() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => cancelAppendFlow()}
+                          onClick={() => requestCancelAppendFlow()}
                           className="flex-shrink-0 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold text-gray-700 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-gray-50 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-800"
                         >
                           Cancel edit
@@ -2729,15 +2874,24 @@ export default function OrderTakerPage() {
                               item.finalPrice ??
                               item.price ??
                               0);
+                          const unavailable =
+                            item.available === false ||
+                            item.finalAvailable === false;
                           const outOfStock =
                             !item.isDeal &&
                             (item.inventorySufficient === false ||
                               item.inventorySufficient === "false");
+                          const cannotAdd = unavailable || outOfStock;
+                          const stockLabel = outOfStock
+                            ? "Out of Stock"
+                            : unavailable
+                              ? "Unavailable"
+                              : null;
                           return (
                             <div
                               key={item.id || item._id}
                               className={`relative rounded-2xl overflow-hidden border border-gray-200 dark:border-neutral-800 transition-transform ${
-                                outOfStock
+                                cannotAdd
                                   ? "bg-white dark:bg-neutral-900"
                                   : "bg-white dark:bg-neutral-900 active:scale-[0.97]"
                               }`}
@@ -2745,26 +2899,26 @@ export default function OrderTakerPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  !outOfStock &&
+                                  !cannotAdd &&
                                   appendCanModifyItems &&
                                   addToCart(item)
                                 }
                                 disabled={
-                                  outOfStock ||
+                                  cannotAdd ||
                                   (appendTargetOrder && !appendCanModifyItems)
                                 }
                                 className="w-full text-left disabled:cursor-not-allowed"
                                 aria-disabled={
-                                  outOfStock ||
+                                  cannotAdd ||
                                   (appendTargetOrder && !appendCanModifyItems)
                                 }
                               >
                                 <div className="relative w-full aspect-[4/3] md:aspect-square bg-gray-100 dark:bg-neutral-900 overflow-hidden">
                                   <div
-                                    className={`absolute inset-0 ${outOfStock ? "opacity-60" : ""}`}
+                                    className={`absolute inset-0 ${cannotAdd ? "opacity-60" : ""}`}
                                     aria-hidden
                                   >
-                                    {item.isDeal && !outOfStock && (
+                                    {item.isDeal && !cannotAdd && (
                                       <div className="absolute top-1.5 left-1.5 z-[2] flex items-center gap-0.5 rounded-md bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
                                         <Tag className="w-2.5 h-2.5" />
                                         Deal
@@ -2774,7 +2928,7 @@ export default function OrderTakerPage() {
                                       <img
                                         src={item.imageUrl}
                                         alt={item.name}
-                                        className={`w-full h-full object-cover ${outOfStock ? "grayscale" : ""}`}
+                                        className={`w-full h-full object-cover ${cannotAdd ? "grayscale" : ""}`}
                                         loading="lazy"
                                       />
                                     ) : (
@@ -2783,20 +2937,26 @@ export default function OrderTakerPage() {
                                       </div>
                                     )}
                                   </div>
-                                  {outOfStock && (
+                                  {stockLabel && (
                                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 pointer-events-none">
-                                      <span className="px-2.5 py-1 rounded-md bg-red-600 text-white text-[10px] md:text-[11px] font-bold shadow-md">
-                                        Out of Stock
+                                      <span
+                                        className={`px-2.5 py-1 rounded-md text-white text-[10px] md:text-[11px] font-bold shadow-md ${
+                                          outOfStock
+                                            ? "bg-red-600"
+                                            : "bg-gray-700"
+                                        }`}
+                                      >
+                                        {stockLabel}
                                       </span>
                                     </div>
                                   )}
                                 </div>
                                 <div
-                                  className={`px-2.5 md:px-2 pt-1.5 md:pt-1 pb-2 md:pb-1.5 ${outOfStock ? "opacity-60" : ""}`}
+                                  className={`px-2.5 md:px-2 pt-1.5 md:pt-1 pb-2 md:pb-1.5 ${cannotAdd ? "opacity-60" : ""}`}
                                 >
                                   <p
                                     className={`text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 pb-0.5 ${
-                                      outOfStock
+                                      cannotAdd
                                         ? "text-gray-400 dark:text-neutral-500"
                                         : ""
                                     }`}
@@ -2805,7 +2965,7 @@ export default function OrderTakerPage() {
                                   </p>
                                   <p
                                     className={`text-xs md:text-[11px] font-extrabold ${
-                                      outOfStock
+                                      cannotAdd
                                         ? "text-gray-400"
                                         : "text-orange-500"
                                     }`}
@@ -2816,7 +2976,7 @@ export default function OrderTakerPage() {
                               </button>
 
                               {qty > 0 &&
-                                !outOfStock &&
+                                !cannotAdd &&
                                 appendCanModifyItems && (
                                   <div className="absolute top-2 md:top-1.5 right-2 md:right-1.5 flex items-center gap-0.5 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-neutral-700/50 px-1 py-0.5">
                                     <button
@@ -2846,7 +3006,7 @@ export default function OrderTakerPage() {
                                 )}
 
                               {qty === 0 &&
-                                !outOfStock &&
+                                !cannotAdd &&
                                 appendCanModifyItems && (
                                   <button
                                     type="button"
@@ -2918,7 +3078,7 @@ export default function OrderTakerPage() {
                         {appendTargetOrder ? (
                           <button
                             type="button"
-                            onClick={() => cancelAppendFlow()}
+                            onClick={() => requestCancelAppendFlow()}
                             className="flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-orange-600 transition-colors hover:bg-orange-500/10 dark:text-orange-400"
                             title="Cancel editing this order"
                           >
@@ -3055,6 +3215,24 @@ export default function OrderTakerPage() {
                                           0,
                                       ) || 0,
                                     );
+                                    const alaCarteUnit = Math.round(
+                                      (group.indices || []).reduce(
+                                        (sum, idx) => {
+                                          const it =
+                                            appendTargetOrder.items?.[idx];
+                                          if (!it) return sum;
+                                          return (
+                                            sum +
+                                            (Number(it.lineTotal) ||
+                                              Number(it.unitPrice || 0) *
+                                                (Number(
+                                                  it.quantity ?? it.qty,
+                                                ) || 1))
+                                          );
+                                        },
+                                        0,
+                                      ) / Math.max(1, dealQty),
+                                    );
                                     const lineTotal = unitPrice * dealQty;
                                     return (
                                       <div
@@ -3104,9 +3282,10 @@ export default function OrderTakerPage() {
                                             </div>
 
                                             <div className="mt-2.5 flex items-center gap-2">
-                                              <p className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
-                                                Rs. {unitPrice.toLocaleString()}
-                                              </p>
+                                              <DealPriceLabels
+                                                unitPrice={unitPrice}
+                                                alaCarteUnit={alaCarteUnit}
+                                              />
                                               {canEditExisting ? (
                                                 <div className="mx-auto flex h-8 flex-shrink-0 items-stretch overflow-hidden rounded-full border border-gray-200 dark:border-neutral-700">
                                                   <button
@@ -3359,6 +3538,23 @@ export default function OrderTakerPage() {
                             const lineTotal = unitPrice * item.quantity;
                             const canChangeQty =
                               !appendTargetOrder || appendCanModifyItems;
+                            const alaCarteUnit = item.isDeal
+                              ? Number(item._alaCartePrice) ||
+                                estimateDealAlaCarteUnit(
+                                  availableDeals.find(
+                                    (d) =>
+                                      String(d._id || d.id) ===
+                                        String(item._dealId || "").replace(
+                                          /^deal-/,
+                                          "",
+                                        ) ||
+                                      `deal-${d._id || d.id}` ===
+                                        String(item.id),
+                                  ),
+                                  item._dealSelections || {},
+                                  menu.items || [],
+                                )
+                              : 0;
                             const optionLines = [];
                             if (item.size && !item.isDeal) {
                               optionLines.push(`+ ${item.size}`);
@@ -3435,9 +3631,16 @@ export default function OrderTakerPage() {
                                     </div>
 
                                     <div className="mt-2.5 flex items-center gap-2">
-                                      <p className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
-                                        Rs. {unitPrice.toLocaleString()}
-                                      </p>
+                                      {item.isDeal ? (
+                                        <DealPriceLabels
+                                          unitPrice={unitPrice}
+                                          alaCarteUnit={alaCarteUnit}
+                                        />
+                                      ) : (
+                                        <p className="min-w-0 flex-shrink-0 text-[13px] font-medium tabular-nums text-gray-700 dark:text-neutral-300">
+                                          Rs. {unitPrice.toLocaleString()}
+                                        </p>
+                                      )}
                                       {canChangeQty ? (
                                         <div className="mx-auto flex h-8 flex-shrink-0 items-stretch overflow-hidden rounded-full border border-gray-200 dark:border-neutral-700">
                                           <button

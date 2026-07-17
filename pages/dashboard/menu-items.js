@@ -1283,13 +1283,22 @@ export default function MenuItemsPage() {
       ["Branch", branchName],
       ["Generated", date],
       [],
-      ["Name", "Category", "Price", "Dietary", "Status", "Trending", "Must Try"],
+      ["Name", "Category", "Price", "Dietary", "Status", "Trending", "Must Try", "Image URL"],
       ...targetItems.map((item) => {
         const cat = categories.find((c) => c.id === item.categoryId)?.name || "Uncategorized";
         const price = item.finalPrice ?? item.price ?? 0;
         const available = (item.finalAvailable ?? item.available ?? true) ? "Enabled" : "Disabled";
         const dietary = item.dietaryType === "veg" ? "Veg" : item.dietaryType === "vegan" ? "Vegan" : "Non-Veg";
-        return [item.name, cat, price, dietary, available, item.isTrending ? "Yes" : "No", item.isMustTry ? "Yes" : "No"];
+        return [
+          item.name,
+          cat,
+          price,
+          dietary,
+          available,
+          item.isTrending ? "Yes" : "No",
+          item.isMustTry ? "Yes" : "No",
+          item.imageUrl || "",
+        ];
       }),
       [],
       ["SUMMARY"],
@@ -1469,6 +1478,14 @@ export default function MenuItemsPage() {
         else if (k === "trending" || k === "is trending") col.trending = i;
         else if (k === "must try" || k === "musttry") col.mustTry = i;
         else if (k === "description") col.description = i;
+        else if (
+          k === "image url" ||
+          k === "imageurl" ||
+          k === "image" ||
+          k === "image link"
+        )
+          col.imageUrl = i;
+        else if (k === "status") col.available = i;
       });
       return col;
     };
@@ -1528,6 +1545,10 @@ export default function MenuItemsPage() {
         description:
           col.description != null
             ? String(cells[col.description] ?? "").trim()
+            : "",
+        imageUrl:
+          col.imageUrl != null
+            ? String(cells[col.imageUrl] ?? "").trim()
             : "",
       });
     }
@@ -1603,6 +1624,7 @@ export default function MenuItemsPage() {
             categoryId: cat.id,
             dietaryType: parseDietaryCell(row.dietaryRaw),
             description: row.description || "",
+            imageUrl: row.imageUrl || "",
             isTrending:
               row.trendingRaw !== undefined && row.trendingRaw !== ""
                 ? parseYesNoCell(row.trendingRaw)
@@ -1618,7 +1640,10 @@ export default function MenuItemsPage() {
           if (
             row.availableRaw !== undefined &&
             row.availableRaw !== "" &&
-            !parseYesNoCell(row.availableRaw)
+            !parseYesNoCell(row.availableRaw) &&
+            !["enabled", "available", "active"].includes(
+              String(row.availableRaw).trim().toLowerCase(),
+            )
           ) {
             await updateBranchMenuItem(createdItem.id, { available: false });
             merged = {
