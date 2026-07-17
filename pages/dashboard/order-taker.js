@@ -1462,7 +1462,11 @@ export default function OrderTakerPage() {
                       ? "Order still being prepared"
                       : "Add items"
                 }
-                className="min-w-0 flex-[1.4] py-2 px-2 rounded-xl border border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform"
+                className={`min-w-0 flex-[1.4] py-2 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform ${
+                  orderStatus === "PROCESSING"
+                    ? "border-blue-500/30 bg-blue-500/5 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                    : "border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500"
+                }`}
               >
                 {canFullyEdit ? (
                   <>
@@ -1495,7 +1499,9 @@ export default function OrderTakerPage() {
               aria-label={isExpanded ? "Hide details" : "Show details"}
               className={`w-10 shrink-0 py-2 rounded-xl text-[11px] font-bold flex items-center justify-center border transition-colors ${
                 isExpanded
-                  ? "bg-orange-500/10 border-orange-500/30 text-orange-500"
+                  ? orderStatus === "PROCESSING"
+                    ? "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
+                    : "bg-orange-500/10 border-orange-500/30 text-orange-500"
                   : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
               }`}
             >
@@ -1757,10 +1763,10 @@ export default function OrderTakerPage() {
       case "PROCESSING":
         return {
           label: "Processing",
-          bg: "bg-amber-500",
-          bgLight: "bg-amber-50 dark:bg-amber-500/10",
-          text: "text-amber-600 dark:text-amber-400",
-          border: "border-amber-200 dark:border-amber-500/20",
+          bg: "bg-blue-500",
+          bgLight: "bg-blue-50 dark:bg-blue-500/10",
+          text: "text-blue-600 dark:text-blue-400",
+          border: "border-blue-200 dark:border-blue-500/20",
           icon: ChefHat,
           pulse: false,
         };
