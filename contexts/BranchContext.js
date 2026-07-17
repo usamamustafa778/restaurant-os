@@ -52,11 +52,18 @@ export function BranchProvider({ children }) {
 
         const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
         const isAdminOrOwner = role === "restaurant_admin" || role === "admin" || role === "super_admin";
-        // Only admin/owner can use "All branches"; manager and others default to first assigned branch
-        const defaultBranch =
-          savedId === "all" || !savedId
-            ? (isAdminOrOwner ? null : list[0] ?? null)
-            : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
+        const isKitchenStaff = role === "kitchen_staff";
+        // Kitchen staff: always lock to their first assigned branch (no "all").
+        // Other non-admins: use saved branch or first assigned. Admins may use "all".
+        let defaultBranch;
+        if (isKitchenStaff) {
+          defaultBranch =
+            (savedId && list.find((b) => b.id === savedId)) || list[0] || null;
+        } else if (savedId === "all" || !savedId) {
+          defaultBranch = isAdminOrOwner ? null : list[0] ?? null;
+        } else {
+          defaultBranch = list.find((b) => b.id === savedId) ?? list[0] ?? null;
+        }
         setCurrentBranchState(defaultBranch);
         if (defaultBranch) {
           window.localStorage.setItem(BRANCH_STORAGE_KEY, defaultBranch.id);
@@ -93,12 +100,21 @@ export function BranchProvider({ children }) {
               setBranches(list);
               const r = auth?.user?.role;
               const isAdminOrOwner = r === "restaurant_admin" || r === "admin" || r === "super_admin";
+              const isKitchenStaff = r === "kitchen_staff";
               const savedId = window.localStorage.getItem(BRANCH_STORAGE_KEY);
-              const defaultBranch =
-                savedId === "all" || !savedId
-                  ? (isAdminOrOwner ? null : list[0] ?? null)
-                  : (list.find((b) => b.id === savedId) ?? list[0] ?? null);
+              let defaultBranch;
+              if (isKitchenStaff) {
+                defaultBranch =
+                  (savedId && list.find((b) => b.id === savedId)) || list[0] || null;
+              } else if (savedId === "all" || !savedId) {
+                defaultBranch = isAdminOrOwner ? null : list[0] ?? null;
+              } else {
+                defaultBranch = list.find((b) => b.id === savedId) ?? list[0] ?? null;
+              }
               setCurrentBranchState(defaultBranch);
+              if (defaultBranch) {
+                window.localStorage.setItem(BRANCH_STORAGE_KEY, defaultBranch.id);
+              }
             })
             .catch(() => setBranches([]));
         }

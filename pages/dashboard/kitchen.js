@@ -1,14 +1,27 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
+import KdsSettingsPanel from "../../components/kitchen/KdsSettingsPanel";
 import { getOrders, getNextStatuses, updateOrderStatus, recallKitchenOrder, getDaySessions } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
+import { playKitchenNewOrderSound, unlockNotificationAudio } from "../../lib/playNotificationSound";
 import {
-  Clock, User, ChefHat, Loader2, CheckCircle2, RefreshCw,
+  DEFAULT_KDS_SETTINGS,
+  KDS_FILTER_PRESETS,
+  getUrgencyLevel,
+  loadKdsSettings,
+  orderMatchesFilterPreset,
+  saveKdsSettings,
+  sortKitchenOrders,
+} from "../../lib/kdsSettings";
+import {
+  User, ChefHat, Loader2, CheckCircle2, RefreshCw,
   Package, UtensilsCrossed, Headset, ShoppingBag, Truck, MapPin,
-  Trash2, EyeOff,
+  Trash2, EyeOff, Settings, VolumeX,
 } from "lucide-react";
 import toast from "react-hot-toast";
+
+const NEW_ORDER_STATUSES = new Set(["NEW_ORDER", "UNPROCESSED"]);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -70,11 +83,8 @@ function formatElapsed(minutes) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function getUrgency(minutes) {
-  if (minutes >= 20) return "critical";
-  if (minutes >= 15) return "urgent";
-  if (minutes >= 10) return "warning";
-  return "normal";
+function getUrgency(minutes, thresholds) {
+  return getUrgencyLevel(minutes, thresholds);
 }
 
 function getOrderTypeLabel(order) {
@@ -189,12 +199,18 @@ const COLUMNS = [
 
 // ─── Order Card ───────────────────────────────────────────────────────────────
 
-function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, tick }) {
+function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, prefs }) {
   const typeLabel = getOrderTypeLabel(order);
   const typeConf = TYPE_CONFIG[typeLabel] || TYPE_CONFIG["Walk-in"];
   const minutes = getElapsedMinutes(order.createdAt);
-  const urgency = getUrgency(minutes);
+  const thresholds = {
+    urgencyWarning: prefs?.urgencyWarning,
+    urgencyUrgent: prefs?.urgencyUrgent,
+    urgencyCritical: prefs?.urgencyCritical,
+  };
+  const urgency = getUrgency(minutes, thresholds);
   const ug = URGENCY[urgency];
+  const compact = prefs?.density === "compact";
   const { AdvIcon } = column;
   const hasAdditions = (order.items || []).some((i) => i.isAddition);
   const itemsToShow = order.items || [];
@@ -206,200 +222,190 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
   const totalQty = itemsToShow.reduce((sum, i) => sum + (Number(i.qty ?? i.quantity) || 1), 0) || 0;
   const stale = isStaleReady(order);
 
-  function renderItemExtras(item) {
+  const metaBits = [];
+  if (prefs?.showTable !== false && typeLabel === "Dine In" && order.tableName) {
+    metaBits.push({ key: "table", Icon: MapPin, text: order.tableName, cls: "text-indigo-600 dark:text-indigo-400 font-semibold" });
+  }
+  if (prefs?.showAddress !== false && typeLabel === "Delivery" && order.deliveryAddress) {
+    metaBits.push({ key: "addr", Icon: Truck, text: order.deliveryAddress, cls: "text-emerald-600 dark:text-emerald-400 font-medium" });
+  }
+  if (prefs?.showCustomer !== false && order.customerName) {
+    metaBits.push({ key: "cust", Icon: User, text: order.customerName, cls: "text-gray-600 dark:text-neutral-400" });
+  }
+  if (prefs?.showWaiter !== false && order.orderTakerName) {
+    metaBits.push({ key: "waiter", Icon: Headset, text: order.orderTakerName, cls: "text-gray-500 dark:text-neutral-500" });
+  }
+  if (typeLabel === "Walk-in" && !order.tableName && !order.customerName) {
+    metaBits.push({ key: "walkin", Icon: User, text: "Walk-in", cls: "text-gray-500 dark:text-neutral-500" });
+  }
+
+  function itemExtrasInline(item) {
+    const parts = [];
+    if (item.variantLabel || item.size) parts.push(item.variantLabel || item.size);
+    (item.modifierSelections || []).forEach((sel) => {
+      (sel.options || []).forEach((opt) => {
+        if (opt.name) parts.push(opt.name);
+      });
+    });
+    if (item.note) parts.push(item.note);
+    if (parts.length === 0) return null;
     return (
-      <>
-        {(item.variantLabel || item.size) && (
-          <div className="text-xs font-normal text-orange-500 dark:text-orange-400 ml-7 mt-0.5">
-            ({item.variantLabel || item.size})
-          </div>
-        )}
-        {(item.modifierSelections || [])
-          .flatMap((sel) =>
-            (sel.options || []).map((opt) => ({
-              key: `${sel.groupId || sel.groupName}-${opt.optionId || opt.name}`,
-              name: opt.name,
-              price: Number(opt.price) || 0,
-            })),
-          )
-          .filter((opt) => opt.name)
-          .map((opt) => (
-            <div
-              key={opt.key}
-              className="text-xs text-orange-500 dark:text-orange-400 leading-tight ml-7 mt-0.5"
-            >
-              + {opt.name}
-              {opt.price > 0 ? ` (+Rs ${opt.price})` : ""}
-            </div>
-          ))}
-        {item.note && (
-          <div className="text-xs italic text-blue-500 dark:text-blue-400 ml-7 mt-0.5">
-            📝 {item.note}
-          </div>
-        )}
-      </>
+      <span className="text-[10px] leading-tight text-orange-500/90 dark:text-orange-400/90 font-medium truncate">
+        {parts.join(" · ")}
+      </span>
     );
   }
 
   return (
     <div
-      className={`bg-white dark:bg-neutral-950 rounded-2xl border-2 ${ug.border} flex flex-col overflow-hidden transition-all hover:shadow-lg ${urgency === "critical" ? "shadow-red-100 dark:shadow-red-900/20" : ""}`}
+      className={`bg-white dark:bg-neutral-950 ${compact ? "rounded-lg" : "rounded-xl"} border-2 ${ug.border} flex flex-col overflow-hidden transition-shadow hover:shadow-md ${urgency === "critical" ? "shadow-red-100 dark:shadow-red-900/20" : ""}`}
     >
-      {/* Card header */}
-      <div className="px-3 pt-3 pb-2">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <div className="flex items-center gap-2 min-w-0 flex-wrap">
-            <span className="text-2xl font-black text-gray-900 dark:text-white leading-none tabular-nums">
-              #{getTokenNumber(order)}
+      {/* Header: token + badges + timer */}
+      <div className={`${compact ? "px-2 pt-1.5 pb-1" : "px-2.5 pt-2 pb-1"}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`${compact ? "text-lg" : "text-xl"} font-black text-gray-900 dark:text-white leading-none tabular-nums shrink-0`}>
+            #{getTokenNumber(order)}
+          </span>
+          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${typeConf.badge}`}>
+            <typeConf.Icon className="w-2.5 h-2.5" />
+            {typeLabel}
+          </span>
+          {showAdditionBadge && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500 text-white shrink-0">
+              +ADD
             </span>
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ${typeConf.badge}`}>
-              <typeConf.Icon className="w-2.5 h-2.5" />
-              {typeLabel}
-            </span>
-            {showAdditionBadge && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500 text-white flex-shrink-0">
-                + ADDITION
+          )}
+          <div className={`ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-md shrink-0 ${ug.timerBg}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${ug.dot}`} />
+            <span className={`text-[10px] font-bold tabular-nums ${ug.timerText}`}>{formatElapsed(minutes)}</span>
+          </div>
+        </div>
+
+        {/* Meta row — single line, separators */}
+        {(metaBits.length > 0 || prefs?.showOrderId !== false) && (
+          <div className="mt-1 flex items-center gap-x-1.5 gap-y-0.5 flex-wrap min-w-0">
+            {prefs?.showOrderId !== false && (
+              <span className="text-[9px] font-mono text-gray-400 dark:text-neutral-600 truncate max-w-[40%]">
+                #{getDisplayOrderId(order)}
               </span>
             )}
+            {prefs?.showOrderId !== false && metaBits.length > 0 && (
+              <span className="text-gray-300 dark:text-neutral-700 text-[9px]">·</span>
+            )}
+            {metaBits.map((bit, i) => (
+              <span key={bit.key} className="inline-flex items-center gap-0.5 min-w-0 max-w-[48%]">
+                {i > 0 && <span className="text-gray-300 dark:text-neutral-700 text-[9px] mr-0.5">·</span>}
+                <bit.Icon className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                <span className={`text-[10px] truncate ${bit.cls}`}>{bit.text}</span>
+              </span>
+            ))}
           </div>
-          <div className={`flex items-center gap-1 px-2 py-1 rounded-lg flex-shrink-0 ${ug.timerBg}`}>
-            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ug.dot}`} />
-            <Clock className={`w-3 h-3 ${ug.timerText}`} />
-            <span className={`text-[11px] font-bold tabular-nums ${ug.timerText}`}>{formatElapsed(minutes)}</span>
-          </div>
-        </div>
-
-        <p className="text-[10px] text-gray-400 dark:text-neutral-600 mb-2 font-mono">
-          #{getDisplayOrderId(order)}
-        </p>
-
-        <div className="space-y-1">
-          {order.customerName && (
-            <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-neutral-400">
-              <User className="w-3 h-3 text-gray-400 flex-shrink-0" />
-              <span className="truncate">{order.customerName}</span>
-            </div>
-          )}
-          {typeLabel === "Dine In" && order.tableName && (
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-              <MapPin className="w-3 h-3 flex-shrink-0" />
-              <span>{order.tableName}</span>
-            </div>
-          )}
-          {typeLabel === "Delivery" && order.deliveryAddress && (
-            <div className="flex items-start gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-              <Truck className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span className="truncate font-medium">{order.deliveryAddress}</span>
-            </div>
-          )}
-          {order.orderTakerName && (
-            <div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-neutral-500">
-              <Headset className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">{order.orderTakerName}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Items */}
-      <div className="mx-3 border-t border-gray-100 dark:border-neutral-800" />
-      <div className="px-3 pt-2 pb-0.5 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
-          Items
-        </span>
-        {totalQty > 0 && (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-[10px] font-bold text-gray-500 dark:text-neutral-400 tabular-nums">
-            {totalQty} qty
-          </span>
         )}
       </div>
-      <div className="px-3 py-2 space-y-1.5 flex-1">
-        {itemsToShow.map((item, idx) => {
-          const st = getItemStatus(item, order.status);
-          return (
-            <div key={idx}>
-              {hasMixed && st === "COOKED" ? (
-                <div className="flex items-baseline gap-2 opacity-50">
-                  <span className="text-green-500 text-xs">✓</span>
-                  <span className="text-xs tabular-nums">{item.qty ?? item.quantity}×</span>
-                  <span className="text-xs text-gray-500">{item.name}</span>
+
+      {/* Items — dense list, no bulky section header */}
+      <div className={`${compact ? "mx-2" : "mx-2.5"} border-t border-gray-100 dark:border-neutral-800/80`} />
+      <div className={`${compact ? "px-2 py-1.5" : "px-2.5 py-2"} flex-1`}>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500">
+            {totalQty} item{totalQty !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <ul className={`${compact ? "space-y-0.5" : "space-y-1"}`}>
+          {itemsToShow.map((item, idx) => {
+            const st = getItemStatus(item, order.status);
+            const qty = item.qty ?? item.quantity ?? 1;
+            const extras = itemExtrasInline(item);
+            const isCookedMixed = hasMixed && st === "COOKED";
+            const isNewMixed = hasMixed && st === "NEW";
+
+            return (
+              <li
+                key={idx}
+                className={`flex gap-1.5 items-start rounded ${
+                  isNewMixed ? "bg-orange-500/10 px-1 py-0.5 -mx-1" : ""
+                } ${isCookedMixed ? "opacity-45" : ""}`}
+              >
+                <span
+                  className={`text-[11px] font-black tabular-nums shrink-0 w-5 text-right leading-snug ${
+                    isNewMixed
+                      ? "text-orange-500"
+                      : isCookedMixed
+                        ? "text-gray-400"
+                        : "text-primary"
+                  }`}
+                >
+                  {isCookedMixed ? "✓" : `${qty}×`}
+                </span>
+                <div className="min-w-0 flex-1 leading-snug">
+                  <div className="flex items-baseline gap-1.5 min-w-0">
+                    <span
+                      className={`text-[12px] font-semibold min-w-0 ${
+                        isNewMixed
+                          ? "text-orange-400"
+                          : isCookedMixed
+                            ? "text-gray-500 line-through"
+                            : "text-gray-900 dark:text-neutral-100"
+                      }`}
+                    >
+                      {item.name}
+                    </span>
+                    {isNewMixed && (
+                      <span className="text-[9px] font-black text-orange-500 shrink-0 uppercase">
+                        new{item.addedAt ? ` ${timeAgoShort(item.addedAt)}` : ""}
+                      </span>
+                    )}
+                  </div>
+                  {extras}
                 </div>
-              ) : hasMixed && st === "NEW" ? (
-                <div className="flex items-baseline gap-2 bg-orange-500/10 rounded px-1 -mx-1">
-                  <span className="text-xs font-black text-orange-500 tabular-nums flex-shrink-0">
-                    {item.qty ?? item.quantity}×
-                  </span>
-                  <span className="text-xs font-bold text-orange-400 min-w-0 flex-1 truncate">
-                    {item.name}
-                  </span>
-                  <span className="text-[10px] font-black text-orange-500 flex-shrink-0 ml-auto">
-                    NEW{item.addedAt ? ` · ${timeAgoShort(item.addedAt)}` : ""}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-baseline gap-2">
-                  <span className="text-xs font-black text-primary w-5 flex-shrink-0 tabular-nums">
-                    {item.qty ?? item.quantity}×
-                  </span>
-                  <span className="text-xs font-semibold text-gray-800 dark:text-neutral-200 leading-snug">
-                    {item.name}
-                  </span>
-                </div>
-              )}
-              {renderItemExtras(item)}
-            </div>
-          );
-        })}
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
-      {/* Recall button — Ready column only */}
-      {column.key === "ready" && onRecall && (
-        <div className="px-3 pb-1">
-          <button
-            type="button"
-            disabled={isUpdating}
-            onClick={() => onRecall(order)}
-            className="w-full mt-2 py-1.5 rounded-lg text-xs font-semibold text-gray-400 border border-gray-700 hover:text-orange-400 hover:border-orange-500/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            ↩ Back to Preparing
-          </button>
+      {/* Actions — compact footer */}
+      {(column.key === "ready" && onRecall) || column.advanceLabel || (stale && onDismiss) ? (
+        <div className={`${compact ? "px-2 pb-1.5 pt-0" : "px-2.5 pb-2 pt-0"} space-y-1`}>
+          {column.key === "ready" && onRecall && (
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => onRecall(order)}
+              className="w-full py-1 rounded-lg text-[11px] font-semibold text-gray-400 border border-gray-200 dark:border-neutral-700 hover:text-orange-400 hover:border-orange-500/50 transition-colors disabled:opacity-50"
+            >
+              ↩ Back to Preparing
+            </button>
+          )}
+          {column.advanceLabel && AdvIcon && (
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => onAdvance(order)}
+              className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-white text-[11px] font-bold transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${column.advanceCls}`}
+            >
+              {isUpdating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  <AdvIcon className="w-3.5 h-3.5" />
+                  {column.advanceLabel}
+                </>
+              )}
+            </button>
+          )}
+          {stale && onDismiss && (
+            <button
+              type="button"
+              onClick={() => onDismiss(order.id || order._id)}
+              className="w-full flex items-center justify-center gap-1 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-[11px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
+            >
+              <EyeOff className="w-3 h-3" />
+              Dismiss
+            </button>
+          )}
         </div>
-      )}
-
-      {/* Advance button — only for New and Preparing columns */}
-      {column.advanceLabel && AdvIcon && (
-        <div className="px-3 pb-3 pt-1.5">
-          <button
-            type="button"
-            disabled={isUpdating}
-            onClick={() => onAdvance(order)}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-xs font-bold transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${column.advanceCls}`}
-          >
-            {isUpdating ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <>
-                <AdvIcon className="w-3.5 h-3.5" />
-                {column.advanceLabel}
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* Dismiss button — only for stale Ready orders */}
-      {stale && onDismiss && (
-        <div className="px-3 pb-3 pt-0">
-          <button
-            type="button"
-            onClick={() => onDismiss(order.id || order._id)}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
-          >
-            <EyeOff className="w-3 h-3" />
-            Dismiss from KDS
-          </button>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -412,10 +418,24 @@ export default function KitchenPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [tick, setTick] = useState(0);
-  const [typeFilter, setTypeFilter] = useState("all");
   const [lastRefreshed, setLastRefreshed] = useState(Date.now());
   const [refreshing, setRefreshing] = useState(false);
   const [sessionStart, setSessionStart] = useState(null);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+
+  // KDS preferences (persisted to localStorage per user)
+  const [kdsPrefs, setKdsPrefs] = useState(() => loadKdsSettings());
+  const [kdsDraft, setKdsDraft] = useState(() => loadKdsSettings());
+
+  const typeFilter = kdsPrefs.filterPreset || "all";
+  const setTypeFilter = useCallback((f) => {
+    setKdsPrefs((p) => {
+      const next = { ...p, filterPreset: f };
+      saveKdsSettings(next);
+      return next;
+    });
+  }, []);
+
   const [dismissedIds, setDismissedIds] = useState(() => {
     try {
       const stored =
@@ -427,10 +447,81 @@ export default function KitchenPage() {
       return new Set();
     }
   });
+  /** null until first load seeds IDs — avoids ringing on initial fetch. */
+  const knownNewOrderIdsRef = useRef(null);
+  const repeatTimerRef = useRef(null);
 
   useEffect(() => {
     const iv = setInterval(() => setTick((t) => t + 1), 30000);
     return () => clearInterval(iv);
+  }, []);
+
+  // Ring when a new ticket appears in the New Orders column.
+  useEffect(() => {
+    if (pageLoading) return;
+
+    const currentIds = new Set(
+      orders
+        .filter((o) => NEW_ORDER_STATUSES.has(o.status))
+        .map((o) => String(o._id || o.id || ""))
+        .filter(Boolean),
+    );
+
+    if (knownNewOrderIdsRef.current === null) {
+      knownNewOrderIdsRef.current = currentIds;
+      return;
+    }
+
+    let hasNew = false;
+    for (const id of currentIds) {
+      if (!knownNewOrderIdsRef.current.has(id)) {
+        hasNew = true;
+        break;
+      }
+    }
+
+    knownNewOrderIdsRef.current = currentIds;
+    if (hasNew && kdsPrefs.soundEnabled) {
+      playKitchenNewOrderSound({
+        soundType: kdsPrefs.soundType,
+        volume: kdsPrefs.soundVolume,
+      });
+    }
+  }, [orders, pageLoading, kdsPrefs.soundEnabled, kdsPrefs.soundType, kdsPrefs.soundVolume]);
+
+  // Repeat-until-seen: re-alert while New Orders column is non-empty.
+  useEffect(() => {
+    if (repeatTimerRef.current) {
+      clearInterval(repeatTimerRef.current);
+      repeatTimerRef.current = null;
+    }
+    if (!kdsPrefs.soundEnabled || !kdsPrefs.soundRepeat) return;
+    const intervalMs = (kdsPrefs.soundRepeatSeconds || 25) * 1000;
+
+    repeatTimerRef.current = setInterval(() => {
+      const hasNewOrders = orders.some((o) => NEW_ORDER_STATUSES.has(o.status));
+      if (hasNewOrders) {
+        playKitchenNewOrderSound({
+          soundType: kdsPrefs.soundType,
+          volume: kdsPrefs.soundVolume,
+        });
+      }
+    }, intervalMs);
+
+    return () => {
+      if (repeatTimerRef.current) clearInterval(repeatTimerRef.current);
+    };
+  }, [orders, kdsPrefs.soundEnabled, kdsPrefs.soundRepeat, kdsPrefs.soundRepeatSeconds, kdsPrefs.soundType, kdsPrefs.soundVolume]);
+
+  // Unlock Web Audio on first interaction (browsers block sound until then).
+  useEffect(() => {
+    const unlock = () => unlockNotificationAudio();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
   }, []);
 
   useEffect(() => {
@@ -575,25 +666,32 @@ export default function KitchenPage() {
     ? activeOrders.filter((o) => isTodayOrder(o, sessionStart))
     : activeOrders;
 
-  const applyTypeFilter = (list) => {
-    if (typeFilter === "all") return list;
-    return list.filter((o) => {
-      const label = getOrderTypeLabel(o);
-      if (typeFilter === "DINE_IN") return label === "Dine In";
-      if (typeFilter === "TAKEAWAY") return label === "Takeaway";
-      if (typeFilter === "DELIVERY") return label === "Delivery";
-      return true;
-    });
+  const thresholds = {
+    urgencyWarning: kdsPrefs.urgencyWarning,
+    urgencyUrgent: kdsPrefs.urgencyUrgent,
+    urgencyCritical: kdsPrefs.urgencyCritical,
   };
 
-  const columnOrders = COLUMNS.map((col) =>
-    applyTypeFilter(
-      visibleOrders.filter((o) => col.statuses.includes(o.status)),
+  const applyTypeFilter = (list) =>
+    list.filter((o) => orderMatchesFilterPreset(o, typeFilter, thresholds));
+
+  const applySorting = (list) => sortKitchenOrders(list, kdsPrefs);
+
+  const activeColumns = kdsPrefs.hideReadyColumn
+    ? COLUMNS.filter((c) => c.key !== "ready")
+    : COLUMNS;
+
+  const columnOrders = activeColumns.map((col) =>
+    applySorting(
+      applyTypeFilter(
+        visibleOrders.filter((o) => col.statuses.includes(o.status)),
+      ),
     ),
   );
 
   // Stale ready orders — drives the "Clear stale" button.
-  const staleReadyCount = columnOrders[2].filter(isStaleReady).length;
+  const readyColIdx = activeColumns.findIndex((c) => c.key === "ready");
+  const staleReadyCount = readyColIdx >= 0 ? columnOrders[readyColIdx].filter(isStaleReady).length : 0;
 
   const typeCounts = {
     DINE_IN:  visibleOrders.filter((o) => getOrderTypeLabel(o) === "Dine In").length,
@@ -607,7 +705,7 @@ export default function KitchenPage() {
 
   if (pageLoading) {
     return (
-      <AdminLayout title="Kitchen (KDS)">
+      <AdminLayout title="Kitchen Display" subtitle="">
         <PermissionGate permission="orders.start_cooking">
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-16 h-16 rounded-2xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center mb-4">
@@ -624,41 +722,30 @@ export default function KitchenPage() {
   }
 
   return (
-    <AdminLayout title="Kitchen (KDS)">
+    <AdminLayout title="Kitchen Display" subtitle="">
       <PermissionGate permission="orders.start_cooking">
       <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 110px)" }}>
 
         {/* ── Top bar ────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Order-type filter */}
-            <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5">
-              {[
-                { value: "all", label: "All", count: totalActive },
-                { value: "DINE_IN", label: "Dine In", count: typeCounts.DINE_IN },
-                { value: "TAKEAWAY", label: "Takeaway", count: typeCounts.TAKEAWAY },
-                { value: "DELIVERY", label: "Delivery", count: typeCounts.DELIVERY },
-              ].map((f) => (
+            {/* Filter presets */}
+            <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5 flex-wrap">
+              {KDS_FILTER_PRESETS.map((f) => (
                 <button
-                  key={f.value}
+                  key={f.id}
                   type="button"
-                  onClick={() => setTypeFilter(f.value)}
+                  onClick={() => setTypeFilter(f.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    typeFilter === f.value
+                    typeFilter === f.id
                       ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
                       : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
                   }`}
                 >
                   {f.label}
-                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                    typeFilter === f.value ? "bg-white/20" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400"
-                  }`}>
-                    {f.count}
-                  </span>
                 </button>
               ))}
             </div>
-
 
             {/* Clear stale Ready orders */}
             {staleReadyCount > 0 && (
@@ -677,10 +764,10 @@ export default function KitchenPage() {
           <div className="flex items-center gap-3">
             <div className="hidden lg:flex items-center gap-3 text-[10px] text-gray-400 dark:text-neutral-500">
               {[
-                { cls: "bg-gray-400", label: "< 10m" },
-                { cls: "bg-amber-400", label: "10-15m" },
-                { cls: "bg-orange-400", label: "15-20m" },
-                { cls: "bg-red-500 animate-pulse", label: "> 20m" },
+                { cls: "bg-gray-400", label: `< ${kdsPrefs.urgencyWarning}m` },
+                { cls: "bg-amber-400", label: `${kdsPrefs.urgencyWarning}-${kdsPrefs.urgencyUrgent}m` },
+                { cls: "bg-orange-400", label: `${kdsPrefs.urgencyUrgent}-${kdsPrefs.urgencyCritical}m` },
+                { cls: "bg-red-500 animate-pulse", label: `> ${kdsPrefs.urgencyCritical}m` },
               ].map((u) => (
                 <div key={u.label} className="flex items-center gap-1">
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${u.cls}`} />
@@ -688,6 +775,14 @@ export default function KitchenPage() {
                 </div>
               ))}
             </div>
+
+            {/* Sound muted indicator */}
+            {!kdsPrefs.soundEnabled && (
+              <span className="hidden sm:flex items-center gap-1 text-[10px] text-gray-400 dark:text-neutral-500" title="Sound is off">
+                <VolumeX className="w-3 h-3" />
+              </span>
+            )}
+
             <div className="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-neutral-500">
               <span className="hidden sm:inline">Updated {refreshLabel}</span>
               <button
@@ -699,13 +794,24 @@ export default function KitchenPage() {
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setKdsDraft({ ...kdsPrefs });
+                  setShowSettingsPanel(true);
+                }}
+                className="p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-primary transition-colors"
+                title="KDS settings"
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* ── 3-column Kanban ────────────────────────────────────────── */}
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 min-h-0">
-          {COLUMNS.map((col, colIdx) => {
+        {/* ── Kanban columns ────────────────────────────────────────── */}
+        <div className={`flex-1 grid grid-cols-1 ${activeColumns.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"} gap-3 min-h-0`}>
+          {activeColumns.map((col, colIdx) => {
             const colOrs = columnOrders[colIdx];
             const { EmptyIcon } = col;
             const staleInCol = col.key === "ready" ? colOrs.filter(isStaleReady).length : 0;
@@ -728,7 +834,7 @@ export default function KitchenPage() {
                   )}
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+                <div className={`flex-1 overflow-y-auto min-h-0 ${kdsPrefs.density === "compact" ? "p-2 space-y-1.5" : "p-2.5 space-y-2"}`}>
                   {colOrs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[120px] opacity-40">
                       <EmptyIcon className="w-10 h-10 text-gray-400 dark:text-neutral-600 mb-2" />
@@ -746,7 +852,7 @@ export default function KitchenPage() {
                           onAdvance={handleStatusAdvance}
                           onDismiss={handleDismiss}
                           onRecall={col.key === "ready" ? recallOrder : null}
-                          tick={tick}
+                          prefs={kdsPrefs}
                         />
                       );
                     })
@@ -757,6 +863,26 @@ export default function KitchenPage() {
           })}
         </div>
       </div>
+
+      <KdsSettingsPanel
+        open={showSettingsPanel}
+        onClose={() => setShowSettingsPanel(false)}
+        settings={kdsDraft}
+        onChange={setKdsDraft}
+        onSave={() => {
+          saveKdsSettings(kdsDraft);
+          setKdsPrefs(kdsDraft);
+          setShowSettingsPanel(false);
+          toast.success("KDS settings saved");
+        }}
+        onReset={() => {
+          const defaults = { ...DEFAULT_KDS_SETTINGS };
+          setKdsDraft(defaults);
+          saveKdsSettings(defaults);
+          setKdsPrefs(defaults);
+          toast.success("Settings reset to defaults");
+        }}
+      />
       </PermissionGate>
     </AdminLayout>
   );

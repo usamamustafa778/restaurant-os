@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { useSocket } from "./SocketContext";
-import { playOrderReadySound } from "../lib/playNotificationSound";
+import { playOrderReadySound, unlockNotificationAudio } from "../lib/playNotificationSound";
 import { getStoredAuth, getActingAsSlug } from "../lib/apiClient";
 
 const OrderNotificationContext = createContext(null);
@@ -39,7 +39,15 @@ function formatTokenLabel(data) {
   if (data?.tokenNumber != null && data.tokenNumber !== "") {
     return `#${String(data.tokenNumber).padStart(4, "0")}`;
   }
-  if (data?.orderNumber) return `#${data.orderNumber}`;
+  const raw = String(data?.orderNumber || "").trim();
+  if (raw) {
+    // Prefer short token-like suffix (e.g. ORD-2026…-0001 → #0001)
+    const tail = raw.split(/[-_/]/).filter(Boolean).pop();
+    if (tail && /^\d+$/.test(tail)) {
+      return `#${tail.padStart(4, "0")}`;
+    }
+    if (raw.length <= 10) return `#${raw.replace(/^#/, "")}`;
+  }
   return "Order";
 }
 
@@ -119,6 +127,22 @@ export function OrderNotificationProvider({ children }) {
     };
   }, []);
 
+  // Browsers block Web Audio until a user gesture — unlock on first interaction
+  // so order-taker / POS hear ready alerts without a silent failure.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!shouldNotifyCurrentUser()) return;
+    const unlock = () => unlockNotificationAudio();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("touchstart", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+  }, []);
+
   const showBrowserNotification = useCallback(({ title, body, orderId }) => {
     if (
       typeof Notification === "undefined" ||
@@ -195,7 +219,8 @@ export function OrderNotificationProvider({ children }) {
 
       upsertAlert(alert);
       pushPopup(alert);
-      playOrderReadySound();
+      unlockNotificationAudio();
+      playOrderReadySound({ volume: 90 });
       showBrowserNotification({
         title: `Order ${token} ready`,
         body: alert.body,

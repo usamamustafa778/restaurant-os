@@ -44,13 +44,15 @@ function orderReadyHref(role) {
   return "/pos";
 }
 
-function PopupToast({ popup, source, onOpen, onDismiss }) {
+function PopupToast({ popup, source, onOpen, onDismiss, wide = false }) {
   const isUrgent = popup.type === "urgent";
   const isOrder = source === "order";
 
   return (
     <div
-      className={`wa-popup pointer-events-auto w-72 overflow-hidden rounded-xl border bg-white shadow-lg dark:bg-neutral-900 ${
+      className={`wa-popup pointer-events-auto overflow-hidden rounded-2xl border bg-white/95 shadow-xl backdrop-blur-md dark:bg-neutral-900/95 ${
+        wide ? "w-full" : "w-72"
+      } ${
         isOrder
           ? "border-orange-200 dark:border-orange-500/30"
           : isUrgent
@@ -61,12 +63,12 @@ function PopupToast({ popup, source, onOpen, onDismiss }) {
       <button
         type="button"
         onClick={() => onOpen(popup)}
-        className="flex w-full items-start gap-3 p-3 pr-8 text-left transition hover:bg-gray-50 dark:hover:bg-neutral-800/60"
+        className="flex w-full items-start gap-3 p-3.5 pr-9 text-left transition hover:bg-gray-50 dark:hover:bg-neutral-800/60"
       >
         <div
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
             isOrder
-              ? "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400"
+              ? "bg-orange-500 text-white"
               : isUrgent
                 ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
                 : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
@@ -81,20 +83,20 @@ function PopupToast({ popup, source, onOpen, onDismiss }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+          <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
             {popup.title}
           </p>
           <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
             {popup.body}
           </p>
           <p
-            className={`mt-1 text-[10px] font-medium ${
+            className={`mt-1.5 text-[10px] font-semibold ${
               isOrder
                 ? "text-orange-600 dark:text-orange-400"
                 : "text-emerald-600 dark:text-emerald-400"
             }`}
           >
-            {isOrder ? "Order ready · tap to open" : "WhatsApp · tap to open"}
+            {isOrder ? "Tap to open ready order" : "WhatsApp · tap to open"}
           </p>
         </div>
       </button>
@@ -127,6 +129,10 @@ export default function WhatsAppNotificationBell({
   showWhatsApp = true,
   showOrders = true,
   popupHost = "always",
+  /** "toolbar" = bordered dashboard button; "ghost" = icon-only (order-taker header) */
+  variant = "toolbar",
+  /** "anchor" under the bell; "top-center" below the app header (better for mobile) */
+  popupPlacement = "anchor",
 }) {
   const router = useRouter();
   const wa = useWhatsAppNotifications();
@@ -184,6 +190,24 @@ export default function WhatsAppNotificationBell({
     }
 
     function updatePos() {
+      if (popupPlacement === "top-center") {
+        const safeTop =
+          typeof window !== "undefined"
+            ? parseInt(
+                getComputedStyle(document.documentElement).getPropertyValue(
+                  "env(safe-area-inset-top)",
+                ) || "0",
+                10,
+              ) || 0
+            : 0;
+        // Sit just under the ~56px waiter header
+        setPopupPos({
+          mode: "top-center",
+          top: Math.max(56, 56 + safeTop) + 10,
+        });
+        return;
+      }
+
       const el = ref.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
@@ -192,6 +216,7 @@ export default function WhatsAppNotificationBell({
         window.innerWidth - POPUP_WIDTH - 8,
       );
       setPopupPos({
+        mode: "anchor",
         top: rect.bottom + 8,
         left,
       });
@@ -204,7 +229,7 @@ export default function WhatsAppNotificationBell({
       window.removeEventListener("resize", updatePos);
       window.removeEventListener("scroll", updatePos, true);
     };
-  }, [hostPopups, mergedPopups.length]);
+  }, [hostPopups, mergedPopups.length, popupPlacement]);
 
   const Icon =
     wa.permission === "denied"
@@ -275,15 +300,25 @@ export default function WhatsAppNotificationBell({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`${HEADER_TOOLBAR_BTN} relative border-gray-200 bg-white px-2.5 text-gray-700 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-orange-500/40 dark:hover:bg-orange-950/30 dark:hover:text-orange-400`}
+        className={
+          variant === "ghost"
+            ? "relative w-9 h-9 rounded-full flex items-center justify-center text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
+            : `${HEADER_TOOLBAR_BTN} relative border-gray-200 bg-white px-2.5 text-gray-700 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-orange-500/40 dark:hover:bg-orange-950/30 dark:hover:text-orange-400`
+        }
         title="Notifications"
         aria-label="Notifications"
       >
         <Icon className="h-4 w-4 shrink-0" />
         {totalUnread > 0 ? (
-          <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-            {totalUnread > 9 ? "9+" : totalUnread}
-          </span>
+          variant === "ghost" ? (
+            <span className="absolute -right-0.5 -top-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-bold leading-4 text-white text-center ring-2 ring-white dark:ring-neutral-950">
+              {totalUnread > 9 ? "9+" : totalUnread}
+            </span>
+          ) : (
+            <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+              {totalUnread > 9 ? "9+" : totalUnread}
+            </span>
+          )
         ) : showWhatsApp && wa.permission === "default" ? (
           <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-white dark:ring-neutral-950" />
         ) : null}
@@ -295,27 +330,44 @@ export default function WhatsAppNotificationBell({
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="pointer-events-none fixed z-[100] flex w-80 flex-col gap-2"
-            style={{ top: popupPos.top, left: popupPos.left }}
+            className={
+              popupPos.mode === "top-center"
+                ? "pointer-events-none fixed inset-x-0 z-[100] flex justify-center px-3"
+                : "pointer-events-none fixed z-[100] flex w-80 flex-col gap-2"
+            }
+            style={
+              popupPos.mode === "top-center"
+                ? { top: popupPos.top }
+                : { top: popupPos.top, left: popupPos.left }
+            }
             aria-live="polite"
           >
-            {mergedPopups.map((popup) => (
-              <PopupToast
-                key={`${popup._source}-${popup.popupId}`}
-                popup={popup}
-                source={popup._source}
-                onOpen={
-                  popup._source === "order"
-                    ? handleOrderClick
-                    : handleWhatsAppClick
-                }
-                onDismiss={
-                  popup._source === "order"
-                    ? orders.dismissPopup
-                    : wa.dismissPopup
-                }
-              />
-            ))}
+            <div
+              className={
+                popupPos.mode === "top-center"
+                  ? "flex w-full max-w-sm flex-col gap-2"
+                  : "flex w-full flex-col gap-2"
+              }
+            >
+              {mergedPopups.map((popup) => (
+                <PopupToast
+                  key={`${popup._source}-${popup.popupId}`}
+                  popup={popup}
+                  source={popup._source}
+                  wide={popupPos.mode === "top-center"}
+                  onOpen={
+                    popup._source === "order"
+                      ? handleOrderClick
+                      : handleWhatsAppClick
+                  }
+                  onDismiss={
+                    popup._source === "order"
+                      ? orders.dismissPopup
+                      : wa.dismissPopup
+                  }
+                />
+              ))}
+            </div>
           </div>,
           document.body,
         )}

@@ -287,8 +287,12 @@ export async function middleware(request) {
       return NextResponse.redirect(url);
     }
 
-    // Order taker can only access /order-taker
-    if (payload.role === "order_taker" && pathname !== "/order-taker") {
+    // Order taker can only access /order-taker and /profile
+    if (
+      payload.role === "order_taker" &&
+      pathname !== "/order-taker" &&
+      pathname !== "/profile"
+    ) {
       const url = request.nextUrl.clone();
       url.pathname = "/order-taker";
       return NextResponse.redirect(url);

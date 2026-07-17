@@ -68,6 +68,7 @@ import {
   Search,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
+import AiKitchenManagerSidebar from "../ai/AiKitchenManagerSidebar";
 import WhatsAppNotificationBell from "../whatsapp/WhatsAppNotificationBell";
 import {
   getToken,
@@ -752,6 +753,7 @@ export default function AdminLayout({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
+  const [aiKitchenManagerOpen, setAiKitchenManagerOpen] = useState(false);
   // Always initialize with defaults to avoid hydration mismatch
   const [collapsed, setCollapsed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState([]);
@@ -1066,8 +1068,15 @@ export default function AdminLayout({
   const hideSidebarForKitchenStaff =
     role === "kitchen_staff" && cleanPath === "/kitchen";
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";
+  const resolvedSubtitle =
+    subtitle !== undefined
+      ? subtitle
+      : isSuperDashboard
+        ? "Manage restaurants, subscriptions and platform configuration"
+        : "Manage your restaurant operations";
   const showBranchRequiredModal =
     role !== "super_admin" &&
+    role !== "kitchen_staff" &&
     !branchLoading &&
     branches?.length > 0 &&
     !currentBranch &&
@@ -1609,13 +1618,11 @@ export default function AdminLayout({
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white truncate bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-neutral-300 bg-clip-text text-transparent">
                   {title}
                 </h1>
-                <p className="text-xs text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
-                  {subtitle != null
-                    ? subtitle
-                    : isSuperDashboard
-                      ? "Manage restaurants, subscriptions and platform configuration"
-                      : "Manage your restaurant operations"}
-                </p>
+                {resolvedSubtitle ? (
+                  <p className="text-xs text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
+                    {resolvedSubtitle}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs">
@@ -1676,7 +1683,17 @@ export default function AdminLayout({
                         </span>
                       </Link>
                     ))}
-                  {role !== "super_admin" && (
+                  {role === "kitchen_staff" ? (
+                    <button
+                      type="button"
+                      onClick={() => setAiKitchenManagerOpen(true)}
+                      className={`${HEADER_TOOLBAR_BTN} border-transparent bg-gradient-to-r from-orange-500 to-orange-600 px-3 text-white hover:from-orange-600 hover:to-orange-700 hover:shadow-md`}
+                    >
+                      <ChefHat className="h-4 w-4" />
+                      <span className="hidden sm:inline">AI Kitchen Manager</span>
+                      <span className="sm:hidden">AI Kitchen</span>
+                    </button>
+                  ) : role !== "super_admin" ? (
                     <>
                       <button
                         type="button"
@@ -1698,9 +1715,9 @@ export default function AdminLayout({
                         </span>
                       </button>
                     </>
-                  )}
+                  ) : null}
 
-                  {!branchLoading && (
+                  {role !== "kitchen_staff" && !branchLoading && (
                     <div className="relative">
                       <button
                         type="button"
@@ -2081,6 +2098,10 @@ export default function AdminLayout({
         isOpen={aiSidebarOpen}
         onClose={() => setAiSidebarOpen(false)}
         restaurantName={restaurantName}
+      />
+      <AiKitchenManagerSidebar
+        isOpen={aiKitchenManagerOpen}
+        onClose={() => setAiKitchenManagerOpen(false)}
       />
     </>
   );

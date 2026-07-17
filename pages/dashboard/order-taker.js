@@ -53,6 +53,8 @@ import {
   CheckCircle,
   Lock,
   Receipt,
+  UserCircle2,
+  MoreVertical,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -161,6 +163,8 @@ export default function OrderTakerPage() {
   const canAddItemsAfterServed = hasPermission("orders.add_items_after_served");
 
   const [activeTab, setActiveTab] = useState(TABS.HOME);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef(null);
   const [step, setStep] = useState(STEPS.TABLE);
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [availableDeals, setAvailableDeals] = useState([]);
@@ -225,6 +229,25 @@ export default function OrderTakerPage() {
     const auth = getStoredAuth();
     setUserName(auth?.user?.name || auth?.user?.email || "");
   }, []);
+
+  // Close header ⋮ menu on outside tap / Escape
+  useEffect(() => {
+    if (!headerMenuOpen) return;
+    function onPointerDown(e) {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target)) {
+        setHeaderMenuOpen(false);
+      }
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") setHeaderMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [headerMenuOpen]);
 
   useEffect(() => {
     setOrderClickHandler(() => {
@@ -1421,9 +1444,9 @@ export default function OrderTakerPage() {
       <SEO title="Order Taker - Eats Desk" noindex />
       <div className="h-[100dvh] flex flex-col bg-[#f9fafb] dark:bg-neutral-950 text-gray-900 dark:text-white overflow-hidden">
         {/* ── Header ─────────────────────────────────────────────────── */}
-        <header className="flex-shrink-0 bg-white dark:bg-neutral-950 border-b border-gray-200 dark:border-neutral-800 ot-safe-top">
-          <div className="flex items-center justify-between px-4 h-14">
-            <div className="flex items-center gap-3 min-w-0">
+        <header className={`relative flex-shrink-0 bg-white/95 dark:bg-neutral-950/95 backdrop-blur-md border-b border-gray-100 dark:border-neutral-800/80 ot-safe-top ${headerMenuOpen ? "z-50" : "z-30"}`}>
+          <div className="flex items-center justify-between gap-3 px-4 h-[56px]">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
               {activeTab === TABS.NEW_ORDER && step !== STEPS.TABLE ? (
                 <button
                   onClick={() =>
@@ -1431,14 +1454,23 @@ export default function OrderTakerPage() {
                       ? setStep(STEPS.MENU)
                       : setStep(STEPS.TABLE)
                   }
-                  className="w-9 h-9 -ml-1.5 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 active:scale-90 transition-all"
+                  className="w-9 h-9 -ml-1 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 active:scale-90 transition-all shrink-0"
                 >
                   <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-neutral-300" />
                 </button>
               ) : (
-                <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0">
-                  <Utensils className="w-[18px] h-[18px] text-white" />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === TABS.HOME || activeTab === TABS.HISTORY) {
+                      window.location.href = "/profile";
+                    }
+                  }}
+                  className="w-9 h-9 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-sm shadow-orange-500/25"
+                  title="Profile"
+                >
+                  <Utensils className="w-[16px] h-[16px] text-white" />
+                </button>
               )}
               <div className="min-w-0">
                 <h1 className="text-[15px] font-extrabold truncate leading-tight tracking-tight text-gray-900 dark:text-white">
@@ -1449,14 +1481,14 @@ export default function OrderTakerPage() {
                     : activeTab === TABS.HISTORY
                       ? "Order History"
                       : step === STEPS.TABLE
-                        ? "Eats Desk"
+                        ? restaurantBranding.name || "Eats Desk"
                         : step === STEPS.MENU
                           ? selectedTable?.name || "Menu"
                           : "Review Order"}
                 </h1>
                 <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate leading-tight">
                   {activeTab === TABS.HOME
-                    ? `${nonCancelledOrders.length} active · ${readyOrders.length} ready to serve`
+                    ? restaurantBranding.name || "Restaurant"
                     : activeTab === TABS.HISTORY
                       ? "Today's summary"
                       : step === STEPS.TABLE
@@ -1468,7 +1500,7 @@ export default function OrderTakerPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 shrink-0">
               {activeTab === TABS.NEW_ORDER &&
                 step === STEPS.MENU &&
                 cartBadge > 0 && (
@@ -1483,78 +1515,101 @@ export default function OrderTakerPage() {
               {activeTab === TABS.NEW_ORDER &&
                 step === STEPS.MENU &&
                 cartBadge === 0 && (
-                  <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center">
-                    <ShoppingCart className="w-4 h-4 text-gray-400 dark:text-neutral-600" />
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-gray-300 dark:text-neutral-600">
+                    <ShoppingCart className="w-4 h-4" />
                   </div>
                 )}
-              {activeTab === TABS.NEW_ORDER && step === STEPS.TABLE && (
+              {activeTab === TABS.NEW_ORDER && step === STEPS.CART && cart.length > 0 && (
                 <button
-                  onClick={handleLogout}
-                  className="h-9 pl-3 pr-3.5 rounded-full flex items-center gap-1.5 text-gray-500 dark:text-neutral-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors text-xs font-semibold"
-                  title="Logout"
+                  onClick={() => setCart([])}
+                  className="h-9 px-3 rounded-full flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs font-semibold"
                 >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Logout</span>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear
                 </button>
               )}
-              {activeTab === TABS.NEW_ORDER &&
-                step === STEPS.CART &&
-                cart.length > 0 && (
+
+              {/* Compact actions: bell + overflow menu */}
+              <div className="flex items-center rounded-full bg-gray-50 dark:bg-neutral-900/80 p-0.5 border border-gray-100 dark:border-neutral-800">
+                <WhatsAppNotificationBell
+                  showWhatsApp={false}
+                  showOrders={true}
+                  variant="ghost"
+                  popupPlacement="top-center"
+                />
+                <div className="relative" ref={headerMenuRef}>
                   <button
-                    onClick={() => setCart([])}
-                    className="h-9 px-3 rounded-full flex items-center gap-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-xs font-semibold"
+                    type="button"
+                    onClick={() => setHeaderMenuOpen((v) => !v)}
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-gray-500 dark:text-neutral-400 hover:bg-white dark:hover:bg-neutral-800 transition-colors"
+                    title="More"
+                    aria-label="More options"
+                    aria-expanded={headerMenuOpen}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Clear
+                    <MoreVertical className="w-4 h-4" />
                   </button>
-                )}
-              {(activeTab === TABS.HOME || activeTab === TABS.HISTORY) && (
-                <button
-                  onClick={() => {
-                    setOrdersLoading(true);
-                    fetchActiveOrders().finally(() => setOrdersLoading(false));
-                  }}
-                  className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
-                  title="Refresh"
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 text-gray-500 dark:text-neutral-400 ${ordersLoading ? "animate-spin" : ""}`}
-                  />
-                </button>
-              )}
-              <WhatsAppNotificationBell
-                showWhatsApp={false}
-                showOrders={true}
-              />
-              <button
-                onClick={toggleTheme}
-                className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors"
-                title={
-                  theme === "light"
-                    ? "Switch to dark mode"
-                    : "Switch to light mode"
-                }
-                aria-label={
-                  theme === "light"
-                    ? "Switch to dark mode"
-                    : "Switch to light mode"
-                }
-              >
-                {theme === "light" ? (
-                  <Moon className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
-                ) : (
-                  <Sun className="w-4 h-4 text-gray-500 dark:text-neutral-400" />
-                )}
-              </button>
-              {(activeTab === TABS.HOME || activeTab === TABS.HISTORY) && (
-                <button
-                  onClick={handleLogout}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                  title="Logout"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              )}
+                  {headerMenuOpen && (
+                      <div className="absolute right-0 top-full z-[60] mt-2 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+                        {(activeTab === TABS.HOME || activeTab === TABS.HISTORY) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHeaderMenuOpen(false);
+                              setOrdersLoading(true);
+                              fetchActiveOrders().finally(() =>
+                                setOrdersLoading(false),
+                              );
+                            }}
+                            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                          >
+                            <RefreshCw
+                              className={`w-4 h-4 ${ordersLoading ? "animate-spin" : ""}`}
+                            />
+                            Refresh
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false);
+                            window.location.href = "/profile";
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                        >
+                          <UserCircle2 className="w-4 h-4" />
+                          Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false);
+                            toggleTheme();
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                        >
+                          {theme === "light" ? (
+                            <Moon className="w-4 h-4" />
+                          ) : (
+                            <Sun className="w-4 h-4" />
+                          )}
+                          {theme === "light" ? "Dark mode" : "Light mode"}
+                        </button>
+                        <div className="border-t border-gray-100 dark:border-neutral-800" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false);
+                            handleLogout();
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          Logout
+                        </button>
+                      </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1581,11 +1636,11 @@ export default function OrderTakerPage() {
           {activeTab === TABS.HOME && (
             <div className="pb-24">
               <div className="px-4 pt-3 pb-2 space-y-3">
-                {readyOrders.length > 0 && (
+                {readyOrders.length > 0 && !headerMenuOpen && (
                   <button
                     type="button"
                     onClick={() => setActiveFilter("ready")}
-                    className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-orange-500 text-white font-bold text-sm text-left active:scale-[0.98] transition-transform animate-pulse"
+                    className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-orange-500 text-white font-bold text-sm text-left active:scale-[0.98] transition-transform"
                   >
                     ⚡ {readyOrders.length} order
                     {readyOrders.length !== 1 ? "s" : ""} ready to serve
@@ -2760,7 +2815,14 @@ export default function OrderTakerPage() {
           )}
 
         {/* ── Bottom Tab Bar ─────────────────────────────────────────── */}
-        <nav className="flex-shrink-0 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex ot-safe-bottom">
+        <div className="flex-shrink-0">
+          <p className="pb-1 text-center text-[10px] font-medium text-gray-400 dark:text-neutral-600 select-none">
+            Powered by{" "}
+            <span className="font-semibold text-gray-500 dark:text-neutral-500">
+              EatsDesk
+            </span>
+          </p>
+          <nav className="bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex ot-safe-bottom">
           <button
             onClick={() => {
               setActiveTab(TABS.HOME);
@@ -2811,6 +2873,7 @@ export default function OrderTakerPage() {
             <span className="text-[10px] font-bold">History</span>
           </button>
         </nav>
+        </div>
       </div>
 
       {showBranchModal && branches?.length > 0 && (

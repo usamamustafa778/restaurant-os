@@ -22,6 +22,7 @@ import {
   Loader2,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import WaiterProfileView from "../../components/order-taker/WaiterProfileView";
 
 const ROLE_LABELS = {
   super_admin: "Super Admin",
@@ -31,6 +32,8 @@ const ROLE_LABELS = {
   cashier: "Cashier",
   manager: "Manager",
   kitchen_staff: "Kitchen Staff",
+  order_taker: "Waiter",
+  delivery_rider: "Rider",
 };
 
 function getRoleLabel(role) {
@@ -40,6 +43,7 @@ function getRoleLabel(role) {
 export default function ProfilePage() {
   const [profile, setProfile] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
+  const [isWaiter, setIsWaiter] = useState(false);
 
   // Edit info
   const [name, setName] = useState("");
@@ -62,15 +66,9 @@ export default function ProfilePage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState({ type: "", text: "" });
 
-  // Redirect order takers to dedicated mobile UI
   useEffect(() => {
     const auth = getStoredAuth();
-    const role = auth?.user?.role;
-    if (role === "order_taker") {
-      if (typeof window !== "undefined") {
-        window.location.href = "/order-taker";
-      }
-    }
+    setIsWaiter(auth?.user?.role === "order_taker");
   }, []);
 
   useEffect(() => {
@@ -169,6 +167,10 @@ export default function ProfilePage() {
     } finally {
       setAvatarUploading(false);
     }
+  }
+
+  if (isWaiter) {
+    return <WaiterProfileView />;
   }
 
   return (
