@@ -667,6 +667,31 @@ export default function RiderPortalPage() {
     };
   }, [headerMenuOpen]);
 
+  function getOrderIdentityKeys(orderOrPayload) {
+    const keys = new Set();
+    const add = (v) => {
+      const s = v != null ? String(v).trim() : "";
+      if (s) keys.add(s);
+    };
+    add(orderOrPayload?._id);
+    add(orderOrPayload?.id);
+    add(orderOrPayload?.orderNumber);
+    return keys;
+  }
+
+  function isKnownAssignment(orderOrPayload) {
+    for (const k of getOrderIdentityKeys(orderOrPayload)) {
+      if (knownAssignedIdsRef.current.has(k)) return true;
+    }
+    return false;
+  }
+
+  function markKnownAssignment(orderOrPayload) {
+    for (const k of getOrderIdentityKeys(orderOrPayload)) {
+      knownAssignedIdsRef.current.add(k);
+    }
+  }
+
   function notifyNewAssignment(orderOrPayload) {
     const token =
       orderOrPayload?.tokenNumber ||
@@ -703,16 +728,11 @@ export default function RiderPortalPage() {
     if (!assignmentAlertsPrimedRef.current) {
       const pending = pendingAssignmentAlertIdsRef.current;
       for (const o of mine) {
-        const orderId = String(o.id || o._id);
-        if (!orderId) continue;
-        if (pending.has(orderId)) {
-          knownAssignedIdsRef.current.add(orderId);
-          notifyNewAssignment(o);
-        } else {
-          knownAssignedIdsRef.current.add(orderId);
-        }
+        const wasPending = [...getOrderIdentityKeys(o)].some((k) => pending.has(k));
+        markKnownAssignment(o);
+        if (wasPending) notifyNewAssignment(o);
       }
-      for (const pendingId of pending) {
+      for (const pendingId of [...pending]) {
         if (!knownAssignedIdsRef.current.has(pendingId)) {
           knownAssignedIdsRef.current.add(pendingId);
           notifyNewAssignment({ id: pendingId });
@@ -724,47 +744,71 @@ export default function RiderPortalPage() {
     }
 
     for (const o of mine) {
-      const orderId = String(o.id || o._id);
-      if (!orderId || knownAssignedIdsRef.current.has(orderId)) continue;
+      if (isKnownAssignment(o)) {
+        markKnownAssignment(o);
+        continue;
+      }
       const status = String(o.status || "").toUpperCase();
-      // Only ring for live deliveries — not when History loads past assigned orders.
       const isLive =
         status === "READY" ||
         status === "OUT_FOR_DELIVERY" ||
         status === "PROCESSING" ||
         status === "PREPARING" ||
         status === "NEW_ORDER";
-      knownAssignedIdsRef.current.add(orderId);
+      markKnownAssignment(o);
       if (isLive) notifyNewAssignment(o);
     }
   }, [orders, riderId, ordersLoading]);
 
   useEffect(() => {
     if (!socket) return;
-    const onOrderEvent = (payload) => {
-      const orderId = String(payload?.id || payload?._id || "");
+    const handleAssignmentEvent = (payload) => {
       const assignedTo =
         payload?.assignedRiderId != null
           ? String(payload.assignedRiderId)
           : "";
-      if (riderId && orderId && assignedTo && assignedTo === String(riderId)) {
+      if (
+        riderId &&
+        assignedTo &&
+        assignedTo === String(riderId) &&
+        (payload?.id || payload?._id || payload?.orderNumber)
+      ) {
         if (!assignmentAlertsPrimedRef.current) {
-          pendingAssignmentAlertIdsRef.current.add(orderId);
-        } else if (!knownAssignedIdsRef.current.has(orderId)) {
-          knownAssignedIdsRef.current.add(orderId);
+          for (const k of getOrderIdentityKeys(payload)) {
+            pendingAssignmentAlertIdsRef.current.add(k);
+          }
+        } else if (!isKnownAssignment(payload)) {
+          markKnownAssignment(payload);
           notifyNewAssignment(payload);
         }
       }
       loadOrders(getCurrentOrdersParams());
       if (tab === TABS.HISTORY) loadHistoryBreakdown();
     };
-    socket.on("order:updated", onOrderEvent);
-    socket.on("order:created", onOrderEvent);
+    socket.on("order:updated", handleAssignmentEvent);
+    socket.on("order:created", handleAssignmentEvent);
+    socket.on("order:assigned", handleAssignmentEvent);
     return () => {
-      socket.off("order:updated", onOrderEvent);
-      socket.off("order:created", onOrderEvent);
+      socket.off("order:updated", handleAssignmentEvent);
+      socket.off("order:created", handleAssignmentEvent);
+      socket.off("order:assigned", handleAssignmentEvent);
     };
   }, [socket, getCurrentOrdersParams, tab, loadHistoryBreakdown, riderId]);
+
+  // Fallback when sockets miss (background tab, flaky mobile network).
+  useEffect(() => {
+    if (tab === TABS.HISTORY) return;
+    const tick = () => loadOrders(getCurrentOrdersParams());
+    const interval = setInterval(tick, 12000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [tab, getCurrentOrdersParams]);
 
   useEffect(() => {
     if (tab !== TABS.HISTORY) return;
