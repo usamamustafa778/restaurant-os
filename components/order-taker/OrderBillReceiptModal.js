@@ -1,8 +1,25 @@
 import { useMemo, useState } from "react";
-import { X, User, Phone, MapPin, ChevronDown } from "lucide-react";
+import { X, Phone, MapPin, ChevronDown } from "lucide-react";
 import { formatPrice } from "../../lib/api";
 import { formatReceiptItemsForBill, getDealDisplayItems } from "../../lib/orderDisplay";
 import { formatPaymentMethod, getOrderTotals } from "../../lib/order-totals";
+
+function digitsOnlyPhone(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+function WhatsAppIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
+  );
+}
 
 function formatReceiptDate(iso) {
   if (!iso) return "—";
@@ -235,19 +252,19 @@ export default function OrderBillReceiptModal({
   if (!order) return null;
 
   const isDeliveryOrder = String(order?.orderType || "").toUpperCase() === "DELIVERY";
-  const rawNumber =
+  const fullOrderId = String(
+    order?.orderNumber ||
+      order?.id ||
+      order?._id ||
+      "",
+  ).replace(/^#/, "");
+  const tokenLabel =
     order?.tokenNumber != null && order.tokenNumber !== ""
       ? String(order.tokenNumber).padStart(4, "0")
-      : order?.orderNumber ||
-        String(order?.id || order?._id || "").slice(-6);
-  const orderNumber = String(rawNumber).replace(/^#/, "");
-  // Prefer short display (…-0001 → 0001) when the full ORD-… id is used
-  const displayNumber = (() => {
-    const parts = orderNumber.split(/[-_/]/).filter(Boolean);
-    const tail = parts[parts.length - 1];
-    if (parts.length > 1 && /^\d+$/.test(tail)) return tail.padStart(4, "0");
-    return orderNumber;
-  })();
+      : null;
+
+  const customerPhone = String(order?.customerPhone || order?.phone || "").trim();
+  const customerPhoneDigits = digitsOnlyPhone(customerPhone);
 
   return (
     <div
@@ -289,9 +306,14 @@ export default function OrderBillReceiptModal({
                   {restaurantName}
                 </p>
               ) : null}
-              <p className="mt-0.5 text-lg font-black tabular-nums text-stone-900">
-                #{displayNumber}
+              <p className="mt-0.5 break-all text-base font-black tabular-nums leading-snug text-stone-900 sm:text-lg">
+                {fullOrderId ? `#${fullOrderId}` : "—"}
               </p>
+              {tokenLabel && fullOrderId && !fullOrderId.endsWith(tokenLabel) ? (
+                <p className="mt-0.5 text-xs font-semibold text-stone-500">
+                  Token #{tokenLabel}
+                </p>
+              ) : null}
               <p className="mt-0.5 text-xs text-stone-500">
                 {formatReceiptDate(order?.createdAt)}
               </p>
@@ -307,35 +329,76 @@ export default function OrderBillReceiptModal({
           </div>
 
           {(order?.customerName ||
-            order?.customerPhone ||
-            order?.phone ||
+            customerPhone ||
             order?.tableName ||
             (isDeliveryOrder && order?.deliveryAddress)) && (
-            <section className="space-y-2 border-b border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
-              {order?.customerName ? (
-                <p className="flex items-center gap-2 text-stone-600">
-                  <User className="h-3.5 w-3.5 shrink-0 text-stone-400" />
-                  {order.customerName}
-                </p>
-              ) : null}
-              {(order?.customerPhone || order?.phone) ? (
-                <p className="flex items-center gap-2 text-stone-600">
-                  <Phone className="h-3.5 w-3.5 shrink-0 text-stone-400" />
-                  {order.customerPhone || order.phone}
-                </p>
-              ) : null}
-              {order?.tableName ? (
-                <p className="flex items-center gap-2 text-stone-600">
-                  <MapPin className="h-3.5 w-3.5 shrink-0 text-stone-400" />
-                  Table {order.tableName}
-                </p>
-              ) : null}
-              {isDeliveryOrder && order?.deliveryAddress ? (
-                <p className="flex items-start gap-2 text-stone-600">
-                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-stone-400" />
-                  <span>{order.deliveryAddress}</span>
-                </p>
-              ) : null}
+            <section className="border-b border-dashed border-stone-300 px-4 py-3">
+              <div className="space-y-2">
+                {(order?.customerName || customerPhone) && (
+                  <div className="min-w-0 space-y-0.5">
+                    {order?.customerName ? (
+                      <p className="truncate text-sm font-bold text-stone-900">
+                        {order.customerName}
+                      </p>
+                    ) : null}
+                    {customerPhone ? (
+                      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] tabular-nums text-stone-600">
+                        <span>{customerPhone}</span>
+                        {customerPhoneDigits ? (
+                          <span className="inline-flex items-center gap-1">
+                            <a
+                              href={`tel:${customerPhone}`}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Call"
+                              aria-label="Call customer"
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 active:scale-95"
+                            >
+                              <Phone className="h-3 w-3" />
+                              Call
+                            </a>
+                            <a
+                              href={`https://wa.me/${customerPhoneDigits}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title="WhatsApp"
+                              aria-label="WhatsApp customer"
+                              className="inline-flex items-center gap-1 rounded-md border border-[#25D366]/35 bg-[#25D366]/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#128C7E] active:scale-95"
+                            >
+                              <WhatsAppIcon className="h-3 w-3" />
+                              Chat
+                            </a>
+                          </span>
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+
+                {(order?.tableName ||
+                  (isDeliveryOrder && order?.deliveryAddress)) && (
+                  <div
+                    className={`space-y-1 text-[12px] leading-snug text-stone-500 ${
+                      order?.customerName || customerPhone
+                        ? "border-t border-dashed border-stone-200 pt-2"
+                        : ""
+                    }`}
+                  >
+                    {order?.tableName ? (
+                      <p className="flex items-center gap-1.5">
+                        <MapPin className="h-3 w-3 shrink-0 text-stone-400" />
+                        Table {order.tableName}
+                      </p>
+                    ) : null}
+                    {isDeliveryOrder && order?.deliveryAddress ? (
+                      <p className="flex items-start gap-1.5">
+                        <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-stone-400" />
+                        <span>{order.deliveryAddress}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+              </div>
             </section>
           )}
 

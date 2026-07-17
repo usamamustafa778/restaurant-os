@@ -72,6 +72,10 @@ import {
   isDealConfigurable,
 } from "../../lib/dealComboItems";
 import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
+import {
+  playOrderReadySound,
+  unlockNotificationAudio,
+} from "../../lib/playNotificationSound";
 
 const TABS = { NEW_ORDER: "new_order", HOME: "home", HISTORY: "history" };
 const STEPS = { MENU: "menu", CART: "cart" };
@@ -357,6 +361,8 @@ export default function RiderPortalPage() {
   const searchRef = useRef(null);
   const headerMenuRef = useRef(null);
   const knownAssignedIdsRef = useRef(new Set());
+  const assignmentAlertsPrimedRef = useRef(false);
+  const pendingAssignmentAlertIdsRef = useRef(new Set());
   /** Ignore stale menu responses if branch changes quickly or an early unscoped request finishes late. */
   const menuLoadSeqRef = useRef(0);
   const dealsLoadSeqRef = useRef(0);
@@ -661,17 +667,77 @@ export default function RiderPortalPage() {
     };
   }, [headerMenuOpen]);
 
+  function notifyNewAssignment(orderOrPayload) {
+    const token =
+      orderOrPayload?.tokenNumber ||
+      String(orderOrPayload?.orderNumber || orderOrPayload?.id || orderOrPayload?._id || "")
+        .slice(-4);
+    toast.success(`New delivery assigned · #${token}`, { duration: 5000 });
+    triggerHaptic([40, 80, 40]);
+    unlockNotificationAudio();
+    playOrderReadySound({ volume: 95 });
+  }
+
   useEffect(() => {
-    if (!riderId || !orders?.length) return;
-    for (const o of orders) {
-      if (
+    if (typeof window === "undefined") return;
+    const unlock = () => unlockNotificationAudio();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("touchstart", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!riderId || ordersLoading) return;
+
+    const mine = (orders || []).filter(
+      (o) =>
         o.assignedRiderId &&
-        String(o.assignedRiderId) === String(riderId)
-      ) {
-        knownAssignedIdsRef.current.add(String(o.id || o._id));
+        String(o.assignedRiderId) === String(riderId),
+    );
+
+    if (!assignmentAlertsPrimedRef.current) {
+      const pending = pendingAssignmentAlertIdsRef.current;
+      for (const o of mine) {
+        const orderId = String(o.id || o._id);
+        if (!orderId) continue;
+        if (pending.has(orderId)) {
+          knownAssignedIdsRef.current.add(orderId);
+          notifyNewAssignment(o);
+        } else {
+          knownAssignedIdsRef.current.add(orderId);
+        }
       }
+      for (const pendingId of pending) {
+        if (!knownAssignedIdsRef.current.has(pendingId)) {
+          knownAssignedIdsRef.current.add(pendingId);
+          notifyNewAssignment({ id: pendingId });
+        }
+      }
+      pending.clear();
+      assignmentAlertsPrimedRef.current = true;
+      return;
     }
-  }, [orders, riderId]);
+
+    for (const o of mine) {
+      const orderId = String(o.id || o._id);
+      if (!orderId || knownAssignedIdsRef.current.has(orderId)) continue;
+      const status = String(o.status || "").toUpperCase();
+      // Only ring for live deliveries — not when History loads past assigned orders.
+      const isLive =
+        status === "READY" ||
+        status === "OUT_FOR_DELIVERY" ||
+        status === "PROCESSING" ||
+        status === "PREPARING" ||
+        status === "NEW_ORDER";
+      knownAssignedIdsRef.current.add(orderId);
+      if (isLive) notifyNewAssignment(o);
+    }
+  }, [orders, riderId, ordersLoading]);
 
   useEffect(() => {
     if (!socket) return;
@@ -681,19 +747,13 @@ export default function RiderPortalPage() {
         payload?.assignedRiderId != null
           ? String(payload.assignedRiderId)
           : "";
-      if (
-        riderId &&
-        orderId &&
-        assignedTo &&
-        assignedTo === String(riderId) &&
-        !knownAssignedIdsRef.current.has(orderId)
-      ) {
-        knownAssignedIdsRef.current.add(orderId);
-        const token =
-          payload.tokenNumber ||
-          String(payload.orderNumber || orderId).slice(-4);
-        toast.success(`New delivery assigned · #${token}`, { duration: 5000 });
-        triggerHaptic([40, 80, 40]);
+      if (riderId && orderId && assignedTo && assignedTo === String(riderId)) {
+        if (!assignmentAlertsPrimedRef.current) {
+          pendingAssignmentAlertIdsRef.current.add(orderId);
+        } else if (!knownAssignedIdsRef.current.has(orderId)) {
+          knownAssignedIdsRef.current.add(orderId);
+          notifyNewAssignment(payload);
+        }
       }
       loadOrders(getCurrentOrdersParams());
       if (tab === TABS.HISTORY) loadHistoryBreakdown();
@@ -1866,14 +1926,15 @@ export default function RiderPortalPage() {
                                 <button
                                   type="button"
                                   onClick={() => startAppendItems(order)}
-                                  className={`min-w-0 flex-1 py-2 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform ${
+                                  title="Add items"
+                                  aria-label="Add items"
+                                  className={`w-10 shrink-0 py-2 rounded-xl border flex items-center justify-center active:scale-[0.98] transition-transform ${
                                     isPreparing
                                       ? "border-blue-500/30 bg-blue-500/5 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
                                       : "border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500"
                                   }`}
                                 >
-                                  <Plus className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="truncate">Add items</span>
+                                  <Plus className="w-4 h-4" />
                                 </button>
                               )}
                               <button
