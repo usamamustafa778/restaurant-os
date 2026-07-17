@@ -22,6 +22,7 @@ import {
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useOrderNotifications } from "../../contexts/OrderNotificationContext";
 import { getBusinessDate, getBusinessDayRange } from "../../lib/businessDay";
 import {
   Bike,
@@ -72,10 +73,7 @@ import {
   isDealConfigurable,
 } from "../../lib/dealComboItems";
 import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
-import {
-  playKitchenNewOrderSound,
-  unlockNotificationAudio,
-} from "../../lib/playNotificationSound";
+import { unlockNotificationAudio } from "../../lib/playNotificationSound";
 
 const TABS = { NEW_ORDER: "new_order", HOME: "home", HISTORY: "history" };
 const STEPS = { MENU: "menu", CART: "cart" };
@@ -353,6 +351,7 @@ function getHistoryRangeBounds(range, customFrom, customTo, cutoffHour = 4) {
 export default function RiderPortalPage() {
   const sym = getCurrencySymbol();
   const { socket, connected: socketConnected } = useSocket() || {};
+  const { pushDeliveryAssignedAlert } = useOrderNotifications();
   const { currentBranch, branches, setCurrentBranch, loading: branchLoading } = useBranch() || {};
   const { theme, toggleTheme } = useTheme() || {
     theme: "light",
@@ -690,6 +689,11 @@ export default function RiderPortalPage() {
   }
 
   function notifyNewAssignment(orderOrPayload) {
+    const pushed = pushDeliveryAssignedAlert(orderOrPayload, {
+      playSound: true,
+      showPopup: true,
+    });
+    if (!pushed) return;
     const token =
       orderOrPayload?.tokenNumber ||
       String(orderOrPayload?.orderNumber || orderOrPayload?.id || "")
@@ -698,18 +702,6 @@ export default function RiderPortalPage() {
       "order";
     toast.success(`New delivery assigned · #${token}`, { duration: 6000 });
     triggerHaptic([80, 40, 80, 40, 120]);
-    unlockNotificationAudio();
-    playKitchenNewOrderSound({ soundType: "service_bell", volume: 100 });
-    try {
-      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        new Notification("New delivery assigned", {
-          body: `#${token} — tap to open rider app`,
-          tag: `rider-assign-${canonicalOrderMongoId(orderOrPayload) || token}`,
-        });
-      }
-    } catch {
-      /* ignore */
-    }
   }
 
   useEffect(() => {
@@ -748,6 +740,10 @@ export default function RiderPortalPage() {
 
     if (knownAssignedIdsRef.current === null) {
       knownAssignedIdsRef.current = new Set(currentIds);
+      // Seed bell with current assignments (no sound) so it isn't empty.
+      for (const o of liveMine) {
+        pushDeliveryAssignedAlert(o, { silent: true });
+      }
       const pending = pendingAssignAlertIdsRef.current;
       for (const pendingId of [...pending]) {
         if (currentIds.has(pendingId)) {
@@ -772,7 +768,7 @@ export default function RiderPortalPage() {
       ...knownAssignedIdsRef.current,
       ...currentIds,
     ]);
-  }, [orders, riderId, ordersLoading]);
+  }, [orders, riderId, ordersLoading, pushDeliveryAssignedAlert]);
 
   useEffect(() => {
     if (!socket) return;

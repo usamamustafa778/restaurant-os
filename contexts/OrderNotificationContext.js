@@ -8,7 +8,11 @@ import {
   useState,
 } from "react";
 import { useSocket } from "./SocketContext";
-import { playOrderReadySound, unlockNotificationAudio } from "../lib/playNotificationSound";
+import {
+  playOrderReadySound,
+  playKitchenNewOrderSound,
+  unlockNotificationAudio,
+} from "../lib/playNotificationSound";
 import { getStoredAuth, getActingAsSlug } from "../lib/apiClient";
 
 const OrderNotificationContext = createContext(null);
@@ -20,12 +24,20 @@ const POPUP_DURATION_MS = 8000;
 /** Roles that should not hear FOH order-ready alerts. */
 const ORDER_READY_SKIP_ROLES = new Set(["kitchen_staff", "delivery_rider"]);
 
-function shouldNotifyCurrentUser() {
+function getAuthRole() {
+  return getStoredAuth()?.user?.role || null;
+}
+
+function getAuthUserId() {
+  const u = getStoredAuth()?.user;
+  return u?.id != null ? String(u.id) : u?._id != null ? String(u._id) : "";
+}
+
+function shouldNotifyOrderReady() {
   const auth = getStoredAuth();
   const role = auth?.user?.role;
   if (!role) return false;
 
-  // Platform staff acting as a tenant should still get ready alerts.
   if (role === "super_admin") {
     const slug =
       getActingAsSlug() || auth?.user?.tenantSlug || auth?.tenantSlug || null;
@@ -35,13 +47,16 @@ function shouldNotifyCurrentUser() {
   return !ORDER_READY_SKIP_ROLES.has(role);
 }
 
+function isDeliveryRider() {
+  return getAuthRole() === "delivery_rider";
+}
+
 function formatTokenLabel(data) {
   if (data?.tokenNumber != null && data.tokenNumber !== "") {
     return `#${String(data.tokenNumber).padStart(4, "0")}`;
   }
   const raw = String(data?.orderNumber || "").trim();
   if (raw) {
-    // Prefer short token-like suffix (e.g. ORD-2026…-0001 → #0001)
     const tail = raw.split(/[-_/]/).filter(Boolean).pop();
     if (tail && /^\d+$/.test(tail)) {
       return `#${tail.padStart(4, "0")}`;
@@ -59,11 +74,32 @@ function orderTypeLabel(orderType) {
   return t ? t.replace(/_/g, " ") : "Order";
 }
 
+function resolveOrderId(data) {
+  if (data?._id) return String(data._id);
+  if (data?.id && /^[0-9a-fA-F]{24}$/.test(String(data.id))) return String(data.id);
+  if (data?.orderNumber) return String(data.orderNumber);
+  if (data?.id) return String(data.id);
+  return "";
+}
+
+function orderIdentityKeys(data) {
+  const keys = new Set();
+  const add = (v) => {
+    const s = v != null ? String(v).trim() : "";
+    if (s) keys.add(s);
+  };
+  add(data?._id);
+  add(data?.id);
+  add(data?.orderNumber);
+  return keys;
+}
+
 export function OrderNotificationProvider({ children }) {
   const { socket } = useSocket() || {};
   const [alerts, setAlerts] = useState([]);
   const [popups, setPopups] = useState([]);
   const notifiedReadyRef = useRef(new Set());
+  const notifiedAssignedRef = useRef(new Set());
   const popupTimersRef = useRef(new Map());
   const orderClickRef = useRef(null);
 
@@ -75,7 +111,10 @@ export function OrderNotificationProvider({ children }) {
     setAlerts((prev) => {
       const oid = String(alert.orderId);
       const without = prev.filter((a) => String(a.orderId) !== oid);
-      return [{ ...alert, read: false }, ...without].slice(0, MAX_ALERTS);
+      return [{ ...alert, read: alert.read === true }, ...without].slice(
+        0,
+        MAX_ALERTS,
+      );
     });
   }, []);
 
@@ -127,11 +166,10 @@ export function OrderNotificationProvider({ children }) {
     };
   }, []);
 
-  // Browsers block Web Audio until a user gesture — unlock on first interaction
-  // so order-taker / POS hear ready alerts without a silent failure.
+  // Unlock audio for FOH ready alerts and rider assignment alerts.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!shouldNotifyCurrentUser()) return;
+    if (!shouldNotifyOrderReady() && !isDeliveryRider()) return;
     const unlock = () => unlockNotificationAudio();
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
@@ -143,20 +181,19 @@ export function OrderNotificationProvider({ children }) {
     };
   }, []);
 
-  const showBrowserNotification = useCallback(({ title, body, orderId }) => {
+  const showBrowserNotification = useCallback(({ title, body, orderId, tagPrefix = "order-ready" }) => {
     if (
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     ) {
       return;
     }
-    // Show even when tab is focused — order ready is high priority for FOH.
     try {
       const notif = new Notification(title, {
         body,
         icon: "/favicon.ico",
         badge: "/favicon.ico",
-        tag: `order-ready-${orderId}`,
+        tag: `${tagPrefix}-${orderId}`,
       });
       notif.onclick = () => {
         window.focus();
@@ -176,11 +213,74 @@ export function OrderNotificationProvider({ children }) {
     [markAlertRead],
   );
 
+  /**
+   * Rider assignment alert — fills the notification bell + optional sound/popup.
+   * Call from rider page when a new delivery is assigned (socket or poll).
+   */
+  const pushDeliveryAssignedAlert = useCallback(
+    (data, opts = {}) => {
+      const { playSound = true, showPopup = true, silent = false } = opts;
+      const orderId = resolveOrderId(data);
+      if (!orderId) return false;
+
+      const keys = orderIdentityKeys(data);
+      if (!silent) {
+        for (const k of keys) {
+          if (notifiedAssignedRef.current.has(k)) return false;
+        }
+        for (const k of keys) notifiedAssignedRef.current.add(k);
+      }
+
+      const token = formatTokenLabel(data);
+      const status = String(data?.status || "").toUpperCase();
+      const statusHint =
+        status === "READY"
+          ? "Ready — collect from kitchen"
+          : status === "OUT_FOR_DELIVERY"
+            ? "Out for delivery"
+            : "Assigned to you";
+      const timestamp = new Date().toISOString();
+      const alert = {
+        id: `assigned-${orderId}-${timestamp}`,
+        orderId,
+        type: "delivery_assigned",
+        title: `${token} assigned to you`,
+        body: `${orderTypeLabel(data?.orderType || "DELIVERY")} · ${statusHint}`,
+        orderNumber: data?.orderNumber || null,
+        tokenNumber: data?.tokenNumber || null,
+        orderType: data?.orderType || "DELIVERY",
+        tableName: "",
+        timestamp,
+        read: silent,
+      };
+
+      upsertAlert(alert);
+
+      if (!silent) {
+        if (showPopup) pushPopup(alert);
+        if (playSound) {
+          unlockNotificationAudio();
+          playKitchenNewOrderSound({ soundType: "service_bell", volume: 100 });
+        }
+        showBrowserNotification({
+          title: `Delivery ${token}`,
+          body: alert.body,
+          orderId,
+          tagPrefix: "rider-assign",
+        });
+      }
+
+      return true;
+    },
+    [upsertAlert, pushPopup, showBrowserNotification],
+  );
+
+  // FOH: order became READY
   useEffect(() => {
     if (!socket) return;
 
     const onOrderUpdated = (data) => {
-      if (!data || !shouldNotifyCurrentUser()) return;
+      if (!data || !shouldNotifyOrderReady()) return;
       const orderId = String(data.id || data._id || "");
       if (!orderId) return;
 
@@ -194,7 +294,6 @@ export function OrderNotificationProvider({ children }) {
         return;
       }
 
-      // Only skip if we know it was already ready (re-broadcast).
       if (previousStatus === "READY") return;
       if (notifiedReadyRef.current.has(orderId)) return;
       notifiedReadyRef.current.add(orderId);
@@ -236,6 +335,25 @@ export function OrderNotificationProvider({ children }) {
     };
   }, [socket, upsertAlert, pushPopup, showBrowserNotification]);
 
+  // Rider: direct assignment events (dedicated channel from assign-rider API)
+  useEffect(() => {
+    if (!socket) return;
+
+    const onAssigned = (data) => {
+      if (!data || !isDeliveryRider()) return;
+      const myId = getAuthUserId();
+      const assignedTo =
+        data.assignedRiderId != null ? String(data.assignedRiderId) : "";
+      if (!myId || !assignedTo || assignedTo !== myId) return;
+      pushDeliveryAssignedAlert(data, { playSound: true, showPopup: true });
+    };
+
+    socket.on("order:assigned", onAssigned);
+    return () => {
+      socket.off("order:assigned", onAssigned);
+    };
+  }, [socket, pushDeliveryAssignedAlert]);
+
   const unreadCount = useMemo(
     () => alerts.filter((a) => !a.read).length,
     [alerts],
@@ -252,6 +370,7 @@ export function OrderNotificationProvider({ children }) {
         dismissPopup,
         openOrder,
         setOrderClickHandler,
+        pushDeliveryAssignedAlert,
       }}
     >
       {children}
@@ -271,6 +390,7 @@ export function useOrderNotifications() {
       dismissPopup: () => {},
       openOrder: () => {},
       setOrderClickHandler: () => {},
+      pushDeliveryAssignedAlert: () => false,
     };
   }
   return ctx;

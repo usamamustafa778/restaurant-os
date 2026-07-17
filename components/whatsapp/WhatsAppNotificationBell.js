@@ -8,6 +8,7 @@ import {
   MessageCircle,
   AlertTriangle,
   ChefHat,
+  Bike,
   X,
 } from "lucide-react";
 import { useWhatsAppNotifications } from "../../contexts/WhatsAppNotificationContext";
@@ -44,9 +45,19 @@ function orderReadyHref(role) {
   return "/pos";
 }
 
+function isRiderRole() {
+  return getStoredAuth()?.user?.role === "delivery_rider";
+}
+
+function OrderAlertIcon({ type, className = "h-4 w-4" }) {
+  if (type === "delivery_assigned") return <Bike className={className} />;
+  return <ChefHat className={className} />;
+}
+
 function PopupToast({ popup, source, onOpen, onDismiss, wide = false }) {
   const isUrgent = popup.type === "urgent";
   const isOrder = source === "order";
+  const isAssignment = popup.type === "delivery_assigned";
 
   return (
     <div
@@ -54,7 +65,9 @@ function PopupToast({ popup, source, onOpen, onDismiss, wide = false }) {
         wide ? "w-full" : "w-72"
       } ${
         isOrder
-          ? "border-orange-200 dark:border-orange-500/30"
+          ? isAssignment
+            ? "border-emerald-200 dark:border-emerald-500/30"
+            : "border-orange-200 dark:border-orange-500/30"
           : isUrgent
             ? "border-amber-200 dark:border-amber-500/30"
             : "border-emerald-200 dark:border-emerald-500/25"
@@ -68,14 +81,16 @@ function PopupToast({ popup, source, onOpen, onDismiss, wide = false }) {
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
             isOrder
-              ? "bg-orange-500 text-white"
+              ? isAssignment
+                ? "bg-emerald-500 text-white"
+                : "bg-orange-500 text-white"
               : isUrgent
                 ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
                 : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
           }`}
         >
           {isOrder ? (
-            <ChefHat className="h-4 w-4" />
+            <OrderAlertIcon type={popup.type} />
           ) : isUrgent ? (
             <AlertTriangle className="h-4 w-4" />
           ) : (
@@ -92,11 +107,17 @@ function PopupToast({ popup, source, onOpen, onDismiss, wide = false }) {
           <p
             className={`mt-1.5 text-[10px] font-semibold ${
               isOrder
-                ? "text-orange-600 dark:text-orange-400"
+                ? isAssignment
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-orange-600 dark:text-orange-400"
                 : "text-emerald-600 dark:text-emerald-400"
             }`}
           >
-            {isOrder ? "Tap to open ready order" : "WhatsApp · tap to open"}
+            {isOrder
+              ? isAssignment
+                ? "Tap to view delivery"
+                : "Tap to open ready order"
+              : "WhatsApp · tap to open"}
           </p>
         </div>
       </button>
@@ -113,7 +134,13 @@ function PopupToast({ popup, source, onOpen, onDismiss, wide = false }) {
       </button>
       <div
         className={`wa-popup-progress h-0.5 ${
-          isOrder ? "bg-orange-500" : isUrgent ? "bg-amber-500" : "bg-emerald-500"
+          isOrder
+            ? isAssignment
+              ? "bg-emerald-500"
+              : "bg-orange-500"
+            : isUrgent
+              ? "bg-amber-500"
+              : "bg-emerald-500"
         }`}
       />
     </div>
@@ -232,11 +259,13 @@ export default function WhatsAppNotificationBell({
   }, [hostPopups, mergedPopups.length, popupPlacement]);
 
   const Icon =
-    wa.permission === "denied"
+    showWhatsApp && wa.permission === "denied"
       ? BellOff
-      : wa.permission === "granted"
+      : showWhatsApp && wa.permission === "granted"
         ? Bell
-        : BellRing;
+        : totalUnread > 0
+          ? BellRing
+          : Bell;
 
   const handleWhatsAppClick = (alert) => {
     wa.markAlertRead(alert.conversationId);
@@ -431,13 +460,20 @@ export default function WhatsAppNotificationBell({
             {tab === "orders" ? (
               orders.alerts.length === 0 ? (
                 <div className="px-4 py-6 text-center">
-                  <ChefHat className="mx-auto mb-2 h-8 w-8 text-gray-300 dark:text-neutral-600" />
+                  {isRiderRole() ? (
+                    <Bike className="mx-auto mb-2 h-8 w-8 text-gray-300 dark:text-neutral-600" />
+                  ) : (
+                    <ChefHat className="mx-auto mb-2 h-8 w-8 text-gray-300 dark:text-neutral-600" />
+                  )}
                   <p className="text-sm font-medium text-gray-700 dark:text-neutral-300">
-                    No ready orders yet
+                    {isRiderRole()
+                      ? "No delivery alerts yet"
+                      : "No ready orders yet"}
                   </p>
                   <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-500">
-                    You&apos;ll hear a sound and see alerts here when kitchen
-                    marks an order ready.
+                    {isRiderRole()
+                      ? "When POS assigns you a delivery, it will show up here with a sound."
+                      : "You'll hear a sound and see alerts here when kitchen marks an order ready."}
                   </p>
                 </div>
               ) : (
@@ -448,12 +484,20 @@ export default function WhatsAppNotificationBell({
                     onClick={() => handleOrderClick(alert)}
                     className={`flex w-full items-start gap-3 border-b border-gray-50 px-4 py-3 text-left transition hover:bg-gray-50 dark:border-neutral-800/80 dark:hover:bg-neutral-800/50 ${
                       !alert.read
-                        ? "bg-orange-50/50 dark:bg-orange-950/20"
+                        ? alert.type === "delivery_assigned"
+                          ? "bg-emerald-50/50 dark:bg-emerald-950/20"
+                          : "bg-orange-50/50 dark:bg-orange-950/20"
                         : ""
                     }`}
                   >
-                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400">
-                      <ChefHat className="h-4 w-4" />
+                    <div
+                      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                        alert.type === "delivery_assigned"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                          : "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400"
+                      }`}
+                    >
+                      <OrderAlertIcon type={alert.type} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
@@ -469,7 +513,13 @@ export default function WhatsAppNotificationBell({
                       </p>
                     </div>
                     {!alert.read && (
-                      <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-orange-500" />
+                      <span
+                        className={`mt-2 h-2 w-2 shrink-0 rounded-full ${
+                          alert.type === "delivery_assigned"
+                            ? "bg-emerald-500"
+                            : "bg-orange-500"
+                        }`}
+                      />
                     )}
                   </button>
                 ))
