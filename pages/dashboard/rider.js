@@ -73,7 +73,7 @@ import {
 } from "../../lib/dealComboItems";
 import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
 import {
-  playOrderReadySound,
+  playKitchenNewOrderSound,
   unlockNotificationAudio,
 } from "../../lib/playNotificationSound";
 
@@ -352,7 +352,7 @@ function getHistoryRangeBounds(range, customFrom, customTo, cutoffHour = 4) {
 
 export default function RiderPortalPage() {
   const sym = getCurrencySymbol();
-  const { socket } = useSocket() || {};
+  const { socket, connected: socketConnected } = useSocket() || {};
   const { currentBranch, branches, setCurrentBranch, loading: branchLoading } = useBranch() || {};
   const { theme, toggleTheme } = useTheme() || {
     theme: "light",
@@ -360,9 +360,10 @@ export default function RiderPortalPage() {
   };
   const searchRef = useRef(null);
   const headerMenuRef = useRef(null);
-  const knownAssignedIdsRef = useRef(new Set());
-  const assignmentAlertsPrimedRef = useRef(false);
-  const pendingAssignmentAlertIdsRef = useRef(new Set());
+  /** Set of assigned order Mongo _ids already alerted; null until first successful orders load. */
+  const knownAssignedIdsRef = useRef(null);
+  /** Assignments that arrived over the socket before the first orders prime. */
+  const pendingAssignAlertIdsRef = useRef(new Set());
   /** Ignore stale menu responses if branch changes quickly or an early unscoped request finishes late. */
   const menuLoadSeqRef = useRef(0);
   const dealsLoadSeqRef = useRef(0);
@@ -667,45 +668,58 @@ export default function RiderPortalPage() {
     };
   }, [headerMenuOpen]);
 
-  function getOrderIdentityKeys(orderOrPayload) {
-    const keys = new Set();
-    const add = (v) => {
-      const s = v != null ? String(v).trim() : "";
-      if (s) keys.add(s);
-    };
-    add(orderOrPayload?._id);
-    add(orderOrPayload?.id);
-    add(orderOrPayload?.orderNumber);
-    return keys;
+  function canonicalOrderMongoId(orderOrPayload) {
+    const raw =
+      orderOrPayload?._id ||
+      (orderOrPayload?.id &&
+      /^[0-9a-fA-F]{24}$/.test(String(orderOrPayload.id))
+        ? orderOrPayload.id
+        : null);
+    return raw != null ? String(raw) : "";
   }
 
-  function isKnownAssignment(orderOrPayload) {
-    for (const k of getOrderIdentityKeys(orderOrPayload)) {
-      if (knownAssignedIdsRef.current.has(k)) return true;
-    }
-    return false;
-  }
-
-  function markKnownAssignment(orderOrPayload) {
-    for (const k of getOrderIdentityKeys(orderOrPayload)) {
-      knownAssignedIdsRef.current.add(k);
-    }
+  function isLiveAssignedStatus(status) {
+    const st = String(status || "").toUpperCase();
+    return (
+      st === "READY" ||
+      st === "OUT_FOR_DELIVERY" ||
+      st === "PROCESSING" ||
+      st === "PREPARING" ||
+      st === "NEW_ORDER"
+    );
   }
 
   function notifyNewAssignment(orderOrPayload) {
     const token =
       orderOrPayload?.tokenNumber ||
-      String(orderOrPayload?.orderNumber || orderOrPayload?.id || orderOrPayload?._id || "")
-        .slice(-4);
-    toast.success(`New delivery assigned · #${token}`, { duration: 5000 });
-    triggerHaptic([40, 80, 40]);
+      String(orderOrPayload?.orderNumber || orderOrPayload?.id || "")
+        .replace(/^.*[-_/]/, "")
+        .slice(-4) ||
+      "order";
+    toast.success(`New delivery assigned · #${token}`, { duration: 6000 });
+    triggerHaptic([80, 40, 80, 40, 120]);
     unlockNotificationAudio();
-    playOrderReadySound({ volume: 95 });
+    playKitchenNewOrderSound({ soundType: "service_bell", volume: 100 });
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("New delivery assigned", {
+          body: `#${token} — tap to open rider app`,
+          tag: `rider-assign-${canonicalOrderMongoId(orderOrPayload) || token}`,
+        });
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const unlock = () => unlockNotificationAudio();
+    const unlock = () => {
+      unlockNotificationAudio();
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+    };
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
     window.addEventListener("touchstart", unlock, { once: true });
@@ -716,48 +730,48 @@ export default function RiderPortalPage() {
     };
   }, []);
 
+  // Primary alert path: detect newly assigned live orders from the orders list
+  // (works even when Socket.IO is broken / multi-instance).
   useEffect(() => {
     if (!riderId || ordersLoading) return;
 
-    const mine = (orders || []).filter(
+    const liveMine = (orders || []).filter(
       (o) =>
         o.assignedRiderId &&
-        String(o.assignedRiderId) === String(riderId),
+        String(o.assignedRiderId) === String(riderId) &&
+        isLiveAssignedStatus(o.status),
     );
 
-    if (!assignmentAlertsPrimedRef.current) {
-      const pending = pendingAssignmentAlertIdsRef.current;
-      for (const o of mine) {
-        const wasPending = [...getOrderIdentityKeys(o)].some((k) => pending.has(k));
-        markKnownAssignment(o);
-        if (wasPending) notifyNewAssignment(o);
-      }
+    const currentIds = new Set(
+      liveMine.map((o) => canonicalOrderMongoId(o)).filter(Boolean),
+    );
+
+    if (knownAssignedIdsRef.current === null) {
+      knownAssignedIdsRef.current = new Set(currentIds);
+      const pending = pendingAssignAlertIdsRef.current;
       for (const pendingId of [...pending]) {
-        if (!knownAssignedIdsRef.current.has(pendingId)) {
-          knownAssignedIdsRef.current.add(pendingId);
-          notifyNewAssignment({ id: pendingId });
+        if (currentIds.has(pendingId)) {
+          const match = liveMine.find(
+            (o) => canonicalOrderMongoId(o) === pendingId,
+          );
+          notifyNewAssignment(match || { _id: pendingId });
         }
+        knownAssignedIdsRef.current.add(pendingId);
       }
       pending.clear();
-      assignmentAlertsPrimedRef.current = true;
       return;
     }
 
-    for (const o of mine) {
-      if (isKnownAssignment(o)) {
-        markKnownAssignment(o);
-        continue;
-      }
-      const status = String(o.status || "").toUpperCase();
-      const isLive =
-        status === "READY" ||
-        status === "OUT_FOR_DELIVERY" ||
-        status === "PROCESSING" ||
-        status === "PREPARING" ||
-        status === "NEW_ORDER";
-      markKnownAssignment(o);
-      if (isLive) notifyNewAssignment(o);
+    for (const o of liveMine) {
+      const id = canonicalOrderMongoId(o);
+      if (!id || knownAssignedIdsRef.current.has(id)) continue;
+      knownAssignedIdsRef.current.add(id);
+      notifyNewAssignment(o);
     }
+    knownAssignedIdsRef.current = new Set([
+      ...knownAssignedIdsRef.current,
+      ...currentIds,
+    ]);
   }, [orders, riderId, ordersLoading]);
 
   useEffect(() => {
@@ -767,18 +781,17 @@ export default function RiderPortalPage() {
         payload?.assignedRiderId != null
           ? String(payload.assignedRiderId)
           : "";
+      const mongoId = canonicalOrderMongoId(payload);
       if (
         riderId &&
         assignedTo &&
         assignedTo === String(riderId) &&
-        (payload?.id || payload?._id || payload?.orderNumber)
+        mongoId
       ) {
-        if (!assignmentAlertsPrimedRef.current) {
-          for (const k of getOrderIdentityKeys(payload)) {
-            pendingAssignmentAlertIdsRef.current.add(k);
-          }
-        } else if (!isKnownAssignment(payload)) {
-          markKnownAssignment(payload);
+        if (knownAssignedIdsRef.current === null) {
+          pendingAssignAlertIdsRef.current.add(mongoId);
+        } else if (!knownAssignedIdsRef.current.has(mongoId)) {
+          knownAssignedIdsRef.current.add(mongoId);
           notifyNewAssignment(payload);
         }
       }
@@ -795,18 +808,25 @@ export default function RiderPortalPage() {
     };
   }, [socket, getCurrentOrdersParams, tab, loadHistoryBreakdown, riderId]);
 
-  // Fallback when sockets miss (background tab, flaky mobile network).
+  // Aggressive poll — sockets are unreliable on multi-instance hosts / mobile networks.
   useEffect(() => {
-    if (tab === TABS.HISTORY) return;
-    const tick = () => loadOrders(getCurrentOrdersParams());
-    const interval = setInterval(tick, 12000);
+    if (tab === TABS.HISTORY) return undefined;
+    const tick = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      loadOrders(getCurrentOrdersParams());
+    };
+    const interval = setInterval(tick, 4000);
     const onVisible = () => {
       if (document.visibilityState === "visible") tick();
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", tick);
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", tick);
     };
   }, [tab, getCurrentOrdersParams]);
 
@@ -1602,21 +1622,33 @@ export default function RiderPortalPage() {
                           ? "New Order"
                           : "Review Order"}
                 </h1>
-                <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate leading-tight">
-                  {tab === TABS.HOME
-                    ? restaurantBranding.name ||
-                      (activeOrders.length > 0
-                        ? `${activeOrders.length} active · ${readyOrders.length} ready`
-                        : "All clear today")
-                    : tab === TABS.HISTORY
-                      ? "Today's summary"
-                      : step === STEPS.MENU
-                        ? appendTargetOrder
-                          ? `Appending to #${appendTargetOrder.tokenNumber || getOrderId(appendTargetOrder).toString().slice(-4)}`
-                          : userName
-                            ? `Hi, ${userName.split(" ")[0]}`
-                            : "Rider Portal"
-                        : `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`}
+                <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate leading-tight flex items-center gap-1.5">
+                  {tab === TABS.HOME ? (
+                    <>
+                      <span
+                        className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
+                          socketConnected ? "bg-emerald-500" : "bg-amber-400"
+                        }`}
+                        title={socketConnected ? "Live updates on" : "Polling for updates"}
+                      />
+                      <span className="truncate">
+                        {restaurantBranding.name ||
+                          (activeOrders.length > 0
+                            ? `${activeOrders.length} active · ${readyOrders.length} ready`
+                            : "All clear today")}
+                      </span>
+                    </>
+                  ) : tab === TABS.HISTORY ? (
+                    "Today's summary"
+                  ) : step === STEPS.MENU ? (
+                    appendTargetOrder
+                      ? `Appending to #${appendTargetOrder.tokenNumber || getOrderId(appendTargetOrder).toString().slice(-4)}`
+                      : userName
+                        ? `Hi, ${userName.split(" ")[0]}`
+                        : "Rider Portal"
+                  ) : (
+                    `${cartBadge} item${cartBadge !== 1 ? "s" : ""}`
+                  )}
                 </p>
               </div>
             </div>

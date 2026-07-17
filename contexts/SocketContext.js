@@ -52,7 +52,12 @@ export function SocketProvider({ children }) {
         branchId: branchId || undefined,
         tenantSlug: tenantSlug || undefined,
       },
-      transports: ["websocket"],
+      // Mobile networks / some proxies break pure websocket — allow long-polling fallback.
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 8000,
     });
 
     newSocket.on("connect", () => setConnected(true));
