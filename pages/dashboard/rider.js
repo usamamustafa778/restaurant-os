@@ -71,11 +71,6 @@ import {
   getComboItemType,
   isDealConfigurable,
 } from "../../lib/dealComboItems";
-import {
-  formatReceiptItemsForBill,
-  formatOrderItemDisplayName,
-  getDealDisplayItems,
-} from "../../lib/orderDisplay.js";
 import { mapPosCartLineToOrderUpdatePayload } from "../../lib/modifier-pricing";
 
 const TABS = { NEW_ORDER: "new_order", HOME: "home", HISTORY: "history" };
@@ -148,7 +143,7 @@ function getStatusConfig(status) {
   switch (status) {
     case "READY":
       return {
-        label: "Ready to Collect",
+        label: "Ready",
         bg: "bg-emerald-500",
         bgLight: "bg-emerald-50 dark:bg-emerald-500/10",
         text: "text-emerald-600 dark:text-emerald-400",
@@ -398,16 +393,6 @@ export default function RiderPortalPage() {
   });
   const [riderPayouts, setRiderPayouts] = useState([]);
   const [payoutsLoading, setPayoutsLoading] = useState(false);
-  const [expandedOrderIds, setExpandedOrderIds] = useState([]);
-
-  function toggleOrderDetails(orderKey) {
-    setExpandedOrderIds((prev) =>
-      prev.includes(orderKey)
-        ? prev.filter((id) => id !== orderKey)
-        : prev.concat(orderKey),
-    );
-  }
-
   // New order
   const [step, setStep] = useState(STEPS.MENU);
   const [menu, setMenu] = useState({ categories: [], items: [] });
@@ -1659,21 +1644,21 @@ export default function RiderPortalPage() {
             <div className="pb-24">
               {/* A) Pending cash banner — only when unsubmitted cash exists */}
               {riderPendingPaymentTotal > 0 && (
-                <div className="mx-4 mt-3 mb-2 flex items-center justify-between px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                <div className="mx-4 mt-3 mb-2 flex items-center justify-between px-4 py-3 rounded-xl bg-primary/10 border border-primary/25">
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                    <AlertTriangle className="w-5 h-5 text-primary shrink-0" />
                     <div>
-                      <p className="text-sm font-bold text-amber-500">
+                      <p className="text-sm font-bold text-primary">
                         {sym === "Rs" ? "Rs." : sym} {Math.round(riderPendingPaymentTotal).toLocaleString()} to hand in
                       </p>
-                      <p className="text-xs text-amber-400/70">
+                      <p className="text-xs text-primary/80">
                         {riderPendingPaymentOrders.length} order{riderPendingPaymentOrders.length > 1 ? "s" : ""} — cash not submitted yet
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={() => { setTab(TABS.HISTORY); setHistoryFilter("pending_payment"); }}
-                    className="text-xs font-bold text-amber-500 underline shrink-0"
+                    className="text-xs font-bold text-primary underline shrink-0"
                   >
                     View →
                   </button>
@@ -1768,7 +1753,6 @@ export default function RiderPortalPage() {
                       const orderId = order.id || order._id;
                       const orderKey = String(orderId);
                       const kitchenUrgency = getKitchenUrgency(order);
-                      const isExpanded = expandedOrderIds.includes(orderKey);
                       const itemCount = (order.items || []).reduce(
                         (sum, item) => sum + (Number(item.quantity || item.qty) || 0),
                         0,
@@ -1776,11 +1760,6 @@ export default function RiderPortalPage() {
                       const canAppend = !["DELIVERED", "COMPLETED", "CANCELLED", "OUT_FOR_DELIVERY"].includes(
                         orderStatus,
                       );
-                      const canShowBill =
-                        orderStatus === "OUT_FOR_DELIVERY" &&
-                        order.assignedRiderId &&
-                        riderId &&
-                        String(order.assignedRiderId) === String(riderId);
                       const tokenLabel = `#${order.tokenNumber || getOrderId(order).toString().slice(-4)}`;
                       const totalAmt = (order.grandTotal ?? order.total)?.toLocaleString();
                       const statusLabel =
@@ -1791,7 +1770,6 @@ export default function RiderPortalPage() {
                             : sc.label;
                       const isPreparing =
                         orderStatus === "PROCESSING" || orderStatus === "PREPARING";
-                      const displayItems = formatReceiptItemsForBill(order);
                       return (
                         <div key={orderKey} className="bg-white dark:bg-neutral-950 rounded-2xl overflow-hidden border border-gray-200 dark:border-neutral-800">
                           <div className={`px-3.5 py-2 flex items-center justify-between ${sc.bgLight}`}>
@@ -1863,7 +1841,7 @@ export default function RiderPortalPage() {
                                   ) : (
                                     <PackageCheck className="w-3.5 h-3.5 shrink-0" />
                                   )}
-                                  <span className="truncate">Collect from Kitchen</span>
+                                  <span className="truncate">Collect order</span>
                                 </button>
                               )}
                               {orderStatus === "OUT_FOR_DELIVERY" &&
@@ -1898,111 +1876,15 @@ export default function RiderPortalPage() {
                                   <span className="truncate">Add items</span>
                                 </button>
                               )}
-                              {canShowBill && (
-                                <button
-                                  type="button"
-                                  onClick={() => setBillOrder(order)}
-                                  className="min-w-0 flex-1 py-2 px-2 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-                                >
-                                  <Receipt className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="truncate">Receipt</span>
-                                </button>
-                              )}
                               <button
                                 type="button"
-                                onClick={() => toggleOrderDetails(orderKey)}
-                                title={isExpanded ? "Hide details" : "Show details"}
-                                aria-label={isExpanded ? "Hide details" : "Show details"}
-                                className={`w-10 shrink-0 py-2 rounded-xl text-[11px] font-bold flex items-center justify-center border transition-colors ${
-                                  isExpanded
-                                    ? orderStatus === "OUT_FOR_DELIVERY"
-                                      ? "bg-[#25343F]/10 border-[#25343F]/30 text-[#25343F]"
-                                      : isPreparing
-                                        ? "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
-                                        : "bg-orange-500/10 border-orange-500/30 text-orange-500"
-                                    : "bg-gray-50 dark:bg-neutral-900 border-gray-200/80 dark:border-neutral-800 text-gray-600 dark:text-neutral-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800"
-                                }`}
+                                onClick={() => setBillOrder(order)}
+                                className="min-w-0 flex-1 py-2 px-2 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
                               >
-                                <ChevronDown
-                                  className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                                />
+                                <Receipt className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">Receipt</span>
                               </button>
                             </div>
-
-                            {isExpanded && (
-                              <>
-                                {order.customerName && (
-                                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
-                                    <User className="w-3 h-3 shrink-0" />
-                                    {order.customerName}
-                                  </div>
-                                )}
-                                {(order.customerPhone || order.phone) && (
-                                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-0.5">
-                                    <Phone className="w-3 h-3 shrink-0" />
-                                    {order.customerPhone || order.phone}
-                                  </div>
-                                )}
-                                {order.deliveryAddress && (
-                                  <div className="flex items-start gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
-                                    <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
-                                    <span className="line-clamp-2">{order.deliveryAddress}</span>
-                                  </div>
-                                )}
-                                <div className="space-y-1.5 mb-2">
-                                  {displayItems.map((item, idx) => {
-                                    const qty = item.qty ?? item.quantity ?? 1;
-                                    if (item.isDealLine) {
-                                      const children = getDealDisplayItems(item);
-                                      return (
-                                        <div key={`deal-${idx}`} className="text-[11px]">
-                                          <div className="flex items-center gap-1.5 font-medium text-gray-800 dark:text-neutral-200">
-                                            <span className="font-bold tabular-nums">{qty}×</span>
-                                            <span className="truncate">{formatOrderItemDisplayName(item)}</span>
-                                            <span className="text-[9px] font-bold uppercase tracking-wide text-orange-500">
-                                              Deal
-                                            </span>
-                                          </div>
-                                          {children.length > 0 ? (
-                                            <div className="mt-0.5 space-y-0.5 border-l-2 border-orange-500/30 pl-2 ml-1">
-                                              {children.map((choice, ci) => (
-                                                <div
-                                                  key={`${choice.name}-${ci}`}
-                                                  className="flex flex-wrap items-center gap-1 text-gray-500 dark:text-neutral-400"
-                                                >
-                                                  <span>
-                                                    + {choice.name}
-                                                    {choice.qty > 1 ? ` ×${choice.qty}` : ""}
-                                                  </span>
-                                                  {choice.isChoice ? (
-                                                    <span className="rounded px-1 py-px text-[8px] font-bold uppercase tracking-wide bg-orange-500/15 text-orange-500">
-                                                      Choice
-                                                    </span>
-                                                  ) : null}
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      );
-                                    }
-                                    return (
-                                      <div
-                                        key={`item-${idx}`}
-                                        className="flex items-center justify-between text-[11px]"
-                                      >
-                                        <span className="text-gray-700 dark:text-neutral-300 font-medium min-w-0 truncate">
-                                          <span className="font-bold text-gray-900 dark:text-white">
-                                            {qty}x
-                                          </span>{" "}
-                                          {formatOrderItemDisplayName(item)}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
                           </div>
                         </div>
                       );
