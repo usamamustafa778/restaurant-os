@@ -151,6 +151,7 @@ function getEmptyForm() {
     description: "",
     components: [],
     comboPrice: "",
+    reservationCharges: "",
     startDate: today,
     endDate: "",
     isActive: true,
@@ -391,7 +392,9 @@ export default function DealsPage() {
   );
   const componentsRegularTotalValue = componentsRegularTotal(form.components, menuItemById);
   const comboPriceNum = Number(form.comboPrice) || 0;
-  const savingsAmount = Math.max(0, componentsRegularTotalValue - comboPriceNum);
+  const reservationChargesNum = Math.max(0, Number(form.reservationCharges) || 0);
+  const foodDealPriceNum = Math.max(0, comboPriceNum - reservationChargesNum);
+  const savingsAmount = componentsRegularTotalValue - foodDealPriceNum;
 
   const categoryNameById = useMemo(
     () =>
@@ -613,6 +616,10 @@ export default function DealsPage() {
       description: deal.description || "",
       components: (deal.comboItems || []).map(comboItemToComponent),
       comboPrice: deal.comboPrice != null ? String(deal.comboPrice) : "",
+      reservationCharges:
+        deal.reservationCharges != null && Number(deal.reservationCharges) > 0
+          ? String(deal.reservationCharges)
+          : "",
       startDate: deal.startDate ? deal.startDate.slice(0, 10) : "",
       endDate: deal.endDate ? deal.endDate.slice(0, 10) : "",
       isActive: deal.isActive !== false,
@@ -864,6 +871,7 @@ export default function DealsPage() {
       dealType: "COMBO",
       comboItems: form.components.map(componentToComboItem),
       comboPrice: Number(form.comboPrice),
+      reservationCharges: Math.max(0, Number(form.reservationCharges) || 0),
       startDate: new Date(form.startDate || new Date()).toISOString(),
       endDate: parseEndDateForPayload(form.endDate),
       isActive: form.isActive,
@@ -2193,9 +2201,40 @@ export default function DealsPage() {
                               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
                             />
                             <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-400">
-                              Regular: {sym}{Math.round(componentsRegularTotalValue).toLocaleString()}
+                              Food value (excl. reservation): {sym}
+                              {Math.round(foodDealPriceNum).toLocaleString()}
                               <span className="mx-1 text-gray-300">·</span>
-                              Save {sym}{Math.round(savingsAmount).toLocaleString()}
+                              Regular: {sym}
+                              {Math.round(componentsRegularTotalValue).toLocaleString()}
+                              <span className="mx-1 text-gray-300">·</span>
+                              {savingsAmount >= 0 ? (
+                                <>Save {sym}{Math.round(savingsAmount).toLocaleString()}</>
+                              ) : (
+                                <span className="text-amber-600 dark:text-amber-400">
+                                  Remaining {sym}
+                                  {Math.round(Math.abs(savingsAmount)).toLocaleString()} will
+                                  count as reservation
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                              Reservation / party fee ({sym})
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={form.reservationCharges}
+                              onChange={(e) =>
+                                setForm((f) => ({ ...f, reservationCharges: e.target.value }))
+                              }
+                              placeholder="e.g. 2000 for birthday booking"
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                            />
+                            <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-400">
+                              Birthday booking fee included in the deal price (cake complimentary or
+                              reservation only). Leave 0 if not used.
                             </p>
                           </div>
                           <div>

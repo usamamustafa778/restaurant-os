@@ -224,6 +224,12 @@ function OrderBillPaymentBreakdown({
           <span className="tabular-nums">{formatPrice(totals.deliveryCharges)}</span>
         </div>
       ) : null}
+      {totals.showReservationRow ? (
+        <div className="flex items-center justify-between text-stone-600">
+          <span>Reservation / party fee</span>
+          <span className="tabular-nums">{formatPrice(totals.reservationCharges)}</span>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between border-t border-stone-200 pt-3 text-base font-black text-stone-900">
         <span>Total</span>
         <span className="tabular-nums" style={{ color: primaryColor }}>
