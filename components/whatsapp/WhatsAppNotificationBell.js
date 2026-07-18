@@ -339,15 +339,9 @@ export default function WhatsAppNotificationBell({
       >
         <Icon className="h-4 w-4 shrink-0" />
         {totalUnread > 0 ? (
-          variant === "ghost" ? (
-            <span className="absolute -right-0.5 -top-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-bold leading-4 text-white text-center ring-2 ring-white dark:ring-neutral-950">
-              {totalUnread > 9 ? "9+" : totalUnread}
-            </span>
-          ) : (
-            <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-              {totalUnread > 9 ? "9+" : totalUnread}
-            </span>
-          )
+          <span className="absolute -right-1 -top-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-[9px] font-bold leading-4 text-white text-center ring-2 ring-white dark:ring-neutral-950">
+            {totalUnread > 9 ? "9+" : totalUnread}
+          </span>
         ) : showWhatsApp && wa.permission === "default" ? (
           <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-white dark:ring-neutral-950" />
         ) : null}
