@@ -175,6 +175,19 @@ function isBranchRequiredError(msg) {
 }
 
 function getOrderTotal(order) {
+  const food = Number(order.total) || 0;
+  const tax = Math.max(0, Number(order.taxAmount) || 0);
+  const reservation = Math.max(0, Number(order.reservationCharges) || 0);
+  const isDelivery =
+    order.orderType === "DELIVERY" ||
+    order.type === "delivery" ||
+    String(order.type || "")
+      .toLowerCase()
+      .includes("delivery");
+  const delivery = isDelivery ? Math.max(0, Number(order.deliveryCharges) || 0) : 0;
+  if (order.total != null) {
+    return food + tax + delivery + reservation;
+  }
   return Number(order.grandTotal ?? order.total) || 0;
 }
 

@@ -281,7 +281,8 @@ const FALLBACK_POS_DISCOUNT_PRESETS = [
 
 /**
  * Same shape as GET /api/admin/orders/:id (mapOrder) for printBillReceipt when a follow-up fetch fails.
- * `total` must be food total after discount (excluding delivery); grandTotal includes delivery.
+ * `total` must be food total after discount (excluding delivery/reservation);
+ * grandTotal includes tax, delivery, and reservation.
  */
 function buildFallbackPrintOrderFromPosResult(result, ctx) {
   const {
@@ -307,6 +308,10 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
       : Math.max(0, (Number(subtotal) || 0) - (Number(discountAmount) || 0));
   const del =
     orderType === "DELIVERY" ? Math.max(0, Number(deliveryCharges) || 0) : 0;
+  const reservationCharges = Math.max(
+    0,
+    Number(result.reservationCharges) || 0,
+  );
   const resolvedTaxAmount =
     result.taxAmount != null && !Number.isNaN(Number(result.taxAmount))
       ? Number(result.taxAmount)
@@ -331,7 +336,7 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
       ? Number(result.grandTotal)
       : result.amountDue != null && !Number.isNaN(Number(result.amountDue))
         ? Number(result.amountDue)
-        : foodTotal + resolvedTaxAmount + del;
+        : foodTotal + resolvedTaxAmount + del + reservationCharges;
   return {
     id: result.orderNumber || String(orderId || ""),
     _id: String(result.id || result._id || orderId || ""),
@@ -347,6 +352,7 @@ function buildFallbackPrintOrderFromPosResult(result, ctx) {
     taxLabel: resolvedTaxLabel,
     taxableAmount: resolvedTaxableAmount,
     deliveryCharges: del,
+    reservationCharges,
     total: foodTotal,
     grandTotal: due,
     type,
