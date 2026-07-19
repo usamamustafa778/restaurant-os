@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
-import KdsSettingsPanel from "../../components/kitchen/KdsSettingsPanel";
-import { getOrders, getNextStatuses, updateOrderStatus, recallKitchenOrder, getDaySessions } from "../../lib/apiClient";
+import { getOrders, getNextStatuses, updateOrderStatus, recallKitchenOrder, getDaySessions, checkKitchenModuleAccess } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
 import { playKitchenNewOrderSound, unlockNotificationAudio } from "../../lib/playNotificationSound";
+import KdsLockedPresentation from "../../components/kitchen/KdsLockedPresentation";
+import KdsSettingsPanel from "../../components/kitchen/KdsSettingsPanel";
 import {
   DEFAULT_KDS_SETTINGS,
   KDS_FILTER_PRESETS,
@@ -487,6 +488,7 @@ export default function KitchenPage() {
   const { socket } = useSocket() || {};
   const [orders, setOrders] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
+  const [moduleLocked, setModuleLocked] = useState(null); // null = checking
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [tick, setTick] = useState(0);
   const [lastRefreshed, setLastRefreshed] = useState(Date.now());
@@ -529,7 +531,7 @@ export default function KitchenPage() {
 
   // Ring when a new ticket appears in the New Orders column.
   useEffect(() => {
-    if (pageLoading) return;
+    if (pageLoading || moduleLocked) return;
 
     const currentIds = new Set(
       orders
@@ -596,13 +598,37 @@ export default function KitchenPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkKitchenModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "kds" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+        if (locked) setPageLoading(false);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return undefined;
     fetchOrders();
     const iv = setInterval(fetchOrders, 30000);
     return () => clearInterval(iv);
-  }, []);
+  }, [moduleLocked]);
 
   // Fetch the active business day session so KDS scope matches POS session scope.
   useEffect(() => {
+    if (moduleLocked !== false) return undefined;
     async function loadSessionStart() {
       try {
         const data = await getDaySessions(null, { limit: 5 });
@@ -626,10 +652,10 @@ export default function KitchenPage() {
       setSessionStart(d);
     }
     loadSessionStart();
-  }, []);
+  }, [moduleLocked]);
 
   useEffect(() => {
-    if (!socket) return;
+    if (moduleLocked !== false || !socket) return undefined;
     const handler = () => fetchOrders();
     socket.on("order:created", handler);
     socket.on("order:updated", handler);
@@ -637,7 +663,7 @@ export default function KitchenPage() {
       socket.off("order:created", handler);
       socket.off("order:updated", handler);
     };
-  }, [socket]);
+  }, [socket, moduleLocked]);
 
   async function fetchOrders() {
     try {
@@ -774,7 +800,19 @@ export default function KitchenPage() {
   const secondsSince = Math.round((Date.now() - lastRefreshed) / 1000);
   const refreshLabel = secondsSince < 5 ? "Just now" : secondsSince < 60 ? `${secondsSince}s ago` : `${Math.floor(secondsSince / 60)}m ago`;
 
-  if (pageLoading) {
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Kitchen Display" subtitle="">
+        <PermissionGate permission="orders.start_cooking">
+          <div className="py-2">
+            <KdsLockedPresentation />
+          </div>
+        </PermissionGate>
+      </AdminLayout>
+    );
+  }
+
+  if (pageLoading || moduleLocked === null) {
     return (
       <AdminLayout title="Kitchen Display" subtitle="">
         <PermissionGate permission="orders.start_cooking">
