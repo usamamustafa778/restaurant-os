@@ -45,69 +45,55 @@ const KDS_FEATURES = [
   },
 ];
 
-const SAMPLE_TICKETS = [
-  {
-    col: "New",
-    tone: "border-amber-400/50 bg-amber-500/10",
-    items: [
-      { token: "0142", meta: "Dine-in · Table 4", age: "0:42" },
-      { token: "0143", meta: "Takeaway", age: "1:08" },
-    ],
-  },
-  {
-    col: "Cooking",
-    tone: "border-orange-500/50 bg-orange-500/10",
-    items: [
-      { token: "0139", meta: "Delivery", age: "6:15" },
-      { token: "0140", meta: "Dine-in · Table 2", age: "4:02" },
-    ],
-  },
-  {
-    col: "Ready",
-    tone: "border-emerald-500/50 bg-emerald-500/10",
-    items: [{ token: "0137", meta: "Takeaway", age: "11:20" }],
-  },
-];
-
 /**
  * Marketing presentation shown when the restaurant has not subscribed to KDS.
  * Route stays available — access to the live board is withheld until the module is active.
  */
 export default function KdsLockedPresentation() {
   return (
-    <div className="mx-auto max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+    <div className="flex h-full min-h-[inherit] w-full flex-col overflow-hidden bg-white dark:bg-neutral-950">
       {/* Hero */}
-      <div className="relative overflow-hidden border-b border-gray-100 dark:border-neutral-800">
+      <div className="relative flex flex-1 flex-col overflow-hidden border-b border-gray-100 dark:border-neutral-800">
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{
-            background:
-              "linear-gradient(135deg, #1c1917 0%, #292524 42%, #431407 100%)",
+            backgroundImage:
+              "url(/images/kitchen/kds-hero.jpg)",
           }}
           aria-hidden
         />
         <div
-          className="pointer-events-none absolute inset-0 opacity-40"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(105deg, rgba(12,10,9,0.92) 0%, rgba(28,25,23,0.82) 38%, rgba(28,25,23,0.55) 62%, rgba(67,20,7,0.35) 100%)",
+          }}
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-50"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 18% 30%, rgba(249,115,22,0.35), transparent 40%), radial-gradient(circle at 85% 15%, rgba(251,146,60,0.22), transparent 36%)",
+              "radial-gradient(circle at 18% 30%, rgba(249,115,22,0.28), transparent 40%), radial-gradient(circle at 85% 15%, rgba(251,146,60,0.16), transparent 36%)",
           }}
           aria-hidden
         />
 
-        <div className="relative grid gap-8 px-6 py-9 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-11">
-          <div>
+        <div className="relative flex flex-1 items-center px-6 py-8 sm:px-8 lg:px-10 lg:py-10 xl:px-14">
+          <div className="max-w-xl">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-orange-200">
               <Lock className="h-3 w-3" />
               Module not active
             </span>
             <h2 className="mt-4 font-black tracking-tight text-white">
-              <span className="block text-3xl sm:text-4xl">Kitchen Display</span>
-              <span className="mt-1 block text-xl font-semibold text-orange-300 sm:text-2xl">
+              <span className="block text-3xl sm:text-4xl xl:text-5xl">
+                Kitchen Display
+              </span>
+              <span className="mt-1 block text-xl font-semibold text-orange-300 sm:text-2xl xl:text-3xl">
                 Run a calmer, faster kitchen
               </span>
             </h2>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-stone-300">
+            <p className="mt-3 text-sm leading-relaxed text-stone-300 sm:text-base">
               Replace paper tickets and shouted updates with a live board your
               whole kitchen can trust — so tickets move, food leaves on time, and
               nothing gets lost on the pass.
@@ -141,48 +127,6 @@ export default function KdsLockedPresentation() {
               </span>
             </div>
           </div>
-
-          {/* Simulated board */}
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-3 shadow-2xl backdrop-blur-sm sm:p-4">
-            <div className="mb-3 flex items-center justify-between px-1">
-              <div className="flex items-center gap-2 text-xs font-semibold text-stone-200">
-                <ChefHat className="h-4 w-4 text-orange-400" />
-                Live preview
-              </div>
-              <span className="rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
-                Sample board
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {SAMPLE_TICKETS.map((column) => (
-                <div key={column.col} className="min-w-0 space-y-2">
-                  <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-                    {column.col}
-                  </p>
-                  {column.items.map((ticket, idx) => (
-                    <div
-                      key={ticket.token}
-                      className={`rounded-xl border px-2.5 py-2 transition ${column.tone} ${
-                        idx === 0 ? "ring-2 ring-orange-400/30" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-sm font-black tabular-nums text-white">
-                          #{ticket.token}
-                        </span>
-                        <span className="text-[10px] font-semibold tabular-nums text-orange-200">
-                          {ticket.age}
-                        </span>
-                      </div>
-                      <p className="mt-1 truncate text-[10px] text-stone-300">
-                        {ticket.meta}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -191,7 +135,7 @@ export default function KdsLockedPresentation() {
         {KDS_FEATURES.map((feature) => (
           <div
             key={feature.title}
-            className="flex gap-3 bg-white p-5 dark:bg-neutral-950 sm:p-6"
+            className="flex gap-3 bg-white p-5 dark:bg-neutral-950 sm:p-6 lg:px-8 lg:py-7"
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400">
               <feature.icon className="h-[18px] w-[18px]" />
@@ -200,7 +144,7 @@ export default function KdsLockedPresentation() {
               <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                 {feature.title}
               </h3>
-              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
+              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-400 sm:text-[13px]">
                 {feature.desc}
               </p>
             </div>
@@ -209,7 +153,7 @@ export default function KdsLockedPresentation() {
       </div>
 
       {/* Footer CTA */}
-      <div className="flex flex-col gap-3 border-t border-gray-100 bg-stone-50 px-6 py-4 dark:border-neutral-800 dark:bg-neutral-900/50 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+      <div className="flex flex-col gap-3 border-t border-gray-100 bg-stone-50 px-6 py-4 dark:border-neutral-800 dark:bg-neutral-900/50 sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-10">
         <p className="text-xs text-gray-500 dark:text-neutral-400">
           Your kitchen page stays here — unlock KDS to replace this preview with
           the live ticket board.

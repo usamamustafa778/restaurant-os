@@ -804,7 +804,7 @@ export default function KitchenPage() {
     return (
       <AdminLayout title="Kitchen Display" subtitle="">
         <PermissionGate permission="orders.start_cooking">
-          <div className="py-2">
+          <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
             <KdsLockedPresentation />
           </div>
         </PermissionGate>
