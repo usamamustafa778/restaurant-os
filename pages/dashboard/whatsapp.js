@@ -13,7 +13,9 @@ import {
   deleteWhatsAppConversation,
   clearAllWhatsAppConversations,
   getStoredAuth,
+  checkAiReceptionistModuleAccess,
 } from "../../lib/apiClient";
+import AiReceptionistLockedPresentation from "../../components/whatsapp/AiReceptionistLockedPresentation";
 import { useSocket } from "../../contexts/SocketContext";
 import { useWhatsAppNotifications } from "../../contexts/WhatsAppNotificationContext";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -131,6 +133,7 @@ const settingsToggleClass = (active) =>
 
 export default function WhatsAppDashboardPage() {
   const [loading, setLoading] = useState(true);
+  const [moduleLocked, setModuleLocked] = useState(null); // null = checking
   const [state, setState] = useState("not_connected");
   const [pendingRequest, setPendingRequest] = useState(null);
   const [live, setLive] = useState(null);
@@ -199,8 +202,32 @@ export default function WhatsAppDashboardPage() {
       window.location.href = "/order-taker";
       return;
     }
+
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkAiReceptionistModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "aiReceptionist" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+        if (locked) setLoading(false);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
     load();
-  }, [load]);
+  }, [moduleLocked, load]);
 
   useEffect(() => {
     if (live?.settings) {
@@ -633,6 +660,18 @@ export default function WhatsAppDashboardPage() {
 
   const isNotConnected = !loading && state === "not_connected";
 
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="WhatsApp AI Receptionist" subtitle="">
+        <PermissionGate permission="whatsapp.conversations.view">
+          <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+            <AiReceptionistLockedPresentation />
+          </div>
+        </PermissionGate>
+      </AdminLayout>
+    );
+  }
+
   return (
     <AdminLayout
       title="WhatsApp AI Receptionist"
@@ -643,7 +682,7 @@ export default function WhatsAppDashboardPage() {
       }
     >
       <PermissionGate permission="whatsapp.conversations.view">
-      {loading ? (
+      {loading || moduleLocked === null ? (
         <div className="mx-auto flex max-w-lg flex-col items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white py-20 dark:border-neutral-800 dark:bg-neutral-950">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
           <p className="text-sm text-gray-500 dark:text-neutral-500">
