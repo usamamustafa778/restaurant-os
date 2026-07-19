@@ -13,7 +13,9 @@ import {
   getInventory, createInventoryItem, updateInventoryItem,
   deleteInventoryItem, getInventoryStockMovements,
   SubscriptionInactiveError, getCurrencySymbol,
+  checkInventoryModuleAccess,
 } from "../../lib/apiClient";
+import InventoryLockedPresentation from "../../components/inventory/InventoryLockedPresentation";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -357,6 +359,7 @@ export default function InventoryPage() {
 
   const [suspended, setSuspended]               = useState(false);
   const [pageLoading, setPageLoading]           = useState(true);
+  const [moduleLocked, setModuleLocked]         = useState(null); // null = checking
   const [search, setSearch]                     = useState("");
   const [statusFilter, setStatusFilter]         = useState("all");
   const [filterUnit, setFilterUnit]             = useState("all");
@@ -394,6 +397,29 @@ export default function InventoryPage() {
   const { hasPermission } = usePermissions();
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkInventoryModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "inventory" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+        if (locked) setPageLoading(false);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
     (async () => {
       try {
         const data = await getInventory();
@@ -405,7 +431,7 @@ export default function InventoryPage() {
         setPageLoading(false);
       }
     })();
-  }, []);
+  }, [moduleLocked]);
 
   useEffect(() => {
     if (!filtersOpen) return;
@@ -968,6 +994,18 @@ export default function InventoryPage() {
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Inventory Management" subtitle="">
+        <PermissionGate permission="inventory.view">
+          <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+            <InventoryLockedPresentation />
+          </div>
+        </PermissionGate>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout title="Inventory Management" suspended={suspended}>
