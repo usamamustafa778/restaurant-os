@@ -49,6 +49,12 @@ export default function BlogPostPage({ post }) {
       "@id": `${BASE_URL}/blog/${post.slug}`,
     },
     keywords: post.keywords,
+    articleSection: post.category || undefined,
+    image: post.ogImage
+      ? post.ogImage.startsWith("http")
+        ? post.ogImage
+        : `${BASE_URL}${post.ogImage}`
+      : `${BASE_URL}/og-image.jpg`,
   };
 
   const breadcrumbs = generateBreadcrumbSchema([
@@ -56,6 +62,22 @@ export default function BlogPostPage({ post }) {
     { name: "Blog", url: `${BASE_URL}/blog` },
     { name: post.title, url: `${BASE_URL}/blog/${post.slug}` },
   ]);
+
+  const faqSchema =
+    Array.isArray(post.faq) && post.faq.length > 0
+      ? {
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: post.faq.map((item) => ({
+            "@type": "Question",
+            name: item.question,
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: item.answer,
+            },
+          })),
+        }
+      : null;
 
   return (
     <>
@@ -65,7 +87,12 @@ export default function BlogPostPage({ post }) {
         keywords={post.keywords}
         canonical={`${BASE_URL}/blog/${post.slug}`}
         ogType="article"
-        structuredData={[structuredData, breadcrumbs]}
+        ogImage={post.ogImage || "/og-image.jpg"}
+        structuredData={[
+          structuredData,
+          breadcrumbs,
+          ...(faqSchema ? [faqSchema] : []),
+        ]}
       />
       <BlogPageShell
         title={post.title}
