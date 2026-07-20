@@ -11,8 +11,10 @@ import {
   deleteReservation,
   getTables,
   updateTable,
+  checkReservationsModuleAccess,
   SubscriptionInactiveError,
 } from "../../lib/apiClient";
+import ReservationsLockedPresentation from "../../components/reservations/ReservationsLockedPresentation";
 import {
   Calendar,
   Clock,
@@ -155,6 +157,7 @@ export default function ReservationsPage() {
   const [reservations, setReservations] = useState([]);
   const [tables, setTables] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
+  const [moduleLocked, setModuleLocked] = useState(null); // null = checking
   const [suspended, setSuspended] = useState(false);
 
   const [dateFilter, setDateFilter] = useState("Today");
@@ -175,10 +178,35 @@ export default function ReservationsPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkReservationsModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "reservations" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+        if (locked) setPageLoading(false);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
     (async () => {
       try {
+        setPageLoading(true);
         const [tablesData] = await Promise.all([getTables()]);
         setTables(Array.isArray(tablesData) ? tablesData : []);
+        setDateFilter("Today");
         await fetchReservations("Today");
       } catch (err) {
         if (err instanceof SubscriptionInactiveError) setSuspended(true);
@@ -187,7 +215,7 @@ export default function ReservationsPage() {
         setPageLoading(false);
       }
     })();
-  }, [currentBranch?.id]);
+  }, [currentBranch?.id, moduleLocked, fetchReservations]);
 
   async function changeDateFilter(f) {
     setDateFilter(f);
@@ -428,7 +456,11 @@ export default function ReservationsPage() {
   return (
     <AdminLayout title="Reservations" suspended={suspended}>
       <PermissionGate permission="reservations.view">
-      {pageLoading ? (
+      {moduleLocked === true ? (
+        <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+          <ReservationsLockedPresentation />
+        </div>
+      ) : pageLoading || moduleLocked === null ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-4">
             <Calendar className="w-10 h-10 text-primary animate-pulse" />

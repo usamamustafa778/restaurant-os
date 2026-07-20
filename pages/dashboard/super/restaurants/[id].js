@@ -86,6 +86,7 @@ const MODULE_DEFINITIONS = [
   { key: "pos", label: "POS Core", rate: 2500, perBranch: true, required: true },
   { key: "kds", label: "KDS", rate: 1500, perBranch: true, requires: ["pos"] },
   { key: "waiterApp", label: "Waiter App", rate: 1500, perBranch: true, requires: ["pos"] },
+  { key: "reservations", label: "Reservations", rate: 1500, perBranch: true, requires: ["pos"] },
   { key: "website", label: "Website", rate: 2500, perBranch: true },
   {
     key: "websiteAnalytics",
@@ -683,6 +684,14 @@ export default function SuperRestaurantDetailPage() {
     }
     if (key === "websiteAnalytics" && nextActive && !moduleDraft.website) {
       toast.error("Website Analytics requires Website to be active.");
+      return;
+    }
+    if (
+      (key === "kds" || key === "waiterApp" || key === "reservations") &&
+      nextActive &&
+      !moduleDraft.pos
+    ) {
+      toast.error("This module requires POS Core to be active.");
       return;
     }
     setModuleDraft((prev) => {

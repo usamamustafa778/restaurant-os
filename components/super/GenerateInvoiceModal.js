@@ -35,6 +35,7 @@ const MODULE_LABELS = {
   pos: "POS Core",
   kds: "KDS",
   waiterApp: "Waiter App",
+  reservations: "Reservations",
   website: "Website",
   websiteAnalytics: "Website Analytics",
   rider: "Rider App",
