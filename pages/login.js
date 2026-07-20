@@ -17,6 +17,7 @@ import {
   getRestaurantSettings,
   setStoredCurrencyCode,
 } from "../lib/apiClient";
+
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft } from "lucide-react";
 import SEO from "../components/SEO";
 import toast from "react-hot-toast";
@@ -152,8 +153,7 @@ export default function LoginPage() {
 
     const isAllowed =
       user &&
-      (SYSTEM_ROLES.includes(user.role) ||
-        (user.role && user.role.length > 0));
+      (SYSTEM_ROLES.includes(user.role) || (user.role && user.role.length > 0));
 
     if (!isAllowed) {
       setError("Invalid credentials or not an admin/staff user");
@@ -247,9 +247,7 @@ export default function LoginPage() {
         setVerifyCode("");
         setVerifyError("");
         setVerifyDevOtpHint(
-          err.devOtp != null && err.devOtp !== ""
-            ? String(err.devOtp)
-            : null,
+          err.devOtp != null && err.devOtp !== "" ? String(err.devOtp) : null,
         );
         setVerifyResendCooldown(60);
         setShowVerifyModal(true);
@@ -347,7 +345,11 @@ export default function LoginPage() {
         <div className="auth-page-bg" aria-hidden />
         <div className="auth-page-inner">
           <div className="auth-page-grid">
-            <a href={MARKETING_URL} className="auth-back" aria-label="Back to home">
+            <a
+              href={MARKETING_URL}
+              className="auth-back"
+              aria-label="Back to home"
+            >
               <ArrowLeft className="w-4 h-4" />
             </a>
 
@@ -465,7 +467,9 @@ export default function LoginPage() {
                             </div>
                           </div>
                           <div className="space-y-1">
-                            <label className="auth-label">Confirm password</label>
+                            <label className="auth-label">
+                              Confirm password
+                            </label>
                             <div className="auth-input-wrap">
                               <input
                                 type={
@@ -642,7 +646,9 @@ export default function LoginPage() {
             <h2>Verify your email</h2>
             <p>
               We&apos;ve sent a 6‑digit code to{" "}
-              <span style={{ color: "var(--auth-ink, #0f172a)", fontWeight: 600 }}>
+              <span
+                style={{ color: "var(--auth-ink, #0f172a)", fontWeight: 600 }}
+              >
                 {verifyEmailAddress}
               </span>
               . Enter it below to complete sign‑in.
@@ -655,7 +661,10 @@ export default function LoginPage() {
                 <span className="auth-verify-dev-hint-label">
                   Local / dev — email not configured:
                 </span>{" "}
-                use code <strong className="auth-verify-dev-code">{verifyDevOtpHint}</strong>
+                use code{" "}
+                <strong className="auth-verify-dev-code">
+                  {verifyDevOtpHint}
+                </strong>
               </div>
             ) : null}
             <form onSubmit={handleVerifySubmit} className="space-y-3">
@@ -679,9 +688,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   className="auth-link-text auth-verify-resend-btn"
-                  disabled={
-                    verifyResendCooldown > 0 || verifyResendLoading
-                  }
+                  disabled={verifyResendCooldown > 0 || verifyResendLoading}
                   onClick={handleVerifyResend}
                 >
                   {verifyResendLoading
@@ -691,9 +698,7 @@ export default function LoginPage() {
                       : "Resend code"}
                 </button>
               </div>
-              {verifyError && (
-                <p className="auth-error-text">{verifyError}</p>
-              )}
+              {verifyError && <p className="auth-error-text">{verifyError}</p>}
               <div className="auth-modal-actions">
                 <button
                   type="button"
@@ -731,9 +736,7 @@ export default function LoginPage() {
                 : "Enter the code we sent to your email, then set a new password on the main form."}
             </p>
 
-            {forgotError && (
-              <p className="auth-error-text">{forgotError}</p>
-            )}
+            {forgotError && <p className="auth-error-text">{forgotError}</p>}
             {forgotSuccess && (
               <p className="auth-success-text">{forgotSuccess}</p>
             )}
