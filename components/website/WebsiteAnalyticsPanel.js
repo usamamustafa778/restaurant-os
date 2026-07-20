@@ -413,9 +413,7 @@ export default function WebsiteAnalyticsPanel({ onModuleLockedChange } = {}) {
         }
       } catch (e) {
         if (!cancelled) {
-          const locked =
-            e?.details?.code === "MODULE_NOT_ACTIVE" ||
-            e?.code === 403;
+          const locked = e?.details?.code === "MODULE_NOT_ACTIVE";
           setModuleLocked(locked);
           setErr(e?.message || "Failed to load website analytics");
           setReport(null);
