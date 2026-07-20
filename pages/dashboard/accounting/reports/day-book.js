@@ -15,10 +15,15 @@ import {
   ArrowUpRight,
   Receipt,
 } from "lucide-react";
-import { getStoredAuth, getCurrencySymbol } from "../../../../lib/apiClient";
+import {
+  checkAccountingModuleAccess,
+  getStoredAuth,
+  getCurrencySymbol,
+} from "../../../../lib/apiClient";
 import toast from "react-hot-toast";
 import { localToday, fmtMoneyPK } from "../../../../lib/accountingFormat";
 import ReportsNav from "../../../../components/accounting/ReportsNav";
+import FinanceLockedPresentation from "../../../../components/accounting/FinanceLockedPresentation";
 
 const API = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
@@ -315,6 +320,7 @@ function exportCSV(vouchers, date) {
 
 export default function DayBookPage() {
   const sym = getCurrencySymbol();
+  const [moduleLocked, setModuleLocked] = useState(null);
   const [date, setDate] = useState(today());
   const [typeFilter, setType] = useState("");
   const [report, setReport] = useState(null);
@@ -370,6 +376,27 @@ export default function DayBookPage() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkAccountingModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "accounting" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!exportOpen) return;
     function handleDown(e) {
       if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
@@ -395,6 +422,16 @@ export default function DayBookPage() {
   function handleExportPrint() {
     setExportOpen(false);
     window.print();
+  }
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Day Book" subtitle="">
+        <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+          <FinanceLockedPresentation />
+        </div>
+      </AdminLayout>
+    );
   }
 
   return (

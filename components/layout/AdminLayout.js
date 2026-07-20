@@ -179,7 +179,7 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
   },
 
-  { type: "section", label: "ORDERS & SERVICE" },
+  { type: "section", label: "OPERATIONS" },
   {
     path: "/pos",
     label: "POS",
@@ -215,6 +215,13 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager"],
     permission: "reservations.view",
   },
+  {
+    path: "/riders",
+    label: "Riders",
+    icon: Truck,
+    roles: ["restaurant_admin", "admin", "manager", "cashier"],
+    permission: "staff.view_riders",
+  },
 
   { type: "section", label: "MENU" },
   {
@@ -244,35 +251,6 @@ const tenantNav = [
     icon: Percent,
     roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "deals_modifiers.manage",
-  },
-
-  { type: "section", label: "PEOPLE" },
-  {
-    path: "/customers",
-    label: "Customers",
-    icon: UserCheck,
-    roles: ["restaurant_admin", "admin", "manager"],
-    permission: "customers.view",
-  },
-  {
-    path: "/users",
-    label: "Staff Management",
-    icon: Users,
-    roles: ["restaurant_admin", "admin", "manager"],
-    permission: "staff.view",
-  },
-  {
-    path: "/settings/roles",
-    label: "Staff Roles",
-    icon: UserCog,
-    roles: ["restaurant_admin", "admin", "manager"],
-  },
-  {
-    path: "/riders",
-    label: "Riders",
-    icon: Truck,
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
-    permission: "staff.view_riders",
   },
 
   { type: "section", label: "INVENTORY" },
@@ -306,7 +284,36 @@ const tenantNav = [
     permission: "inventory.purchase_orders",
   },
 
-  { type: "section", label: "ACCOUNTS" },
+  { type: "section", label: "CUSTOMERS & STAFF" },
+  {
+    path: "/customers",
+    label: "Customers",
+    icon: UserCheck,
+    roles: ["restaurant_admin", "admin", "manager"],
+    permission: "customers.view",
+  },
+  {
+    path: "/users",
+    label: "Staff Management",
+    icon: Users,
+    roles: ["restaurant_admin", "admin", "manager"],
+    permission: "staff.view",
+  },
+  {
+    path: "/settings/roles",
+    label: "Staff Roles",
+    icon: UserCog,
+    roles: ["restaurant_admin", "admin", "manager"],
+  },
+
+  { type: "section", label: "FINANCE" },
+  {
+    path: "/sales-report",
+    label: "Sales",
+    icon: BarChart3,
+    roles: ["restaurant_admin", "admin", "manager"],
+    permission: "reports.view_sales",
+  },
   {
     path: "/accounting",
     label: "Accounts Board",
@@ -314,13 +321,6 @@ const tenantNav = [
     roles: ["restaurant_admin", "admin", "manager"],
     exact: true,
     permission: "accounting.access",
-  },
-  {
-    path: "/sales-report",
-    label: "Sales",
-    icon: BarChart3,
-    roles: ["restaurant_admin", "admin", "manager"],
-    permission: "reports.view_sales",
   },
   {
     label: "Vouchers",

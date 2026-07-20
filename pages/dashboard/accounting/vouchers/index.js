@@ -7,11 +7,16 @@ import {
   ChevronDown, Plus, FileX, Receipt, CheckCircle2,
   Clock, Ban, TrendingUp, RefreshCw, RotateCcw,
 } from "lucide-react";
-import { getStoredAuth, getCurrencySymbol } from "../../../../lib/apiClient";
+import {
+  checkAccountingModuleAccess,
+  getStoredAuth,
+  getCurrencySymbol,
+} from "../../../../lib/apiClient";
 import toast from "react-hot-toast";
 import { fmtMoneyPK } from "../../../../lib/accountingFormat";
 import VoucherPagesNav from "../../../../components/accounting/VoucherPagesNav";
 import { NEW_VOUCHER_MENU_LINKS } from "../../../../components/accounting/voucherNavConfig";
+import FinanceLockedPresentation from "../../../../components/accounting/FinanceLockedPresentation";
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 
@@ -389,6 +394,7 @@ function VoucherSlideOver({
 
 export default function VouchersListPage() {
   const sym = getCurrencySymbol();
+  const [moduleLocked, setModuleLocked] = useState(null);
   const [vouchers, setVouchers]   = useState([]);
   const [total, setTotal]         = useState(0);
   const [page, setPage]           = useState(1);
@@ -420,7 +426,31 @@ export default function VouchersListPage() {
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { fetchVouchers(1); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkAccountingModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "accounting" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
+    fetchVouchers(1);
+  }, [moduleLocked]);
 
   useEffect(() => {
     function handler(e) {
@@ -556,6 +586,16 @@ export default function VouchersListPage() {
       ),
     },
   ];
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Vouchers" subtitle="">
+        <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+          <FinanceLockedPresentation />
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout title="Vouchers">

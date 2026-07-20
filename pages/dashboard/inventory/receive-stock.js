@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
+  checkAccountingModuleAccess,
   getPurchaseOrders,
   getPurchaseOrder,
   getInventory,
@@ -23,6 +24,7 @@ import {
   getCurrencySymbol,
 } from "../../../lib/apiClient";
 import { useBranch } from "../../../contexts/BranchContext";
+import FinanceLockedPresentation from "../../../components/accounting/FinanceLockedPresentation";
 
 const UNIT_ABBR = {
   kilogram: "kg",
@@ -48,6 +50,7 @@ export default function ReceiveStockPage() {
   const { poId } = router.query;
   const { currentBranch } = useBranch() || {};
   const sym = getCurrencySymbol();
+  const [moduleLocked, setModuleLocked] = useState(null);
 
   const [mode, setMode] = useState(poId ? "po" : "");
   const [sourcePos, setSourcePos] = useState([]);
@@ -72,11 +75,33 @@ export default function ReceiveStockPage() {
   });
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkAccountingModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "accounting" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
     getInventory().then((d) => setInventory(Array.isArray(d) ? d : [])).catch(() => setInventory([]));
     getAccountingParties({ type: "supplier", limit: 200 }).then((d) => setSuppliers(d?.parties || [])).catch(() => {});
     getAccountingAccounts({ type: "asset", q: "" }).then((d) => setCashAccounts(d?.accounts || [])).catch(() => {});
     getPurchaseOrders({ status: "sent" }).then((d) => setSourcePos(d?.orders || [])).catch(() => setSourcePos([]));
-  }, []);
+  }, [moduleLocked]);
 
   useEffect(() => {
     if (!poId) return;
@@ -85,6 +110,7 @@ export default function ReceiveStockPage() {
   }, [poId]);
 
   useEffect(() => {
+    if (moduleLocked !== false) return;
     if (!selectedPoId || mode !== "po") return;
     getPurchaseOrder(selectedPoId)
       .then((po) => {
@@ -105,7 +131,7 @@ export default function ReceiveStockPage() {
         }));
       })
       .catch((err) => toast.error(err.message || "Failed to load purchase order"));
-  }, [selectedPoId, mode]);
+  }, [selectedPoId, mode, moduleLocked]);
 
   const total = useMemo(
     () => form.lines.reduce((sum, l) => sum + Number(l.receivedQty || 0) * Number(l.unitCost || 0), 0),
@@ -160,6 +186,18 @@ export default function ReceiveStockPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Receive Stock" subtitle="">
+        <PermissionGate permission="inventory.receive_stock">
+          <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+            <FinanceLockedPresentation />
+          </div>
+        </PermissionGate>
+      </AdminLayout>
+    );
   }
 
   if (result?.grn) {

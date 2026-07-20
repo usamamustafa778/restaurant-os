@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
+  checkAccountingModuleAccess,
   getPurchaseOrders,
   createPurchaseOrder,
   sendPurchaseOrder,
@@ -30,6 +31,7 @@ import {
   getStoredAuth,
 } from "../../../lib/apiClient";
 import { useBranch } from "../../../contexts/BranchContext";
+import FinanceLockedPresentation from "../../../components/accounting/FinanceLockedPresentation";
 
 const STATUS_COLORS = {
   draft: "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-300 ring-1 ring-gray-200 dark:ring-neutral-700",
@@ -555,6 +557,7 @@ export default function PurchaseOrdersPage() {
   const router = useRouter();
   const { currentBranch, branches = [], hasMultipleBranches } = useBranch() || {};
   const sym = getCurrencySymbol();
+  const [moduleLocked, setModuleLocked] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [showNew, setShowNew] = useState(false);
@@ -575,8 +578,30 @@ export default function PurchaseOrdersPage() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkAccountingModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "accounting" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
     load();
-  }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [statusFilter, moduleLocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -684,6 +709,18 @@ export default function PurchaseOrdersPage() {
   ];
 
   const hasRows = rows.length > 0;
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Purchase Orders" subtitle="">
+        <PermissionGate permission="inventory.purchase_orders">
+          <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+            <FinanceLockedPresentation />
+          </div>
+        </PermissionGate>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout title="Purchase Orders">

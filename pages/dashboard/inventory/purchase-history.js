@@ -5,7 +5,14 @@ import DataTable from "../../../components/ui/DataTable";
 import Button from "../../../components/ui/Button";
 import { Eye, Printer, X, ClipboardList } from "lucide-react";
 import toast from "react-hot-toast";
-import { getGrns, getAccountingParties, getGrnPrintUrl, getCurrencySymbol } from "../../../lib/apiClient";
+import {
+  checkAccountingModuleAccess,
+  getGrns,
+  getAccountingParties,
+  getGrnPrintUrl,
+  getCurrencySymbol,
+} from "../../../lib/apiClient";
+import FinanceLockedPresentation from "../../../components/accounting/FinanceLockedPresentation";
 
 function StatCard({ label, value }) {
   return (
@@ -18,6 +25,7 @@ function StatCard({ label, value }) {
 
 export default function PurchaseHistoryPage() {
   const sym = getCurrencySymbol();
+  const [moduleLocked, setModuleLocked] = useState(null);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ thisMonthTotal: 0, cashTotal: 0, creditTotal: 0 });
   const [loading, setLoading] = useState(true);
@@ -44,12 +52,37 @@ export default function PurchaseHistoryPage() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkAccountingModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "accounting" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
     getAccountingParties({ type: "supplier", limit: 200 })
       .then((d) => setSuppliers(d?.parties || []))
       .catch(() => setSuppliers([]));
-  }, []);
+  }, [moduleLocked]);
 
-  useEffect(() => { load(); }, [filters.dateFrom, filters.dateTo, filters.supplierId, filters.paymentType]); // eslint-disable-line
+  useEffect(() => {
+    if (moduleLocked !== false) return;
+    load();
+  }, [filters.dateFrom, filters.dateTo, filters.supplierId, filters.paymentType, moduleLocked]); // eslint-disable-line
 
   const pendingPayables = useMemo(
     () => rows.filter((r) => r.paymentType === "credit").reduce((sum, r) => sum + Number(r.totalCost || 0), 0),
@@ -81,6 +114,18 @@ export default function PurchaseHistoryPage() {
       ),
     },
   ];
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Purchase History" subtitle="">
+        <PermissionGate permission="inventory.purchase_orders">
+          <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+            <FinanceLockedPresentation />
+          </div>
+        </PermissionGate>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout title="Purchase History">

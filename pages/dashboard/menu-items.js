@@ -9,7 +9,7 @@ import ViewToggle from "../../components/ui/ViewToggle";
 import ActionDropdown from "../../components/ui/ActionDropdown";
 import {
   getMenu,
-  getInventory,
+  getInventoryIfAvailable,
   createItem,
   updateItem,
   deleteItem,
@@ -314,9 +314,9 @@ export default function MenuItemsPage() {
     // Always use the admin endpoint so unavailable items are included and can be re-enabled.
     // getBranchMenu uses the public /by-category endpoint which strips unavailable items.
     const menuData = await getMenu(currentBranch?.id);
-    
-    const inv = await getInventory();
-    
+
+    const inv = await getInventoryIfAvailable();
+
     return {
       categories: menuData.categories || [],
       items: menuData.items || [],

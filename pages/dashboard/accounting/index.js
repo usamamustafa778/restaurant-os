@@ -8,7 +8,12 @@ import {
   ArrowUpCircle, ArrowDownCircle, Building2, FileX,
   BarChart3, BookMarked,
 } from "lucide-react";
-import { getStoredAuth, getCurrencySymbol } from "../../../lib/apiClient";
+import {
+  checkAccountingModuleAccess,
+  getStoredAuth,
+  getCurrencySymbol,
+} from "../../../lib/apiClient";
+import FinanceLockedPresentation from "../../../components/accounting/FinanceLockedPresentation";
 import toast from "react-hot-toast";
 import { localToday, localMonthStart, fmtMoneyPK } from "../../../lib/accountingFormat";
 
@@ -108,6 +113,7 @@ function MetricCard({ icon, label, value, color, loading, sub = "" }) {
 export default function AccountingHome() {
   const sym = getCurrencySymbol();
   const [checking, setChecking]         = useState(true);
+  const [moduleLocked, setModuleLocked] = useState(null);
   const [isSetup, setIsSetup]           = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
   const [syncing, setSyncing]           = useState(false);
@@ -120,14 +126,37 @@ export default function AccountingHome() {
   const [cashAccId, setCashAccId]           = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkAccountingModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "accounting" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+        if (locked) setChecking(false);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return;
     apiFetch("/api/accounting/accounts?limit=1")
       .then((d) => setIsSetup(!d.isEmpty))
       .catch(() => setIsSetup(false))
       .finally(() => setChecking(false));
-  }, []);
+  }, [moduleLocked]);
 
   useEffect(() => {
-    if (!isSetup) return;
+    if (moduleLocked !== false || !isSetup) return;
     const t  = localToday();
     const ms = localMonthStart();
 
@@ -195,6 +224,18 @@ export default function AccountingHome() {
     } catch (err) {
       toast.error(err.message || "Sync failed");
     } finally { setSyncing(false); }
+  }
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Accounts Board" subtitle="">
+        <PermissionGate permission="accounting.access">
+          <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+            <FinanceLockedPresentation />
+          </div>
+        </PermissionGate>
+      </AdminLayout>
+    );
   }
 
   // ── Loading state ────────────────────────────────────────────────────────────
