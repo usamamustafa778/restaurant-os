@@ -24,6 +24,23 @@ const POPUP_DURATION_MS = 8000;
 /** Roles that should not hear FOH order-ready alerts. */
 const ORDER_READY_SKIP_ROLES = new Set(["kitchen_staff", "delivery_rider"]);
 
+/** Staff who should only hear ready alerts for orders they created. */
+const ORDER_READY_OWN_ONLY_ROLES = new Set([
+  "order_taker",
+  "cashier",
+  "default_cashier",
+]);
+
+/** Managers/admins hear all ready alerts in their current branch scope. */
+const ORDER_READY_ALL_ROLES = new Set([
+  "admin",
+  "restaurant_admin",
+  "manager",
+  "default_manager",
+  "product_manager",
+  "super_admin",
+]);
+
 function getAuthRole() {
   return getStoredAuth()?.user?.role || null;
 }
@@ -33,18 +50,40 @@ function getAuthUserId() {
   return u?.id != null ? String(u.id) : u?._id != null ? String(u._id) : "";
 }
 
-function shouldNotifyOrderReady() {
+function shouldNotifyOrderReady(data) {
   const auth = getStoredAuth();
   const role = auth?.user?.role;
   if (!role) return false;
 
+  if (ORDER_READY_SKIP_ROLES.has(role)) return false;
+
   if (role === "super_admin") {
     const slug =
       getActingAsSlug() || auth?.user?.tenantSlug || auth?.tenantSlug || null;
-    return Boolean(slug);
+    if (!slug) return false;
   }
 
-  return !ORDER_READY_SKIP_ROLES.has(role);
+  const myId = getAuthUserId();
+  const creatorId =
+    data?.createdById != null && data.createdById !== ""
+      ? String(data.createdById)
+      : "";
+
+  // Order-takers / cashiers: only their own tickets (or unassigned website
+  // orders for cashiers so the counter still hears pickups).
+  if (ORDER_READY_OWN_ONLY_ROLES.has(role)) {
+    if (!creatorId) {
+      return role === "cashier" || role === "default_cashier";
+    }
+    return Boolean(myId) && creatorId === myId;
+  }
+
+  // Known managers/admins: all ready in joined rooms (branch-scoped by socket).
+  if (ORDER_READY_ALL_ROLES.has(role)) return true;
+
+  // Custom / unknown roles: only own orders when creator is known.
+  if (creatorId) return Boolean(myId) && creatorId === myId;
+  return false;
 }
 
 function isDeliveryRider() {
@@ -280,7 +319,7 @@ export function OrderNotificationProvider({ children }) {
     if (!socket) return;
 
     const onOrderUpdated = (data) => {
-      if (!data || !shouldNotifyOrderReady()) return;
+      if (!data || !shouldNotifyOrderReady(data)) return;
       const orderId = String(data.id || data._id || "");
       if (!orderId) return;
 
