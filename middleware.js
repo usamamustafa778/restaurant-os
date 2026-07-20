@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { verifyJwt } from "./lib/auth";
 
 // Root domain for subdomain-based tenant routing.
-// In production set NEXT_PUBLIC_ROOT_DOMAIN to your dashboard domain (e.g. eatsdesk.com)
-// Storefronts are served from eatsdesk.app (separate repo/deployment)
+// Production app host: set NEXT_PUBLIC_ROOT_DOMAIN=app.eatsdesk.com
+// (If left as eatsdesk.com while the app runs on app.eatsdesk.com, "app" is
+// reserved and will not be treated as a restaurant tenant.)
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "";
 // Subdomain for Food Hub (e.g. food.eatsdesk.com → /food). Do not use "food" as a restaurant slug.
 const FOOD_HUB_SUBDOMAIN =
@@ -44,7 +45,7 @@ const DASHBOARD_PAGES = new Set([
 ]);
 
 // Routes that should only be visible to non-authenticated users
-const PUBLIC_ONLY_ROUTES = new Set(["/signup"]);
+const PUBLIC_ONLY_ROUTES = new Set(["/signup", "/login"]);
 
 /**
  * Extract tenant subdomain from the Host header.
@@ -57,7 +58,16 @@ function getSubdomain(host) {
   const rootHostname = ROOT_DOMAIN.split(":")[0];
   if (!hostname.endsWith(rootHostname)) return null;
   const prefix = hostname.slice(0, -(rootHostname.length + 1));
-  if (!prefix || prefix === "www" || prefix.includes(".")) return null;
+  // Never treat the app host itself (or www) as a restaurant tenant.
+  // e.g. host=app.eatsdesk.com with ROOT_DOMAIN=eatsdesk.com must NOT yield "app".
+  if (
+    !prefix ||
+    prefix === "www" ||
+    prefix === "app" ||
+    prefix.includes(".")
+  ) {
+    return null;
+  }
   return prefix;
 }
 
@@ -212,7 +222,7 @@ export async function middleware(request) {
     return NextResponse.redirect(url, 301);
   }
 
-  // ─── Root path: authenticated → dashboard, otherwise → landing page ────
+  // ─── Root path: authenticated → dashboard, otherwise → login ───────────
   if (pathname === "/") {
     const payload = await checkAuth(request);
     if (payload) {
@@ -245,7 +255,9 @@ export async function middleware(request) {
       }
       return NextResponse.redirect(url);
     }
-    return NextResponse.next();
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
   }
 
   // ─── Super admin pages: /super/* → rewrite to /dashboard/super/* ───────

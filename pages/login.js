@@ -19,8 +19,10 @@ import {
 } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft } from "lucide-react";
 import SEO from "../components/SEO";
-import AuthDashboardMockupPanel from "../components/AuthDashboardMockupPanel";
 import toast from "react-hot-toast";
+
+const MARKETING_URL =
+  process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com";
 
 const SYSTEM_ROLES = [
   "restaurant_admin",
@@ -345,11 +347,9 @@ export default function LoginPage() {
         <div className="auth-page-bg" aria-hidden />
         <div className="auth-page-inner">
           <div className="auth-page-grid">
-            <Link href="/" className="auth-back" aria-label="Back to home">
+            <a href={MARKETING_URL} className="auth-back" aria-label="Back to home">
               <ArrowLeft className="w-4 h-4" />
-            </Link>
-
-            <AuthDashboardMockupPanel />
+            </a>
 
             <div className="auth-page-form-col">
               <div className="auth-brand">
@@ -642,7 +642,7 @@ export default function LoginPage() {
             <h2>Verify your email</h2>
             <p>
               We&apos;ve sent a 6‑digit code to{" "}
-              <span style={{ color: "var(--white)", fontWeight: 600 }}>
+              <span style={{ color: "var(--auth-ink, #0f172a)", fontWeight: 600 }}>
                 {verifyEmailAddress}
               </span>
               . Enter it below to complete sign‑in.

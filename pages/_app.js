@@ -1,6 +1,4 @@
 import "../styles/globals.css";
-import "@/styles/landing.css";
-import "@/styles/landing-home.css";
 import "@/styles/auth-pages.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { ConfirmDialogProvider } from "../contexts/ConfirmDialogContext";

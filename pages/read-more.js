@@ -326,7 +326,7 @@ export default function ReadMore() {
         <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-gray-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
-              <Link href="/" className="flex items-center gap-2.5">
+              <a href={process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com"} className="flex items-center gap-2.5">
                 <img
                   src="/favicon.png"
                   alt="Eats Desk"
@@ -342,7 +342,7 @@ export default function ReadMore() {
                     Restaurant &amp; Cafe Operations Desk
                   </div>
                 </div>
-              </Link>
+              </a>
 
               <nav className="hidden md:flex items-center gap-8 text-sm text-gray-600">
                 <a href="#problem" className="hover:text-primary transition-colors">The Problem</a>
@@ -1201,12 +1201,12 @@ export default function ReadMore() {
                   <Calendar className="w-4 h-4" />
                   Book Your Free Demo Call Now
                 </Link>
-                <Link
-                  href="/"
+                <a
+                  href={process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com"}
                   className="inline-flex items-center gap-2 px-7 py-4 rounded-xl border border-white/15 text-white/80 hover:border-white/30 hover:text-white transition-all text-sm"
                 >
                   Back to Home
-                </Link>
+                </a>
               </div>
               <div className="mt-6 flex flex-col items-center gap-2">
                 <p className="text-xs text-gray-500 flex items-center justify-center gap-4 flex-wrap">
@@ -1245,10 +1245,10 @@ export default function ReadMore() {
               </div>
             </div>
             <div className="flex items-center gap-6 text-xs text-gray-500">
-              <Link href="/privacy-policy" className="hover:text-gray-300 transition-colors">
+              <Link href="https://eatsdesk.com/privacy-policy" className="hover:text-gray-300 transition-colors">
                 Privacy Policy
               </Link>
-              <Link href="/terms-and-conditions" className="hover:text-gray-300 transition-colors">
+              <Link href="https://eatsdesk.com/terms-and-conditions" className="hover:text-gray-300 transition-colors">
                 Terms
               </Link>
               <Link href="/login" className="hover:text-gray-300 transition-colors">

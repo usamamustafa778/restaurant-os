@@ -3,7 +3,9 @@ import Link from "next/link";
 import { registerRestaurant } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, Trash2, CheckCircle2 } from "lucide-react";
 import SEO from "../components/SEO";
-import AuthDashboardMockupPanel from "../components/AuthDashboardMockupPanel";
+
+const MARKETING_URL =
+  process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com";
 
 function getFlagEmoji(iso2) {
   if (!iso2 || iso2.length !== 2) return "";
@@ -222,11 +224,9 @@ export default function SignupPage() {
         <div className="auth-page-bg" aria-hidden />
         <div className="auth-page-inner">
           <div className="auth-page-grid">
-            <Link href="/" className="auth-back" aria-label="Back to home">
+            <a href={MARKETING_URL} className="auth-back" aria-label="Back to home">
               <ArrowLeft className="w-4 h-4" />
-            </Link>
-
-            <AuthDashboardMockupPanel />
+            </a>
 
             <div className="auth-page-form-col">
               <div className="auth-brand">
@@ -352,7 +352,7 @@ export default function SignupPage() {
                             className="auth-input"
                           />
                         </div>
-                        <p className="text-[11px] text-[var(--gray-3)] mt-1">
+                        <p className="text-[11px] text-[var(--auth-muted,#64748b)] mt-1">
                           Without country code (7–15 digits)
                         </p>
                       </div>

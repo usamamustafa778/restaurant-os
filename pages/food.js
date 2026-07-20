@@ -156,12 +156,12 @@ export default function FoodHub({ initialRestaurants = [], fetchError = null }) 
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Link
-                href="/"
+              <a
+                href={process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com"}
                 className="hidden text-xs font-semibold text-gray-600 hover:text-pink-600 sm:inline"
               >
                 For restaurants
-              </Link>
+              </a>
               <Link
                 href="/login"
                 className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 sm:px-4 sm:text-sm"
@@ -279,9 +279,9 @@ export default function FoodHub({ initialRestaurants = [], fetchError = null }) 
         <footer className="border-t border-gray-200 bg-gray-900 py-8 text-center text-xs text-gray-400">
           <p>
             © {new Date().getFullYear()} Eats Desk —{" "}
-            <Link href="/" className="text-pink-400 hover:underline">
+            <a href={process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com"} className="text-pink-400 hover:underline">
               Restaurant dashboard
-            </Link>
+            </a>
           </p>
         </footer>
       </div>

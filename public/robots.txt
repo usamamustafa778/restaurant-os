@@ -1,41 +1,10 @@
-# robots.txt for Eats Desk
+# App host (app.eatsdesk.com) — marketing lives on eatsdesk.com
 
-# Allow all bots to crawl public pages
 User-agent: *
-Allow: /
-Allow: /blog
-Allow: /blog/*
+Disallow: /
 
-# Disallow dashboard pages (served at root level, auth-protected)
-Disallow: /overview
-Disallow: /pos
-Disallow: /orders
-Disallow: /kitchen
-Disallow: /reservations
-Disallow: /categories
-Disallow: /menu-items
-Disallow: /customers
-Disallow: /inventory
-Disallow: /deals
-Disallow: /users
-Disallow: /branches
-Disallow: /tables
-Disallow: /history
-Disallow: /website
-Disallow: /website-settings
-Disallow: /website-content
-Disallow: /integrations
-Disallow: /subscription
-Disallow: /profile
-Disallow: /day-report
-Disallow: /super/
-Disallow: /dashboard/
-Disallow: /api/
-Disallow: /login
-Disallow: /signup
+# Public auth entry points may be linked; still noindex via page meta where set.
+Allow: /login
+Allow: /signup
 
-# Crawl delay (optional)
-Crawl-delay: 1
-
-# Sitemap
 Sitemap: https://eatsdesk.com/sitemap.xml
