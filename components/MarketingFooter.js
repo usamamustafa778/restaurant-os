@@ -37,8 +37,8 @@ export default function MarketingFooter() {
             <span className="nav-logo-text">EatsDesk</span>
           </Link>
           <p className="footer-brand-desc">
-            Restaurant OS for fast food — POS, kitchen, riders, inventory, and
-            your site in one place.
+            Modular restaurant OS — POS, kitchen, riders, inventory, accounting,
+            website, and AI. Pay only for the modules you switch on.
           </p>
         </div>
 
@@ -52,10 +52,7 @@ export default function MarketingFooter() {
               <Link href="/#pricing">Pricing</Link>
             </li>
             <li>
-              <Link href="/#compare">Compare plans</Link>
-            </li>
-            <li>
-              <Link href="/#how">How it works</Link>
+              <Link href="/#how">Setup</Link>
             </li>
             <li>
               <Link href="/#faq">FAQ</Link>

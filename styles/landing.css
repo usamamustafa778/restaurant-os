@@ -19,6 +19,9 @@
   --light-muted: #6B6B67;
   --radius: 12px;
   --radius-lg: 20px;
+  --font-display: "Montserrat", sans-serif;
+  --font-body: "Montserrat", sans-serif;
+  --font-syne: "Montserrat", sans-serif;
 }
 
 html:has(.eatsdesk-landing) {
@@ -26,7 +29,7 @@ html:has(.eatsdesk-landing) {
 }
 
 body:has(.eatsdesk-landing) {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   background: var(--dark);
   color: var(--white);
   overflow-x: hidden;
@@ -161,7 +164,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .nav-logo-text {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-weight: 700;
   font-size: 17px;
   color: var(--white);
@@ -228,7 +231,7 @@ body:has(.eatsdesk-landing) {
   gap: 8px;
   padding: 11px 24px;
   border-radius: 100px;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
@@ -352,7 +355,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing h1 {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: clamp(44px, 5.5vw, 72px);
   font-weight: 800;
   line-height: 0.95;
@@ -543,7 +546,7 @@ body:has(.eatsdesk-landing) {
   padding: 4px 12px;
   font-size: 11px;
   color: var(--gray-3);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
 }
 
 .eatsdesk-landing .dash-content {
@@ -558,7 +561,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .dash-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 18px;
   font-weight: 700;
   color: var(--white);
@@ -605,7 +608,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .stat-val {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 18px;
   font-weight: 700;
 }
@@ -749,7 +752,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .strip-num {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 42px;
   font-weight: 800;
   letter-spacing: -2px;
@@ -789,7 +792,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .section-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: clamp(32px, 4vw, 52px);
   font-weight: 800;
   letter-spacing: -1.5px;
@@ -847,7 +850,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .pain-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.5px;
@@ -889,7 +892,7 @@ body:has(.eatsdesk-landing) {
   border: 1px solid var(--light-2);
   background: transparent;
   color: var(--light-muted);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 13px;
   font-weight: 500;
   cursor: none;
@@ -950,7 +953,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .fi-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 15px;
   font-weight: 700;
   color: var(--light-text);
@@ -981,7 +984,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .fv-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 13px;
   font-weight: 600;
   color: var(--white);
@@ -1025,7 +1028,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .kds-num {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 22px;
   font-weight: 800;
   color: var(--white);
@@ -1102,7 +1105,7 @@ body:has(.eatsdesk-landing) {
   align-items: center;
   justify-content: center;
   margin: 0 auto 24px;
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 18px;
   font-weight: 800;
   color: var(--gray-3);
@@ -1117,7 +1120,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .step-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 16px;
   font-weight: 700;
   color: var(--white);
@@ -1217,7 +1220,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .pc-price {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: clamp(32px, 2.6vw, 38px);
   font-weight: 800;
   letter-spacing: -1.5px;
@@ -1311,7 +1314,7 @@ body:has(.eatsdesk-landing) {
   width: 100%;
   padding: 13px;
   border-radius: 100px;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 14px;
   font-weight: 600;
   cursor: none;
@@ -1409,7 +1412,7 @@ body:has(.eatsdesk-landing) {
   border: none;
   background: transparent;
   color: var(--gray-4);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 13px;
   font-weight: 600;
   cursor: none;
@@ -1586,7 +1589,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .pricing-detail-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: clamp(26px, 3.5vw, 36px);
   font-weight: 800;
   letter-spacing: -0.8px;
@@ -1623,7 +1626,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .savings-amount {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 30px;
   font-weight: 800;
   color: #00C896;
@@ -1652,7 +1655,7 @@ body:has(.eatsdesk-landing) {
 .eatsdesk-landing .cmp-table th {
   padding: 14px 16px;
   text-align: left;
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.2px;
@@ -1744,7 +1747,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .faq-section-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: clamp(26px, 3.5vw, 36px);
   font-weight: 800;
   letter-spacing: -0.8px;
@@ -1773,7 +1776,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .faq-q {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 14px;
   font-weight: 700;
   color: var(--white);
@@ -1920,14 +1923,14 @@ body:has(.eatsdesk-landing) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 17px;
   font-weight: 700;
   color: #fff;
 }
 
 .eatsdesk-landing .testi-name {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 14px;
   font-weight: 700;
   color: var(--light-text);
@@ -1955,7 +1958,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .cta-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: clamp(36px, 5vw, 64px);
   font-weight: 800;
   letter-spacing: -2px;
@@ -2039,11 +2042,11 @@ body:has(.eatsdesk-landing) {
   line-height: 1.65;
   margin: 14px 0 0;
   max-width: 300px;
-  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
 }
 
 .eatsdesk-landing .footer-col-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -2071,7 +2074,7 @@ body:has(.eatsdesk-landing) {
   color: var(--gray-3);
   text-decoration: none;
   padding: 7px 0;
-  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   transition: color 0.15s ease;
 }
 
@@ -2100,13 +2103,13 @@ body:has(.eatsdesk-landing) {
 .eatsdesk-landing .footer-legal {
   font-size: 12px;
   color: var(--gray-4);
-  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
 }
 
 .eatsdesk-landing .footer-domain {
   font-size: 12px;
   font-weight: 600;
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   color: var(--orange);
 }
 
@@ -2441,7 +2444,7 @@ body:has(.eatsdesk-landing) {
   border: 1px solid var(--gray-1);
   background: transparent;
   color: var(--gray-4);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 13px;
   font-weight: 600;
   cursor: none;
@@ -2593,7 +2596,7 @@ body:has(.eatsdesk-landing) {
 }
 
 .eatsdesk-landing .gi-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 17px;
   font-weight: 700;
   color: var(--white);
@@ -2650,7 +2653,7 @@ body:has(.legal-doc-page) {
 }
 
 .eatsdesk-landing.legal-doc-page .legal-doc-hero h1 {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: clamp(28px, 4vw, 40px);
   font-weight: 800;
   letter-spacing: -0.5px;
@@ -2698,7 +2701,7 @@ body:has(.legal-doc-page) {
 }
 
 .eatsdesk-landing.legal-doc-page .legal-doc-inner h2 {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 1.35rem;
   font-weight: 800;
   color: var(--white);
@@ -2707,7 +2710,7 @@ body:has(.legal-doc-page) {
 }
 
 .eatsdesk-landing.legal-doc-page .legal-doc-inner h3 {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 1rem;
   font-weight: 600;
   color: var(--gray-5);
@@ -2827,7 +2830,7 @@ body:has(.legal-doc-page) {
 }
 
 .eatsdesk-landing .fc-title {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 17px;
   font-weight: 700;
   color: var(--white);
@@ -2894,7 +2897,7 @@ body:has(.legal-doc-page) {
   border: 1px solid #2A2A28;
   border-radius: 10px;
   padding: 12px 16px;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 15px;
   color: var(--white);
   outline: none;
@@ -2938,7 +2941,7 @@ body:has(.legal-doc-page) {
 }
 
 .eatsdesk-landing .cr-value {
-  font-family: 'Syne', sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.5px;
@@ -3246,5 +3249,553 @@ body:has(.blog-page) {
   .eatsdesk-landing.legal-doc-page .legal-doc-body {
     padding-left: 20px;
     padding-right: 20px;
+  }
+}
+/* ─── MODULAR LANDING (2026) ─────────────────────────────────────── */
+.eatsdesk-landing .brand-mark {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--white);
+  margin-bottom: 12px;
+}
+
+.eatsdesk-landing .hero--modular .hero-left {
+  max-width: 560px;
+}
+
+.eatsdesk-landing .module-hero-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+}
+
+.eatsdesk-landing .module-hero-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--dark-3), var(--dark-4));
+  border: 1px solid var(--gray-1);
+  transform: translateX(calc(var(--i, 0) * 8px));
+  animation: mhc-in 0.6s ease both;
+  animation-delay: calc(0.08s * var(--i, 0));
+}
+
+.eatsdesk-landing .module-hero-chip.required {
+  border-color: rgba(255, 84, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 84, 0, 0.15);
+}
+
+.eatsdesk-landing .module-hero-chip.more {
+  justify-content: center;
+  border-style: dashed;
+  color: var(--gray-4);
+  transform: none;
+}
+
+.eatsdesk-landing .mhc-name {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.eatsdesk-landing .mhc-rate {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--orange);
+  white-space: nowrap;
+}
+
+.eatsdesk-landing .mhc-rate small {
+  color: var(--gray-4);
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+@keyframes mhc-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) translateX(calc(var(--i, 0) * 8px));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(calc(var(--i, 0) * 8px));
+  }
+}
+
+.eatsdesk-landing .modules-section {
+  padding: 96px 0;
+  background: var(--dark);
+}
+
+.eatsdesk-landing .mod-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-top: 40px;
+}
+
+.eatsdesk-landing .mod-card {
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  background: var(--dark-2);
+  border: 1px solid var(--gray-1);
+  opacity: 0;
+  transform: translateY(16px);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.eatsdesk-landing .mod-card.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.eatsdesk-landing .mod-card:hover {
+  border-color: rgba(255, 84, 0, 0.4);
+}
+
+.eatsdesk-landing .mod-card--required {
+  border-color: rgba(255, 84, 0, 0.35);
+}
+
+.eatsdesk-landing .mod-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.eatsdesk-landing .mod-card-title {
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--white);
+}
+
+.eatsdesk-landing .mod-card-price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--orange);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.eatsdesk-landing .mod-card-price span {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gray-4);
+}
+
+.eatsdesk-landing .mod-card-blurb {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--gray-4);
+  margin-bottom: 14px;
+}
+
+.eatsdesk-landing .mod-card-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.eatsdesk-landing .mod-card-list li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 13px;
+  color: var(--gray-5);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.eatsdesk-landing .mod-card-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+.eatsdesk-landing .mod-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eatsdesk-landing .mod-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--orange-dim);
+  color: var(--orange);
+}
+
+.eatsdesk-landing .mod-badge--warn {
+  background: rgba(255, 180, 0, 0.12);
+  color: #ffb400;
+}
+
+.eatsdesk-landing .mod-badge--muted {
+  background: var(--dark-4);
+  color: var(--gray-4);
+}
+
+.eatsdesk-landing .feat-cards-grid--six {
+  margin-top: 36px;
+}
+
+.eatsdesk-landing .feat-card .fc-rate {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--orange);
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+
+.eatsdesk-landing .feat-card .fc-rate span {
+  color: var(--gray-4);
+  font-weight: 500;
+}
+
+.eatsdesk-landing .bundle-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 36px 0 28px;
+}
+
+.eatsdesk-landing .bundle-card {
+  position: relative;
+  text-align: left;
+  padding: 22px 20px;
+  border-radius: var(--radius-lg);
+  background: var(--dark-2);
+  border: 1px solid var(--gray-1);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.eatsdesk-landing .bundle-card:hover,
+.eatsdesk-landing .bundle-card.active {
+  border-color: var(--orange);
+  background: linear-gradient(160deg, rgba(255, 84, 0, 0.1), var(--dark-2));
+}
+
+.eatsdesk-landing .bundle-card.popular {
+  border-color: rgba(255, 84, 0, 0.45);
+}
+
+.eatsdesk-landing .bundle-popular {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--orange);
+}
+
+.eatsdesk-landing .bundle-name {
+  display: block;
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.eatsdesk-landing .bundle-tagline {
+  display: block;
+  font-size: 13px;
+  color: var(--gray-4);
+  margin-bottom: 12px;
+}
+
+.eatsdesk-landing .bundle-price {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--white);
+  margin-bottom: 8px;
+}
+
+.eatsdesk-landing .bundle-price small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-4);
+  margin-left: 4px;
+}
+
+.eatsdesk-landing .bundle-mods {
+  display: block;
+  font-size: 12px;
+  color: var(--gray-4);
+  line-height: 1.4;
+}
+
+.eatsdesk-landing .pricing-builder {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.eatsdesk-landing .pricing-builder-left {
+  padding: 28px;
+  border-radius: var(--radius-lg);
+  background: var(--dark-2);
+  border: 1px solid var(--gray-1);
+}
+
+.eatsdesk-landing .pb-title {
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.eatsdesk-landing .pb-sub {
+  font-size: 13px;
+  color: var(--gray-4);
+  margin-bottom: 18px;
+}
+
+.eatsdesk-landing .module-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eatsdesk-landing .module-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--gray-1);
+  background: var(--dark-3);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.eatsdesk-landing .module-toggle:hover:not(:disabled) {
+  border-color: rgba(255, 84, 0, 0.4);
+}
+
+.eatsdesk-landing .module-toggle.on {
+  border-color: rgba(255, 84, 0, 0.55);
+  background: rgba(255, 84, 0, 0.08);
+}
+
+.eatsdesk-landing .module-toggle.locked {
+  cursor: default;
+  opacity: 1;
+}
+
+.eatsdesk-landing .mt-check {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--gray-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--orange);
+  margin-top: 1px;
+}
+
+.eatsdesk-landing .module-toggle.on .mt-check {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #fff;
+}
+
+.eatsdesk-landing .mt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eatsdesk-landing .mt-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.eatsdesk-landing .mt-note {
+  font-style: normal;
+  font-weight: 600;
+  color: #ffb400;
+  font-size: 12px;
+}
+
+.eatsdesk-landing .mt-meta {
+  font-size: 12px;
+  color: var(--gray-4);
+}
+
+.eatsdesk-landing .pricing-builder-right {
+  position: sticky;
+  top: 88px;
+}
+
+.eatsdesk-landing .pb-summary {
+  padding: 28px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(165deg, #1c1410 0%, var(--dark-2) 55%);
+  border: 1px solid rgba(255, 84, 0, 0.35);
+}
+
+.eatsdesk-landing .pb-summary-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin-bottom: 16px;
+}
+
+.eatsdesk-landing .pb-branches {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.eatsdesk-landing .pb-branches label {
+  font-size: 13px;
+  color: var(--gray-4);
+}
+
+.eatsdesk-landing .pb-branches input {
+  width: 72px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-2);
+  background: var(--dark);
+  color: var(--white);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+}
+
+.eatsdesk-landing .pb-line-items {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  border-top: 1px solid var(--gray-1);
+  border-bottom: 1px solid var(--gray-1);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.eatsdesk-landing .pb-line-items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--gray-5);
+}
+
+.eatsdesk-landing .pb-total-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--gray-4);
+  margin-bottom: 8px;
+}
+
+.eatsdesk-landing .pb-total-row strong {
+  color: var(--white);
+  font-size: 15px;
+}
+
+.eatsdesk-landing .pb-total-row--grand {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 84, 0, 0.25);
+  font-size: 14px;
+  color: var(--white);
+}
+
+.eatsdesk-landing .pb-total-row--grand strong {
+  font-size: 1.35rem;
+  color: var(--orange);
+}
+
+.eatsdesk-landing .pb-trial-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--gray-4);
+  margin: 14px 0 16px;
+}
+
+.eatsdesk-landing .pb-cta {
+  display: block;
+  text-align: center;
+  width: 100%;
+}
+
+.eatsdesk-landing .pb-contact {
+  display: block;
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--gray-4);
+  text-decoration: none;
+}
+
+.eatsdesk-landing .pb-contact:hover {
+  color: var(--orange);
+}
+
+@media (max-width: 1000px) {
+  .eatsdesk-landing .mod-grid,
+  .eatsdesk-landing .bundle-row,
+  .eatsdesk-landing .pricing-builder {
+    grid-template-columns: 1fr;
+  }
+
+  .eatsdesk-landing .pricing-builder-right {
+    position: static;
+  }
+
+  .eatsdesk-landing .module-hero-chip {
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .eatsdesk-landing .mod-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eatsdesk-landing .pricing-builder-left,
+  .eatsdesk-landing .pb-summary {
+    padding: 20px;
   }
 }

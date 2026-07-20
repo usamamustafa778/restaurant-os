@@ -8,7 +8,7 @@
   align-items: center;
   justify-content: center;
   padding: 56px 16px 32px;
-  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   background: var(--dark);
   color: var(--white);
 }
@@ -173,7 +173,7 @@
 }
 
 .auth-login-mockup-card {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   background: #1a1a18;
   border: 1px solid #2a2a28;
   border-top: 2px solid #ff5400;
@@ -203,7 +203,7 @@
   border-radius: 8px;
   background: #ff5400;
   color: #0d0d0b;
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-weight: 800;
   font-size: 15px;
   display: flex;
@@ -214,7 +214,7 @@
 }
 
 .auth-login-mockup-overview {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-weight: 700;
   font-size: 15px;
   color: #fff;
@@ -225,7 +225,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 11px;
   font-weight: 600;
   color: #ff5400;
@@ -269,7 +269,7 @@
 }
 
 .auth-login-mockup-stat-label {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -278,7 +278,7 @@
 }
 
 .auth-login-mockup-stat-val {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
@@ -305,7 +305,7 @@
 }
 
 .auth-login-mockup-chart-label {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 10px;
   font-weight: 600;
   color: #6b6b67;
@@ -343,14 +343,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 11px;
   font-weight: 600;
   color: #fff;
 }
 
 .auth-login-mockup-badge {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 9px;
   font-weight: 700;
   padding: 2px 8px;
@@ -431,7 +431,7 @@
 }
 
 .auth-brand-title {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-weight: 700;
   font-size: 18px;
   letter-spacing: -0.3px;
@@ -459,7 +459,7 @@
 }
 
 .auth-card-title {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 1.35rem;
   font-weight: 800;
   letter-spacing: -0.5px;
@@ -591,7 +591,7 @@ select.auth-input option {
   border: none;
   background: var(--orange);
   color: #fff;
-  font-family: "Instrument Sans", sans-serif;
+  font-family: var(--font-body), sans-serif;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -799,7 +799,7 @@ select.auth-input option {
 }
 
 .auth-modal h2 {
-  font-family: "Syne", sans-serif;
+  font-family: var(--font-display), sans-serif;
   font-size: 15px;
   font-weight: 700;
   color: var(--white);

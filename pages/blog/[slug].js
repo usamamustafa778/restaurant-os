@@ -95,6 +95,7 @@ export default function BlogPostPage({ post }) {
         ]}
       />
       <BlogPageShell
+        variant="article"
         title={post.title}
         eyebrow={post.category}
         meta={
@@ -102,11 +103,11 @@ export default function BlogPostPage({ post }) {
             <time dateTime={post.publishedAt}>
               {formatDate(post.publishedAt)}
             </time>
-            <span className="blog-meta-dot" aria-hidden>
+            <span className="ed-blog-meta-dot" aria-hidden>
               ·
             </span>
             <span>{post.readMinutes} min read</span>
-            <span className="blog-meta-dot" aria-hidden>
+            <span className="ed-blog-meta-dot" aria-hidden>
               ·
             </span>
             <span>{post.author}</span>
@@ -114,13 +115,13 @@ export default function BlogPostPage({ post }) {
         }
       >
         <BlogPostBody sections={post.sections} />
-        <div className="blog-post-cta">
+        <div className="ed-blog-post-cta">
           <h3>Try EatsDesk on your next dinner rush</h3>
           <p>
             POS, kitchen display, riders, inventory, website ordering, and
             WhatsApp AI Receptionist — one platform. 30-day free trial.
           </p>
-          <Link href="/signup" className="btn btn-primary">
+          <Link href="/signup" className="ed-btn ed-btn-primary ed-btn-sm">
             Start free trial →
           </Link>
         </div>

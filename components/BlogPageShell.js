@@ -1,7 +1,4 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect } from "react";
 import MarketingFooter from "./MarketingFooter";
 
 export default function BlogPageShell({
@@ -10,32 +7,21 @@ export default function BlogPageShell({
   meta,
   backHref = "/blog",
   backLabel = "← All articles",
+  variant = "index",
   children,
+  toolbar = null,
 }) {
-  useEffect(() => {
-    const nav = document.getElementById("nav");
-    const onScroll = () =>
-      nav?.classList.toggle("scrolled", window.scrollY > 40);
-    onScroll();
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  const isArticle = variant === "article";
 
   return (
-    <div className="eatsdesk-landing blog-page">
-      <nav id="nav">
-        <div className="nav-inner">
-          <Link href="/" className="nav-logo">
-            <img
-              className="nav-logo-mark"
-              src="/favicon.png"
-              alt="EatsDesk"
-              width={34}
-              height={34}
-            />
-            <span className="nav-logo-text">EatsDesk</span>
+    <div className={`ed-home ed-blog${isArticle ? " ed-blog--article" : ""}`}>
+      <nav className="ed-nav">
+        <div className="ed-nav-inner">
+          <Link href="/" className="ed-logo">
+            <img src="/favicon.png" alt="" width={30} height={30} />
+            EatsDesk
           </Link>
-          <ul className="nav-links">
+          <ul className="ed-nav-links">
             <li>
               <Link href="/#features">Features</Link>
             </li>
@@ -43,56 +29,75 @@ export default function BlogPageShell({
               <Link href="/#pricing">Pricing</Link>
             </li>
             <li>
-              <Link href="/blog">Blog</Link>
+              <Link href="/#how">Setup</Link>
+            </li>
+            <li>
+              <Link href="/blog" className="is-active">
+                Blog
+              </Link>
             </li>
             <li>
               <Link href="/#faq">FAQ</Link>
             </li>
           </ul>
-          <div className="nav-cta">
-            <Link href="/login" className="btn btn-ghost">
+          <div className="ed-nav-cta">
+            <Link href="/login" className="ed-link-quiet">
               Sign in
             </Link>
-            <Link href="/signup" className="btn btn-primary">
-              <span className="nav-trial-long">Start free trial →</span>
-              <span className="nav-trial-short">Free trial →</span>
+            <Link href="/signup" className="ed-btn ed-btn-primary ed-btn-sm">
+              Start free trial →
             </Link>
           </div>
         </div>
       </nav>
 
-      <section className="blog-hero">
-        <div className="blog-hero-inner">
-          <Link href={backHref} className="blog-back">
+      <section className="ed-blog-hero">
+        <div
+          className={`ed-wrap ed-blog-hero-inner${isArticle ? " ed-blog-hero-inner--narrow" : ""}`}
+        >
+          <Link href={backHref} className="ed-blog-back">
             {backLabel}
           </Link>
-          <p className="blog-eyebrow">{eyebrow}</p>
-          <h1>{title}</h1>
-          {meta ? <div className="blog-meta">{meta}</div> : null}
+          <div className="ed-badge ed-blog-badge">
+            <span className="ed-badge-dot" />
+            {eyebrow}
+          </div>
+          <h1 className="ed-blog-title">{title}</h1>
+          {meta ? <div className="ed-blog-meta">{meta}</div> : null}
+          {toolbar}
         </div>
       </section>
 
-      <div className="blog-body">
-        <div className="blog-inner">{children}</div>
+      <div className="ed-blog-body">
+        <div
+          className={`ed-wrap ed-blog-inner${isArticle ? " ed-blog-inner--narrow" : ""}`}
+        >
+          {children}
+        </div>
       </div>
 
-      <section className="cta-section">
-        <div className="section-inner">
-          <h2 className="cta-title">
+      <section className="ed-final">
+        <div className="ed-wrap">
+          <h2>
             Ready to run your restaurant
             <br />
-            on one screen?
+            on <em>one system?</em>
           </h2>
-          <p className="cta-sub">
-            30 days free. POS, kitchen, riders, inventory, and your website —
-            no credit card required.
+          <p>
+            30 days free on eligible modules. POS, kitchen, riders, inventory,
+            and more — no credit card required.
           </p>
-          <Link href="/signup" className="btn btn-white">
-            Start free — 30 days →
-          </Link>
-          <p className="cta-note">
+          <div className="ed-final-actions">
+            <Link href="/signup" className="ed-btn ed-btn-primary">
+              Start free — 30 days →
+            </Link>
+            <Link href="/#pricing" className="ed-btn ed-btn-ghost-dark">
+              See pricing
+            </Link>
+          </div>
+          <div className="ed-final-note">
             No credit card · No hardware · Cancel anytime
-          </p>
+          </div>
         </div>
       </section>
 

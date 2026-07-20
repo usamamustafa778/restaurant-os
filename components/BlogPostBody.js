@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function BlogPostBody({ sections = [] }) {
   return (
-    <article className="blog-article">
+    <article className="ed-blog-article">
       {sections.map((block, i) => {
         if (block.type === "h2") {
           return <h2 key={i}>{block.text}</h2>;
@@ -21,10 +21,10 @@ export default function BlogPostBody({ sections = [] }) {
         }
         if (block.type === "cta") {
           return (
-            <div key={i} className="blog-inline-cta">
+            <div key={i} className="ed-blog-inline-cta">
               <p>{block.text}</p>
               {block.href ? (
-                <Link href={block.href} className="btn btn-primary">
+                <Link href={block.href} className="ed-btn ed-btn-primary ed-btn-sm">
                   {block.buttonLabel || "Start free trial →"}
                 </Link>
               ) : null}
