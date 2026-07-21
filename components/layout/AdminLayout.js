@@ -551,6 +551,12 @@ const superNav = [
     permission: "platform.blog.view",
   },
   {
+    href: "/super/seo",
+    label: "SEO Locations",
+    icon: Globe,
+    permission: "platform.seo.manage",
+  },
+  {
     href: "/super/whatsapp",
     label: "WhatsApp",
     icon: MessageCircle,
