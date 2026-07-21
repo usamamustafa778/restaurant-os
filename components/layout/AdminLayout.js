@@ -545,6 +545,12 @@ const superNav = [
     permission: "platform.leads.view",
   },
   {
+    href: "/super/blog",
+    label: "Blog CMS",
+    icon: BookOpen,
+    permission: "platform.blog.view",
+  },
+  {
     href: "/super/whatsapp",
     label: "WhatsApp",
     icon: MessageCircle,
