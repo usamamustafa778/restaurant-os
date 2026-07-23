@@ -31,7 +31,12 @@ import {
   auditSessionReportPayments,
 } from "../../lib/sessionReportBreakdown";
 import { printBillReceipt } from "../../lib/printBillReceipt";
-import { formatReceiptItemsForBill, formatOrderItemDisplayName, getOrderItemModifierSubtexts, getDealDisplayItems } from "../../lib/orderDisplay.js";
+import {
+  formatReceiptItemsForBill,
+  formatOrderItemDisplayName,
+  getOrderItemModifierSubtexts,
+  getDealDisplayItems,
+} from "../../lib/orderDisplay.js";
 import {
   getBusinessDate,
   getBusinessDayRange,
@@ -41,9 +46,7 @@ import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
-import {
-  playPosFeedbackSound,
-} from "../../lib/posAddSounds";
+import { playPosFeedbackSound } from "../../lib/posAddSounds";
 import toast from "react-hot-toast";
 import {
   Loader2,
@@ -77,6 +80,7 @@ import {
   PlayCircle,
   Coffee,
   Globe,
+  SlidersHorizontal,
 } from "lucide-react";
 
 // ─── Board configuration ────────────────────────────────────────────────────
@@ -88,6 +92,24 @@ const BOARD_COLUMNS = [
   { status: "OUT_FOR_DELIVERY", label: "Out for Delivery" },
   { status: "AWAITING_PAYMENT", label: "Awaiting Payment" },
 ];
+
+const SIMPLE_BILLING_COLUMNS = [
+  { status: "NEW_ORDER", label: "Open Orders" },
+  { status: "AWAITING_PAYMENT", label: "Awaiting Payment" },
+];
+
+/** Orders shown in a board column (simple billing folds kitchen statuses into Open). */
+function getColumnOrders(groupedOrders, colStatus, orderWorkflow) {
+  if (orderWorkflow === "simple_billing" && colStatus === "NEW_ORDER") {
+    return [
+      ...(groupedOrders.NEW_ORDER || []),
+      ...(groupedOrders.PROCESSING || []),
+      ...(groupedOrders.READY || []),
+      ...(groupedOrders.OUT_FOR_DELIVERY || []),
+    ];
+  }
+  return groupedOrders[colStatus] || [];
+}
 
 const STATUS_THEME = {
   NEW_ORDER: {
@@ -256,7 +278,9 @@ function getOrderTotal(order) {
     String(order.type || "")
       .toLowerCase()
       .includes("delivery");
-  const delivery = isDelivery ? Math.max(0, Number(order.deliveryCharges) || 0) : 0;
+  const delivery = isDelivery
+    ? Math.max(0, Number(order.deliveryCharges) || 0)
+    : 0;
   if (order.total != null) {
     return food + tax + delivery + reservation;
   }
@@ -319,7 +343,9 @@ function getOrderSourceKey(order) {
 }
 
 function getCalendarDayRange(dateStr) {
-  const [y, m, d] = String(dateStr || "").split("-").map(Number);
+  const [y, m, d] = String(dateStr || "")
+    .split("-")
+    .map(Number);
   if (!y || !m || !d) return null;
   const from = new Date(y, m - 1, d, 0, 0, 0, 0);
   const to = new Date(y, m - 1, d, 23, 59, 59, 999);
@@ -459,16 +485,18 @@ export default function OrdersPage() {
     "orders.view_awaiting_payment",
   );
   const canViewSessionReport = hasPermission("pos.view_session_report");
-  const showClosedOrdersBar =
-    canViewClosedCount || canViewClosedAmount;
+  const showClosedOrdersBar = canViewClosedCount || canViewClosedAmount;
   const [orders, setOrders] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [search, setSearch] = useState("");
   const [orderTypeFilter, setOrderTypeFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [mobileOpenColumns, setMobileOpenColumns] = useState({});
   const [sourceFilter, setSourceFilter] = useState("All");
   const [riderFilter, setRiderFilter] = useState("All");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef(null);
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -581,7 +609,12 @@ export default function OrdersPage() {
   // Ctrl+N / Cmd+N → open POS for a new order
   useEffect(() => {
     const onKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === "n" || e.key === "N") && !e.shiftKey && !e.altKey) {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === "n" || e.key === "N") &&
+        !e.shiftKey &&
+        !e.altKey
+      ) {
         e.preventDefault();
         if (activeView !== "pos") openPOS();
       }
@@ -681,10 +714,18 @@ export default function OrdersPage() {
     let cancelled = false;
     setRidersLoading(true);
     getDeliveryRiders()
-      .then((data) => { if (!cancelled) setRiders(data); })
-      .catch(() => { if (!cancelled) setRiders([]); })
-      .finally(() => { if (!cancelled) setRidersLoading(false); });
-    return () => { cancelled = true; };
+      .then((data) => {
+        if (!cancelled) setRiders(data);
+      })
+      .catch(() => {
+        if (!cancelled) setRiders([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRidersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ── Handlers (preserved exactly) ───────────────────────────────────────
@@ -1053,7 +1094,8 @@ export default function OrdersPage() {
         (st === "DELIVERED" || st === "COMPLETED") &&
         getPaymentStatus(o) === "unpaid";
       const needsRiderHandIn =
-        (st === "DELIVERED" || st === "COMPLETED") && isDeliveryPaymentPending(o);
+        (st === "DELIVERED" || st === "COMPLETED") &&
+        isDeliveryPaymentPending(o);
       return isToday || isActive || isAwaitingPayment || needsRiderHandIn;
     });
   }, [orders, isCashier, datePreset]);
@@ -1073,8 +1115,13 @@ export default function OrdersPage() {
 
   const dateRange = useMemo(() => {
     if (!datePreset) return null;
-    if (datePreset === "today") return getBusinessDayRange(businessDateStr, cutoffHour);
-    if (datePreset === "yesterday") return getBusinessDayRange(shiftBusinessDateStr(businessDateStr, -1), cutoffHour);
+    if (datePreset === "today")
+      return getBusinessDayRange(businessDateStr, cutoffHour);
+    if (datePreset === "yesterday")
+      return getBusinessDayRange(
+        shiftBusinessDateStr(businessDateStr, -1),
+        cutoffHour,
+      );
 
     if (datePreset === "7days") {
       const fromStr = shiftBusinessDateStr(businessDateStr, -6);
@@ -1095,18 +1142,21 @@ export default function OrdersPage() {
     if (datePreset === "custom") {
       const isSessionMode = customRangeMode === "session";
       const fromRange = customFrom
-        ? (isSessionMode
-            ? getBusinessDayRange(customFrom, cutoffHour)
-            : getCalendarDayRange(customFrom))
+        ? isSessionMode
+          ? getBusinessDayRange(customFrom, cutoffHour)
+          : getCalendarDayRange(customFrom)
         : null;
       const toRange = customTo
-        ? (isSessionMode
-            ? getBusinessDayRange(customTo, cutoffHour)
-            : getCalendarDayRange(customTo))
+        ? isSessionMode
+          ? getBusinessDayRange(customTo, cutoffHour)
+          : getCalendarDayRange(customTo)
         : null;
 
       if (fromRange && toRange) {
-        const fromMs = Math.min(fromRange.from.getTime(), toRange.from.getTime());
+        const fromMs = Math.min(
+          fromRange.from.getTime(),
+          toRange.from.getTime(),
+        );
         const toMs = Math.max(fromRange.to.getTime(), toRange.to.getTime());
         return { from: new Date(fromMs), to: new Date(toMs) };
       }
@@ -1115,7 +1165,14 @@ export default function OrdersPage() {
     }
 
     return getBusinessDayRange(businessDateStr, cutoffHour);
-  }, [datePreset, customFrom, customTo, customRangeMode, businessDateStr, cutoffHour]);
+  }, [
+    datePreset,
+    customFrom,
+    customTo,
+    customRangeMode,
+    businessDateStr,
+    cutoffHour,
+  ]);
 
   // Re-subscribe socket listeners whenever dateRange changes (must be after dateRange is declared)
   useEffect(() => {
@@ -1147,7 +1204,8 @@ export default function OrdersPage() {
         const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
         const match = sessions.find(
           (s) =>
-            getBusinessDate(new Date(s.startAt), cutoffHour) === businessDateStr,
+            getBusinessDate(new Date(s.startAt), cutoffHour) ===
+            businessDateStr,
         );
         if (match) {
           sessionId = match.id;
@@ -1190,8 +1248,7 @@ export default function OrdersPage() {
       return;
     if (isCashier) return;
     try {
-      if (window.localStorage.getItem("DEBUG_SESSION_PAYMENTS") !== "1")
-        return;
+      if (window.localStorage.getItem("DEBUG_SESSION_PAYMENTS") !== "1") return;
       const audit = auditSessionReportPayments(todayReportData.orders);
       console.log("[Today's session report — payment audit]", {
         cashKpiShownInModal: todayReportBreakdown?.payment?.cash,
@@ -1276,6 +1333,17 @@ export default function OrdersPage() {
     };
   }, [currentBranch?.id]);
 
+  useEffect(() => {
+    if (!filtersOpen) return;
+    function handleDown(e) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target)) {
+        setFiltersOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleDown);
+    return () => document.removeEventListener("mousedown", handleDown);
+  }, [filtersOpen]);
+
   const dateRangeKey = `${dateRange?.from?.getTime() ?? ""}-${dateRange?.to?.getTime() ?? ""}`;
   useEffect(() => {
     if (!datePreset || !dateRange) return;
@@ -1300,15 +1368,19 @@ export default function OrdersPage() {
           setSessionGateChecked(true);
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [currentBranch?.id]);
 
   const baseFiltered = useMemo(() => {
     const base = Array.isArray(cashierBaseOrders) ? cashierBaseOrders : [];
     const term = search.trim().toLowerCase();
     const hasDateRange = dateRange && (dateRange.from || dateRange.to);
-    const fromMs = hasDateRange && dateRange.from ? dateRange.from.getTime() : 0;
-    const toMs = hasDateRange && dateRange.to ? dateRange.to.getTime() : Infinity;
+    const fromMs =
+      hasDateRange && dateRange.from ? dateRange.from.getTime() : 0;
+    const toMs =
+      hasDateRange && dateRange.to ? dateRange.to.getTime() : Infinity;
     const filterType = orderTypeFilter !== "All";
     const filterStatus = statusFilter !== "ALL";
     const filterSource = sourceFilter !== "All";
@@ -1318,16 +1390,21 @@ export default function OrdersPage() {
         const t = new Date(o.createdAt).getTime();
         if (t < fromMs || t > toMs) return false;
       }
-      if (term && !(
-        (o.id || "").toLowerCase().includes(term) ||
-        (o.customerName || "").toLowerCase().includes(term) ||
-        (o.orderTakerName || "").toLowerCase().includes(term) ||
-        (o.assignedRiderName || "").toLowerCase().includes(term) ||
-        (o.externalOrderId || "").toLowerCase().includes(term) ||
-        (o.customerPhone || "").toLowerCase().includes(term)
-      )) return false;
+      if (
+        term &&
+        !(
+          (o.id || "").toLowerCase().includes(term) ||
+          (o.customerName || "").toLowerCase().includes(term) ||
+          (o.orderTakerName || "").toLowerCase().includes(term) ||
+          (o.assignedRiderName || "").toLowerCase().includes(term) ||
+          (o.externalOrderId || "").toLowerCase().includes(term) ||
+          (o.customerPhone || "").toLowerCase().includes(term)
+        )
+      )
+        return false;
       if (filterType && getOrderTypeLabel(o) !== orderTypeFilter) return false;
-      if (filterStatus && getOrderStatusBucket(o) !== statusFilter) return false;
+      if (filterStatus && getOrderStatusBucket(o) !== statusFilter)
+        return false;
       if (filterSource && getOrderSourceKey(o) !== sourceFilter) return false;
       if (riderFilter !== "All") {
         const rider = riders.find((r) => r.id === riderFilter);
@@ -1347,7 +1424,11 @@ export default function OrdersPage() {
     });
 
     const dir = -1; // Newest First
-    filtered.sort((a, b) => dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    filtered.sort(
+      (a, b) =>
+        dir *
+        (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+    );
     return filtered;
   }, [
     cashierBaseOrders,
@@ -1388,7 +1469,14 @@ export default function OrdersPage() {
     return groups;
   }, [baseFiltered]);
 
-  const displayColumns = BOARD_COLUMNS;
+  const orderWorkflow =
+    currentBranch?.orderWorkflow === "simple_billing"
+      ? "simple_billing"
+      : "kitchen_board";
+  const isSimpleBilling = orderWorkflow === "simple_billing";
+  const displayColumns = isSimpleBilling
+    ? SIMPLE_BILLING_COLUMNS
+    : BOARD_COLUMNS;
   const totalActive = BOARD_COLUMNS.reduce(
     (sum, col) => sum + (groupedOrders[col.status]?.length || 0),
     0,
@@ -1422,1887 +1510,2255 @@ export default function OrdersPage() {
       suspended={suspended}
     >
       <PermissionGate permission="orders.view">
-      {/* ── POS View ──────────────────────────────────────────────── */}
-      <div style={{ display: activeView === "pos" ? "block" : "none" }}>
-        <POSView
-          editOrderId={posEditOrderId}
-          onClose={closePOS}
-          onOrderChanged={handlePosOrderChanged}
-          isActive={activeView === "pos"}
-          initialTableName={posInitialTableName}
-        />
-      </div>
-
-      {/* ── Orders View ───────────────────────────────────────────── */}
-      <div style={{ display: activeView === "orders" ? "block" : "none" }}>
-      {pageLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-3">
-            <ShoppingBag className="w-8 h-8 text-primary animate-pulse" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
-              Loading orders...
-            </p>
-          </div>
+        {/* ── POS View ──────────────────────────────────────────────── */}
+        <div style={{ display: activeView === "pos" ? "block" : "none" }}>
+          <POSView
+            editOrderId={posEditOrderId}
+            onClose={closePOS}
+            onOrderChanged={handlePosOrderChanged}
+            isActive={activeView === "pos"}
+            initialTableName={posInitialTableName}
+          />
         </div>
-      ) : (
-        <div className="flex flex-col h-[calc(100vh-120px)]">
-          {/* ── Filter bar ─────────────────────────────────────────── */}
-          <div className="flex flex-col gap-3 mb-4 flex-shrink-0">
-            {/* Row 1: Filters (left) + Search (middle) + New Order + Refresh (right) */}
-            <div className="flex items-center gap-2">
-              {/* Order type */}
-              <select
-                value={orderTypeFilter}
-                onChange={(e) => setOrderTypeFilter(e.target.value)}
-                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[6.5rem]"
-                aria-label="Filter by order type"
-              >
-                {ORDER_TYPE_FILTERS.map((t) => (
-                  <option key={t} value={t}>
-                    {t === "All" ? `All (${totalActive})` : t}
-                  </option>
-                ))}
-              </select>
 
-              {/* Status */}
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-9 pl-3 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all flex-shrink-0 cursor-pointer appearance-none min-w-[6.5rem]"
-                aria-label="Filter by order status"
-              >
-                {ORDER_STATUS_FILTERS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-
-              {/* Rider */}
-              <div className="relative flex-shrink-0">
-                <select
-                  value={riderFilter}
-                  onChange={(e) => setRiderFilter(e.target.value)}
-                  disabled={ridersLoading}
-                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[6.5rem] disabled:opacity-60"
-                  aria-label="Filter by rider"
-                >
-                  <option value="All">All riders</option>
-                  {riders.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-                <Bike className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-neutral-500" />
+        {/* ── Orders View ───────────────────────────────────────────── */}
+        <div style={{ display: activeView === "orders" ? "block" : "none" }}>
+          {pageLoading ? (
+            <div className="flex flex-col items-center justify-center min-h-[60vh]">
+              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center mb-3">
+                <ShoppingBag className="w-8 h-8 text-primary animate-pulse" />
               </div>
-
-              {/* Source */}
-              <div className="relative flex-shrink-0">
-                <select
-                  value={sourceFilter}
-                  onChange={(e) => setSourceFilter(e.target.value)}
-                  className="h-9 pl-8 pr-8 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-gray-700 dark:text-neutral-200 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all cursor-pointer appearance-none min-w-[6.5rem]"
-                  aria-label="Filter by order source"
-                >
-                  {SOURCE_FILTERS.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-                <Globe className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-neutral-500" />
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <p className="text-sm font-semibold text-gray-700 dark:text-neutral-300">
+                  Loading orders...
+                </p>
               </div>
+            </div>
+          ) : (
+            <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-100px)]">
+              {/* ── Filter bar ─────────────────────────────────────────── */}
+              <div className="mb-2.5 md:mb-3 flex flex-col gap-2 lg:flex-row lg:items-center flex-shrink-0">
+                <div className="flex w-full min-w-0 items-center gap-2 lg:flex-1">
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search order #, customer…"
+                    className="min-w-0 flex-1 h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
+                  />
 
-              {/* Search */}
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search order #, customer, phone, rider..."
-                className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-              />
+                  {/* Filters dropdown — icon-only on phone */}
+                  <div className="relative flex-shrink-0" ref={filtersRef}>
+                    <button
+                      type="button"
+                      onClick={() => setFiltersOpen((v) => !v)}
+                      className={`relative inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition-all w-9 px-0 lg:w-auto lg:px-3 ${
+                        filtersOpen
+                          ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
+                          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200 dark:hover:bg-neutral-900"
+                      }`}
+                      title="Filters"
+                      aria-label="Filters"
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+                      <span className="hidden lg:inline">Filters</span>
+                      {(() => {
+                        const count =
+                          (orderTypeFilter !== "All" ? 1 : 0) +
+                          (statusFilter !== "ALL" ? 1 : 0) +
+                          (sourceFilter !== "All" ? 1 : 0) +
+                          (riderFilter !== "All" ? 1 : 0);
+                        return count > 0 ? (
+                          <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white leading-none lg:static lg:right-auto lg:top-auto">
+                            {count}
+                          </span>
+                        ) : null;
+                      })()}
+                      <ChevronDown
+                        className={`hidden lg:block h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${
+                          filtersOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {/* New Order */}
-                {hasPermission("orders.create") && (
-                <button
-                  type="button"
-                  onClick={() => openPOS()}
-                  className="h-9 px-3.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-bold transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" /> New Order
-                </button>
-                )}
+                    {filtersOpen && (
+                      <div className="absolute right-0 top-full z-[100] mt-1.5 w-[min(100vw-2rem,18rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                            Filters
+                          </span>
+                          {(orderTypeFilter !== "All" ||
+                            statusFilter !== "ALL" ||
+                            sourceFilter !== "All" ||
+                            riderFilter !== "All") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOrderTypeFilter("All");
+                                setStatusFilter("ALL");
+                                setSourceFilter("All");
+                                setRiderFilter("All");
+                              }}
+                              className="text-xs font-semibold text-red-500 hover:text-red-600 dark:text-red-400"
+                            >
+                              Reset all
+                            </button>
+                          )}
+                        </div>
 
-                {/* Date filter */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowDateDropdown((v) => !v)}
-                    className="h-9 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-[11px] font-semibold text-gray-700 dark:text-neutral-300 hover:border-gray-400 dark:hover:border-neutral-500 transition-all inline-flex items-center gap-1.5"
-                  >
-                    <Clock className="w-3 h-3 text-gray-400 dark:text-neutral-500" />
-                    {
-                      {
+                        <div className="p-4 space-y-4 max-h-[min(70vh,28rem)] overflow-y-auto">
+                          {/* Order type */}
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                              Order type
+                            </label>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {ORDER_TYPE_FILTERS.map((t) => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => setOrderTypeFilter(t)}
+                                  className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                                    orderTypeFilter === t
+                                      ? "bg-primary text-white shadow-sm"
+                                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                                  }`}
+                                >
+                                  {t === "All" ? `All (${totalActive})` : t}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Status */}
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                              Status
+                            </label>
+                            <select
+                              value={statusFilter}
+                              onChange={(e) => setStatusFilter(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-2.5 pr-7 text-sm font-medium text-gray-800 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                              aria-label="Filter by order status"
+                            >
+                              {ORDER_STATUS_FILTERS.map((s) => (
+                                <option key={s.value} value={s.value}>
+                                  {s.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Rider */}
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                              Rider
+                            </label>
+                            <select
+                              value={riderFilter}
+                              onChange={(e) => setRiderFilter(e.target.value)}
+                              disabled={ridersLoading}
+                              className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-2.5 pr-7 text-sm font-medium text-gray-800 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                              aria-label="Filter by rider"
+                            >
+                              <option value="All">All riders</option>
+                              {riders.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Source */}
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                              Source
+                            </label>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {SOURCE_FILTERS.map((s) => (
+                                <button
+                                  key={s.value}
+                                  type="button"
+                                  onClick={() => setSourceFilter(s.value)}
+                                  className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                                    sourceFilter === s.value
+                                      ? "bg-primary text-white shadow-sm"
+                                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                                  }`}
+                                >
+                                  {s.label.replace("All sources", "All")}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {(orderTypeFilter !== "All" ||
+                          statusFilter !== "ALL" ||
+                          sourceFilter !== "All" ||
+                          riderFilter !== "All" ||
+                          search.trim()) && (
+                          <div className="px-4 pb-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOrderTypeFilter("All");
+                                setStatusFilter("ALL");
+                                setSourceFilter("All");
+                                setRiderFilter("All");
+                                setSearch("");
+                                setFiltersOpen(false);
+                              }}
+                              className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-red-50 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+                            >
+                              <X className="h-3.5 w-3.5" /> Clear all filters
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto lg:flex-shrink-0">
+                  {/* New Order — desktop only */}
+                  {hasPermission("orders.create") && (
+                    <button
+                      type="button"
+                      onClick={() => openPOS()}
+                      className="hidden lg:inline-flex h-9 flex-shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-white transition-colors hover:bg-primary/90"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      New Order
+                    </button>
+                  )}
+
+                  {/* Date filter */}
+                  <div className="relative flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowDateDropdown((v) => !v)}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 sm:px-3 text-xs font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-900"
+                    >
+                      <Clock className="h-3.5 w-3.5 text-gray-400 dark:text-neutral-500" />
+                      {{
                         today: "Today",
                         yesterday: "Yesterday",
                         "7days": "Last 7 Days",
                         "30days": "Last Month",
                         custom: "Custom",
-                      }[datePreset] || "Today"
-                    }
-                    <ChevronDown
-                      className={`w-3 h-3 text-gray-400 transition-transform ${
-                        showDateDropdown ? "rotate-180" : ""
-                      }`}
-                    />
+                      }[datePreset] || "Today"}
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 text-gray-400 transition-transform ${
+                          showDateDropdown ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {showDateDropdown && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowDateDropdown(false)}
+                        />
+                        <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden">
+                          {[
+                            { id: "today", label: "Today's Session" },
+                            { id: "yesterday", label: "Yesterday" },
+                            { id: "7days", label: "Last 7 Days" },
+                            { id: "30days", label: "Last Month" },
+                            { id: "custom", label: "Custom Range" },
+                          ].map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setDatePreset(p.id);
+                                if (p.id !== "custom")
+                                  setShowDateDropdown(false);
+                              }}
+                              className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors flex items-center justify-between ${
+                                datePreset === p.id
+                                  ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                  : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
+                              }`}
+                            >
+                              {p.label}
+                              {datePreset === p.id && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              )}
+                            </button>
+                          ))}
+
+                          {datePreset === "custom" && (
+                            <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 space-y-2">
+                              <div>
+                                <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
+                                  Range Mode
+                                </label>
+                                <div className="grid grid-cols-2 gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCustomRangeMode("calendar")
+                                    }
+                                    className={`h-7 rounded-lg text-[11px] font-semibold transition-colors ${
+                                      customRangeMode === "calendar"
+                                        ? "bg-emerald-600 text-white"
+                                        : "bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700"
+                                    }`}
+                                  >
+                                    Calendar Day
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCustomRangeMode("session")
+                                    }
+                                    className={`h-7 rounded-lg text-[11px] font-semibold transition-colors ${
+                                      customRangeMode === "session"
+                                        ? "bg-emerald-600 text-white"
+                                        : "bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700"
+                                    }`}
+                                  >
+                                    Session
+                                  </button>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
+                                  From
+                                </label>
+                                <input
+                                  type="date"
+                                  value={customFrom}
+                                  onChange={(e) =>
+                                    setCustomFrom(e.target.value)
+                                  }
+                                  className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
+                                  To
+                                </label>
+                                <input
+                                  type="date"
+                                  value={customTo}
+                                  onChange={(e) => setCustomTo(e.target.value)}
+                                  className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowDateDropdown(false)}
+                                disabled={!customFrom && !customTo}
+                                className="w-full h-7 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition-colors disabled:opacity-40"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Refresh */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!dateRange) return;
+                      const toastId = toast.loading("Refreshing...");
+                      loadOrders(dateRange)
+                        .then(() =>
+                          toast.success("Refreshed!", { id: toastId }),
+                        )
+                        .catch(() => toast.dismiss(toastId));
+                    }}
+                    className="inline-flex h-9 w-9 sm:w-auto flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-0 sm:px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-900"
+                    title="Refresh"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Refresh</span>
                   </button>
 
-                  {showDateDropdown && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setShowDateDropdown(false)}
-                      />
-                      <div className="absolute right-0 top-full mt-1 z-50 w-64 bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl overflow-hidden">
-                        {[ 
-                          { id: "today", label: "Today's Session" },
-                          { id: "yesterday", label: "Yesterday" },
-                          { id: "7days", label: "Last 7 Days" },
-                          { id: "30days", label: "Last Month" },
-                          { id: "custom", label: "Custom Range" },
-                        ].map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setDatePreset(p.id);
-                              if (p.id !== "custom") setShowDateDropdown(false);
-                            }}
-                            className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors flex items-center justify-between ${
-                              datePreset === p.id
-                                ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                : "text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-900"
-                            }`}
-                          >
-                            {p.label}
-                            {datePreset === p.id && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            )}
-                          </button>
-                        ))}
+                  {canViewSessionReport && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        loadTodaySessionReport();
+                        setShowTodayReportModal(true);
+                      }}
+                      className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-all hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-400 dark:hover:bg-neutral-900"
+                      title="Today's session report"
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {canCloseBusinessDay && (
+                    <button
+                      type="button"
+                      onClick={openEndDayModal}
+                      className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 transition-all hover:bg-red-100 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+                      title="End business day"
+                    >
+                      <Power className="h-3.5 w-3.5" />
+                    </button>
+                  )}
 
-                        {datePreset === "custom" && (
-                          <div className="px-4 py-3 border-t border-gray-100 dark:border-neutral-800 space-y-2">
-                            <div>
-                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
-                                Range Mode
-                              </label>
-                              <div className="grid grid-cols-2 gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setCustomRangeMode("calendar")}
-                                  className={`h-7 rounded-lg text-[11px] font-semibold transition-colors ${
-                                    customRangeMode === "calendar"
-                                      ? "bg-emerald-600 text-white"
-                                      : "bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700"
-                                  }`}
+                  {/* Session date — same row, right edge, no box */}
+                  <span className="ml-auto inline-flex h-9 flex-shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-green-700 dark:text-green-400">
+                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                    {formatBusinessDate(businessDateStr)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex-1 flex flex-col min-h-0 gap-2.5">
+                {/* Mobile: stacked collapsible columns (closed by default) */}
+                <div className="lg:hidden flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-2">
+                  {displayColumns.map((col) => {
+                    const theme = STATUS_THEME[col.status];
+                    const allColOrders = getColumnOrders(
+                      groupedOrders,
+                      col.status,
+                      orderWorkflow,
+                    );
+                    const isOpen = !!mobileOpenColumns[col.status];
+                    return (
+                      <div
+                        key={col.status}
+                        className={`flex flex-col rounded-xl border ${theme.colBorder} ${theme.colBg} overflow-hidden`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMobileOpenColumns((prev) => ({
+                              ...prev,
+                              [col.status]: !prev[col.status],
+                            }))
+                          }
+                          className={`flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors ${
+                            isOpen ? `border-b ${theme.colBorder}` : ""
+                          }`}
+                        >
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${theme.dot} flex-shrink-0`}
+                          />
+                          <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">
+                            {col.label}
+                          </span>
+                          <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                            {(col.status !== "AWAITING_PAYMENT" ||
+                              canViewAwaitingPaymentSummary) && (
+                              <span
+                                className={`text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
+                              >
+                                {allColOrders.length}
+                              </span>
+                            )}
+                            {col.status === "AWAITING_PAYMENT" &&
+                              canViewAwaitingPaymentSummary &&
+                              allColOrders.length > 0 && (
+                                <span
+                                  className={`text-[11px] font-bold text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
                                 >
-                                  Calendar Day
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCustomRangeMode("session")}
-                                  className={`h-7 rounded-lg text-[11px] font-semibold transition-colors ${
-                                    customRangeMode === "session"
-                                      ? "bg-emerald-600 text-white"
-                                      : "bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-neutral-300 hover:bg-gray-200 dark:hover:bg-neutral-700"
-                                  }`}
-                                >
-                                  Session
-                                </button>
+                                  {sym}{" "}
+                                  {Math.round(
+                                    awaitingTotalAmount,
+                                  ).toLocaleString()}
+                                </span>
+                              )}
+                            <ChevronDown
+                              className={`h-4 w-4 text-gray-400 transition-transform ${
+                                isOpen ? "rotate-180" : ""
+                              }`}
+                            />
+                          </span>
+                        </button>
+
+                        {isOpen && (
+                          <div className="px-1.5 pb-1.5 pt-1.5 space-y-1.5">
+                            {allColOrders.length === 0 ? (
+                              <div className="flex flex-col items-center justify-center py-10 opacity-30">
+                                <CircleDot className="w-7 h-7 mb-1.5" />
+                                <p className="text-[11px] font-medium">
+                                  No orders
+                                </p>
                               </div>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
-                                From
-                              </label>
-                              <input
-                                type="date"
-                                value={customFrom}
-                                onChange={(e) => setCustomFrom(e.target.value)}
-                                className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase mb-1">
-                                To
-                              </label>
-                              <input
-                                type="date"
-                                value={customTo}
-                                onChange={(e) => setCustomTo(e.target.value)}
-                                className="w-full h-8 px-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs text-gray-700 dark:text-neutral-300 outline-none focus:border-primary"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setShowDateDropdown(false)}
-                              disabled={!customFrom && !customTo}
-                              className="w-full h-7 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold transition-colors disabled:opacity-40"
-                            >
-                              Apply
-                            </button>
+                            ) : (
+                              allColOrders.map((order) => (
+                                <OrderCard
+                                  key={order.id || order._id}
+                                  order={order}
+                                  now={now}
+                                  theme={theme}
+                                  isOrderTaker={isOrderTaker}
+                                  isCashier={isCashier}
+                                  isAdmin={isAdmin}
+                                  simpleBilling={isSimpleBilling}
+                                  updatingId={updatingId}
+                                  onUpdateStatus={handleUpdateStatus}
+                                  onOpenCancel={openCancelModal}
+                                  onOpenPayment={openPaymentModal}
+                                  riders={riders}
+                                  ridersLoading={ridersLoading}
+                                  assigningOrderId={assigningOrderId}
+                                  onAssignRider={handleInlineAssignRider}
+                                  onOpenCollect={openCollectPaymentModal}
+                                  onPrint={openPrintBill}
+                                  onEdit={(order) =>
+                                    openPOS(order.id || order._id)
+                                  }
+                                />
+                              ))
+                            )}
                           </div>
                         )}
                       </div>
-                    </>
-                  )}
+                    );
+                  })}
                 </div>
 
-                {/* Refresh */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!dateRange) return;
-                    const toastId = toast.loading("Refreshing...");
-                    loadOrders(dateRange)
-                      .then(() => toast.success("Refreshed!", { id: toastId }))
-                      .catch(() => toast.dismiss(toastId));
-                  }}
-                  className="h-9 px-3 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex-shrink-0 inline-flex items-center gap-1.5"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
-                </button>
-
-                {/* Session indicator */}
-                <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 text-[11px] font-semibold flex-shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
-                  {formatBusinessDate(businessDateStr)}
-                </span>
-                {canViewSessionReport && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    loadTodaySessionReport();
-                    setShowTodayReportModal(true);
-                  }}
-                  className="h-9 w-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 hover:border-gray-400 dark:hover:border-neutral-500 transition-all inline-flex items-center justify-center flex-shrink-0"
-                  title="Today's session report"
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                </button>
-                )}
-                {canCloseBusinessDay && (
-                <button
-                  type="button"
-                  onClick={openEndDayModal}
-                  className="h-9 w-9 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-all inline-flex items-center justify-center flex-shrink-0"
-                  title="End business day"
-                >
-                  <Power className="w-3.5 h-3.5" />
-                </button>
-                )}
+                {/* Desktop / tablet: multi-column board */}
+                <div className="hidden lg:flex flex-1 gap-2.5 overflow-x-auto min-h-0">
+                  {displayColumns.map((col) => {
+                    const theme = STATUS_THEME[col.status];
+                    const allColOrders = getColumnOrders(
+                      groupedOrders,
+                      col.status,
+                      orderWorkflow,
+                    );
+                    return (
+                      <div
+                        key={col.status}
+                        className={`flex flex-col min-w-[290px] w-[290px] lg:min-w-0 lg:flex-1 rounded-xl border ${theme.colBorder} ${theme.colBg} overflow-hidden`}
+                      >
+                        <div
+                          className={`flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b ${theme.colBorder}`}
+                        >
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${theme.dot} flex-shrink-0`}
+                          />
+                          <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">
+                            {col.label}
+                          </span>
+                          <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                            {(col.status !== "AWAITING_PAYMENT" ||
+                              canViewAwaitingPaymentSummary) && (
+                              <span
+                                className={`text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
+                              >
+                                {allColOrders.length}
+                              </span>
+                            )}
+                            {col.status === "AWAITING_PAYMENT" &&
+                              canViewAwaitingPaymentSummary &&
+                              allColOrders.length > 0 && (
+                                <span
+                                  className={`text-[11px] font-bold text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
+                                >
+                                  {sym}{" "}
+                                  {Math.round(
+                                    awaitingTotalAmount,
+                                  ).toLocaleString()}
+                                </span>
+                              )}
+                          </span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto px-1.5 pb-1.5 pt-1.5 space-y-1.5 min-h-0">
+                          {allColOrders.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 opacity-30">
+                              <CircleDot className="w-7 h-7 mb-1.5" />
+                              <p className="text-[11px] font-medium">
+                                No orders
+                              </p>
+                            </div>
+                          ) : (
+                            allColOrders.map((order) => (
+                              <OrderCard
+                                key={order.id || order._id}
+                                order={order}
+                                now={now}
+                                theme={theme}
+                                isOrderTaker={isOrderTaker}
+                                isCashier={isCashier}
+                                isAdmin={isAdmin}
+                                simpleBilling={isSimpleBilling}
+                                updatingId={updatingId}
+                                onUpdateStatus={handleUpdateStatus}
+                                onOpenCancel={openCancelModal}
+                                onOpenPayment={openPaymentModal}
+                                riders={riders}
+                                ridersLoading={ridersLoading}
+                                assigningOrderId={assigningOrderId}
+                                onAssignRider={handleInlineAssignRider}
+                                onOpenCollect={openCollectPaymentModal}
+                                onPrint={openPrintBill}
+                                onEdit={(order) =>
+                                  openPOS(order.id || order._id)
+                                }
+                              />
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* ── Kanban board ───────────────────────────────────────── */}
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 flex gap-2.5 overflow-x-auto pb-2 min-h-0">
-              {displayColumns.map((col) => {
-                const theme = STATUS_THEME[col.status];
-                const allColOrders = groupedOrders[col.status] || [];
-                return (
-                  <div
-                    key={col.status}
-                    className={`flex flex-col min-w-[290px] w-[290px] lg:min-w-0 lg:flex-1 rounded-xl border ${theme.colBorder} ${theme.colBg} overflow-hidden`}
+      {/* ── Floating popups — bottom (LinkedIn-style) ──────── */}
+          {!pageLoading && (
+            <div className="fixed bottom-16 md:bottom-0 left-2 right-2 md:left-auto md:right-4 z-40 flex flex-col-reverse md:flex-row items-stretch md:items-end gap-1.5 md:gap-2 md:justify-end pointer-events-none">
+              {/* Closed popup */}
+              {closedCount > 0 && showClosedOrdersBar && (
+                <div className="pointer-events-auto w-full md:w-[280px] flex flex-col rounded-xl md:rounded-t-xl md:rounded-b-none shadow-2xl overflow-hidden border border-gray-200 dark:border-neutral-700 md:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowClosed(!showClosed)}
+                    className="flex items-center gap-2 px-3 py-1 bg-gray-700 dark:bg-neutral-800 text-white hover:bg-gray-600 dark:hover:bg-neutral-700 transition-colors flex-shrink-0"
                   >
-                    <div
-                      className={`flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b ${theme.colBorder}`}
-                    >
-                      <span
-                        className={`w-2.5 h-2.5 rounded-full ${theme.dot} flex-shrink-0`}
-                      />
-                      <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">
-                        {col.label}
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+                    <span className="text-sm font-semibold flex-shrink-0">
+                      Closed
+                    </span>
+                    {canViewClosedCount && (
+                      <span className="text-[11px] font-bold bg-white/20 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        {closedCount}
                       </span>
-                      <span className="ml-auto flex items-center gap-1 flex-shrink-0">
-                      {(col.status !== "AWAITING_PAYMENT" ||
-                        canViewAwaitingPaymentSummary) && (
+                    )}
+                    {canViewClosedAmount && (
+                      <span className="text-[11px] font-bold bg-white/15 px-1.5 py-0.5 rounded-full truncate min-w-0">
+                        {sym} {Math.round(closedTotalAmount).toLocaleString()}
+                      </span>
+                    )}
+                    <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                      {canDownloadClosedReport && (
                         <span
-                          className={`text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
-                        >
-                          {allColOrders.length}
-                        </span>
-                      )}
-                        {col.status === "AWAITING_PAYMENT" &&
-                          canViewAwaitingPaymentSummary &&
-                          allColOrders.length > 0 && (
-                            <span
-                              className={`text-[11px] font-bold text-center px-1.5 py-0.5 rounded-full ${theme.countBg}`}
-                            >
-                              {sym}{" "}
-                              {Math.round(awaitingTotalAmount).toLocaleString()}
-                            </span>
-                          )}
-                      </span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-1.5 pb-1.5 pt-1.5 space-y-1.5 min-h-0">
-                      {allColOrders.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 opacity-30">
-                          <CircleDot className="w-7 h-7 mb-1.5" />
-                          <p className="text-[11px] font-medium">No orders</p>
-                        </div>
-                      ) : (
-                        allColOrders.map((order) => (
-                          <OrderCard
-                            key={order.id || order._id}
-                            order={order}
-                            now={now}
-                            theme={theme}
-                            isOrderTaker={isOrderTaker}
-                            isCashier={isCashier}
-                            isAdmin={isAdmin}
-                            updatingId={updatingId}
-                            onUpdateStatus={handleUpdateStatus}
-                            onOpenCancel={openCancelModal}
-                            onOpenPayment={openPaymentModal}
-                            riders={riders}
-                            ridersLoading={ridersLoading}
-                            assigningOrderId={assigningOrderId}
-                            onAssignRider={handleInlineAssignRider}
-                            onOpenCollect={openCollectPaymentModal}
-                            onPrint={openPrintBill}
-                            onEdit={(order) =>
-                              openPOS(order.id || order._id)
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadClosedOrdersCSV(groupedOrders.DELIVERED);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              downloadClosedOrdersCSV(groupedOrders.DELIVERED);
                             }
-                          />
-                        ))
+                          }}
+                          className="p-1 rounded-md hover:bg-white/20 transition-colors"
+                          aria-label="Download closed orders"
+                          title="Download closed orders (CSV)"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </span>
                       )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Floating popups — bottom right (LinkedIn-style) ──────── */}
-      {!pageLoading && (
-        <div className="fixed bottom-0 right-4 z-40 flex items-end gap-2">
-          {/* Closed popup */}
-          {closedCount > 0 && showClosedOrdersBar && (
-            <div className="w-[300px] flex flex-col rounded-t-xl shadow-2xl overflow-hidden border border-b-0 border-gray-200 dark:border-neutral-700">
-              <button
-                type="button"
-                onClick={() => setShowClosed(!showClosed)}
-                className="flex items-center justify-between px-4 py-2.5 bg-gray-700 dark:bg-neutral-800 text-white hover:bg-gray-600 dark:hover:bg-neutral-700 transition-colors flex-shrink-0"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span className="text-sm font-semibold">Closed</span>
-                  {canViewClosedCount && (
-                    <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                      {closedCount}
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${showClosed ? "" : "rotate-180"}`}
+                      />
                     </span>
-                  )}
-                  {canViewClosedAmount && (
-                    <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                      {sym} {Math.round(closedTotalAmount).toLocaleString()}
-                    </span>
-                  )}
-                  {canDownloadClosedReport && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        downloadClosedOrdersCSV(groupedOrders.DELIVERED);
-                      }}
-                      className="p-1 rounded-md hover:bg-white/20 transition-colors"
-                      aria-label="Download closed orders"
-                      title="Download closed orders (CSV)"
+                  </button>
+                  {showClosed && (
+                    <div
+                      className="bg-white dark:bg-neutral-950 overflow-y-auto px-2 py-2 space-y-1.5"
+                      style={{ maxHeight: "min(50vh, calc(100vh - 180px))" }}
                     >
-                      <Download className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform ${showClosed ? "" : "rotate-180"}`}
-                />
-              </button>
-              {showClosed && (
-                <div
-                  className="bg-white dark:bg-neutral-950 overflow-y-auto px-2 py-2 space-y-1.5"
-                  style={{ maxHeight: "calc(100vh - 100px)" }}
-                >
-                  {groupedOrders.DELIVERED.map((order) => (
-                    <OrderCard
-                      key={order.id || order._id}
-                      order={order}
-                      now={now}
-                      theme={STATUS_THEME.DELIVERED}
-                      isOrderTaker={isOrderTaker}
-                      isCashier={isCashier}
-                      updatingId={updatingId}
-                      onUpdateStatus={handleUpdateStatus}
-                      onOpenCancel={openCancelModal}
-                      onOpenPayment={openPaymentModal}
-                      riders={riders}
-                      ridersLoading={ridersLoading}
-                      assigningOrderId={assigningOrderId}
-                      onAssignRider={handleInlineAssignRider}
-                      onOpenCollect={openCollectPaymentModal}
-                      onPrint={openPrintBill}
-                      onEdit={(order) =>
-                        openPOS(order.id || order._id)
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Cancelled popup */}
-          {cancelledCount > 0 && (
-            <div className="w-[300px] flex flex-col rounded-t-xl shadow-2xl overflow-hidden border border-b-0 border-red-200 dark:border-red-500/30">
-              <button
-                type="button"
-                onClick={() => setShowCancelled(!showCancelled)}
-                className="flex items-center justify-between px-4 py-2.5 bg-red-600 dark:bg-red-700 text-white hover:bg-red-500 dark:hover:bg-red-600 transition-colors flex-shrink-0"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-red-200" />
-                  <span className="text-sm font-semibold">Cancelled</span>
-                  <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                    {cancelledCount}
-                  </span>
-                  <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                    {sym} {Math.round(cancelledTotalAmount).toLocaleString()}
-                  </span>
-                </div>
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform ${showCancelled ? "" : "rotate-180"}`}
-                />
-              </button>
-              {showCancelled && (
-                <div
-                  className="bg-white dark:bg-neutral-950 overflow-y-auto px-2 py-2 space-y-1.5"
-                  style={{ maxHeight: "calc(100vh - 160px)" }}
-                >
-                  {groupedOrders.CANCELLED.map((order) => (
-                    <OrderCard
-                      key={order.id || order._id}
-                      order={order}
-                      now={now}
-                      theme={STATUS_THEME.CANCELLED}
-                      isOrderTaker={isOrderTaker}
-                      isCashier={isCashier}
-                      updatingId={updatingId}
-                      onUpdateStatus={handleUpdateStatus}
-                      onOpenCancel={openCancelModal}
-                      onOpenPayment={openPaymentModal}
-                      riders={riders}
-                      ridersLoading={ridersLoading}
-                      assigningOrderId={assigningOrderId}
-                      onAssignRider={handleInlineAssignRider}
-                      onOpenCollect={openCollectPaymentModal}
-                      onPrint={openPrintBill}
-                      onEdit={(order) =>
-                        openPOS(order.id || order._id)
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Take payment modal (unchanged) ──────────────────────────── */}
-      {showPaymentModal && paymentOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-                  <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                    {paymentModalMode === "riderCollect"
-                      ? "Collect Payment"
-                      : "Take Payment"}
-                  </h2>
-                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                    Order #{getDisplayOrderId(paymentOrder)}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closePaymentModal}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="px-5 pt-5">
-              <div className="text-center py-4 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">
-                  {paymentModalMode === "riderCollect"
-                    ? "Amount to Collect"
-                    : "Bill Total"}
-                </p>
-                <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
-                  {sym} {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
-                </p>
-                {getOrderTotal(paymentOrder) % 1 !== 0 && (
-                  <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
-                    {getOrderTotal(paymentOrder).toFixed(2)}
-                  </p>
-                )}
-              </div>
-            </div>
-            <form
-              onSubmit={paymentModalMode === "riderCollect" ? handleCollectPayment : handleRecordPayment}
-              className="px-5 pt-4 pb-5 space-y-4"
-            >
-              {paymentError && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
-                  <p className="text-xs font-medium text-red-600 dark:text-red-400">
-                    {paymentError}
-                  </p>
-                </div>
-              )}
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                  Payment method
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    {
-                      m: "CASH",
-                      Icon: Banknote,
-                      label: "Cash",
-                      active:
-                        "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-                    },
-                    {
-                      m: "CARD",
-                      Icon: CreditCard,
-                      label: "Card",
-                      active:
-                        "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
-                    },
-                    {
-                      m: "ONLINE",
-                      Icon: Smartphone,
-                      label: "Online",
-                      active:
-                        "border-primary bg-primary/10 dark:bg-primary/20 text-primary",
-                    },
-                    {
-                      m: "SPLIT",
-                      Icon: Wallet,
-                      label: "Split",
-                      active:
-                        "border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
-                    },
-                  ].map(({ m, Icon, label, active }) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        setPaymentMethod(m);
-                        if (m !== "ONLINE" && m !== "SPLIT")
-                          setOnlineProvider(null);
-                      }}
-                      className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${paymentMethod === m ? active : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"}`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {paymentMethod === "SPLIT" &&
-                (() => {
-                  const orderTotal = getOrderTotal(paymentOrder);
-                  const cashPart = Number(splitCashAmount);
-                  const cardPart = Number(splitCardAmount);
-                  const onlinePart = Number(splitOnlineAmount);
-                  const hasCash = splitCashAmount !== "" && !isNaN(cashPart);
-                  const hasCard = splitCardAmount !== "" && !isNaN(cardPart);
-                  const hasOnline =
-                    splitOnlineAmount !== "" && !isNaN(onlinePart);
-                  const splitSum =
-                    (hasCash ? cashPart : 0) +
-                    (hasCard ? cardPart : 0) +
-                    (hasOnline ? onlinePart : 0);
-                  const diff = orderTotal - splitSum;
-                  return (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
-                            Cash amount (Rs)
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={splitCashAmount}
-                            onChange={(e) => setSplitCashAmount(e.target.value)}
-                            placeholder="0"
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
-                            Card amount (Rs)
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={splitCardAmount}
-                            onChange={(e) => setSplitCardAmount(e.target.value)}
-                            placeholder="0"
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
-                            Online amount (Rs)
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={splitOnlineAmount}
-                            onChange={(e) => setSplitOnlineAmount(e.target.value)}
-                            placeholder="0"
-                            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                        <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">
-                          Remaining
-                        </span>
-                        <span
-                          className={`text-sm font-black tabular-nums ${
-                            Math.abs(diff) < 0.01
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-amber-600 dark:text-amber-400"
-                          }`}
-                        >
-                          {sym} {diff.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              {(paymentMethod === "ONLINE" ||
-                (paymentMethod === "SPLIT" &&
-                  (Number(splitOnlineAmount) || 0) > 0)) && (
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                    Paid to
-                  </label>
-                  {paymentAccountsLoading ? (
-                    <div className="flex items-center justify-center gap-2 py-4">
-                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      <span className="text-xs text-gray-400 dark:text-neutral-500">
-                        Loading accounts…
-                      </span>
-                    </div>
-                  ) : paymentAccounts.length === 0 ? (
-                    <div className="px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
-                      No payment accounts configured. Go to{" "}
-                      <span className="font-semibold">
-                        Business Settings → Payment Accounts
-                      </span>{" "}
-                      to add them.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {paymentAccounts.map((acc) => (
-                        <button
-                          key={acc.id}
-                          type="button"
-                          onClick={() => setOnlineProvider(acc.name)}
-                          className={`px-3 py-2.5 rounded-xl border-2 text-left transition-all ${onlineProvider === acc.name ? "border-primary bg-primary/10 dark:bg-primary/20" : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"}`}
-                        >
-                          <p
-                            className={`text-xs font-semibold truncate ${onlineProvider === acc.name ? "text-primary" : "text-gray-700 dark:text-neutral-300"}`}
-                          >
-                            {acc.name}
-                          </p>
-                          {acc.description && (
-                            <p className="text-[10px] text-gray-400 dark:text-neutral-500 truncate mt-0.5">
-                              {acc.description}
-                            </p>
-                          )}
-                        </button>
+                      {groupedOrders.DELIVERED.map((order) => (
+                        <OrderCard
+                          key={order.id || order._id}
+                          order={order}
+                          now={now}
+                          theme={STATUS_THEME.DELIVERED}
+                          isOrderTaker={isOrderTaker}
+                          isCashier={isCashier}
+                          updatingId={updatingId}
+                          onUpdateStatus={handleUpdateStatus}
+                          onOpenCancel={openCancelModal}
+                          onOpenPayment={openPaymentModal}
+                          riders={riders}
+                          ridersLoading={ridersLoading}
+                          assigningOrderId={assigningOrderId}
+                          onAssignRider={handleInlineAssignRider}
+                          onOpenCollect={openCollectPaymentModal}
+                          onPrint={openPrintBill}
+                          onEdit={(order) => openPOS(order.id || order._id)}
+                        />
                       ))}
                     </div>
                   )}
-                  {paymentAccounts.length > 0 && !onlineProvider && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">
-                      Please select an account to continue.
-                    </p>
+                </div>
+              )}
+
+              {/* Cancelled popup */}
+              {cancelledCount > 0 && (
+                <div className="pointer-events-auto w-full md:w-[280px] flex flex-col rounded-xl md:rounded-t-xl md:rounded-b-none shadow-2xl overflow-hidden border border-red-200 dark:border-red-500/30 md:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelled(!showCancelled)}
+                    className="flex items-center gap-2 px-3 py-1 bg-red-600 dark:bg-red-700 text-white hover:bg-red-500 dark:hover:bg-red-600 transition-colors flex-shrink-0"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-red-200 flex-shrink-0" />
+                    <span className="text-sm font-semibold flex-shrink-0">
+                      Cancelled
+                    </span>
+                    <span className="text-[11px] font-bold bg-white/20 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                      {cancelledCount}
+                    </span>
+                    <span className="text-[11px] font-bold bg-white/15 px-1.5 py-0.5 rounded-full truncate min-w-0">
+                      {sym} {Math.round(cancelledTotalAmount).toLocaleString()}
+                    </span>
+                    <ChevronDown
+                      className={`ml-auto w-4 h-4 flex-shrink-0 transition-transform ${showCancelled ? "" : "rotate-180"}`}
+                    />
+                  </button>
+                  {showCancelled && (
+                    <div
+                      className="bg-white dark:bg-neutral-950 overflow-y-auto px-2 py-2 space-y-1.5"
+                      style={{ maxHeight: "min(50vh, calc(100vh - 180px))" }}
+                    >
+                      {groupedOrders.CANCELLED.map((order) => (
+                        <OrderCard
+                          key={order.id || order._id}
+                          order={order}
+                          now={now}
+                          theme={STATUS_THEME.CANCELLED}
+                          isOrderTaker={isOrderTaker}
+                          isCashier={isCashier}
+                          updatingId={updatingId}
+                          onUpdateStatus={handleUpdateStatus}
+                          onOpenCancel={openCancelModal}
+                          onOpenPayment={openPaymentModal}
+                          riders={riders}
+                          ridersLoading={ridersLoading}
+                          assigningOrderId={assigningOrderId}
+                          onAssignRider={handleInlineAssignRider}
+                          onOpenCollect={openCollectPaymentModal}
+                          onPrint={openPrintBill}
+                          onEdit={(order) => openPOS(order.id || order._id)}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
-              {paymentMethod === "CASH" &&
-                (() => {
-                  const orderTotal = getOrderTotal(paymentOrder);
-                  const exactAmt = Math.ceil(orderTotal);
-                  const roundDenominations = [
-                    100, 200, 500, 1000, 2000, 5000, 10000,
-                  ];
-                  const quickAmounts = [
-                    exactAmt,
-                    ...roundDenominations.filter((v) => v > exactAmt),
-                  ].slice(0, 4);
-                  const receivedNum = Number(amountReceived);
-                  const isUnderpaid =
-                    amountReceived !== "" &&
-                    !isNaN(receivedNum) &&
-                    receivedNum < orderTotal;
-                  const isOverpaid =
-                    amountReceived !== "" &&
-                    !isNaN(receivedNum) &&
-                    receivedNum >= orderTotal;
-                  return (
-                    <>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                          Quick amount
-                        </label>
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {quickAmounts.map((amt) => (
-                            <button
-                              key={amt}
-                              type="button"
-                              onClick={() => setAmountReceived(String(amt))}
-                              className={`py-2 rounded-lg text-xs font-bold transition-all border ${receivedNum === amt ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
-                            >
-                              {amt.toLocaleString()}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
-                          Amount received (Rs)
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          required={paymentMethod === "CASH"}
-                          value={amountReceived}
-                          onChange={(e) => setAmountReceived(e.target.value)}
-                          placeholder={`Min. ${exactAmt.toLocaleString()}`}
-                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                        />
-                      </div>
-                      {isOverpaid && (
-                        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                              Change
-                            </span>
-                          </div>
-                          <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
-                            {sym} {(receivedNum - orderTotal).toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      {isUnderpaid && (
-                        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-red-500" />
-                            <span className="text-xs font-semibold text-red-700 dark:text-red-400">
-                              Short by
-                            </span>
-                          </div>
-                          <span className="text-xl font-black text-red-700 dark:text-red-400 tabular-nums">
-                            {sym} {(orderTotal - receivedNum).toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              {paymentModalMode === "riderCollect" && paymentOrder?.assignedRiderName && (
-                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
-                  <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-                  <div>
-                    <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
-                      {paymentOrder.assignedRiderName}
+            </div>
+          )}
+
+          {/* ── Take payment modal (unchanged) ──────────────────────────── */}
+          {showPaymentModal && paymentOrder && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-neutral-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                      <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                        {paymentModalMode === "riderCollect"
+                          ? "Collect Payment"
+                          : "Take Payment"}
+                      </h2>
+                      <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                        Order #{getDisplayOrderId(paymentOrder)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closePaymentModal}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="px-5 pt-5">
+                  <div className="text-center py-4 px-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                    <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1">
+                      {paymentModalMode === "riderCollect"
+                        ? "Amount to Collect"
+                        : "Bill Total"}
                     </p>
-                    {paymentOrder?.assignedRiderPhone && (
-                      <p className="text-[10px] text-indigo-500 dark:text-indigo-500">
-                        {paymentOrder.assignedRiderPhone}
+                    <p className="text-4xl font-black text-gray-900 dark:text-white tabular-nums leading-none">
+                      {sym}{" "}
+                      {Math.round(getOrderTotal(paymentOrder)).toLocaleString()}
+                    </p>
+                    {getOrderTotal(paymentOrder) % 1 !== 0 && (
+                      <p className="text-xs text-gray-400 dark:text-neutral-600 mt-1">
+                        {getOrderTotal(paymentOrder).toFixed(2)}
                       </p>
                     )}
                   </div>
                 </div>
-              )}
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={closePaymentModal}
-                  className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    paymentLoading ||
-                    (paymentModalMode === "record"
-                      ? ((paymentMethod === "CASH" &&
-                          (amountReceived === "" ||
-                            Number(amountReceived) <
-                              getOrderTotal(paymentOrder))) ||
-                          (paymentMethod === "ONLINE" && !onlineProvider) ||
-                          (paymentMethod === "SPLIT" &&
-                            (() => {
-                              const cash = Number(splitCashAmount) || 0;
-                              const card = Number(splitCardAmount) || 0;
-                              const online = Number(splitOnlineAmount) || 0;
-                              const positiveParts = [cash, card, online].filter(
-                                (n) => n > 0,
-                              ).length;
-                              const sumMatches =
-                                Math.abs(
-                                  cash + card + online - getOrderTotal(paymentOrder),
-                                ) <= 0.01;
-                              const providerNeeded =
-                                online > 0 && !onlineProvider;
-                              return positiveParts < 2 || !sumMatches || providerNeeded;
-                            })()))
-                      : paymentModalMode === "riderCollect"
-                        ? (paymentMethod === "CASH" &&
-                            (amountReceived === "" ||
-                              Number(amountReceived) < getOrderTotal(paymentOrder))) ||
-                          (paymentMethod === "ONLINE" && !onlineProvider) ||
-                          (paymentMethod === "SPLIT" &&
-                            (() => {
-                              const cash = Number(splitCashAmount) || 0;
-                              const card = Number(splitCardAmount) || 0;
-                              const online = Number(splitOnlineAmount) || 0;
-                              const positiveParts = [cash, card, online].filter(
-                                (n) => n > 0,
-                              ).length;
-                              const sumMatches =
-                                Math.abs(
-                                  cash + card + online - getOrderTotal(paymentOrder),
-                                ) <= 0.01;
-                              const providerNeeded =
-                                online > 0 && !onlineProvider;
-                              return positiveParts < 2 || !sumMatches || providerNeeded;
-                            })())
-                        : false)
-                  }
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 transition-colors ${
+                <form
+                  onSubmit={
                     paymentModalMode === "riderCollect"
-                      ? "bg-amber-500 hover:bg-amber-600"
-                      : "bg-emerald-600 hover:bg-emerald-700"
-                  }`}
-                >
-                  {paymentLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Processing…
-                    </>
-                  ) : (
-                    <>
-                      <CircleCheckBig className="w-4 h-4" />
-                      {paymentModalMode === "riderCollect" ? "Collect Payment" : "Record Payment"}
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Cancel modal (unchanged) ────────────────────────────────── */}
-      {showCancelModal && cancelTargetOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                Cancel order
-              </h2>
-              <button
-                type="button"
-                onClick={closeCancelModal}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
-              >
-                <span className="text-2xl">×</span>
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <p className="text-sm text-gray-700 dark:text-neutral-300">
-                Are you sure you want to cancel order{" "}
-                <span className="font-semibold">
-                  #{getDisplayOrderId(cancelTargetOrder)}
-                </span>
-                ? This cannot be undone.
-              </p>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5">
-                  Reason for cancellation
-                </label>
-                <input
-                  type="text"
-                  value={cancelReason}
-                  onChange={(e) => setCancelReason(e.target.value)}
-                  placeholder="e.g. Customer changed mind, out of stock..."
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-500/10 transition-all"
-                />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={closeCancelModal}
-                  className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
-                >
-                  Keep order
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    updatingId === getOrderId(cancelTargetOrder) ||
-                    !cancelReason.trim()
+                      ? handleCollectPayment
+                      : handleRecordPayment
                   }
-                  onClick={() => {
-                    handleUpdateStatus(
-                      getOrderId(cancelTargetOrder),
-                      "CANCELLED",
-                      { cancelReason: cancelReason.trim() },
-                    );
-                    closeCancelModal();
-                  }}
-                  className="flex-1 px-3 py-2.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+                  className="px-5 pt-4 pb-5 space-y-4"
                 >
-                  {updatingId === getOrderId(cancelTargetOrder)
-                    ? "Cancelling..."
-                    : "Yes, cancel order"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {/* ── Today's session report ───────────────────────────────── */}
-      {showTodayReportModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowTodayReportModal(false);
-          }}
-        >
-          <div className="bg-white dark:bg-neutral-950 rounded-xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col text-[13px]">
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-r from-gray-50/90 to-white dark:from-neutral-900/80 dark:to-neutral-950">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <h2 className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">
-                    Today&apos;s session report
-                  </h2>
-                  {todayReportData?.meta?.status === "OPEN" ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-500/25">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      OPEN
-                    </span>
-                  ) : todayReportData?.meta?.status ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 border border-gray-200 dark:border-neutral-700">
-                      {todayReportData.meta.status}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-0.5">
-                  {currentBranch?.name || "All branches"} · Business day{" "}
-                  {formatBusinessDate(businessDateStr)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {todayReportData?.meta?.startAt && (
-                  <p className="text-[10px] text-gray-500 dark:text-neutral-400 text-right leading-tight max-w-[calc(100vw-8rem)] sm:max-w-[220px]">
-                    {new Date(todayReportData.meta.startAt).toLocaleString(
-                      "en-PK",
-                      {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                      },
-                    )}
-                    {todayReportData.meta.status === "OPEN"
-                      ? " · Ongoing"
-                      : todayReportData.meta.endAt
-                        ? ` → ${new Date(todayReportData.meta.endAt).toLocaleString("en-PK", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                          })}`
-                        : ""}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowTodayReportModal(false)}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-              {loadingTodayReport ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-2">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <p className="text-xs text-gray-500 dark:text-neutral-400">
-                    Loading session numbers…
-                  </p>
-                </div>
-              ) : !todayReportData?.sessionId ? (
-                <div className="text-center py-8 px-3 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/30">
-                  <p className="text-xs font-medium text-gray-700 dark:text-neutral-300">
-                    No business-day session found for today.
-                  </p>
-                  <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-0.5">
-                    Start a session from the POS to see live totals here.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {todayReportBreakdown && (
-                    <>
-                      {/* KPI row — cashiers: total sales only (no order count) */}
-                      <div
-                        className={`grid gap-2 ${showFullSessionReport ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
-                      >
-                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
-                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
-                            {showFullSessionReport ? "Total revenue" : "Total sales"}
-                          </p>
-                          <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
-                            {sym}{" "}
-                            {Math.round(
-                              todayReportBreakdown.totalRevenue || 0,
-                            ).toLocaleString()}
-                          </p>
-                          {showFullSessionReport ? (
-                            todayReportBreakdown.unpaid.totalCount > 0 ? (
-                              <div className="mt-1.5 space-y-0.5 text-[9px] text-amber-600 dark:text-amber-400">
-                                <p className="font-semibold leading-snug">
-                                  Unpaid total: {sym}{" "}
-                                  {Math.round(
-                                    todayReportBreakdown.unpaid.totalAmt,
-                                  ).toLocaleString()}{" "}
-                                  · {todayReportBreakdown.unpaid.totalCount}{" "}
-                                  orders
-                                </p>
-                                <p className="text-[8px] leading-snug opacity-95">
-                                  In progress: {sym}{" "}
-                                  {Math.round(
-                                    todayReportBreakdown.unpaid.pipelineAmt,
-                                  ).toLocaleString()}{" "}
-                                  ({todayReportBreakdown.unpaid.pipelineCount}) ·
-                                  Delivered, payment pending: {sym}{" "}
-                                  {Math.round(
-                                    todayReportBreakdown.unpaid.deliveredAmt,
-                                  ).toLocaleString()}{" "}
-                                  ({todayReportBreakdown.unpaid.deliveredCount})
-                                  {todayReportBreakdown.unpaid.otherCount > 0
-                                    ? ` · Other unpaid: ${sym} ${Math.round(todayReportBreakdown.unpaid.otherAmt).toLocaleString()} (${todayReportBreakdown.unpaid.otherCount})`
-                                    : ""}
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="mt-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
-                                All recorded orders paid
-                              </p>
-                            )
-                          ) : null}
-                        </div>
-                        {showFullSessionReport && (
-                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
-                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
-                            Orders
-                          </p>
-                          <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
-                            {(todayReportBreakdown.totalOrders ?? 0).toLocaleString()}
-                          </p>
-                          <>
-                              <p className="mt-1.5 text-[9px] text-gray-500 dark:text-neutral-400 leading-snug">
-                                Paid orders in session (closed sales)
-                              </p>
-                              {(todayReportBreakdown.totalOrders ?? 0) > 0 && (
-                                <p className="mt-1 text-[10px] font-semibold text-gray-700 dark:text-neutral-300">
-                                  Avg {sym}{" "}
-                                  {Math.round(
-                                    todayReportBreakdown.totalRevenue /
-                                      todayReportBreakdown.totalOrders,
-                                  ).toLocaleString()}
-                                </p>
-                              )}
-                            </>
-                        </div>
-                        )}
-                      </div>
-
-                      {showFullSessionReport ? (
-                        <>
-                      {/* Payment method KPIs */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
-                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
-                            Cash
-                          </p>
-                          <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
-                            {sym}{" "}
-                            {Math.round(
-                              todayReportBreakdown.payment.cash,
-                            ).toLocaleString()}
-                          </p>
-                          <p className="text-[9px] text-gray-400 mt-0.5">
-                            {todayReportBreakdown.payment.cashOrders} orders
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
-                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
-                            Card
-                          </p>
-                          <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
-                            {sym}{" "}
-                            {Math.round(
-                              todayReportBreakdown.payment.card,
-                            ).toLocaleString()}
-                          </p>
-                          <p className="text-[9px] text-gray-400 mt-0.5">
-                            {todayReportBreakdown.payment.cardOrders} orders
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
-                          <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
-                            Online
-                          </p>
-                          <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
-                            {sym}{" "}
-                            {Math.round(
-                              todayReportBreakdown.payment.online,
-                            ).toLocaleString()}
-                          </p>
-                          <p className="text-[9px] text-gray-400 mt-0.5">
-                            {todayReportBreakdown.payment.onlineOrders} orders
-                          </p>
-                          {todayReportBreakdown.payment.onlineProviders.length >
-                            0 && (
-                            <div className="mt-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-800 space-y-0.5 max-h-16 overflow-y-auto text-left">
-                              {todayReportBreakdown.payment.onlineProviders.map(
-                                ([name, amt]) => (
-                                  <div
-                                    key={name}
-                                    className="flex justify-between gap-2 text-[9px] text-gray-500 dark:text-neutral-400"
-                                  >
-                                    <span className="truncate">{name}</span>
-                                    <span className="tabular-nums shrink-0">
-                                      {sym}{" "}
-                                      {Math.round(amt).toLocaleString()}
-                                    </span>
-                                  </div>
-                                ),
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Cash denomination (same calendar day as session start) */}
-                      <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
-                          <h3 className="text-xs font-bold text-gray-900 dark:text-white">
-                            Cash breakdown
-                          </h3>
-                          <span className="text-[10px] text-gray-500 dark:text-neutral-400">
-                            Saved denomination count
-                          </span>
-                        </div>
-                        {todayReportCurrencyLoading ? (
-                          <div className="py-4 flex justify-center">
-                            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                          </div>
-                        ) : todayReportCashDenom.currencyRows.length === 0 ? (
-                          <p className="text-[11px] text-gray-500 dark:text-neutral-400 py-1">
-                            No denomination count saved for this day.
-                          </p>
-                        ) : (
-                          <>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
-                                <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
-                                  Notes
-                                </p>
-                                <div className="space-y-1">
-                                  {todayReportCashDenom.notesRows.length === 0 ? (
-                                    <p className="text-[10px] text-gray-400">
-                                      None
-                                    </p>
-                                  ) : (
-                                    todayReportCashDenom.notesRows.map((r) => (
-                                      <div
-                                        key={`n-${r.denom}`}
-                                        className="flex justify-between text-[10px]"
-                                      >
-                                        <span className="text-gray-600 dark:text-neutral-400">
-                                          {sym}{" "}
-                                          {Math.round(r.denom).toLocaleString()}{" "}
-                                          × {r.qty}
-                                        </span>
-                                        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                                          {sym}{" "}
-                                          {Math.round(r.subtotal).toLocaleString()}
-                                        </span>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
-                                <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-0.5">
-                                  Coins
-                                </p>
-                                <div className="space-y-1">
-                                  {todayReportCashDenom.coinsRows.length === 0 ? (
-                                    <p className="text-[10px] text-gray-400">
-                                      None
-                                    </p>
-                                  ) : (
-                                    todayReportCashDenom.coinsRows.map((r) => (
-                                      <div
-                                        key={`c-${r.denom}`}
-                                        className="flex justify-between text-[10px]"
-                                      >
-                                        <span className="text-gray-600 dark:text-neutral-400">
-                                          {sym}{" "}
-                                          {r.denom.toLocaleString()} × {r.qty}
-                                        </span>
-                                        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                                          {sym}{" "}
-                                          {Math.round(r.subtotal).toLocaleString()}
-                                        </span>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <div className="rounded-md bg-gray-50 dark:bg-neutral-800/60 px-2 py-1.5">
-                                <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">
-                                  Expected cash
-                                </p>
-                                <p className="text-[11px] font-bold text-gray-900 dark:text-white">
-                                  {sym}{" "}
-                                  {Math.round(
-                                    todayReportCashDenom.expectedCash,
-                                  ).toLocaleString()}
-                                </p>
-                              </div>
-                              <div className="rounded-md bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1.5">
-                                <p className="text-[9px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-                                  Counted cash
-                                </p>
-                                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-                                  {sym}{" "}
-                                  {Math.round(
-                                    todayReportCashDenom.countedCashTotal,
-                                  ).toLocaleString()}
-                                </p>
-                              </div>
-                              <div
-                                className={`rounded-md px-2 py-1.5 ${
-                                  todayReportCashDenom.cashDiff === 0
-                                    ? "bg-gray-50 dark:bg-neutral-800/60"
-                                    : todayReportCashDenom.cashDiff > 0
-                                      ? "bg-amber-50 dark:bg-amber-500/10"
-                                      : "bg-rose-50 dark:bg-rose-500/10"
-                                }`}
-                              >
-                                <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">
-                                  Difference
-                                </p>
-                                <p
-                                  className={`text-[11px] font-bold ${
-                                    todayReportCashDenom.cashDiff === 0
-                                      ? "text-gray-900 dark:text-white"
-                                      : todayReportCashDenom.cashDiff > 0
-                                        ? "text-amber-700 dark:text-amber-400"
-                                        : "text-rose-700 dark:text-rose-400"
-                                  }`}
-                                >
-                                  {todayReportCashDenom.cashDiff > 0 ? "+" : ""}
-                                  {sym}{" "}
-                                  {Math.round(
-                                    todayReportCashDenom.cashDiff,
-                                  ).toLocaleString()}
-                                </p>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Order type + website */}
-                      <div>
-                        <h3 className="text-xs font-bold text-gray-900 dark:text-white mb-1.5">
-                          Order type breakdown
-                        </h3>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                          <div className="rounded-lg border border-orange-200/80 dark:border-orange-500/25 bg-orange-50/60 dark:bg-orange-500/10 px-2 py-2 flex flex-col justify-between gap-1">
-                            <p className="text-[9px] font-semibold text-orange-800 dark:text-orange-400 flex items-center gap-1">
-                              <UtensilsCrossed className="w-3 h-3 opacity-80 shrink-0" />
-                              Dine in
-                            </p>
-                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
-                              {sym}{" "}
-                              {Math.round(
-                                todayReportBreakdown.orderTypes.DINE_IN.amt,
-                              ).toLocaleString()}
-                            </p>
-                            <p className="text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.orderTypes.DINE_IN.n} paid ·{" "}
-                              {todayReportBreakdown.orderTypes.DINE_IN.unpaidN}{" "}
-                              unpaid
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-emerald-200/80 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-2 py-2 flex flex-col justify-between gap-1">
-                            <p className="text-[9px] font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
-                              <ShoppingBag className="w-3 h-3 opacity-80 shrink-0" />
-                              Takeaway
-                            </p>
-                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
-                              {sym}{" "}
-                              {Math.round(
-                                todayReportBreakdown.orderTypes.TAKEAWAY.amt,
-                              ).toLocaleString()}
-                            </p>
-                            <p className="text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.orderTypes.TAKEAWAY.n} paid ·{" "}
-                              {
-                                todayReportBreakdown.orderTypes.TAKEAWAY.unpaidN
-                              }{" "}
-                              unpaid
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-sky-200/80 dark:border-sky-500/25 bg-sky-50/60 dark:bg-sky-500/10 px-2 py-2 flex flex-col gap-1">
-                            <p className="text-[9px] font-semibold text-sky-800 dark:text-sky-400 flex items-center gap-1">
-                              <Truck className="w-3 h-3 opacity-80 shrink-0" />
-                              Delivery
-                            </p>
-                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
-                              {sym}{" "}
-                              {Math.round(
-                                todayReportBreakdown.orderTypes.DELIVERY.amt,
-                              ).toLocaleString()}
-                            </p>
-                            {(todayReportBreakdown.orderTypes.DELIVERY.items >
-                              0 ||
-                              todayReportBreakdown.orderTypes.DELIVERY.fees >
-                                0) && (
-                              <p className="text-[8px] text-gray-600 dark:text-neutral-400 leading-snug">
-                                {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.orderTypes.DELIVERY.items,
-                                ).toLocaleString()}{" "}
-                                (items) + {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.orderTypes.DELIVERY.fees,
-                                ).toLocaleString()}{" "}
-                                (fees)
-                              </p>
-                            )}
-                            <p className="mt-auto pt-1 text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.orderTypes.DELIVERY.n} paid ·{" "}
-                              {
-                                todayReportBreakdown.orderTypes.DELIVERY
-                                  .unpaidN
-                              }{" "}
-                              unpaid
-                            </p>
-                          </div>
-                          <div className="rounded-lg border border-rose-200/80 dark:border-rose-500/25 bg-rose-50/60 dark:bg-rose-500/10 px-2 py-2 flex flex-col justify-between gap-1">
-                            <p className="text-[9px] font-semibold text-rose-800 dark:text-rose-400 flex items-center gap-1">
-                              <Globe className="w-3 h-3 opacity-80 shrink-0" />
-                              Website
-                            </p>
-                            <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
-                              {sym}{" "}
-                              {Math.round(
-                                todayReportBreakdown.sources.WEBSITE.amt,
-                              ).toLocaleString()}
-                            </p>
-                            <p className="text-[9px] text-gray-500 dark:text-neutral-400">
-                              {todayReportBreakdown.sources.WEBSITE.n} paid ·{" "}
-                              {todayReportBreakdown.sources.WEBSITE.unpaidN}{" "}
-                              unpaid
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Channel strip (POS / Website / Foodpanda / other) */}
-                        <div className="rounded-lg border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 px-3 py-2">
-                          <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
-                            Sales by channel
-                          </p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-1 text-[10px]">
-                            <div>
-                              <span className="text-gray-500 dark:text-neutral-400">
-                                POS counter
-                              </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
-                                {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.sources.POS.amt,
-                                ).toLocaleString()}
-                              </p>
-                              <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.POS.n} paid ·{" "}
-                                {todayReportBreakdown.sources.POS.unpaidN}{" "}
-                                unpaid
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-neutral-400">
-                                Website
-                              </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
-                                {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.sources.WEBSITE.amt,
-                                ).toLocaleString()}
-                              </p>
-                              <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.WEBSITE.n} paid ·{" "}
-                                {todayReportBreakdown.sources.WEBSITE.unpaidN}{" "}
-                                unpaid
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-neutral-400">
-                                Foodpanda
-                              </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
-                                {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.sources.FOODPANDA.amt,
-                                ).toLocaleString()}
-                              </p>
-                              <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.FOODPANDA.n} paid ·{" "}
-                                {
-                                  todayReportBreakdown.sources.FOODPANDA.unpaidN
-                                }{" "}
-                                unpaid
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-neutral-400">
-                                Other
-                              </span>
-                              <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
-                                {sym}{" "}
-                                {Math.round(
-                                  todayReportBreakdown.sources.OTHER.amt,
-                                ).toLocaleString()}
-                              </p>
-                              <p className="text-[9px] text-gray-400">
-                                {todayReportBreakdown.sources.OTHER.n} paid ·{" "}
-                                {todayReportBreakdown.sources.OTHER.unpaidN}{" "}
-                                unpaid
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
-                          <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                            Top items today
-                          </p>
-                          <div className="space-y-1.5 text-xs">
-                            {todayReportBreakdown.topItems.length === 0 ? (
-                              <p className="text-gray-400 text-[11px]">
-                                No item data
-                              </p>
-                            ) : (
-                              todayReportBreakdown.topItems.map((it) => (
-                                <div
-                                  key={it.name}
-                                  className="flex justify-between gap-2 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
-                                >
-                                  <span className="text-gray-800 dark:text-neutral-200 truncate text-[12px]">
-                                    {it.name}
-                                  </span>
-                                  <span className="text-[10px] text-gray-500 dark:text-neutral-400 shrink-0 tabular-nums">
-                                    {Math.round(it.qty)} sold · {sym}{" "}
-                                    {Math.round(it.rev).toLocaleString()}
-                                  </span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
-                          <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
-                            Staff (order takers)
-                          </p>
-                          <div className="space-y-1.5 text-xs">
-                            {todayReportBreakdown.staffList.length === 0 ? (
-                              <p className="text-gray-400 text-[11px]">
-                                No staff-attributed orders in closed sales
-                              </p>
-                            ) : (
-                              todayReportBreakdown.staffList.map((st) => (
-                                <div
-                                  key={st.name}
-                                  className="flex justify-between gap-2 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
-                                >
-                                  <span className="font-medium text-gray-800 dark:text-neutral-200 text-[12px]">
-                                    {st.name}
-                                  </span>
-                                  <span className="text-[10px] tabular-nums text-gray-600 dark:text-neutral-400">
-                                    {st.n} orders · {sym}{" "}
-                                    {Math.round(st.rev).toLocaleString()}
-                                  </span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                        </>
-                      ) : null}
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="px-4 py-2 border-t border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              {showFullSessionReport ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowTodayReportModal(false);
-                    loadSessionHistory();
-                    setShowLegacySessionsModal(true);
-                  }}
-                  className="text-xs font-semibold text-primary hover:underline text-left"
-                >
-                  View session history →
-                </button>
-              ) : (
-                <span className="text-[10px] text-gray-400 dark:text-neutral-500">
-                  Detailed breakdown is available to restaurant owners and managers.
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowTodayReportModal(false)}
-                className="h-8 px-3 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Past sessions (full history) ────────────────────────── */}
-      {showLegacySessionsModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowLegacySessionsModal(false);
-          }}
-        >
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <div>
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Past Sessions
-                </h2>
-                <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
-                  {currentBranch
-                    ? `History for ${currentBranch.name}`
-                    : "All branches"}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowLegacySessionsModal(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {loadingSessionHistory ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                </div>
-              ) : sessionHistory.length === 0 ? (
-                <div className="text-center py-12 text-sm text-gray-400 dark:text-neutral-600">
-                  No past sessions found
-                </div>
-              ) : (
-                sessionHistory.map((s) => (
-                  <div
-                    key={s.id}
-                    className="p-4 rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/50 hover:bg-white dark:hover:bg-neutral-900 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.status === "OPEN" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}
-                        >
-                          {s.status === "OPEN" && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          )}
-                          {s.status}
-                        </span>
-                        {!currentBranch && s.branchName && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
-                            {s.branchName}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-sm font-bold text-gray-900 dark:text-white">
-                          {sym} {(s.totalSales || 0).toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-gray-500 dark:text-neutral-400">
-                          {s.totalOrders || 0} orders
-                        </div>
-                      </div>
+                  {paymentError && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                      <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                        {paymentError}
+                      </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 text-xs text-gray-500 dark:text-neutral-500">
-                      <div>
-                        <span className="font-medium">Started: </span>
-                        {new Date(s.startAt).toLocaleString("en-PK", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: true,
-                        })}
-                      </div>
-                      {s.endAt && (
+                  )}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                      Payment method
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        {
+                          m: "CASH",
+                          Icon: Banknote,
+                          label: "Cash",
+                          active:
+                            "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                        },
+                        {
+                          m: "CARD",
+                          Icon: CreditCard,
+                          label: "Card",
+                          active:
+                            "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400",
+                        },
+                        {
+                          m: "ONLINE",
+                          Icon: Smartphone,
+                          label: "Online",
+                          active:
+                            "border-primary bg-primary/10 dark:bg-primary/20 text-primary",
+                        },
+                        {
+                          m: "SPLIT",
+                          Icon: Wallet,
+                          label: "Split",
+                          active:
+                            "border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                        },
+                      ].map(({ m, Icon, label, active }) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod(m);
+                            if (m !== "ONLINE" && m !== "SPLIT")
+                              setOnlineProvider(null);
+                          }}
+                          className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${paymentMethod === m ? active : "border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 hover:border-gray-300 dark:hover:border-neutral-600"}`}
+                        >
+                          <Icon className="w-5 h-5" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {paymentMethod === "SPLIT" &&
+                    (() => {
+                      const orderTotal = getOrderTotal(paymentOrder);
+                      const cashPart = Number(splitCashAmount);
+                      const cardPart = Number(splitCardAmount);
+                      const onlinePart = Number(splitOnlineAmount);
+                      const hasCash =
+                        splitCashAmount !== "" && !isNaN(cashPart);
+                      const hasCard =
+                        splitCardAmount !== "" && !isNaN(cardPart);
+                      const hasOnline =
+                        splitOnlineAmount !== "" && !isNaN(onlinePart);
+                      const splitSum =
+                        (hasCash ? cashPart : 0) +
+                        (hasCard ? cardPart : 0) +
+                        (hasOnline ? onlinePart : 0);
+                      const diff = orderTotal - splitSum;
+                      return (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                                Cash amount (Rs)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={splitCashAmount}
+                                onChange={(e) =>
+                                  setSplitCashAmount(e.target.value)
+                                }
+                                placeholder="0"
+                                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                                Card amount (Rs)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={splitCardAmount}
+                                onChange={(e) =>
+                                  setSplitCardAmount(e.target.value)
+                                }
+                                placeholder="0"
+                                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                                Online amount (Rs)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={splitOnlineAmount}
+                                onChange={(e) =>
+                                  setSplitOnlineAmount(e.target.value)
+                                }
+                                placeholder="0"
+                                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                            <span className="text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                              Remaining
+                            </span>
+                            <span
+                              className={`text-sm font-black tabular-nums ${
+                                Math.abs(diff) < 0.01
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-amber-600 dark:text-amber-400"
+                              }`}
+                            >
+                              {sym} {diff.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  {(paymentMethod === "ONLINE" ||
+                    (paymentMethod === "SPLIT" &&
+                      (Number(splitOnlineAmount) || 0) > 0)) && (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                        Paid to
+                      </label>
+                      {paymentAccountsLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-4">
+                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                          <span className="text-xs text-gray-400 dark:text-neutral-500">
+                            Loading accounts…
+                          </span>
+                        </div>
+                      ) : paymentAccounts.length === 0 ? (
+                        <div className="px-4 py-3 rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
+                          No payment accounts configured. Go to{" "}
+                          <span className="font-semibold">
+                            Business Settings → Payment Accounts
+                          </span>{" "}
+                          to add them.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {paymentAccounts.map((acc) => (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => setOnlineProvider(acc.name)}
+                              className={`px-3 py-2.5 rounded-xl border-2 text-left transition-all ${onlineProvider === acc.name ? "border-primary bg-primary/10 dark:bg-primary/20" : "border-gray-200 dark:border-neutral-700 hover:border-gray-300 dark:hover:border-neutral-600"}`}
+                            >
+                              <p
+                                className={`text-xs font-semibold truncate ${onlineProvider === acc.name ? "text-primary" : "text-gray-700 dark:text-neutral-300"}`}
+                              >
+                                {acc.name}
+                              </p>
+                              {acc.description && (
+                                <p className="text-[10px] text-gray-400 dark:text-neutral-500 truncate mt-0.5">
+                                  {acc.description}
+                                </p>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {paymentAccounts.length > 0 && !onlineProvider && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">
+                          Please select an account to continue.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {paymentMethod === "CASH" &&
+                    (() => {
+                      const orderTotal = getOrderTotal(paymentOrder);
+                      const exactAmt = Math.ceil(orderTotal);
+                      const roundDenominations = [
+                        100, 200, 500, 1000, 2000, 5000, 10000,
+                      ];
+                      const quickAmounts = [
+                        exactAmt,
+                        ...roundDenominations.filter((v) => v > exactAmt),
+                      ].slice(0, 4);
+                      const receivedNum = Number(amountReceived);
+                      const isUnderpaid =
+                        amountReceived !== "" &&
+                        !isNaN(receivedNum) &&
+                        receivedNum < orderTotal;
+                      const isOverpaid =
+                        amountReceived !== "" &&
+                        !isNaN(receivedNum) &&
+                        receivedNum >= orderTotal;
+                      return (
+                        <>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                              Quick amount
+                            </label>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {quickAmounts.map((amt) => (
+                                <button
+                                  key={amt}
+                                  type="button"
+                                  onClick={() => setAmountReceived(String(amt))}
+                                  className={`py-2 rounded-lg text-xs font-bold transition-all border ${receivedNum === amt ? "border-primary bg-primary/10 text-primary" : "border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"}`}
+                                >
+                                  {amt.toLocaleString()}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                              Amount received (Rs)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              required={paymentMethod === "CASH"}
+                              value={amountReceived}
+                              onChange={(e) =>
+                                setAmountReceived(e.target.value)
+                              }
+                              placeholder={`Min. ${exactAmt.toLocaleString()}`}
+                              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                            />
+                          </div>
+                          {isOverpaid && (
+                            <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                  Change
+                                </span>
+                              </div>
+                              <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                {sym} {(receivedNum - orderTotal).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {isUnderpaid && (
+                            <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-red-500" />
+                                <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+                                  Short by
+                                </span>
+                              </div>
+                              <span className="text-xl font-black text-red-700 dark:text-red-400 tabular-nums">
+                                {sym} {(orderTotal - receivedNum).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  {paymentModalMode === "riderCollect" &&
+                    paymentOrder?.assignedRiderName && (
+                      <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30">
+                        <Bike className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                         <div>
-                          <span className="font-medium">Ended: </span>
-                          {new Date(s.endAt).toLocaleString("en-PK", {
+                          <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
+                            {paymentOrder.assignedRiderName}
+                          </p>
+                          {paymentOrder?.assignedRiderPhone && (
+                            <p className="text-[10px] text-indigo-500 dark:text-indigo-500">
+                              {paymentOrder.assignedRiderPhone}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={closePaymentModal}
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        paymentLoading ||
+                        (paymentModalMode === "record"
+                          ? (paymentMethod === "CASH" &&
+                              (amountReceived === "" ||
+                                Number(amountReceived) <
+                                  getOrderTotal(paymentOrder))) ||
+                            (paymentMethod === "ONLINE" && !onlineProvider) ||
+                            (paymentMethod === "SPLIT" &&
+                              (() => {
+                                const cash = Number(splitCashAmount) || 0;
+                                const card = Number(splitCardAmount) || 0;
+                                const online = Number(splitOnlineAmount) || 0;
+                                const positiveParts = [
+                                  cash,
+                                  card,
+                                  online,
+                                ].filter((n) => n > 0).length;
+                                const sumMatches =
+                                  Math.abs(
+                                    cash +
+                                      card +
+                                      online -
+                                      getOrderTotal(paymentOrder),
+                                  ) <= 0.01;
+                                const providerNeeded =
+                                  online > 0 && !onlineProvider;
+                                return (
+                                  positiveParts < 2 ||
+                                  !sumMatches ||
+                                  providerNeeded
+                                );
+                              })())
+                          : paymentModalMode === "riderCollect"
+                            ? (paymentMethod === "CASH" &&
+                                (amountReceived === "" ||
+                                  Number(amountReceived) <
+                                    getOrderTotal(paymentOrder))) ||
+                              (paymentMethod === "ONLINE" && !onlineProvider) ||
+                              (paymentMethod === "SPLIT" &&
+                                (() => {
+                                  const cash = Number(splitCashAmount) || 0;
+                                  const card = Number(splitCardAmount) || 0;
+                                  const online = Number(splitOnlineAmount) || 0;
+                                  const positiveParts = [
+                                    cash,
+                                    card,
+                                    online,
+                                  ].filter((n) => n > 0).length;
+                                  const sumMatches =
+                                    Math.abs(
+                                      cash +
+                                        card +
+                                        online -
+                                        getOrderTotal(paymentOrder),
+                                    ) <= 0.01;
+                                  const providerNeeded =
+                                    online > 0 && !onlineProvider;
+                                  return (
+                                    positiveParts < 2 ||
+                                    !sumMatches ||
+                                    providerNeeded
+                                  );
+                                })())
+                            : false)
+                      }
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 transition-colors ${
+                        paymentModalMode === "riderCollect"
+                          ? "bg-amber-500 hover:bg-amber-600"
+                          : "bg-emerald-600 hover:bg-emerald-700"
+                      }`}
+                    >
+                      {paymentLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                          Processing…
+                        </>
+                      ) : (
+                        <>
+                          <CircleCheckBig className="w-4 h-4" />
+                          {paymentModalMode === "riderCollect"
+                            ? "Collect Payment"
+                            : "Record Payment"}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ── Cancel modal (unchanged) ────────────────────────────────── */}
+          {showCancelModal && cancelTargetOrder && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white dark:bg-neutral-950 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-neutral-800">
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                    Cancel order
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={closeCancelModal}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
+                  >
+                    <span className="text-2xl">×</span>
+                  </button>
+                </div>
+                <div className="p-4 space-y-3">
+                  <p className="text-sm text-gray-700 dark:text-neutral-300">
+                    Are you sure you want to cancel order{" "}
+                    <span className="font-semibold">
+                      #{getDisplayOrderId(cancelTargetOrder)}
+                    </span>
+                    ? This cannot be undone.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-neutral-400 mb-1.5">
+                      Reason for cancellation
+                    </label>
+                    <input
+                      type="text"
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      placeholder="e.g. Customer changed mind, out of stock..."
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-500/10 transition-all"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={closeCancelModal}
+                      className="flex-1 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-700 dark:text-neutral-300"
+                    >
+                      Keep order
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        updatingId === getOrderId(cancelTargetOrder) ||
+                        !cancelReason.trim()
+                      }
+                      onClick={() => {
+                        handleUpdateStatus(
+                          getOrderId(cancelTargetOrder),
+                          "CANCELLED",
+                          { cancelReason: cancelReason.trim() },
+                        );
+                        closeCancelModal();
+                      }}
+                      className="flex-1 px-3 py-2.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {updatingId === getOrderId(cancelTargetOrder)
+                        ? "Cancelling..."
+                        : "Yes, cancel order"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Today's session report ───────────────────────────────── */}
+          {showTodayReportModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4"
+              onClick={(e) => {
+                if (e.target === e.currentTarget)
+                  setShowTodayReportModal(false);
+              }}
+            >
+              <div className="bg-white dark:bg-neutral-950 rounded-xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col text-[13px]">
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-200 dark:border-neutral-800 bg-gradient-to-r from-gray-50/90 to-white dark:from-neutral-900/80 dark:to-neutral-950">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <h2 className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">
+                        Today&apos;s session report
+                      </h2>
+                      {todayReportData?.meta?.status === "OPEN" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-500/25">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          OPEN
+                        </span>
+                      ) : todayReportData?.meta?.status ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400 border border-gray-200 dark:border-neutral-700">
+                          {todayReportData.meta.status}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-0.5">
+                      {currentBranch?.name || "All branches"} · Business day{" "}
+                      {formatBusinessDate(businessDateStr)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {todayReportData?.meta?.startAt && (
+                      <p className="text-[10px] text-gray-500 dark:text-neutral-400 text-right leading-tight max-w-[calc(100vw-8rem)] sm:max-w-[220px]">
+                        {new Date(todayReportData.meta.startAt).toLocaleString(
+                          "en-PK",
+                          {
                             month: "short",
                             day: "numeric",
                             year: "numeric",
                             hour: "2-digit",
                             minute: "2-digit",
                             hour12: true,
-                          })}
-                        </div>
-                      )}
-                    </div>
+                          },
+                        )}
+                        {todayReportData.meta.status === "OPEN"
+                          ? " · Ongoing"
+                          : todayReportData.meta.endAt
+                            ? ` → ${new Date(
+                                todayReportData.meta.endAt,
+                              ).toLocaleString("en-PK", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              })}`
+                            : ""}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowTodayReportModal(false)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── End Day modal ──────────────────────────────────────────── */}
-      {showEndDayModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !endingDay)
-              setShowEndDayModal(false);
-          }}
-        >
-          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-500/15 flex items-center justify-center flex-shrink-0">
-                  <Power className="w-4 h-4 text-red-600 dark:text-red-400" />
                 </div>
-                <div>
-                  <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                    End Business Day
-                  </h2>
-                  <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
-                    This action cannot be undone
-                  </p>
+
+                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+                  {loadingTodayReport ? (
+                    <div className="flex flex-col items-center justify-center py-12 gap-2">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      <p className="text-xs text-gray-500 dark:text-neutral-400">
+                        Loading session numbers…
+                      </p>
+                    </div>
+                  ) : !todayReportData?.sessionId ? (
+                    <div className="text-center py-8 px-3 rounded-xl border border-dashed border-gray-200 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/30">
+                      <p className="text-xs font-medium text-gray-700 dark:text-neutral-300">
+                        No business-day session found for today.
+                      </p>
+                      <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-0.5">
+                        Start a session from the POS to see live totals here.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {todayReportBreakdown && (
+                        <>
+                          {/* KPI row — cashiers: total sales only (no order count) */}
+                          <div
+                            className={`grid gap-2 ${showFullSessionReport ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
+                          >
+                            <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
+                              <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                                {showFullSessionReport
+                                  ? "Total revenue"
+                                  : "Total sales"}
+                              </p>
+                              <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                                {sym}{" "}
+                                {Math.round(
+                                  todayReportBreakdown.totalRevenue || 0,
+                                ).toLocaleString()}
+                              </p>
+                              {showFullSessionReport ? (
+                                todayReportBreakdown.unpaid.totalCount > 0 ? (
+                                  <div className="mt-1.5 space-y-0.5 text-[9px] text-amber-600 dark:text-amber-400">
+                                    <p className="font-semibold leading-snug">
+                                      Unpaid total: {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.unpaid.totalAmt,
+                                      ).toLocaleString()}{" "}
+                                      · {todayReportBreakdown.unpaid.totalCount}{" "}
+                                      orders
+                                    </p>
+                                    <p className="text-[8px] leading-snug opacity-95">
+                                      In progress: {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.unpaid.pipelineAmt,
+                                      ).toLocaleString()}{" "}
+                                      (
+                                      {
+                                        todayReportBreakdown.unpaid
+                                          .pipelineCount
+                                      }
+                                      ) · Delivered, payment pending: {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.unpaid
+                                          .deliveredAmt,
+                                      ).toLocaleString()}{" "}
+                                      (
+                                      {
+                                        todayReportBreakdown.unpaid
+                                          .deliveredCount
+                                      }
+                                      )
+                                      {todayReportBreakdown.unpaid.otherCount >
+                                      0
+                                        ? ` · Other unpaid: ${sym} ${Math.round(todayReportBreakdown.unpaid.otherAmt).toLocaleString()} (${todayReportBreakdown.unpaid.otherCount})`
+                                        : ""}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p className="mt-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                    All recorded orders paid
+                                  </p>
+                                )
+                              ) : null}
+                            </div>
+                            {showFullSessionReport && (
+                              <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
+                                <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                                  Orders
+                                </p>
+                                <p className="mt-1 text-[22px] leading-none font-black text-gray-900 dark:text-white tabular-nums">
+                                  {(
+                                    todayReportBreakdown.totalOrders ?? 0
+                                  ).toLocaleString()}
+                                </p>
+                                <>
+                                  <p className="mt-1.5 text-[9px] text-gray-500 dark:text-neutral-400 leading-snug">
+                                    Paid orders in session (closed sales)
+                                  </p>
+                                  {(todayReportBreakdown.totalOrders ?? 0) >
+                                    0 && (
+                                    <p className="mt-1 text-[10px] font-semibold text-gray-700 dark:text-neutral-300">
+                                      Avg {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.totalRevenue /
+                                          todayReportBreakdown.totalOrders,
+                                      ).toLocaleString()}
+                                    </p>
+                                  )}
+                                </>
+                              </div>
+                            )}
+                          </div>
+
+                          {showFullSessionReport ? (
+                            <>
+                              {/* Payment method KPIs */}
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
+                                  <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                                    Cash
+                                  </p>
+                                  <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
+                                    {sym}{" "}
+                                    {Math.round(
+                                      todayReportBreakdown.payment.cash,
+                                    ).toLocaleString()}
+                                  </p>
+                                  <p className="text-[9px] text-gray-400 mt-0.5">
+                                    {todayReportBreakdown.payment.cashOrders}{" "}
+                                    orders
+                                  </p>
+                                </div>
+                                <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
+                                  <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                                    Card
+                                  </p>
+                                  <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
+                                    {sym}{" "}
+                                    {Math.round(
+                                      todayReportBreakdown.payment.card,
+                                    ).toLocaleString()}
+                                  </p>
+                                  <p className="text-[9px] text-gray-400 mt-0.5">
+                                    {todayReportBreakdown.payment.cardOrders}{" "}
+                                    orders
+                                  </p>
+                                </div>
+                                <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-2 text-center shadow-sm">
+                                  <p className="text-[9px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide">
+                                    Online
+                                  </p>
+                                  <p className="mt-0.5 text-base font-black text-gray-900 dark:text-white tabular-nums leading-tight">
+                                    {sym}{" "}
+                                    {Math.round(
+                                      todayReportBreakdown.payment.online,
+                                    ).toLocaleString()}
+                                  </p>
+                                  <p className="text-[9px] text-gray-400 mt-0.5">
+                                    {todayReportBreakdown.payment.onlineOrders}{" "}
+                                    orders
+                                  </p>
+                                  {todayReportBreakdown.payment.onlineProviders
+                                    .length > 0 && (
+                                    <div className="mt-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-800 space-y-0.5 max-h-16 overflow-y-auto text-left">
+                                      {todayReportBreakdown.payment.onlineProviders.map(
+                                        ([name, amt]) => (
+                                          <div
+                                            key={name}
+                                            className="flex justify-between gap-2 text-[9px] text-gray-500 dark:text-neutral-400"
+                                          >
+                                            <span className="truncate">
+                                              {name}
+                                            </span>
+                                            <span className="tabular-nums shrink-0">
+                                              {sym}{" "}
+                                              {Math.round(amt).toLocaleString()}
+                                            </span>
+                                          </div>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Cash denomination (same calendar day as session start) */}
+                              <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-2">
+                                  <h3 className="text-xs font-bold text-gray-900 dark:text-white">
+                                    Cash breakdown
+                                  </h3>
+                                  <span className="text-[10px] text-gray-500 dark:text-neutral-400">
+                                    Saved denomination count
+                                  </span>
+                                </div>
+                                {todayReportCurrencyLoading ? (
+                                  <div className="py-4 flex justify-center">
+                                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                                  </div>
+                                ) : todayReportCashDenom.currencyRows.length ===
+                                  0 ? (
+                                  <p className="text-[11px] text-gray-500 dark:text-neutral-400 py-1">
+                                    No denomination count saved for this day.
+                                  </p>
+                                ) : (
+                                  <>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
+                                        <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-1">
+                                          Notes
+                                        </p>
+                                        <div className="space-y-1">
+                                          {todayReportCashDenom.notesRows
+                                            .length === 0 ? (
+                                            <p className="text-[10px] text-gray-400">
+                                              None
+                                            </p>
+                                          ) : (
+                                            todayReportCashDenom.notesRows.map(
+                                              (r) => (
+                                                <div
+                                                  key={`n-${r.denom}`}
+                                                  className="flex justify-between text-[10px]"
+                                                >
+                                                  <span className="text-gray-600 dark:text-neutral-400">
+                                                    {sym}{" "}
+                                                    {Math.round(
+                                                      r.denom,
+                                                    ).toLocaleString()}{" "}
+                                                    × {r.qty}
+                                                  </span>
+                                                  <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                                                    {sym}{" "}
+                                                    {Math.round(
+                                                      r.subtotal,
+                                                    ).toLocaleString()}
+                                                  </span>
+                                                </div>
+                                              ),
+                                            )
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="rounded-md border border-gray-100 dark:border-neutral-800 px-2 py-1.5">
+                                        <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500 mb-0.5">
+                                          Coins
+                                        </p>
+                                        <div className="space-y-1">
+                                          {todayReportCashDenom.coinsRows
+                                            .length === 0 ? (
+                                            <p className="text-[10px] text-gray-400">
+                                              None
+                                            </p>
+                                          ) : (
+                                            todayReportCashDenom.coinsRows.map(
+                                              (r) => (
+                                                <div
+                                                  key={`c-${r.denom}`}
+                                                  className="flex justify-between text-[10px]"
+                                                >
+                                                  <span className="text-gray-600 dark:text-neutral-400">
+                                                    {sym}{" "}
+                                                    {r.denom.toLocaleString()} ×{" "}
+                                                    {r.qty}
+                                                  </span>
+                                                  <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                                                    {sym}{" "}
+                                                    {Math.round(
+                                                      r.subtotal,
+                                                    ).toLocaleString()}
+                                                  </span>
+                                                </div>
+                                              ),
+                                            )
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                      <div className="rounded-md bg-gray-50 dark:bg-neutral-800/60 px-2 py-1.5">
+                                        <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                                          Expected cash
+                                        </p>
+                                        <p className="text-[11px] font-bold text-gray-900 dark:text-white">
+                                          {sym}{" "}
+                                          {Math.round(
+                                            todayReportCashDenom.expectedCash,
+                                          ).toLocaleString()}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-md bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1.5">
+                                        <p className="text-[9px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                                          Counted cash
+                                        </p>
+                                        <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                          {sym}{" "}
+                                          {Math.round(
+                                            todayReportCashDenom.countedCashTotal,
+                                          ).toLocaleString()}
+                                        </p>
+                                      </div>
+                                      <div
+                                        className={`rounded-md px-2 py-1.5 ${
+                                          todayReportCashDenom.cashDiff === 0
+                                            ? "bg-gray-50 dark:bg-neutral-800/60"
+                                            : todayReportCashDenom.cashDiff > 0
+                                              ? "bg-amber-50 dark:bg-amber-500/10"
+                                              : "bg-rose-50 dark:bg-rose-500/10"
+                                        }`}
+                                      >
+                                        <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                                          Difference
+                                        </p>
+                                        <p
+                                          className={`text-[11px] font-bold ${
+                                            todayReportCashDenom.cashDiff === 0
+                                              ? "text-gray-900 dark:text-white"
+                                              : todayReportCashDenom.cashDiff >
+                                                  0
+                                                ? "text-amber-700 dark:text-amber-400"
+                                                : "text-rose-700 dark:text-rose-400"
+                                          }`}
+                                        >
+                                          {todayReportCashDenom.cashDiff > 0
+                                            ? "+"
+                                            : ""}
+                                          {sym}{" "}
+                                          {Math.round(
+                                            todayReportCashDenom.cashDiff,
+                                          ).toLocaleString()}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+
+                              {/* Order type + website */}
+                              <div>
+                                <h3 className="text-xs font-bold text-gray-900 dark:text-white mb-1.5">
+                                  Order type breakdown
+                                </h3>
+                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                                  <div className="rounded-lg border border-orange-200/80 dark:border-orange-500/25 bg-orange-50/60 dark:bg-orange-500/10 px-2 py-2 flex flex-col justify-between gap-1">
+                                    <p className="text-[9px] font-semibold text-orange-800 dark:text-orange-400 flex items-center gap-1">
+                                      <UtensilsCrossed className="w-3 h-3 opacity-80 shrink-0" />
+                                      Dine in
+                                    </p>
+                                    <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.orderTypes.DINE_IN
+                                          .amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-500 dark:text-neutral-400">
+                                      {
+                                        todayReportBreakdown.orderTypes.DINE_IN
+                                          .n
+                                      }{" "}
+                                      paid ·{" "}
+                                      {
+                                        todayReportBreakdown.orderTypes.DINE_IN
+                                          .unpaidN
+                                      }{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg border border-emerald-200/80 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10 px-2 py-2 flex flex-col justify-between gap-1">
+                                    <p className="text-[9px] font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
+                                      <ShoppingBag className="w-3 h-3 opacity-80 shrink-0" />
+                                      Takeaway
+                                    </p>
+                                    <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.orderTypes.TAKEAWAY
+                                          .amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-500 dark:text-neutral-400">
+                                      {
+                                        todayReportBreakdown.orderTypes.TAKEAWAY
+                                          .n
+                                      }{" "}
+                                      paid ·{" "}
+                                      {
+                                        todayReportBreakdown.orderTypes.TAKEAWAY
+                                          .unpaidN
+                                      }{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg border border-sky-200/80 dark:border-sky-500/25 bg-sky-50/60 dark:bg-sky-500/10 px-2 py-2 flex flex-col gap-1">
+                                    <p className="text-[9px] font-semibold text-sky-800 dark:text-sky-400 flex items-center gap-1">
+                                      <Truck className="w-3 h-3 opacity-80 shrink-0" />
+                                      Delivery
+                                    </p>
+                                    <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.orderTypes.DELIVERY
+                                          .amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    {(todayReportBreakdown.orderTypes.DELIVERY
+                                      .items > 0 ||
+                                      todayReportBreakdown.orderTypes.DELIVERY
+                                        .fees > 0) && (
+                                      <p className="text-[8px] text-gray-600 dark:text-neutral-400 leading-snug">
+                                        {sym}{" "}
+                                        {Math.round(
+                                          todayReportBreakdown.orderTypes
+                                            .DELIVERY.items,
+                                        ).toLocaleString()}{" "}
+                                        (items) + {sym}{" "}
+                                        {Math.round(
+                                          todayReportBreakdown.orderTypes
+                                            .DELIVERY.fees,
+                                        ).toLocaleString()}{" "}
+                                        (fees)
+                                      </p>
+                                    )}
+                                    <p className="mt-auto pt-1 text-[9px] text-gray-500 dark:text-neutral-400">
+                                      {
+                                        todayReportBreakdown.orderTypes.DELIVERY
+                                          .n
+                                      }{" "}
+                                      paid ·{" "}
+                                      {
+                                        todayReportBreakdown.orderTypes.DELIVERY
+                                          .unpaidN
+                                      }{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg border border-rose-200/80 dark:border-rose-500/25 bg-rose-50/60 dark:bg-rose-500/10 px-2 py-2 flex flex-col justify-between gap-1">
+                                    <p className="text-[9px] font-semibold text-rose-800 dark:text-rose-400 flex items-center gap-1">
+                                      <Globe className="w-3 h-3 opacity-80 shrink-0" />
+                                      Website
+                                    </p>
+                                    <p className="text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.sources.WEBSITE
+                                          .amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-500 dark:text-neutral-400">
+                                      {todayReportBreakdown.sources.WEBSITE.n}{" "}
+                                      paid ·{" "}
+                                      {
+                                        todayReportBreakdown.sources.WEBSITE
+                                          .unpaidN
+                                      }{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Channel strip (POS / Website / Foodpanda / other) */}
+                              <div className="rounded-lg border border-gray-100 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/50 px-3 py-2">
+                                <p className="text-[9px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-1.5">
+                                  Sales by channel
+                                </p>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-1 text-[10px]">
+                                  <div>
+                                    <span className="text-gray-500 dark:text-neutral-400">
+                                      POS counter
+                                    </span>
+                                    <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.sources.POS.amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-400">
+                                      {todayReportBreakdown.sources.POS.n} paid
+                                      ·{" "}
+                                      {todayReportBreakdown.sources.POS.unpaidN}{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 dark:text-neutral-400">
+                                      Website
+                                    </span>
+                                    <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.sources.WEBSITE
+                                          .amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-400">
+                                      {todayReportBreakdown.sources.WEBSITE.n}{" "}
+                                      paid ·{" "}
+                                      {
+                                        todayReportBreakdown.sources.WEBSITE
+                                          .unpaidN
+                                      }{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 dark:text-neutral-400">
+                                      Foodpanda
+                                    </span>
+                                    <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.sources.FOODPANDA
+                                          .amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-400">
+                                      {todayReportBreakdown.sources.FOODPANDA.n}{" "}
+                                      paid ·{" "}
+                                      {
+                                        todayReportBreakdown.sources.FOODPANDA
+                                          .unpaidN
+                                      }{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 dark:text-neutral-400">
+                                      Other
+                                    </span>
+                                    <p className="font-bold text-gray-900 dark:text-white tabular-nums text-[11px]">
+                                      {sym}{" "}
+                                      {Math.round(
+                                        todayReportBreakdown.sources.OTHER.amt,
+                                      ).toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-400">
+                                      {todayReportBreakdown.sources.OTHER.n}{" "}
+                                      paid ·{" "}
+                                      {
+                                        todayReportBreakdown.sources.OTHER
+                                          .unpaidN
+                                      }{" "}
+                                      unpaid
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
+                                  <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                                    Top items today
+                                  </p>
+                                  <div className="space-y-1.5 text-xs">
+                                    {todayReportBreakdown.topItems.length ===
+                                    0 ? (
+                                      <p className="text-gray-400 text-[11px]">
+                                        No item data
+                                      </p>
+                                    ) : (
+                                      todayReportBreakdown.topItems.map(
+                                        (it) => (
+                                          <div
+                                            key={it.name}
+                                            className="flex justify-between gap-2 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                                          >
+                                            <span className="text-gray-800 dark:text-neutral-200 truncate text-[12px]">
+                                              {it.name}
+                                            </span>
+                                            <span className="text-[10px] text-gray-500 dark:text-neutral-400 shrink-0 tabular-nums">
+                                              {Math.round(it.qty)} sold · {sym}{" "}
+                                              {Math.round(
+                                                it.rev,
+                                              ).toLocaleString()}
+                                            </span>
+                                          </div>
+                                        ),
+                                      )
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-sm">
+                                  <p className="text-[10px] font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider mb-2">
+                                    Staff (order takers)
+                                  </p>
+                                  <div className="space-y-1.5 text-xs">
+                                    {todayReportBreakdown.staffList.length ===
+                                    0 ? (
+                                      <p className="text-gray-400 text-[11px]">
+                                        No staff-attributed orders in closed
+                                        sales
+                                      </p>
+                                    ) : (
+                                      todayReportBreakdown.staffList.map(
+                                        (st) => (
+                                          <div
+                                            key={st.name}
+                                            className="flex justify-between gap-2 py-1 border-b border-gray-50 dark:border-neutral-800/80 last:border-0"
+                                          >
+                                            <span className="font-medium text-gray-800 dark:text-neutral-200 text-[12px]">
+                                              {st.name}
+                                            </span>
+                                            <span className="text-[10px] tabular-nums text-gray-600 dark:text-neutral-400">
+                                              {st.n} orders · {sym}{" "}
+                                              {Math.round(
+                                                st.rev,
+                                              ).toLocaleString()}
+                                            </span>
+                                          </div>
+                                        ),
+                                      )
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          ) : null}
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="px-4 py-2 border-t border-gray-200 dark:border-neutral-800 bg-gray-50/80 dark:bg-neutral-900/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  {showFullSessionReport ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTodayReportModal(false);
+                        loadSessionHistory();
+                        setShowLegacySessionsModal(true);
+                      }}
+                      className="text-xs font-semibold text-primary hover:underline text-left"
+                    >
+                      View session history →
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-gray-400 dark:text-neutral-500">
+                      Detailed breakdown is available to restaurant owners and
+                      managers.
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowTodayReportModal(false)}
+                    className="h-8 px-3 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold"
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  if (!endingDay) setShowEndDayModal(false);
-                }}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
-            <div className="px-5 py-4">
-              {loadingSession ? (
-                <div className="flex items-center justify-center py-6">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          )}
+
+          {/* ── Past sessions (full history) ────────────────────────── */}
+          {showLegacySessionsModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+              onClick={(e) => {
+                if (e.target === e.currentTarget)
+                  setShowLegacySessionsModal(false);
+              }}
+            >
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+                  <div>
+                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                      Past Sessions
+                    </h2>
+                    <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                      {currentBranch
+                        ? `History for ${currentBranch.name}`
+                        : "All branches"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowLegacySessionsModal(false)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-              ) : currentSession ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-gray-600 dark:text-neutral-400">
-                    Are you sure you want to end today&apos;s session?
-                    Here&apos;s the current summary:
-                  </p>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">
-                        Revenue
-                      </p>
-                      <p className="text-base font-bold text-gray-900 dark:text-white">
-                        {sym} {(currentSession.totalSales || 0).toLocaleString()}
-                      </p>
+                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                  {loadingSessionHistory ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
                     </div>
-                    <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">
-                        Orders
-                      </p>
-                      <p className="text-base font-bold text-gray-900 dark:text-white">
-                        {currentSession.totalOrders || 0}
+                  ) : sessionHistory.length === 0 ? (
+                    <div className="text-center py-12 text-sm text-gray-400 dark:text-neutral-600">
+                      No past sessions found
+                    </div>
+                  ) : (
+                    sessionHistory.map((s) => (
+                      <div
+                        key={s.id}
+                        className="p-4 rounded-xl border border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/50 hover:bg-white dark:hover:bg-neutral-900 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.status === "OPEN" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"}`}
+                            >
+                              {s.status === "OPEN" && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              )}
+                              {s.status}
+                            </span>
+                            {!currentBranch && s.branchName && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+                                {s.branchName}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-sm font-bold text-gray-900 dark:text-white">
+                              {sym} {(s.totalSales || 0).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-gray-500 dark:text-neutral-400">
+                              {s.totalOrders || 0} orders
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 text-xs text-gray-500 dark:text-neutral-500">
+                          <div>
+                            <span className="font-medium">Started: </span>
+                            {new Date(s.startAt).toLocaleString("en-PK", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: true,
+                            })}
+                          </div>
+                          {s.endAt && (
+                            <div>
+                              <span className="font-medium">Ended: </span>
+                              {new Date(s.endAt).toLocaleString("en-PK", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── End Day modal ──────────────────────────────────────────── */}
+          {showEndDayModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+              onClick={(e) => {
+                if (e.target === e.currentTarget && !endingDay)
+                  setShowEndDayModal(false);
+              }}
+            >
+              <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-gray-200 dark:border-neutral-800 shadow-2xl w-full max-w-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-neutral-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-500/15 flex items-center justify-center flex-shrink-0">
+                      <Power className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                        End Business Day
+                      </h2>
+                      <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5">
+                        This action cannot be undone
                       </p>
                     </div>
                   </div>
-                  {currentSession.startAt && (
-                    <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                      Session started{" "}
-                      {new Date(currentSession.startAt).toLocaleString(
-                        "en-PK",
-                        {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: true,
-                        },
+                  <button
+                    onClick={() => {
+                      if (!endingDay) setShowEndDayModal(false);
+                    }}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="px-5 py-4">
+                  {loadingSession ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    </div>
+                  ) : currentSession ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-600 dark:text-neutral-400">
+                        Are you sure you want to end today&apos;s session?
+                        Here&apos;s the current summary:
+                      </p>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                          <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">
+                            Revenue
+                          </p>
+                          <p className="text-base font-bold text-gray-900 dark:text-white">
+                            {sym}{" "}
+                            {(currentSession.totalSales || 0).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800">
+                          <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">
+                            Orders
+                          </p>
+                          <p className="text-base font-bold text-gray-900 dark:text-white">
+                            {currentSession.totalOrders || 0}
+                          </p>
+                        </div>
+                      </div>
+                      {currentSession.startAt && (
+                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                          Session started{" "}
+                          {new Date(currentSession.startAt).toLocaleString(
+                            "en-PK",
+                            {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: true,
+                            },
+                          )}
+                        </p>
                       )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
+                      Are you sure you want to end the current business day?
                     </p>
                   )}
                 </div>
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-neutral-400 py-2">
-                  Are you sure you want to end the current business day?
-                </p>
-              )}
+                <div className="flex items-center gap-2.5 px-5 pb-5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!endingDay) setShowEndDayModal(false);
+                    }}
+                    disabled={endingDay}
+                    className="flex-1 h-9 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEndDay}
+                    disabled={endingDay}
+                    className="flex-1 h-9 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {endingDay ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Power className="w-3.5 h-3.5" />
+                    )}
+                    {endingDay ? "Ending…" : "End Now"}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2.5 px-5 pb-5">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!endingDay) setShowEndDayModal(false);
-                }}
-                disabled={endingDay}
-                className="flex-1 h-9 rounded-xl border border-gray-200 dark:border-neutral-700 text-sm font-medium text-gray-600 dark:text-neutral-400 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleEndDay}
-                disabled={endingDay}
-                className="flex-1 h-9 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {endingDay ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Power className="w-3.5 h-3.5" />
-                )}
-                {endingDay ? "Ending…" : "End Now"}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-      )}
-      </div>
 
-      {/* ── Start Session Gate ───────────────────────────────────────────────
+        {/* ── Start Session Gate ───────────────────────────────────────────────
           z-20 keeps the overlay below the sidebar (z-40) and header (z-30),
           so both remain visible and clickable while blocking the content area.
       ─────────────────────────────────────────────────────────────────────── */}
-      {sessionGateChecked && noActiveSession && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-white/80 dark:bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-5 border border-gray-200 dark:border-neutral-700">
-            <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center">
-              <Coffee className="w-8 h-8 text-amber-500" />
+        {sessionGateChecked && noActiveSession && (
+          <div className="fixed inset-0 z-20 flex items-center justify-center bg-white/80 dark:bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-5 border border-gray-200 dark:border-neutral-700">
+              <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center">
+                <Coffee className="w-8 h-8 text-amber-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
+                  Business Day Not Started
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-neutral-400 leading-relaxed">
+                  {canStartBusinessDay
+                    ? "Open the business day to start accepting orders. No orders can be placed until the day is started."
+                    : "The business day hasn't been opened yet. Ask your manager or admin to start it."}
+                </p>
+              </div>
+              {canStartBusinessDay ? (
+                <button
+                  type="button"
+                  onClick={handleStartSession}
+                  disabled={startingSession}
+                  className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {startingSession ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <PlayCircle className="w-4 h-4" />
+                  )}
+                  {startingSession ? "Starting…" : "Start Business Day"}
+                </button>
+              ) : (
+                <p className="text-xs text-gray-400 dark:text-neutral-500 font-medium">
+                  Contact your manager or admin to start the session.
+                </p>
+              )}
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-                Business Day Not Started
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-neutral-400 leading-relaxed">
-                {canStartBusinessDay
-                  ? "Open the business day to start accepting orders. No orders can be placed until the day is started."
-                  : "The business day hasn't been opened yet. Ask your manager or admin to start it."}
-              </p>
-            </div>
-            {canStartBusinessDay ? (
-              <button
-                type="button"
-                onClick={handleStartSession}
-                disabled={startingSession}
-                className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {startingSession ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <PlayCircle className="w-4 h-4" />
-                )}
-                {startingSession ? "Starting…" : "Start Business Day"}
-              </button>
-            ) : (
-              <p className="text-xs text-gray-400 dark:text-neutral-500 font-medium">
-                Contact your manager or admin to start the session.
-              </p>
-            )}
           </div>
-        </div>
-      )}
-
+        )}
       </PermissionGate>
     </AdminLayout>
   );
@@ -3444,7 +3900,9 @@ function OrderItemRow({ item }) {
               <span className="mt-0.5 block truncate text-[10px] font-normal text-gray-500 dark:text-neutral-400">
                 {children
                   .map((choice) =>
-                    choice.qty > 1 ? `${choice.name} ×${choice.qty}` : choice.name,
+                    choice.qty > 1
+                      ? `${choice.name} ×${choice.qty}`
+                      : choice.name,
                   )
                   .join(" · ")}
               </span>
@@ -3516,6 +3974,7 @@ function OrderCard({
   isOrderTaker,
   isCashier,
   isAdmin,
+  simpleBilling = false,
   updatingId,
   onUpdateStatus,
   onOpenCancel,
@@ -3546,7 +4005,11 @@ function OrderCard({
     normalizedTableLabel !== "walk in";
   const TypeIcon = ORDER_TYPE_ICON[typeLabel] || ShoppingBag;
   const status = orderStatusForTab(order.status);
-  const cancelReasonText = (order.cancelReason || order.cancelledReason || "").trim();
+  const cancelReasonText = (
+    order.cancelReason ||
+    order.cancelledReason ||
+    ""
+  ).trim();
   const waitMin = getWaitingMinutes(order.createdAt, now);
   const urgency = getUrgency(waitMin);
   const isActive = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(status);
@@ -3554,32 +4017,46 @@ function OrderCard({
   const canCancel =
     // Always allow cancelling from active states.
     status !== "CANCELLED" &&
-    (
-      // Keep existing rule: hide cancel for delivered/completed/out_for_delivery.
-      !["DELIVERED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(status) ||
+    // Keep existing rule: hide cancel for delivered/completed/out_for_delivery.
+    (!["DELIVERED", "COMPLETED", "OUT_FOR_DELIVERY"].includes(status) ||
       // Admin override: allow cancelling unpaid delivered/completed orders
       // (these are shown in the "Awaiting Payment" column).
-      (isAdmin && paymentStatus === "unpaid" && ["DELIVERED", "COMPLETED"].includes(status))
-    );
+      (isAdmin &&
+        paymentStatus === "unpaid" &&
+        ["DELIVERED", "COMPLETED"].includes(status)));
 
   const nextStatuses = getNextStatuses(order.status, orderType);
   const primaryNext = nextStatuses[0];
   const actionLabel = getActionLabel(primaryNext, order);
+  const kitchenNextStatuses = [
+    "PROCESSING",
+    "READY",
+    "OUT_FOR_DELIVERY",
+    "DELIVERED",
+  ];
   const canAdvanceStatus =
     primaryNext &&
     actionLabel &&
-    !(isCashier && primaryNext === "DELIVERED" && isDeliveryOrder(order));
+    !(isCashier && primaryNext === "DELIVERED" && isDeliveryOrder(order)) &&
+    !(simpleBilling && kitchenNextStatuses.includes(primaryNext));
 
   const showAssignRider =
-    isDeliveryOrder(order) && status === "READY" && !isOrderTaker && !order.assignedRiderName;
-  const showChangeRider =
-    isDeliveryOrder(order) && status === "READY" && !isOrderTaker && !!order.assignedRiderName;
-  const showOutForDelivery =
-    isDeliveryOrder(order) && status === "READY" && !isOrderTaker && !!order.assignedRiderName;
-  const showOutForDeliveryMarkDelivered =
     isDeliveryOrder(order) &&
-    status === "OUT_FOR_DELIVERY" &&
-    canAdvanceStatus;
+    status === "READY" &&
+    !isOrderTaker &&
+    !order.assignedRiderName;
+  const showChangeRider =
+    isDeliveryOrder(order) &&
+    status === "READY" &&
+    !isOrderTaker &&
+    !!order.assignedRiderName;
+  const showOutForDelivery =
+    isDeliveryOrder(order) &&
+    status === "READY" &&
+    !isOrderTaker &&
+    !!order.assignedRiderName;
+  const showOutForDeliveryMarkDelivered =
+    isDeliveryOrder(order) && status === "OUT_FOR_DELIVERY" && canAdvanceStatus;
   const showRiderReassignOutForDelivery =
     isDeliveryOrder(order) && status === "OUT_FOR_DELIVERY" && !isOrderTaker;
   const isAwaitingPayment =
@@ -3587,8 +4064,7 @@ function OrderCard({
     paymentStatus === "unpaid";
   /** Cash/COD delivered: show even when customer payment already recorded (rider still needs to hand in). */
   const showCollectFromRider = isDeliveryPaymentPending(order) && !isOrderTaker;
-  const riderHandInPending =
-    showCollectFromRider && paymentStatus === "paid";
+  const riderHandInPending = showCollectFromRider && paymentStatus === "paid";
   const showTakePayment =
     isAwaitingPayment && !isOrderTaker && !isDeliveryOrder(order);
   const showEarlyPayment =
@@ -3626,7 +4102,8 @@ function OrderCard({
   const showEarlyPaymentPerm =
     showEarlyPayment && hasPermission("orders.collect_payment");
   const canCancelPerm =
-    canCancel && (hasPermission("pos.void_order") || hasPermission("orders.cancel"));
+    canCancel &&
+    (hasPermission("pos.void_order") || hasPermission("orders.cancel"));
   const isServedUnpaid =
     paymentStatus === "unpaid" &&
     ["READY", "DELIVERED", "COMPLETED"].includes(status);
@@ -3754,7 +4231,9 @@ function OrderCard({
             </span>
           )}
           {order.orderTakerName && (
-            <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${order.createdByRole === "delivery_rider" ? "text-sky-600 dark:text-sky-400" : "text-gray-400 dark:text-neutral-500"}`}>
+            <span
+              className={`inline-flex items-center gap-1 text-[10px] font-medium ${order.createdByRole === "delivery_rider" ? "text-sky-600 dark:text-sky-400" : "text-gray-400 dark:text-neutral-500"}`}
+            >
               {order.createdByRole === "delivery_rider" ? (
                 <>
                   <Bike className="w-3 h-3" />
@@ -3772,50 +4251,72 @@ function OrderCard({
       </div>
 
       {/* Timeline for closed / cancelled orders */}
-      {!isActive && (() => {
-        const fmtTime = (d) => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        const STATUS_LABELS = {
-          NEW_ORDER: "Created",
-          PROCESSING: "Preparing",
-          READY: "Ready",
-          OUT_FOR_DELIVERY: "Out for Delivery",
-          DELIVERED: "Closed",
-          CANCELLED: "Cancelled",
-        };
-        const STATUS_COLORS = {
-          NEW_ORDER: "text-gray-400 dark:text-neutral-500",
-          PROCESSING: "text-blue-500 dark:text-blue-400",
-          READY: "text-emerald-500 dark:text-emerald-400",
-          OUT_FOR_DELIVERY: "text-[#25343F] dark:text-[#25343F]",
-          DELIVERED: "text-emerald-600 dark:text-emerald-400",
-          CANCELLED: "text-red-400 dark:text-red-500",
-        };
-        const allHistory = order.statusHistory?.length > 0
-          ? order.statusHistory
-          : [
-              { status: "NEW_ORDER", at: order.createdAt },
-              ...(order.cancelledAt ? [{ status: "CANCELLED", at: order.cancelledAt }]
-                : order.updatedAt ? [{ status: "DELIVERED", at: order.updatedAt }] : []),
-            ].filter(Boolean);
+      {!isActive &&
+        (() => {
+          const fmtTime = (d) =>
+            new Date(d).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          const STATUS_LABELS = {
+            NEW_ORDER: "Created",
+            PROCESSING: "Preparing",
+            READY: "Ready",
+            OUT_FOR_DELIVERY: "Out for Delivery",
+            DELIVERED: "Closed",
+            CANCELLED: "Cancelled",
+          };
+          const STATUS_COLORS = {
+            NEW_ORDER: "text-gray-400 dark:text-neutral-500",
+            PROCESSING: "text-blue-500 dark:text-blue-400",
+            READY: "text-emerald-500 dark:text-emerald-400",
+            OUT_FOR_DELIVERY: "text-[#25343F] dark:text-[#25343F]",
+            DELIVERED: "text-emerald-600 dark:text-emerald-400",
+            CANCELLED: "text-red-400 dark:text-red-500",
+          };
+          const allHistory =
+            order.statusHistory?.length > 0
+              ? order.statusHistory
+              : [
+                  { status: "NEW_ORDER", at: order.createdAt },
+                  ...(order.cancelledAt
+                    ? [{ status: "CANCELLED", at: order.cancelledAt }]
+                    : order.updatedAt
+                      ? [{ status: "DELIVERED", at: order.updatedAt }]
+                      : []),
+                ].filter(Boolean);
 
-        const createdEntry = allHistory.find((h) => h.status === "NEW_ORDER") || { status: "NEW_ORDER", at: order.createdAt };
-        const closedEntry = allHistory.find((h) => h.status === "CANCELLED") || allHistory.find((h) => h.status === "DELIVERED") || null;
-        const history = [createdEntry, closedEntry].filter(Boolean);
+          const createdEntry = allHistory.find(
+            (h) => h.status === "NEW_ORDER",
+          ) || { status: "NEW_ORDER", at: order.createdAt };
+          const closedEntry =
+            allHistory.find((h) => h.status === "CANCELLED") ||
+            allHistory.find((h) => h.status === "DELIVERED") ||
+            null;
+          const history = [createdEntry, closedEntry].filter(Boolean);
 
-        return (
-          <div className="mx-3 mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px]">
-            {history.map((h, i) => (
-              <span key={i} className="flex items-center gap-0.5">
-                {i > 0 && <span className="text-gray-300 dark:text-neutral-700 mr-0.5">→</span>}
-                <span className={`font-semibold ${STATUS_COLORS[h.status] || "text-gray-400"}`}>
-                  {STATUS_LABELS[h.status] || h.status}
+          return (
+            <div className="mx-3 mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px]">
+              {history.map((h, i) => (
+                <span key={i} className="flex items-center gap-0.5">
+                  {i > 0 && (
+                    <span className="text-gray-300 dark:text-neutral-700 mr-0.5">
+                      →
+                    </span>
+                  )}
+                  <span
+                    className={`font-semibold ${STATUS_COLORS[h.status] || "text-gray-400"}`}
+                  >
+                    {STATUS_LABELS[h.status] || h.status}
+                  </span>
+                  <span className="text-gray-400 dark:text-neutral-600">
+                    {fmtTime(h.at)}
+                  </span>
                 </span>
-                <span className="text-gray-400 dark:text-neutral-600">{fmtTime(h.at)}</span>
-              </span>
-            ))}
-          </div>
-        );
-      })()}
+              ))}
+            </div>
+          );
+        })()}
 
       {/* Cancel reason (only for cancelled orders) */}
       {!isActive && status === "CANCELLED" && cancelReasonText && (
@@ -3833,7 +4334,9 @@ function OrderCard({
             className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 dark:bg-neutral-900/80 text-[11px] font-bold text-gray-500 dark:text-neutral-400 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
           >
             <span>{displayItems.length} items</span>
-            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+            />
           </button>
           {expanded && (
             <div className="px-2.5 py-2 mt-1 rounded-lg bg-gray-50 dark:bg-neutral-900/80 space-y-1">
@@ -3913,7 +4416,10 @@ function OrderCard({
                 <button
                   type="button"
                   onClick={() =>
-                    onPrint(order, paymentStatus === "paid" ? "receipt" : "bill")
+                    onPrint(
+                      order,
+                      paymentStatus === "paid" ? "receipt" : "bill",
+                    )
                   }
                   className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
                   title="Print"
@@ -3922,15 +4428,15 @@ function OrderCard({
                 </button>
               )}
               {canShowEditButton && (
-                  <button
-                    type="button"
-                    onClick={() => onEdit(order)}
-                    className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
-                    title="Edit"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => onEdit(order)}
+                  className="p-1 rounded text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-gray-600 dark:hover:text-neutral-300 transition-colors"
+                  title="Edit"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              )}
               {canCancelPerm && (
                 <button
                   type="button"

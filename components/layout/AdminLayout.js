@@ -762,6 +762,7 @@ export default function AdminLayout({
   const [restaurantName, setRestaurantName] = useState("");
   const [restaurantLogoUrl, setRestaurantLogoUrl] = useState("");
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
+  const [mobileBranchOpen, setMobileBranchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
@@ -1192,6 +1193,104 @@ export default function AdminLayout({
                 className="flex-1 p-3 overflow-y-auto"
                 aria-label="Main navigation"
               >
+                {(role !== "super_admin" || actingAsSlug) &&
+                role !== "kitchen_staff" &&
+                !branchLoading ? (
+                  <div className="md:hidden mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setMobileBranchOpen((prev) => !prev)}
+                      className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-left dark:border-neutral-700 dark:bg-neutral-900"
+                      aria-expanded={mobileBranchOpen}
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary">
+                        <MapPin className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                          Branch
+                        </p>
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                          {currentBranch
+                            ? currentBranch.name
+                            : role === "restaurant_admin" || role === "admin"
+                              ? "All branches"
+                              : (branches?.[0]?.name ?? "Select branch")}
+                        </p>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-neutral-400 ${
+                          mobileBranchOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                    {mobileBranchOpen ? (
+                      <div className="mt-2 max-h-48 space-y-1 overflow-y-auto rounded-xl border border-gray-200 p-2 dark:border-neutral-700">
+                        {(role === "restaurant_admin" ||
+                          role === "admin" ||
+                          (role === "super_admin" && actingAsSlug)) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCurrentBranch(null);
+                              setMobileBranchOpen(false);
+                              setMobileSidebarOpen(false);
+                              window.location.reload();
+                            }}
+                            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium transition-all ${
+                              !currentBranch
+                                ? "bg-gradient-to-r from-primary/10 to-secondary/10 text-primary"
+                                : "text-gray-700 hover:bg-gray-100 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                            }`}
+                          >
+                            <MapPin className="h-4 w-4 shrink-0" />
+                            <span>All branches</span>
+                          </button>
+                        )}
+                        {(branches && branches.length > 0
+                          ? branches
+                          : [{ id: "none", name: "No branches yet" }]
+                        ).map((b) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            disabled={b.id === "none"}
+                            onClick={() => {
+                              if (b.id === "none") return;
+                              setCurrentBranch(b);
+                              setMobileBranchOpen(false);
+                              setMobileSidebarOpen(false);
+                              window.location.reload();
+                            }}
+                            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium transition-all disabled:opacity-50 ${
+                              currentBranch?.id === b.id
+                                ? "bg-gradient-to-r from-primary/10 to-secondary/10 text-primary"
+                                : "text-gray-700 hover:bg-gray-100 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                            }`}
+                          >
+                            <MapPin className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{b.name}</span>
+                          </button>
+                        ))}
+                        {(role === "restaurant_admin" ||
+                          role === "admin" ||
+                          (role === "super_admin" && actingAsSlug)) && (
+                          <Link
+                            href="/business-settings"
+                            onClick={() => {
+                              setMobileBranchOpen(false);
+                              setMobileSidebarOpen(false);
+                            }}
+                            className="mt-1 flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/10"
+                          >
+                            <PlusSquare className="h-4 w-4" />
+                            <span>Manage branches</span>
+                          </Link>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {!permissionsLoaded ? (
                   <SidebarNavSkeleton
                     collapsed={collapsed && !mobileSidebarOpen}
@@ -1460,45 +1559,6 @@ export default function AdminLayout({
                   })
                 )}
               </nav>
-              {/* Mobile: Account section at bottom of sidebar */}
-              <div className="md:hidden flex-shrink-0 p-3 border-t-2 border-gray-100 dark:border-neutral-800 space-y-1">
-                <p className="px-3 py-1 text-[10px] font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
-                  Account
-                </p>
-                <Link
-                  href={profileHref}
-                  onClick={() => setMobileSidebarOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all"
-                >
-                  <UserCircle2 className="w-4 h-4" />
-                  <span>Profile</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    toggleTheme();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 transition-all"
-                >
-                  {theme === "light" ? (
-                    <Moon className="w-4 h-4" />
-                  ) : (
-                    <Sun className="w-4 h-4" />
-                  )}
-                  <span>{theme === "light" ? "Dark mode" : "Light mode"}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    handleLogout();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Logout</span>
-                </button>
-              </div>
             </aside>
           </>
         )}
@@ -1605,13 +1665,76 @@ export default function AdminLayout({
                     </span>
                   </Link>
                 ))}
-              <Link
-                href={profileHref}
-                className="flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-primary to-secondary text-white text-[10px] font-bold flex-shrink-0 shadow-sm"
-                title={userName}
-              >
-                {userInitials || userName?.charAt(0)?.toUpperCase() || "U"}
-              </Link>
+              <div className="relative flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setUserMenuOpen((prev) => !prev)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-[10px] font-bold text-white shadow-sm"
+                  title={userName || "Account"}
+                  aria-label="Account menu"
+                >
+                  {userInitials || userName?.charAt(0)?.toUpperCase() || "U"}
+                </button>
+                {userMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      aria-hidden
+                      onClick={() => setUserMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full z-50 mt-2 min-w-[180px] overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
+                      <div className="border-b-2 border-gray-100 p-3 dark:border-neutral-800">
+                        <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                          Account
+                        </p>
+                        {userName ? (
+                          <p className="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                            {userName}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1 p-2">
+                        <Link
+                          href={profileHref}
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                        >
+                          <UserCircle2 className="h-4 w-4" />
+                          <span>Profile</span>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleTheme();
+                            setUserMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                        >
+                          {theme === "light" ? (
+                            <Moon className="h-4 w-4" />
+                          ) : (
+                            <Sun className="h-4 w-4" />
+                          )}
+                          <span>
+                            {theme === "light" ? "Dark mode" : "Light mode"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            handleLogout();
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-red-600 transition-all hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          <span>Logout</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </header>
 

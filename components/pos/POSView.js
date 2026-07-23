@@ -503,6 +503,7 @@ export default function POSView({
   const [soundOnAdd, setSoundOnAdd] = useState(false);
   const [soundVolume, setSoundVolume] = useState(70);
   const [soundBeep, setSoundBeep] = useState("chime");
+  const [orderWorkflow, setOrderWorkflow] = useState("kitchen_board");
   const [showPosTableSettingsModal, setShowPosTableSettingsModal] =
     useState(false);
   const [posTableSettingsDraft, setPosTableSettingsDraft] = useState(true);
@@ -518,6 +519,8 @@ export default function POSView({
   const [posSoundOnAddDraft, setPosSoundOnAddDraft] = useState(false);
   const [posSoundVolumeDraft, setPosSoundVolumeDraft] = useState(70);
   const [posSoundBeepDraft, setPosSoundBeepDraft] = useState("chime");
+  const [posOrderWorkflowDraft, setPosOrderWorkflowDraft] =
+    useState("kitchen_board");
   const posAudioCtxRef = useRef(null);
   const [posOrderTypesDraft, setPosOrderTypesDraft] = useState({
     DINE_IN: true,
@@ -778,6 +781,7 @@ export default function POSView({
       setShowItemImages(true);
       setCartPosition("right");
       setSoundOnAdd(false);
+      setOrderWorkflow("kitchen_board");
       setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
       setPosOptionsLoaded(true);
       return;
@@ -804,6 +808,19 @@ export default function POSView({
             );
           }
           setSoundBeep(normalizePosAddSoundId(b?.posSoundBeep));
+          setOrderWorkflow(
+            b?.orderWorkflow === "simple_billing"
+              ? "simple_billing"
+              : "kitchen_board",
+          );
+          if (
+            typeof setCurrentBranch === "function" &&
+            currentBranch &&
+            b?.id &&
+            String(currentBranch.id) === String(b.id)
+          ) {
+            setCurrentBranch({ ...currentBranch, ...b });
+          }
           // Order types are a per-terminal preference stored in localStorage,
           // not a branch-wide restriction — read from localStorage, not the API.
           try {
@@ -832,6 +849,7 @@ export default function POSView({
           setSoundOnAdd(false);
           setSoundVolume(70);
           setSoundBeep("chime");
+          setOrderWorkflow("kitchen_board");
           setPosAllowedOrderTypes([...ALL_POS_ORDER_TYPES]);
           setPosOptionsLoaded(true);
         }
@@ -3843,6 +3861,7 @@ export default function POSView({
                     setPosSoundOnAddDraft(soundOnAdd);
                     setPosSoundVolumeDraft(soundVolume);
                     setPosSoundBeepDraft(soundBeep);
+                    setPosOrderWorkflowDraft(orderWorkflow);
                     setPosOrderTypesDraft({
                       DINE_IN: posAllowedOrderTypes.includes("DINE_IN"),
                       TAKEAWAY: posAllowedOrderTypes.includes("TAKEAWAY"),
@@ -5864,6 +5883,56 @@ export default function POSView({
                 </section>
 
                 <section>
+                  <h3 className="mb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-neutral-500">
+                    Order board
+                  </h3>
+                  <p className="mb-2 text-[11px] leading-snug text-gray-500 dark:text-neutral-400">
+                    How orders move on the Point of Sale board for this branch.
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      {
+                        id: "kitchen_board",
+                        label: "Kitchen board",
+                        desc: "New → Preparing → Ready → Delivery → Payment",
+                      },
+                      {
+                        id: "simple_billing",
+                        label: "Simple billing",
+                        desc: "Create, take payment, and close — for cafes & counters",
+                      },
+                    ].map((opt) => {
+                      const on = posOrderWorkflowDraft === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setPosOrderWorkflowDraft(opt.id)}
+                          className={`flex flex-col items-start gap-1 rounded-2xl border px-3.5 py-3 text-left transition-all ${
+                            on
+                              ? "border-primary/40 bg-primary/10 ring-1 ring-primary/20"
+                              : "border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
+                          }`}
+                        >
+                          <span
+                            className={`block text-xs font-bold ${
+                              on
+                                ? "text-primary"
+                                : "text-gray-900 dark:text-white"
+                            }`}
+                          >
+                            {opt.label}
+                          </span>
+                          <span className="text-[10px] leading-snug text-gray-500 dark:text-neutral-400">
+                            {opt.desc}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section>
                   <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:text-neutral-500">
                     Layout
                   </h3>
@@ -6093,6 +6162,7 @@ export default function POSView({
                     posSoundOnAdd: posSoundOnAddDraft,
                     posSoundVolume: posSoundVolumeDraft,
                     posSoundBeep: posSoundBeepDraft,
+                    orderWorkflow: posOrderWorkflowDraft,
                   })
                     .then((b) => {
                       setShowTablePos(posTableSettingsDraft);
@@ -6111,6 +6181,11 @@ export default function POSView({
                       setSoundOnAdd(posSoundOnAddDraft);
                       setSoundVolume(posSoundVolumeDraft);
                       setSoundBeep(posSoundBeepDraft);
+                      setOrderWorkflow(
+                        posOrderWorkflowDraft === "simple_billing"
+                          ? "simple_billing"
+                          : "kitchen_board",
+                      );
                       try {
                         localStorage.setItem(
                           POS_ORDER_TYPES_KEY,
