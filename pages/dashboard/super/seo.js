@@ -23,6 +23,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  ChevronsUpDown,
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -447,6 +448,19 @@ export default function SuperSeoPage() {
     }));
   }
 
+  function collapseAllLocations() {
+    const nextCountries = {};
+    const nextStates = {};
+    for (const country of countries) {
+      nextCountries[country.slug] = false;
+      for (const state of Object.values(country.states || {})) {
+        nextStates[`${country.slug}/${state.slug}`] = false;
+      }
+    }
+    setExpandedCountries(nextCountries);
+    setExpandedStates(nextStates);
+  }
+
   const locationCount = countries.reduce(
     (total, country) =>
       total +
@@ -506,6 +520,16 @@ export default function SuperSeoPage() {
                     ? `${keywords.length} keyword${keywords.length === 1 ? "" : "s"}`
                     : `${locationCount} location${locationCount === 1 ? "" : "s"}`}
                 </span>
+                {tab === "locations" && countries.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={collapseAllLocations}
+                    className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                  >
+                    <ChevronsUpDown className="h-4 w-4" />
+                    Collapse all
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() =>
