@@ -345,8 +345,12 @@ export function InvoiceDocument({ invoice }) {
   );
 }
 
+export async function getInvoicePDFBlob(invoice) {
+  return pdf(<InvoiceDocument invoice={invoice} />).toBlob();
+}
+
 export async function getInvoicePDFBlobUrl(invoice) {
-  const blob = await pdf(<InvoiceDocument invoice={invoice} />).toBlob();
+  const blob = await getInvoicePDFBlob(invoice);
   return URL.createObjectURL(blob);
 }
 

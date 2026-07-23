@@ -539,16 +539,16 @@ const superNav = [
     permission: "platform.restaurants.view",
   },
   {
-    href: "/super/subscriptions",
-    label: "Subscriptions",
-    icon: CreditCard,
-    permission: "platform.subscriptions.view",
-  },
-  {
     href: "/super/invoices",
     label: "Invoices",
     icon: Receipt,
     permission: "platform.invoices.view",
+  },
+  {
+    href: "/super/accounting",
+    label: "Accounting",
+    icon: Wallet,
+    ownerOnly: true,
   },
   {
     href: "/super/users",
@@ -807,6 +807,7 @@ export default function AdminLayout({
   const { theme, toggleTheme } = useTheme();
   const { hasPermission, hasViewOrManage, permissionsLoaded, roleName } =
     usePermissions();
+  const isPlatformOwner = hasPermission("*");
 
   // Load sidebar state from sessionStorage after mount (client-side only)
   useEffect(() => {
@@ -1073,6 +1074,7 @@ export default function AdminLayout({
     role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
   const canSeeNavItem = (item) => {
     if (item.type === "section") return true;
+    if (item.ownerOnly) return isPlatformOwner;
     if (item.permission) {
       return item.permission.endsWith(".view")
         ? hasViewOrManage(item.permission)
@@ -1116,7 +1118,7 @@ export default function AdminLayout({
     subtitle !== undefined
       ? subtitle
       : isSuperDashboard
-        ? "Manage restaurants, subscriptions and platform configuration"
+        ? "Manage restaurants and platform configuration"
         : "Manage your restaurant operations";
   const showBranchRequiredModal =
     role !== "super_admin" &&

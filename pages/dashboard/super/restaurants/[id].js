@@ -9,7 +9,7 @@ import Button from "../../../../components/ui/Button";
 import ActionDropdown from "../../../../components/ui/ActionDropdown";
 import GenerateInvoiceModal from "../../../../components/super/GenerateInvoiceModal";
 import MarkPaidModal from "../../../../components/super/MarkPaidModal";
-import { viewInvoicePDF } from "../../../../components/super/InvoicePDF";
+import { downloadInvoicePDF } from "../../../../components/super/InvoicePDF";
 import {
   deleteSuperInvoice,
   getSuperInvoice,
@@ -26,7 +26,7 @@ import {
 import { useConfirmDialog } from "../../../../contexts/ConfirmDialogContext";
 import { usePermissions } from "../../../../contexts/PermissionContext";
 import {
-  ArrowLeft,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
@@ -35,6 +35,7 @@ import {
   Loader2,
   MailCheck,
   Pencil,
+  Share2,
   Trash2,
   User,
   X,
@@ -961,16 +962,69 @@ export default function SuperRestaurantDetailPage() {
     }
   }
 
-  async function handleViewInvoicePdf(invoice) {
+  async function handleDownloadInvoicePdf(invoice) {
     try {
       setInvoiceActionId(invoice.id);
       const full =
         invoice.snapshot && invoice.bankDetails
           ? invoice
           : await getSuperInvoice(invoice.id);
-      await viewInvoicePDF(full);
+      await downloadInvoicePDF(full);
+      toast.success("PDF downloaded");
     } catch (err) {
-      toast.error(err.message || "Could not open PDF");
+      toast.error(err.message || "PDF download failed");
+    } finally {
+      setInvoiceActionId(null);
+    }
+  }
+
+  async function handleShareInvoiceOnWhatsApp(invoice) {
+    try {
+      setInvoiceActionId(invoice.id);
+      const full =
+        invoice.snapshot && invoice.bankDetails
+          ? invoice
+          : await getSuperInvoice(invoice.id);
+
+      // WhatsApp web links can't attach files — download PDF so it can be attached.
+      await downloadInvoicePDF(full);
+
+      const amount = Math.round(Number(full.amount) || 0).toLocaleString(
+        "en-PK",
+      );
+      const restaurantName =
+        website.name || full.snapshot?.restaurantName || "Restaurant";
+      const message = [
+        `*EatsDesk Invoice*`,
+        ``,
+        `Restaurant: ${restaurantName}`,
+        `Invoice: ${full.invoiceNumber || "—"}`,
+        `Period: ${full.period || "—"}`,
+        `Amount: Rs ${amount}`,
+        full.dueDate ? `Due: ${formatDate(full.dueDate)}` : null,
+        ``,
+        `Please find the invoice PDF attached.`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      let phone = String(ownerPhone || "").replace(/\D/g, "");
+      if (phone.startsWith("0") && phone.length === 11) {
+        phone = `92${phone.slice(1)}`;
+      }
+
+      const url = phone
+        ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+        : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+      window.open(url, "_blank", "noopener,noreferrer");
+      toast.success(
+        phone
+          ? "PDF downloaded — WhatsApp opened. Attach the PDF to send."
+          : "PDF downloaded — WhatsApp opened. Choose a chat and attach the PDF.",
+      );
+    } catch (err) {
+      toast.error(err.message || "Could not share on WhatsApp");
     } finally {
       setInvoiceActionId(null);
     }
@@ -1150,15 +1204,7 @@ export default function SuperRestaurantDetailPage() {
 
   return (
     <AdminLayout title={website.name || "Restaurant"}>
-      <div className="-mx-4 sm:-mx-6 px-4 sm:px-6 min-h-full">
-        <Link
-          href="/super/restaurants"
-          className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-primary mb-4"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Restaurants
-        </Link>
-
+      <div className="-mx-4 sm:-mx-6 -mt-4 px-4 sm:px-6 min-h-full">
         {/* Tabs */}
         <div className="border-b border-gray-200 dark:border-neutral-800 overflow-x-auto mb-6 -mx-4 sm:-mx-6 px-4 sm:px-6">
           <div className="flex gap-0 min-w-max">
@@ -1515,11 +1561,20 @@ export default function SuperRestaurantDetailPage() {
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={() => handleViewInvoicePdf(row)}
-                            title="View PDF"
-                            className="px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-[11px] font-semibold hover:bg-gray-50"
+                            onClick={() => handleDownloadInvoicePdf(row)}
+                            title="Download PDF"
+                            className="p-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800"
                           >
-                            PDF
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => handleShareInvoiceOnWhatsApp(row)}
+                            title="Share on WhatsApp"
+                            className="p-1.5 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                          >
+                            <Share2 className="w-4 h-4" />
                           </button>
                           {canMarkPaid && (
                             <button

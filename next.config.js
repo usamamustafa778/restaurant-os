@@ -29,6 +29,17 @@ const nextConfig = {
   },
   async redirects() {
     return [
+      // Subscriptions console folded into Restaurants; keep old URLs working.
+      {
+        source: "/super/subscriptions",
+        destination: "/super/restaurants",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/super/subscriptions",
+        destination: "/super/restaurants",
+        permanent: false,
+      },
       // App root (/) is handled in middleware: login vs dashboard.
       // Marketing pages that used to live here now redirect to eatsdesk.com.
       {

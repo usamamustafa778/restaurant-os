@@ -1,4 +1,5 @@
 import { Loader2, ShieldOff } from "lucide-react";
+import { useEffect } from "react";
 import { useRouter } from "next/router";
 import { usePlatformPermissionGate } from "../../hooks/usePlatformPermissionGate";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -8,13 +9,39 @@ import {
 } from "../../lib/superAdminNav";
 
 /** Blocks super page content until permissions load; redirects when access is denied. */
-export default function SuperPageGate({ permission, children }) {
+export default function SuperPageGate({
+  permission,
+  ownerOnly = false,
+  children,
+}) {
   const router = useRouter();
-  const { hasPermission, hasViewOrManage } = usePermissions();
-  const { permissionsLoaded, hasAccess } = usePlatformPermissionGate(permission);
+  const { hasPermission, hasViewOrManage, permissions, permissionsLoaded } =
+    usePermissions();
+  usePlatformPermissionGate(ownerOnly ? null : permission);
 
-  const canAccessNavItem = (perm) =>
-    perm.endsWith(".view") ? hasViewOrManage(perm) : hasPermission(perm);
+  const isOwner = permissions.includes("*");
+  const allowsAccess = ownerOnly
+    ? permissionsLoaded && isOwner
+    : permissionsLoaded &&
+      (permission?.endsWith(".view")
+        ? hasViewOrManage(permission)
+        : hasPermission(permission));
+
+  const canAccessNavItem = (perm) => {
+    if (perm === "*") return isOwner;
+    return perm.endsWith(".view")
+      ? hasViewOrManage(perm)
+      : hasPermission(perm);
+  };
+
+  useEffect(() => {
+    if (!permissionsLoaded || allowsAccess) return;
+    const fallback = getFirstSuperAdminPath(canAccessNavItem);
+    const current = normalizeSuperPath(router.pathname);
+    if (current !== fallback) {
+      router.replace(fallback);
+    }
+  }, [permissionsLoaded, allowsAccess, router]);
 
   if (!permissionsLoaded) {
     return (
@@ -24,7 +51,7 @@ export default function SuperPageGate({ permission, children }) {
     );
   }
 
-  if (!hasAccess) {
+  if (!allowsAccess) {
     const fallback = getFirstSuperAdminPath(canAccessNavItem);
     const current = normalizeSuperPath(router.pathname);
     if (current !== fallback) {
@@ -42,7 +69,9 @@ export default function SuperPageGate({ permission, children }) {
           You don&apos;t have access to this page.
         </p>
         <p className="text-xs text-gray-500 dark:text-neutral-400 max-w-sm">
-          Ask a platform owner to update your role permissions if you need access here.
+          {ownerOnly
+            ? "This section is only available to the platform owner."
+            : "Ask a platform owner to update your role permissions if you need access here."}
         </p>
       </div>
     );
