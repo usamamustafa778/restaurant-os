@@ -2,8 +2,31 @@
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com";
 
+const { DASHBOARD_TOP_SEGMENTS } = require("./lib/dashboardPages");
+
+/**
+ * Client-router-aware rewrites.
+ * Middleware rewrites alone update the address bar but often leave soft-nav
+ * stuck because Pages Router cannot resolve /tables → pages/dashboard/tables.js.
+ */
+function buildDashboardRewrites() {
+  const pageRewrites = DASHBOARD_TOP_SEGMENTS.flatMap((seg) => [
+    { source: `/${seg}`, destination: `/dashboard/${seg}` },
+    { source: `/${seg}/:path*`, destination: `/dashboard/${seg}/:path*` },
+  ]);
+
+  return [
+    ...pageRewrites,
+    { source: "/super", destination: "/dashboard/super" },
+    { source: "/super/:path*", destination: "/dashboard/super/:path*" },
+  ];
+}
+
 const nextConfig = {
   reactStrictMode: true,
+  async rewrites() {
+    return buildDashboardRewrites();
+  },
   async redirects() {
     return [
       // App root (/) is handled in middleware: login vs dashboard.

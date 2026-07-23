@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import SuperPageGate from "../../../components/super/SuperPageGate";
@@ -29,11 +29,11 @@ import {
   CheckCircle2,
   Ban,
   XCircle,
+  Filter,
+  SlidersHorizontal,
+  ChevronDown,
 } from "lucide-react";
 import toast from "react-hot-toast";
-
-const STOREFRONT_DOMAIN =
-  process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "eatsdesk.app";
 
 function formatRelativeTime(iso) {
   if (!iso) return null;
@@ -57,14 +57,15 @@ function formatRelativeTime(iso) {
   }
 }
 
-function formatTrialEndLabel(iso) {
+function formatEndsInLabel(iso) {
   if (!iso) return null;
   try {
-    return `Ends ${new Date(iso).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })}`;
+    const end = new Date(iso).getTime();
+    if (Number.isNaN(end)) return null;
+    const remainingMs = end - Date.now();
+    if (remainingMs <= 0) return "Ended";
+    const days = Math.max(1, Math.ceil(remainingMs / 86400000));
+    return `Ends in ${days}d`;
   } catch {
     return null;
   }
@@ -458,153 +459,509 @@ export default function SuperRestaurantsPage() {
 
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterHealth, setFilterHealth] = useState("all");
-  const [sortSales, setSortSales] = useState("desc"); // "desc" = high to low, "asc" = low to high
+  const [filterSource, setFilterSource] = useState("all");
+  const [filterEmail, setFilterEmail] = useState("all");
+  const [filterPlan, setFilterPlan] = useState("all");
+  const [filterActivity, setFilterActivity] = useState("all");
+  const [filterExpiry, setFilterExpiry] = useState("all");
+  const [sortBy, setSortBy] = useState("sales_desc");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const filtered = restaurants.filter((r) => {
-    const subStatus = r.subscription?.status || "";
-    const egKey = r.engagement?.key || "";
-    const isPending = r.approvalStatus === "pending";
-    const isRejected = r.approvalStatus === "rejected";
+  const filterSelectCls =
+    "box-border h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200";
 
-    if (filterStatus === "pending_approval") {
-      if (!isPending) return false;
-    } else if (filterStatus === "rejected") {
-      if (!isRejected) return false;
-    } else if (filterStatus !== "all" && subStatus !== filterStatus) {
-      return false;
+  const summary = useMemo(() => {
+    const counts = {
+      total: restaurants.length,
+      pending: 0,
+      trial: 0,
+      active: 0,
+      suspended: 0,
+      dormant: 0,
+      expiring: 0,
+    };
+    for (const r of restaurants) {
+      if (r.approvalStatus === "pending") counts.pending += 1;
+      const status = String(r.subscription?.status || "").toUpperCase();
+      if (status === "TRIAL") counts.trial += 1;
+      if (status === "ACTIVE") counts.active += 1;
+      if (status === "SUSPENDED") counts.suspended += 1;
+      if ((r.engagement?.key || "") === "dormant") counts.dormant += 1;
+      const end =
+        r.subscription?.freeTrialEndDate ||
+        r.subscription?.trialEndsAt ||
+        r.subscription?.expiresAt;
+      if (isExpiringWithinDays(end, 7)) counts.expiring += 1;
     }
-    if (filterHealth !== "all" && egKey !== filterHealth) return false;
+    return counts;
+  }, [restaurants]);
 
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.trim().toLowerCase();
-    const name = (r.website?.name || "").toLowerCase();
-    const sub = (r.website?.subdomain || "").toLowerCase();
-    const phone = (r.website?.contactPhone || "").toLowerCase();
-    const email = (r.website?.contactEmail || "").toLowerCase();
-    const ownerDisplay = (r.ownerAccount?.displayName || "").toLowerCase();
-    const ownerLogin = (r.ownerAccount?.loginEmail || "").toLowerCase();
-    const creationMeta = getRestaurantCreationMeta(r);
-    const createdByLabel = creationMeta.creatorName.toLowerCase();
-    const createdBySource = creationMeta.label.toLowerCase();
-    const plan = (r.subscription?.plan || "").toLowerCase();
-    const status = (r.subscription?.status || "").toLowerCase();
-    const loginEmailState = r.ownerAccount
-      ? r.ownerAccount.allVerified
-        ? "verified"
-        : "pending"
-      : "";
-    return (
-      name.includes(q) ||
-      sub.includes(q) ||
-      phone.includes(q) ||
-      email.includes(q) ||
-      ownerDisplay.includes(q) ||
-      ownerLogin.includes(q) ||
-      createdByLabel.includes(q) ||
-      createdBySource.includes(q) ||
-      plan.includes(q) ||
-      status.includes(q) ||
-      loginEmailState.includes(q)
-    );
-  });
+  const filtered = useMemo(() => {
+    return restaurants.filter((r) => {
+      const subStatus = String(r.subscription?.status || "").toUpperCase();
+      const egKey = r.engagement?.key || "";
+      const isPending = r.approvalStatus === "pending";
+      const isRejected = r.approvalStatus === "rejected";
+      const creationMeta = getRestaurantCreationMeta(r);
+      const plan = String(r.subscription?.plan || "ESSENTIAL").toUpperCase();
+      const ordersLifetime = r.activity?.ordersLifetime ?? 0;
+      const orders30 = r.activity?.ordersLast30Days ?? 0;
+      const end =
+        r.subscription?.freeTrialEndDate ||
+        r.subscription?.trialEndsAt ||
+        r.subscription?.expiresAt;
 
-  const sorted = [...filtered].sort((a, b) => {
-    const aPending = a.approvalStatus === "pending" ? 1 : 0;
-    const bPending = b.approvalStatus === "pending" ? 1 : 0;
-    if (aPending !== bPending) return bPending - aPending;
+      if (filterStatus === "pending_approval") {
+        if (!isPending) return false;
+      } else if (filterStatus === "rejected") {
+        if (!isRejected) return false;
+      } else if (filterStatus !== "all" && subStatus !== filterStatus) {
+        return false;
+      }
 
-    const lastA = a.activity?.lastOrderAt
-      ? new Date(a.activity.lastOrderAt).getTime()
-      : 0;
-    const lastB = b.activity?.lastOrderAt
-      ? new Date(b.activity.lastOrderAt).getTime()
-      : 0;
-    if (lastA !== lastB) return lastB - lastA;
+      if (filterHealth !== "all" && egKey !== filterHealth) return false;
 
-    const revA = a.activity?.revenueLast30Days ?? 0;
-    const revB = b.activity?.revenueLast30Days ?? 0;
-    const mult = sortSales === "asc" ? 1 : -1;
-    return (revA - revB) * mult;
-  });
+      if (filterSource === "self" && creationMeta.kind !== "self") return false;
+      if (filterSource === "team" && creationMeta.kind !== "team") return false;
+
+      if (filterEmail === "verified") {
+        if (!r.ownerAccount?.allVerified) return false;
+      } else if (filterEmail === "unverified") {
+        if (!r.ownerAccount || r.ownerAccount.allVerified) return false;
+      } else if (filterEmail === "no_owner") {
+        if (r.ownerAccount) return false;
+      }
+
+      if (filterPlan !== "all" && plan !== filterPlan) return false;
+
+      if (filterActivity === "ordered_30d" && orders30 < 1) return false;
+      if (filterActivity === "never_ordered" && ordersLifetime > 0) return false;
+      if (filterActivity === "had_orders" && ordersLifetime < 1) return false;
+      if (filterActivity === "quiet_30d" && !(ordersLifetime > 0 && orders30 < 1))
+        return false;
+
+      if (filterExpiry === "expiring_7d" && !isExpiringWithinDays(end, 7))
+        return false;
+      if (filterExpiry === "expiring_30d" && !isExpiringWithinDays(end, 30))
+        return false;
+
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim().toLowerCase();
+      const name = (r.website?.name || "").toLowerCase();
+      const sub = (r.website?.subdomain || "").toLowerCase();
+      const phone = (r.website?.contactPhone || "").toLowerCase();
+      const email = (r.website?.contactEmail || "").toLowerCase();
+      const city = (r.website?.city || "").toLowerCase();
+      const ownerDisplay = (r.ownerAccount?.displayName || "").toLowerCase();
+      const ownerLogin = (r.ownerAccount?.loginEmail || "").toLowerCase();
+      const createdByLabel = creationMeta.creatorName.toLowerCase();
+      const createdBySource = creationMeta.label.toLowerCase();
+      const planLabel = plan.toLowerCase();
+      const status = subStatus.toLowerCase();
+      const loginEmailState = r.ownerAccount
+        ? r.ownerAccount.allVerified
+          ? "verified"
+          : "pending"
+        : "";
+      return (
+        name.includes(q) ||
+        sub.includes(q) ||
+        phone.includes(q) ||
+        email.includes(q) ||
+        city.includes(q) ||
+        ownerDisplay.includes(q) ||
+        ownerLogin.includes(q) ||
+        createdByLabel.includes(q) ||
+        createdBySource.includes(q) ||
+        planLabel.includes(q) ||
+        status.includes(q) ||
+        loginEmailState.includes(q)
+      );
+    });
+  }, [
+    restaurants,
+    searchQuery,
+    filterStatus,
+    filterHealth,
+    filterSource,
+    filterEmail,
+    filterPlan,
+    filterActivity,
+    filterExpiry,
+  ]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const aPending = a.approvalStatus === "pending" ? 1 : 0;
+      const bPending = b.approvalStatus === "pending" ? 1 : 0;
+      if (aPending !== bPending) return bPending - aPending;
+
+      if (sortBy === "name_asc" || sortBy === "name_desc") {
+        const na = (a.website?.name || "").toLowerCase();
+        const nb = (b.website?.name || "").toLowerCase();
+        const cmp = na.localeCompare(nb);
+        return sortBy === "name_asc" ? cmp : -cmp;
+      }
+
+      if (sortBy === "created_desc" || sortBy === "created_asc") {
+        const ca = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const cb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return sortBy === "created_desc" ? cb - ca : ca - cb;
+      }
+
+      if (sortBy === "last_order") {
+        const lastA = a.activity?.lastOrderAt
+          ? new Date(a.activity.lastOrderAt).getTime()
+          : 0;
+        const lastB = b.activity?.lastOrderAt
+          ? new Date(b.activity.lastOrderAt).getTime()
+          : 0;
+        return lastB - lastA;
+      }
+
+      const revA = a.activity?.revenueLast30Days ?? 0;
+      const revB = b.activity?.revenueLast30Days ?? 0;
+      return sortBy === "sales_asc" ? revA - revB : revB - revA;
+    });
+  }, [filtered, sortBy]);
+
+  const activeFilterCount = [
+    filterStatus !== "all",
+    filterHealth !== "all",
+    filterSource !== "all",
+    filterEmail !== "all",
+    filterPlan !== "all",
+    filterActivity !== "all",
+    filterExpiry !== "all",
+    Boolean(searchQuery.trim()),
+  ].filter(Boolean).length;
+
+  function clearAllFilters() {
+    setSearchQuery("");
+    setFilterStatus("all");
+    setFilterHealth("all");
+    setFilterSource("all");
+    setFilterEmail("all");
+    setFilterPlan("all");
+    setFilterActivity("all");
+    setFilterExpiry("all");
+    setSortBy("sales_desc");
+  }
+
+  const quickFilters = [
+    { id: "all", label: "All", status: "all", count: summary.total },
+    {
+      id: "pending_approval",
+      label: "Pending",
+      status: "pending_approval",
+      count: summary.pending,
+    },
+    { id: "TRIAL", label: "Trial", status: "TRIAL", count: summary.trial },
+    { id: "ACTIVE", label: "Active", status: "ACTIVE", count: summary.active },
+    {
+      id: "SUSPENDED",
+      label: "Suspended",
+      status: "SUSPENDED",
+      count: summary.suspended,
+    },
+  ];
 
   return (
     <AdminLayout title="Restaurants & Subscriptions">
       <SuperPageGate permission="platform.restaurants.view">
-      <div className="flex flex-col">
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="relative flex flex-1 min-w-[200px] max-w-sm items-center">
-            <Search className="pointer-events-none absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-neutral-500" />
-            <input
-              type="text"
-              placeholder="Search by name, subdomain, phone, email, plan or status..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="box-border h-9 w-full rounded-lg border border-gray-200 bg-white py-0 pl-9 pr-4 text-sm leading-normal text-gray-900 placeholder:text-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
-            />
-          </div>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
-          >
-            <option value="all">All statuses</option>
-            <option value="pending_approval">Pending approval</option>
-            <option value="rejected">Rejected</option>
-            <option value="TRIAL">Trial</option>
-            <option value="ACTIVE">Active</option>
-            <option value="PAST_DUE">Past due</option>
-            <option value="GRACE">Grace</option>
-            <option value="SUSPENDED">Suspended</option>
-          </select>
-          <select
-            value={filterHealth}
-            onChange={(e) => setFilterHealth(e.target.value)}
-            className="box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
-          >
-            <option value="all">All health</option>
-            <option value="active">Active</option>
-            <option value="quiet">Quiet</option>
-            <option value="new">New</option>
-            <option value="configured">Configured</option>
-            <option value="dormant">Dormant</option>
-          </select>
-          <select
-            value={sortSales}
-            onChange={(e) => setSortSales(e.target.value)}
-            className="box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium leading-normal text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
-            title="Sort by 30-day revenue"
-          >
-            <option value="desc">Sales: High → Low</option>
-            <option value="asc">Sales: Low → High</option>
-          </select>
-          {(searchQuery ||
-            filterStatus !== "all" ||
-            filterHealth !== "all") && (
-            <span className="inline-flex h-9 shrink-0 items-center text-xs text-neutral-500">
-              {filtered.length} of {restaurants.length}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={handleRefreshList}
-            disabled={listRefreshing}
-            className="box-border inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
-            title="Refresh list"
-            aria-label="Refresh restaurants list"
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${listRefreshing ? "animate-spin" : ""}`}
-            />
-          </button>
-          <Button
-            type="button"
-            onClick={handleOpenCreate}
-            className="box-border !h-9 !min-h-0 shrink-0 !py-0 inline-flex items-center gap-1.5 px-3 text-xs font-semibold"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Create restaurant
-          </Button>
+      <div className="flex flex-col gap-4">
+        {/* Summary strip */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            { label: "Total", value: summary.total, tone: "text-gray-900 dark:text-white" },
+            { label: "Pending", value: summary.pending, tone: "text-amber-700 dark:text-amber-300" },
+            { label: "On trial", value: summary.trial, tone: "text-sky-700 dark:text-sky-300" },
+            { label: "Active", value: summary.active, tone: "text-emerald-700 dark:text-emerald-300" },
+            { label: "Suspended", value: summary.suspended, tone: "text-red-700 dark:text-red-300" },
+            { label: "Expiring 7d", value: summary.expiring, tone: "text-orange-700 dark:text-orange-300" },
+          ].map((card) => (
+            <div
+              key={card.label}
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 dark:border-neutral-800 dark:bg-neutral-950"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                {card.label}
+              </p>
+              <p className={`mt-0.5 text-xl font-black tabular-nums ${card.tone}`}>
+                {card.value}
+              </p>
+            </div>
+          ))}
         </div>
+
+        {/* Toolbar */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-950 sm:p-4">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5">
+              <div className="relative flex min-w-[160px] flex-1 items-center">
+                <Search className="pointer-events-none absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-neutral-500" />
+                <input
+                  type="text"
+                  placeholder="Search name, subdomain, city, owner, email, plan…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="box-border h-9 w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 py-0 pl-9 pr-9 text-sm leading-normal text-gray-900 placeholder:text-gray-400 focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-neutral-800"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className={`${filterSelectCls} w-auto max-w-[11rem] shrink-0`}
+                title="Sort restaurants"
+              >
+                <option value="sales_desc">Sales: High → Low</option>
+                <option value="sales_asc">Sales: Low → High</option>
+                <option value="last_order">Last order (newest)</option>
+                <option value="created_desc">Newest created</option>
+                <option value="created_asc">Oldest created</option>
+                <option value="name_asc">Name A → Z</option>
+                <option value="name_desc">Name Z → A</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((v) => !v)}
+                className={`box-border inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                  filtersOpen || activeFilterCount > 0
+                    ? "border-primary/30 bg-primary/5 text-primary"
+                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                }`}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : (
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
+                  />
+                )}
+              </button>
+
+              {activeFilterCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="box-border inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              ) : null}
+
+              <span className="inline-flex h-9 shrink-0 items-center whitespace-nowrap text-xs text-neutral-500">
+                <Filter className="mr-1 h-3.5 w-3.5" />
+                {filtered.length} of {restaurants.length}
+              </span>
+
+              <button
+                type="button"
+                onClick={handleRefreshList}
+                disabled={listRefreshing}
+                className="box-border ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                title="Refresh list"
+                aria-label="Refresh restaurants list"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${listRefreshing ? "animate-spin" : ""}`}
+                />
+              </button>
+              <Button
+                type="button"
+                onClick={handleOpenCreate}
+                className="box-border !h-9 !min-h-0 shrink-0 !py-0 inline-flex items-center gap-1.5 px-3 text-xs font-semibold"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create restaurant
+              </Button>
+            </div>
+
+            {/* Quick status chips */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {quickFilters.map((chip) => {
+                const active = filterStatus === chip.status;
+                return (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => setFilterStatus(chip.status)}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                      active
+                        ? "border-primary bg-primary text-white shadow-sm shadow-primary/20"
+                        : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300 hover:bg-white dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                    }`}
+                  >
+                    {chip.label}
+                    <span
+                      className={`tabular-nums ${
+                        active ? "text-white/80" : "text-gray-400 dark:text-neutral-500"
+                      }`}
+                    >
+                      {chip.count}
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterExpiry("expiring_7d");
+                  setFiltersOpen(true);
+                }}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                  filterExpiry === "expiring_7d"
+                    ? "border-orange-500 bg-orange-500 text-white"
+                    : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
+                }`}
+              >
+                Expiring soon
+                <span className="tabular-nums opacity-80">{summary.expiring}</span>
+              </button>
+            </div>
+
+            {/* Advanced filters */}
+            {filtersOpen ? (
+              <div className="grid grid-cols-1 gap-2 border-t border-gray-100 pt-3 dark:border-neutral-800 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Status
+                  </span>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className={filterSelectCls}
+                  >
+                    <option value="all">All statuses</option>
+                    <option value="pending_approval">Pending approval</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="TRIAL">Trial</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="PAST_DUE">Past due</option>
+                    <option value="GRACE">Grace</option>
+                    <option value="EXPIRED">Expired</option>
+                    <option value="SUSPENDED">Suspended</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Health
+                  </span>
+                  <select
+                    value={filterHealth}
+                    onChange={(e) => setFilterHealth(e.target.value)}
+                    className={filterSelectCls}
+                  >
+                    <option value="all">All health</option>
+                    <option value="active">Active</option>
+                    <option value="quiet">Quiet</option>
+                    <option value="new">New</option>
+                    <option value="configured">Configured</option>
+                    <option value="dormant">Dormant</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Source
+                  </span>
+                  <select
+                    value={filterSource}
+                    onChange={(e) => setFilterSource(e.target.value)}
+                    className={filterSelectCls}
+                  >
+                    <option value="all">All sources</option>
+                    <option value="self">Self request</option>
+                    <option value="team">Team created</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Plan
+                  </span>
+                  <select
+                    value={filterPlan}
+                    onChange={(e) => setFilterPlan(e.target.value)}
+                    className={filterSelectCls}
+                  >
+                    <option value="all">All plans</option>
+                    <option value="ESSENTIAL">Essential</option>
+                    <option value="PROFESSIONAL">Professional</option>
+                    <option value="ENTERPRISE">Enterprise</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Owner email
+                  </span>
+                  <select
+                    value={filterEmail}
+                    onChange={(e) => setFilterEmail(e.target.value)}
+                    className={filterSelectCls}
+                  >
+                    <option value="all">All emails</option>
+                    <option value="verified">Verified</option>
+                    <option value="unverified">Unverified</option>
+                    <option value="no_owner">No owner</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Activity
+                  </span>
+                  <select
+                    value={filterActivity}
+                    onChange={(e) => setFilterActivity(e.target.value)}
+                    className={filterSelectCls}
+                  >
+                    <option value="all">All activity</option>
+                    <option value="ordered_30d">Ordered in 30 days</option>
+                    <option value="quiet_30d">Had orders, quiet 30d</option>
+                    <option value="had_orders">Ever ordered</option>
+                    <option value="never_ordered">Never ordered</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-1 sm:col-span-2 lg:col-span-3 xl:col-span-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-500">
+                    Expiry
+                  </span>
+                  <select
+                    value={filterExpiry}
+                    onChange={(e) => setFilterExpiry(e.target.value)}
+                    className={filterSelectCls}
+                  >
+                    <option value="all">Any expiry</option>
+                    <option value="expiring_7d">Ends within 7 days</option>
+                    <option value="expiring_30d">Ends within 30 days</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
         <DataTable
           variant="card"
           data={sorted}
@@ -617,21 +974,11 @@ export default function SuperRestaurantsPage() {
             {
               key: "restaurant",
               header: "Restaurant",
-              render: (_, r) => {
-                const sub = r.website?.subdomain;
-                return (
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-bold leading-snug text-gray-900 dark:text-white">
-                      {r.website?.name || "Untitled restaurant"}
-                    </div>
-                    {sub ? (
-                      <div className="truncate font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
-                        {sub}.{STOREFRONT_DOMAIN}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              },
+              render: (_, r) => (
+                <div className="truncate text-sm font-bold leading-snug text-gray-900 dark:text-white">
+                  {r.website?.name || "Untitled restaurant"}
+                </div>
+              ),
             },
             {
               key: "owner",
@@ -639,24 +986,16 @@ export default function SuperRestaurantsPage() {
               render: (_, r) => {
                 const oa = r.ownerAccount;
                 const name = (oa?.displayName || "").trim();
-                const email = (oa?.loginEmail || "").trim();
-                if (!name && !email) {
+                if (!name) {
                   return (
                     <span className="text-[11px] text-neutral-500">—</span>
                   );
                 }
                 return (
-                  <div className="min-w-0 max-w-[220px]">
-                    {name ? (
-                      <div className="truncate text-sm leading-snug text-gray-900 dark:text-white">
-                        {name}
-                      </div>
-                    ) : null}
-                    {email ? (
-                      <div className="truncate text-[11px] text-neutral-500 dark:text-neutral-400">
-                        {email}
-                      </div>
-                    ) : null}
+                  <div className="min-w-0 max-w-[180px]">
+                    <div className="truncate text-sm leading-snug text-gray-900 dark:text-white">
+                      {name}
+                    </div>
                     {oa && oa.allVerified === false ? (
                       <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                         Email pending
@@ -670,7 +1009,7 @@ export default function SuperRestaurantsPage() {
             {
               key: "status",
               header: "Status",
-              cellClassName: "whitespace-normal",
+              cellClassName: "whitespace-nowrap",
               render: (_, r) => {
                 const isPending = r.approvalStatus === "pending";
                 const isRejected = r.approvalStatus === "rejected";
@@ -679,47 +1018,92 @@ export default function SuperRestaurantsPage() {
                 const statusLabel = formatSubscriptionStatusLabel(statusValue);
                 const badgeClass =
                   SUBSCRIPTION_PILL[statusValue] || SUBSCRIPTION_PILL.TRIAL;
-                const trialEnd =
-                  sub.trialEndsAt ||
-                  sub.freeTrialEndDate ||
-                  sub.expiresAt;
-                const endLabel = formatTrialEndLabel(trialEnd);
-                const warn = isExpiringWithinDays(trialEnd);
+                if (isPending) {
+                  return (
+                    <span className="badge w-fit text-[10px] font-semibold uppercase tracking-wide bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50">
+                      Pending approval
+                    </span>
+                  );
+                }
+                if (isRejected) {
+                  return (
+                    <span className="badge w-fit text-[10px] font-semibold uppercase tracking-wide bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-700/50">
+                      Rejected
+                    </span>
+                  );
+                }
                 return (
-                  <div className="flex flex-col gap-1 min-w-0">
-                    {isPending ? (
-                      <span className="badge w-fit text-[10px] font-semibold uppercase tracking-wide bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700/50">
-                        Pending approval
-                      </span>
-                    ) : isRejected ? (
-                      <span className="badge w-fit text-[10px] font-semibold uppercase tracking-wide bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-700/50">
-                        Rejected
-                      </span>
-                    ) : (
-                      <span
-                        className={`badge w-fit text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}
-                      >
-                        {statusLabel}
-                      </span>
-                    )}
-                    {!isPending && !isRejected && endLabel ? (
-                      <span
-                        className={`text-[11px] ${
-                          warn
-                            ? "text-red-600 dark:text-red-400 font-medium"
-                            : "text-neutral-500 dark:text-neutral-400"
-                        }`}
-                      >
-                        {endLabel}
-                      </span>
-                    ) : null}
+                  <span
+                    className={`badge w-fit text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}
+                  >
+                    {statusLabel}
+                  </span>
+                );
+              },
+            },
+            {
+              key: "subscriptionEnds",
+              header: "Ends",
+              cellClassName: "whitespace-nowrap",
+              render: (_, r) => {
+                if (
+                  r.approvalStatus === "pending" ||
+                  r.approvalStatus === "rejected"
+                ) {
+                  return (
+                    <span className="text-[11px] text-neutral-500">—</span>
+                  );
+                }
+                const sub = r.subscription || {};
+                const trialEnd =
+                  sub.freeTrialEndDate || sub.trialEndsAt || sub.expiresAt;
+                const endLabel = formatEndsInLabel(trialEnd);
+                if (!endLabel) {
+                  return (
+                    <span className="text-[11px] text-neutral-500">—</span>
+                  );
+                }
+                const warn = isExpiringWithinDays(trialEnd, 7);
+                return (
+                  <span
+                    className={`text-[11px] font-medium ${
+                      warn
+                        ? "text-red-600 dark:text-red-400"
+                        : endLabel === "Ended"
+                          ? "text-neutral-500"
+                          : "text-gray-700 dark:text-neutral-300"
+                    }`}
+                    title={
+                      trialEnd
+                        ? new Date(trialEnd).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        : undefined
+                    }
+                  >
+                    {endLabel}
+                  </span>
+                );
+              },
+            },
+            {
+              key: "createdByName",
+              header: "Created by",
+              render: (_, r) => {
+                const meta = getRestaurantCreationMeta(r);
+                return (
+                  <div className="truncate text-sm leading-snug text-gray-900 dark:text-white max-w-[160px]">
+                    {meta.creatorName || "—"}
                   </div>
                 );
               },
             },
             {
-              key: "createdBy",
-              header: "Created By",
+              key: "createdSource",
+              header: "Source",
+              cellClassName: "whitespace-nowrap",
               render: (_, r) => {
                 const meta = getRestaurantCreationMeta(r);
                 const pillClass =
@@ -727,16 +1111,11 @@ export default function SuperRestaurantsPage() {
                     ? "bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/35 dark:text-blue-200 dark:border-blue-700/60"
                     : "bg-violet-50 text-violet-800 border border-violet-200 dark:bg-violet-950/35 dark:text-violet-200 dark:border-violet-700/60";
                 return (
-                  <div className="min-w-0 max-w-[210px]">
-                    <div className="truncate text-sm leading-snug text-gray-900 dark:text-white">
-                      {meta.creatorName}
-                    </div>
-                    <span
-                      className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${pillClass}`}
-                    >
-                      {meta.label}
-                    </span>
-                  </div>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${pillClass}`}
+                  >
+                    {meta.label}
+                  </span>
                 );
               },
             },

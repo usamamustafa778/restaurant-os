@@ -9,7 +9,7 @@ import {
   updateTable,
   deleteTable,
   getOrders,
-  getReservations,
+  getReservationsIfAvailable,
   SubscriptionInactiveError,
 } from "../../lib/apiClient";
 import {
@@ -122,10 +122,13 @@ export default function TablesPage() {
 
   const loadData = useCallback(async () => {
     try {
+      // Tables are part of POS core — never gate this page on Reservations module.
       const [tablesData, ordersData, reservationsData] = await Promise.all([
         getTables(),
         getOrders({ limit: 200 }),
-        getReservations({ date: new Date().toISOString().split("T")[0] }),
+        getReservationsIfAvailable({
+          date: new Date().toISOString().split("T")[0],
+        }),
       ]);
       setTables(Array.isArray(tablesData) ? tablesData : []);
       const orders = Array.isArray(ordersData?.orders) ? ordersData.orders : [];

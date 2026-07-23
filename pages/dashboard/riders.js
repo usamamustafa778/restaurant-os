@@ -1049,7 +1049,7 @@ export default function RidersPage() {
 
   if (moduleLocked === true) {
     return (
-      <AdminLayout title="Riders" subtitle="">
+      <AdminLayout title="Riders Portal" subtitle="">
         <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
           <RidersLockedPresentation />
         </div>
@@ -1059,14 +1059,14 @@ export default function RidersPage() {
 
   if (moduleLocked === null) {
     return (
-      <AdminLayout title="Riders" subtitle="">
+      <AdminLayout title="Riders Portal" subtitle="">
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-16 h-16 rounded-2xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center mb-4">
             <Truck className="w-8 h-8 text-orange-500 animate-pulse" />
           </div>
           <div className="flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-            <p className="text-sm text-gray-500">Checking Riders access…</p>
+            <p className="text-sm text-gray-500">Checking Riders Portal access…</p>
           </div>
         </div>
       </AdminLayout>
@@ -1074,7 +1074,7 @@ export default function RidersPage() {
   }
 
   return (
-    <AdminLayout title="Riders">
+    <AdminLayout title="Riders Portal">
       <div
         className={`space-y-5 pb-16 text-gray-900 dark:text-white ${
           sidebarRiderKey

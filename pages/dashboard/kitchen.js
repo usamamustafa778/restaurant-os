@@ -802,7 +802,7 @@ export default function KitchenPage() {
 
   if (moduleLocked === true) {
     return (
-      <AdminLayout title="Kitchen Display" subtitle="">
+      <AdminLayout title="Kitchen Display System" subtitle="">
         <PermissionGate permission="orders.start_cooking">
           <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
             <KdsLockedPresentation />
@@ -814,7 +814,7 @@ export default function KitchenPage() {
 
   if (pageLoading || moduleLocked === null) {
     return (
-      <AdminLayout title="Kitchen Display" subtitle="">
+      <AdminLayout title="Kitchen Display System" subtitle="">
         <PermissionGate permission="orders.start_cooking">
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-16 h-16 rounded-2xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center mb-4">
@@ -831,7 +831,7 @@ export default function KitchenPage() {
   }
 
   return (
-    <AdminLayout title="Kitchen Display" subtitle="">
+    <AdminLayout title="Kitchen Display System" subtitle="">
       <PermissionGate permission="orders.start_cooking">
       <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 110px)" }}>
 

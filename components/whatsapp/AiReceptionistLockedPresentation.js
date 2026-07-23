@@ -15,32 +15,32 @@ import {
 const AI_RECEPTIONIST_FEATURES = [
   {
     icon: UserX,
-    title: "No human needed on the line",
+    title: "No Human Needed On The Line",
     desc: "AI greets guests, answers questions, and takes orders — your team stays on the floor, not the phone.",
   },
   {
     icon: Moon,
-    title: "Works nights, rushes & holidays",
+    title: "Works Nights, Rushes & Holidays",
     desc: "While one staffer can take one call, AI keeps 100+ WhatsApp chats moving at the same time — even at 2 AM.",
   },
   {
     icon: ShoppingBag,
-    title: "Orders straight to your kitchen",
+    title: "Orders Straight To Your Kitchen",
     desc: "Confirmed WhatsApp orders land in EatsDesk — no retyping, no missed details.",
   },
   {
     icon: MessageCircle,
-    title: "Urdu & English, instantly",
+    title: "Urdu & English, Instantly",
     desc: "Menu, hours, location, and deals — answered in the language your guests actually use.",
   },
   {
     icon: Sparkles,
-    title: "Always in sync with your menu",
+    title: "Always In Sync With Your Menu",
     desc: "Live items, deals, and branch hours — so AI never promises what you can’t serve.",
   },
   {
     icon: Globe2,
-    title: "Branch-aware & handoff-ready",
+    title: "Branch-Aware & Handoff-Ready",
     desc: "Route to the right location. Escalate to a manager only when you want a human in the loop.",
   },
 ];
@@ -84,20 +84,20 @@ export default function AiReceptionistLockedPresentation() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-orange-200">
                 <Lock className="h-3 w-3" />
-                Module not active
+                Available Add-On
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-200">
                 <Bot className="h-3 w-3" />
-                100+ chats at once · No staff needed
+                100+ Chats At Once · No Staff Needed
               </span>
             </div>
 
             <h2 className="mt-4 font-black tracking-tight text-white">
               <span className="block text-3xl sm:text-4xl xl:text-5xl">
-                Receptionist that never sleeps
+                Receptionist That Never Sleeps
               </span>
               <span className="mt-1.5 block text-xl font-semibold text-emerald-300 sm:text-2xl xl:text-3xl">
-                Talks to 100+ customers at once
+                Talks To 100+ Customers At Once
               </span>
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-stone-300 sm:text-base">
@@ -139,15 +139,15 @@ export default function AiReceptionistLockedPresentation() {
             <div className="mt-6 flex flex-wrap gap-4 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
               <span className="inline-flex items-center gap-1.5">
                 <UserX className="h-3.5 w-3.5 text-emerald-400" />
-                No human on chat
+                No Human On Chat
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <MessageCircle className="h-3.5 w-3.5 text-emerald-400" />
-                100+ at once
+                100+ At Once
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <Clock3 className="h-3.5 w-3.5 text-emerald-400" />
-                Never sleeps
+                Never Sleeps
               </span>
             </div>
           </div>
@@ -186,7 +186,7 @@ export default function AiReceptionistLockedPresentation() {
           href="/subscription"
           className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:underline underline-offset-2 dark:text-emerald-400"
         >
-          See subscription options
+          See Subscription Options
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>

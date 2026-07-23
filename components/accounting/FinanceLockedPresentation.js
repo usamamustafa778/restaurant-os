@@ -7,51 +7,60 @@ import {
   FileText,
   Lock,
   Receipt,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
   Wallet,
 } from "lucide-react";
+
+const OUTCOME_BULLETS = [
+  "Stop closing the night on spreadsheets and guesswork",
+  "See cash, receivables, and payables in one live board",
+  "Catch leakage early — before month-end surprises hit",
+];
 
 const FINANCE_FEATURES = [
   {
     icon: Calculator,
-    title: "Accounts board",
-    desc: "See receivables, payables, and cash positions in one accounting workspace.",
+    title: "Accounts Board Built For Owners",
+    desc: "Receivables, payables, and cash position in one workspace — so you always know what the business is owed and what it owes.",
   },
   {
     icon: Receipt,
-    title: "Voucher workflow",
-    desc: "Post cash, bank, and journal vouchers with cleaner day-end reconciliation.",
+    title: "Voucher Workflow That Closes Clean",
+    desc: "Post cash, bank, and journal vouchers with a clear trail. Day-end reconciliation stops being a late-night scramble.",
   },
   {
     icon: FileText,
-    title: "Built-in reports",
-    desc: "Run day book, ledger, trial balance, P&L, and balance sheet from live data.",
+    title: "Reports That Answer Profit Questions",
+    desc: "Day book, ledger, trial balance, P&L, and balance sheet from live operations — not a separate accountant spreadsheet.",
   },
   {
     icon: BookOpen,
-    title: "Accounting setup",
-    desc: "Chart of accounts and parties stay aligned with your restaurant operations.",
+    title: "Setup That Matches The Restaurant",
+    desc: "Chart of accounts and parties stay aligned with how you actually buy, sell, and pay.",
   },
   {
     icon: ClipboardList,
-    title: "Purchase cycle",
-    desc: "Manage purchase orders, stock receiving, and purchase history in one flow.",
+    title: "Purchase Cycle In The Same System",
+    desc: "Purchase orders, receiving, and history connect to stock and spend — fewer gaps between kitchen and books.",
   },
   {
     icon: Wallet,
-    title: "Operational control",
-    desc: "Track spend and liabilities with fewer manual spreadsheets and less leakage.",
+    title: "Less Leakage, More Control",
+    desc: "Track spend and liabilities with fewer manual sheets. Small daily misses stop becoming monthly losses.",
   },
 ];
 
 /**
- * Marketing presentation shown when the restaurant has not subscribed to Finance/Accounting.
+ * Marketing presentation when Accounting / Accounts Board is not subscribed.
  */
 export default function FinanceLockedPresentation() {
   return (
     <div className="flex h-full min-h-[inherit] w-full flex-col overflow-hidden bg-white dark:bg-neutral-950">
       <div className="relative flex flex-1 flex-col overflow-hidden border-b border-gray-100 dark:border-neutral-800">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          className="absolute inset-0 bg-cover bg-[center_right] bg-no-repeat"
           style={{ backgroundImage: "url(/images/accounting/finance-hero.jpg)" }}
           aria-hidden
         />
@@ -59,49 +68,83 @@ export default function FinanceLockedPresentation() {
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "linear-gradient(105deg, rgba(12,10,9,0.92) 0%, rgba(28,25,23,0.82) 38%, rgba(28,25,23,0.55) 62%, rgba(67,20,7,0.35) 100%)",
+              "linear-gradient(105deg, rgba(12,10,9,0.94) 0%, rgba(28,25,23,0.82) 38%, rgba(41,37,36,0.5) 68%, rgba(67,20,7,0.22) 100%)",
           }}
           aria-hidden
         />
         <div
-          className="pointer-events-none absolute inset-0 opacity-50"
+          className="pointer-events-none absolute inset-0 opacity-45"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 18% 30%, rgba(249,115,22,0.28), transparent 40%), radial-gradient(circle at 85% 15%, rgba(251,146,60,0.16), transparent 36%)",
+              "radial-gradient(circle at 16% 30%, rgba(249,115,22,0.24), transparent 44%), radial-gradient(circle at 88% 40%, rgba(251,146,60,0.12), transparent 40%)",
           }}
           aria-hidden
         />
 
         <div className="relative flex flex-1 items-center px-6 py-8 sm:px-8 lg:px-10 lg:py-10 xl:px-14">
           <div className="max-w-xl">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-orange-200">
-              <Lock className="h-3 w-3" />
-              Module not active
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-orange-200">
+                <Lock className="h-3 w-3" />
+                Available Add-On
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/35 bg-amber-400/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
+                <TrendingUp className="h-3 w-3" />
+                Turns Sales Into Real Profit Clarity
+              </span>
+            </div>
+
             <h2 className="mt-4 font-black tracking-tight text-white">
               <span className="block text-3xl sm:text-4xl xl:text-5xl">
-                Finance & Accounting
+                Accounts Board
               </span>
-              <span className="mt-1 block text-xl font-semibold text-orange-300 sm:text-2xl xl:text-3xl">
-                Control cash, vouchers, and reports
+              <span className="mt-1.5 block text-xl font-semibold text-orange-300 sm:text-2xl xl:text-3xl">
+                Know Where Every Rupee Went
               </span>
             </h2>
+
             <p className="mt-3 text-sm leading-relaxed text-stone-300 sm:text-base">
-              Unlock accounting operations built for restaurants — from vouchers
-              and ledgers to purchase receiving and financial statements.
+              Sales on the POS are only half the story. Accounts Board connects
+              cash, vouchers, parties, and reports so owners see profit — not just
+              ticket totals.
             </p>
+
+            <ul className="mt-4 space-y-1.5 text-sm text-stone-200">
+              {OUTCOME_BULLETS.map((line) => (
+                <li key={line} className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
+                  {line}
+                </li>
+              ))}
+            </ul>
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link
                 href="/subscription"
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-5 text-sm font-semibold text-white shadow-lg shadow-orange-900/40 transition hover:-translate-y-0.5"
+                className="inline-flex h-12 items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 text-sm font-bold text-white shadow-lg shadow-orange-950/45 transition hover:-translate-y-0.5 hover:shadow-orange-950/55"
               >
-                Enable Finance Module
+                Unlock Accounts Board
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <p className="text-xs text-stone-400">
-                Ask your restaurant admin to enable Accounting in Subscription.
+              <p className="max-w-[14rem] text-xs leading-snug text-stone-400">
+                Enable it in Subscription — or ask your restaurant admin to turn
+                on Accounting for this branch.
               </p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-4 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+              <span className="inline-flex items-center gap-1.5">
+                <Wallet className="h-3.5 w-3.5 text-orange-400" />
+                Cash Clarity
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
+                Cleaner Closes
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-orange-400" />
+                Live P&L View
+              </span>
             </div>
           </div>
         </div>
@@ -128,16 +171,17 @@ export default function FinanceLockedPresentation() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-gray-100 bg-stone-50 px-6 py-4 dark:border-neutral-800 dark:bg-neutral-900/50 sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-10">
-        <p className="text-xs text-gray-500 dark:text-neutral-400">
-          These finance pages stay here — unlock Accounting to activate vouchers,
-          reports, setup, and purchase workflows.
+      <div className="flex flex-col gap-3 border-t border-gray-100 bg-gradient-to-r from-orange-50/90 to-stone-50 px-6 py-4 dark:border-neutral-800 dark:from-orange-950/30 dark:to-neutral-900/50 sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-10">
+        <p className="text-xs text-gray-600 dark:text-neutral-400">
+          Busy restaurants don’t lose money on one bad night — they lose it in
+          untracked spend. Unlock Accounts Board and run the books from live
+          operations.
         </p>
         <Link
           href="/subscription"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline underline-offset-2"
+          className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-orange-700 hover:underline underline-offset-2 dark:text-orange-300"
         >
-          View subscription options
+          See Subscription Options
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>

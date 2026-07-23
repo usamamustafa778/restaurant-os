@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyJwt } from "./lib/auth";
+import { DASHBOARD_TOP_SEGMENTS } from "./lib/dashboardPages";
 
 // Root domain for subdomain-based tenant routing.
 // Production app host: set NEXT_PUBLIC_ROOT_DOMAIN=app.eatsdesk.com
@@ -29,20 +30,9 @@ function isAllowedDashboardRole(role) {
   return role.length > 0;
 }
 
-// Dashboard pages that live under pages/dashboard/ and are now served at /<page>
-const DASHBOARD_PAGES = new Set([
-  "overview", "pos", "orders", "kitchen", "reservations",
-  "categories", "menu-items", "menu", "modifier-groups",
-  "customers", "inventory", "deals",
-  "users", "business-settings", "settings", "tables", "history",
-  "website-settings", "integrations", "whatsapp",
-  "subscription", "profile", "day-report",
-  "order-taker", "rider", "migrate-pending",
-  "sales-report",
-  "riders",
-  "rider-payouts",
-  "accounting", "vouchers",
-]);
+// Dashboard pages that live under pages/dashboard/ and are served at /<page>
+// Path rewriting is in next.config.js (client-router aware). Middleware only auths.
+const DASHBOARD_PAGES = new Set(DASHBOARD_TOP_SEGMENTS);
 
 // Routes that should only be visible to non-authenticated users
 const PUBLIC_ONLY_ROUTES = new Set(["/signup", "/login"]);
@@ -260,7 +250,7 @@ export async function middleware(request) {
     return NextResponse.redirect(url);
   }
 
-  // ─── Super admin pages: /super/* → rewrite to /dashboard/super/* ───────
+  // ─── Super admin pages: /super/* (rewritten to /dashboard/super/* in next.config)
   if (pathname.startsWith("/super")) {
     const payload = await checkAuth(request);
     if (!payload) {
@@ -277,9 +267,7 @@ export async function middleware(request) {
       return NextResponse.redirect(url);
     }
 
-    const url = request.nextUrl.clone();
-    url.pathname = `/dashboard${pathname}`;
-    return NextResponse.rewrite(url);
+    return NextResponse.next();
   }
 
   // ─── Legacy /orders → /pos (bookmarks) ─────────────────────────────────
@@ -334,10 +322,9 @@ export async function middleware(request) {
       }
     }
 
-    // Rewrite clean URL to the actual file path under pages/dashboard/
-    const url = request.nextUrl.clone();
-    url.pathname = `/dashboard${pathname}`;
-    return NextResponse.rewrite(url);
+    // Auth OK — path rewrite to pages/dashboard/* is handled by next.config.js
+    // so client-side <Link> navigations resolve instead of stalling.
+    return NextResponse.next();
   }
 
   // ─── Public-only routes: redirect authenticated users to / ─────────────

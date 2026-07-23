@@ -10,6 +10,7 @@ import {
   getCustomRolesForRestaurant,
   SubscriptionInactiveError,
   getStoredAuth,
+  checkRiderModuleAccess,
 } from "../../lib/apiClient";
 import {
   UserPlus,
@@ -201,8 +202,10 @@ export default function UsersPage() {
     branchIds: [],
     phone: "",
   });
+  const [originalRole, setOriginalRole] = useState(null);
 
   const [customRoles, setCustomRoles] = useState([]);
+  const [riderModuleActive, setRiderModuleActive] = useState(null);
 
   const systemRoleOptions = useMemo(() => {
     const fixed = isManager
@@ -217,8 +220,13 @@ export default function UsersPage() {
       !fixed.some((r) => r.value === form.role)
         ? LEGACY_FIXED_ROLE_DROPDOWN.filter((r) => r.value === form.role)
         : [];
-    return [...fixed, ...legacy];
-  }, [isManager, form.role]);
+    const roles = [...fixed, ...legacy];
+    // Hide Delivery Rider unless Riders module is subscribed — except when editing an existing rider.
+    if (riderModuleActive === false && form.role !== "delivery_rider") {
+      return roles.filter((r) => r.value !== "delivery_rider");
+    }
+    return roles;
+  }, [isManager, form.role, riderModuleActive]);
 
   const defaultCreateRole = useMemo(() => {
     const cashier = customRoles.find((r) => r.slug === "default_cashier");
@@ -242,6 +250,25 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    checkRiderModuleAccess()
+      .then(() => {
+        if (!cancelled) setRiderModuleActive(true);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "rider" ||
+          e?.code === 403;
+        setRiderModuleActive(locked ? false : true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!currentBranch) return;
     getCustomRolesForRestaurant()
       .then((data) => setCustomRoles(Array.isArray(data) ? data : []))
@@ -258,6 +285,7 @@ export default function UsersPage() {
       branchIds: currentBranch?.id ? [currentBranch.id] : [],
       phone: "",
     });
+    setOriginalRole(null);
     setShowPassword(false);
   }
 
@@ -277,6 +305,7 @@ export default function UsersPage() {
       branchIds: (u.branches || []).map((b) => b.branchId).filter(Boolean),
       phone: u.phone || "",
     });
+    setOriginalRole(u.role || null);
     setModalError("");
     setIsModalOpen(true);
   }
@@ -303,6 +332,14 @@ export default function UsersPage() {
     if (!form.email.trim()) return setModalError("Email is required");
     if (!form.id && !form.password.trim()) return setModalError("Password is required");
     if (form.role === "delivery_rider" && !form.phone.trim()) return setModalError("Phone is required for riders");
+
+    const assigningRiderRole =
+      form.role === "delivery_rider" && originalRole !== "delivery_rider";
+    if (assigningRiderRole && riderModuleActive === false) {
+      return setModalError(
+        "Riders portal and app is not in your subscription. Enable it to add delivery riders.",
+      );
+    }
 
     setLoading(true);
     setModalError("");
@@ -869,6 +906,13 @@ export default function UsersPage() {
                   )}
                 </select>
                 <p className="text-xs text-gray-500">{getRoleDescription(form.role, customRoles)}</p>
+                {riderModuleActive === false && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
+                    Delivery Rider role requires an active{" "}
+                    <span className="font-semibold">Riders portal and app</span>{" "}
+                    subscription.
+                  </p>
+                )}
 
                 <div className="relative">
                   <input type={showPassword ? "text" : "password"} value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder={form.id ? "Leave blank to keep current password" : "Password"} className="w-full h-10 px-3 pr-10 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm" />

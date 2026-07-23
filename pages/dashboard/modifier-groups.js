@@ -235,16 +235,7 @@ export default function ModifierGroupsPage() {
     <PermissionGate permission="menu.manage">
       <AdminLayout title="Modifier Groups">
         <div className="space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Layers className="w-5 h-5 text-primary" />
-                Modifier Groups
-              </h1>
-              <p className="text-sm text-gray-500 dark:text-neutral-400 mt-1 max-w-2xl">
-                Reusable add-on groups (e.g. Extra toppings, Choose a drink). Attach them to menu items from the item editor.
-              </p>
-            </div>
+          <div className="flex justify-end">
             <Button onClick={openCreate} className="inline-flex items-center gap-2">
               <Plus className="w-4 h-4" />
               New group

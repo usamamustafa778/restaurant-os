@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { getWebsiteAnalytics } from "../../lib/apiClient";
 import {
   Activity,
-  ArrowRight,
-  BarChart3,
   Eye,
   Globe,
-  Lock,
   Loader2,
   Monitor,
   ShoppingBag,
@@ -16,137 +12,12 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+import AnalyticsLockedPresentation from "./AnalyticsLockedPresentation";
 
 const PRESETS = [
   { id: "7d", label: "Last 7 days" },
   { id: "30d", label: "Last 30 days" },
 ];
-
-const ANALYTICS_FEATURES = [
-  {
-    icon: Eye,
-    title: "Traffic at a glance",
-    desc: "Page views, unique visitors, and daily trends from your storefront.",
-  },
-  {
-    icon: ShoppingBag,
-    title: "Add-on revenue proof",
-    desc: "See how modifiers and upsells contribute to online order value.",
-  },
-  {
-    icon: Globe,
-    title: "Top pages & sources",
-    desc: "Know which pages convert and where guests are coming from.",
-  },
-  {
-    icon: Smartphone,
-    title: "Device breakdown",
-    desc: "Mobile vs desktop mix so you can optimize the experience that matters.",
-  },
-];
-
-function AnalyticsLockedPresentation() {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
-      <div className="relative border-b border-gray-100 bg-gradient-to-br from-orange-50 via-white to-amber-50 px-6 py-8 dark:border-neutral-800 dark:from-orange-950/30 dark:via-neutral-950 dark:to-amber-950/20 sm:px-8">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.35]"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 12% 20%, rgba(249,115,22,0.18), transparent 42%), radial-gradient(circle at 88% 10%, rgba(251,191,36,0.16), transparent 38%)",
-          }}
-          aria-hidden
-        />
-        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-xl">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-white/80 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-orange-700 shadow-sm dark:border-orange-500/30 dark:bg-neutral-900/80 dark:text-orange-300">
-              <Lock className="h-3 w-3" />
-              Module available
-            </span>
-            <h3 className="mt-3 text-2xl font-black tracking-tight text-gray-900 dark:text-white sm:text-3xl">
-              Unlock Website Analytics
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-neutral-300">
-              Turn storefront visits into clear decisions — track traffic, top
-              pages, devices, and the add-on revenue your menu is already
-              generating.
-            </p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Link
-                href="/subscription"
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-5 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition hover:-translate-y-0.5 hover:shadow-primary/35"
-              >
-                Enable on Subscription
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <p className="text-xs text-gray-500 dark:text-neutral-400">
-                Or ask EatsDesk support if this should already be active.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid w-full max-w-sm grid-cols-2 gap-2.5 lg:shrink-0">
-            {[
-              { label: "Page views", value: "1.2k", icon: Eye },
-              { label: "Visitors", value: "438", icon: Users },
-              { label: "Add-on share", value: "18%", icon: TrendingUp },
-              { label: "Top device", value: "Mobile", icon: Smartphone },
-            ].map((card) => (
-              <div
-                key={card.label}
-                className="rounded-xl border border-white/70 bg-white/80 p-3 shadow-sm backdrop-blur-sm dark:border-neutral-700 dark:bg-neutral-900/70"
-              >
-                <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
-                  <card.icon className="h-3 w-3 text-primary" />
-                  {card.label}
-                </div>
-                <p className="mt-1.5 text-xl font-black text-gray-900 dark:text-white">
-                  {card.value}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-px bg-gray-100 dark:bg-neutral-800 sm:grid-cols-2">
-        {ANALYTICS_FEATURES.map((feature) => (
-          <div
-            key={feature.title}
-            className="flex gap-3 bg-white p-5 dark:bg-neutral-950 sm:p-6"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <feature.icon className="h-[18px] w-[18px]" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                {feature.title}
-              </h4>
-              <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
-                {feature.desc}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-3 border-t border-gray-100 bg-gray-50/80 px-6 py-4 dark:border-neutral-800 dark:bg-neutral-900/40 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-400">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          Sample metrics shown above — real data appears once the module is
-          enabled.
-        </div>
-        <Link
-          href="/subscription"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline underline-offset-2"
-        >
-          View subscription options
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 function fmtDate(date) {
   if (!date) return "—";

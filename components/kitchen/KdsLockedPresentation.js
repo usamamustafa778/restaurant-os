@@ -15,32 +15,32 @@ import {
 const KDS_FEATURES = [
   {
     icon: LayoutGrid,
-    title: "Live ticket board",
+    title: "Live Ticket Board",
     desc: "New, cooking, and ready columns update in real time so every station knows what’s next.",
   },
   {
     icon: Timer,
-    title: "Urgency that can’t be missed",
+    title: "Urgency That Can’t Be Missed",
     desc: "Aging tickets change color and rise in priority before service slows down.",
   },
   {
     icon: BellRing,
-    title: "Instant new-order alerts",
+    title: "Instant New-Order Alerts",
     desc: "Sound and visual cues when something hits the kitchen — no more missed chits.",
   },
   {
     icon: MonitorSmartphone,
-    title: "Built for the pass",
+    title: "Built For The Pass",
     desc: "Large touch targets, filter presets, and a layout that works on tablets or kitchen screens.",
   },
   {
     icon: Volume2,
-    title: "Station-ready controls",
+    title: "Station-Ready Controls",
     desc: "Mute, dismiss stale ready tickets, and tune filters without leaving the board.",
   },
   {
     icon: Zap,
-    title: "Faster handoffs",
+    title: "Faster Handoffs",
     desc: "One tap moves tickets from new → cooking → ready so runners and cashiers stay in sync.",
   },
 ];
@@ -83,14 +83,14 @@ export default function KdsLockedPresentation() {
           <div className="max-w-xl">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-orange-200">
               <Lock className="h-3 w-3" />
-              Module not active
+              Available Add-On
             </span>
             <h2 className="mt-4 font-black tracking-tight text-white">
               <span className="block text-3xl sm:text-4xl xl:text-5xl">
                 Kitchen Display
               </span>
               <span className="mt-1 block text-xl font-semibold text-orange-300 sm:text-2xl xl:text-3xl">
-                Run a calmer, faster kitchen
+                Run A Calmer, Faster Kitchen
               </span>
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-stone-300 sm:text-base">
@@ -104,7 +104,7 @@ export default function KdsLockedPresentation() {
                 href="/subscription"
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-5 text-sm font-semibold text-white shadow-lg shadow-orange-900/40 transition hover:-translate-y-0.5"
               >
-                Enable Kitchen Display
+                Unlock Kitchen Display
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <p className="text-xs text-stone-400">
@@ -115,15 +115,15 @@ export default function KdsLockedPresentation() {
             <div className="mt-6 flex flex-wrap gap-4 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
               <span className="inline-flex items-center gap-1.5">
                 <Clock3 className="h-3.5 w-3.5 text-orange-400" />
-                Less ticket chaos
+                Less Ticket Chaos
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <ChefHat className="h-3.5 w-3.5 text-orange-400" />
-                Clear station view
+                Clear Station View
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <Zap className="h-3.5 w-3.5 text-orange-400" />
-                Faster handoffs
+                Faster Handoffs
               </span>
             </div>
           </div>
@@ -162,7 +162,7 @@ export default function KdsLockedPresentation() {
           href="/subscription"
           className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline underline-offset-2"
         >
-          View subscription options
+          See Subscription Options
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>

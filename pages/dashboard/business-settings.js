@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { useRouter } from "next/router";
 import { buildBillHtml } from "../../lib/printBillReceipt";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
@@ -134,6 +135,9 @@ const SECTIONS = [
   { id: "discounts", label: "Discounts", icon: Percent },
   { id: "payment-accounts", label: "Payment Accounts", icon: Wallet },
 ];
+
+const SECTION_IDS = new Set(SECTIONS.map((s) => s.id));
+const DEFAULT_SECTION = "branding";
 
 const inp =
   "w-full h-10 px-4 rounded-xl bg-gray-50 dark:bg-neutral-900 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all";
@@ -285,6 +289,7 @@ function SectionCard({ id, icon: Icon, title, subtitle, children }) {
 }
 
 export default function BusinessSettingsPage() {
+  const router = useRouter();
   const {
     branches: contextBranches,
     currentBranch,
@@ -293,7 +298,7 @@ export default function BusinessSettingsPage() {
     loading: contextLoading,
   } = useBranch() || {};
   const { hasPermission } = usePermissions();
-  const [activeSection, setActiveSection] = useState("branding");
+  const [activeSection, setActiveSection] = useState(DEFAULT_SECTION);
 
   // Branches
   const [branches, setBranches] = useState([]);
@@ -383,6 +388,18 @@ export default function BusinessSettingsPage() {
   const [accountingAssetsAvailable, setAccountingAssetsAvailable] =
     useState(true);
   const [accountEditSource, setAccountEditSource] = useState(null);
+
+  // Keep sidebar deep-links (?section=) in sync with the visible panel
+  useEffect(() => {
+    const section = router.query.section;
+    if (typeof section === "string" && SECTION_IDS.has(section)) {
+      setActiveSection(section);
+      return;
+    }
+    if (router.isReady && (section == null || section === "")) {
+      setActiveSection(DEFAULT_SECTION);
+    }
+  }, [router.isReady, router.query.section]);
 
   // ── Fetch branches ──
   useEffect(() => {
@@ -1255,8 +1272,19 @@ export default function BusinessSettingsPage() {
   }
 
   function scrollTo(id) {
-    // clicking a nav item just swaps the visible section.
     setActiveSection(id);
+    const as =
+      id === DEFAULT_SECTION
+        ? "/business-settings"
+        : `/business-settings?section=${encodeURIComponent(id)}`;
+    router.replace(
+      {
+        pathname: "/dashboard/business-settings",
+        query: id === DEFAULT_SECTION ? {} : { section: id },
+      },
+      as,
+      { shallow: true },
+    );
   }
 
   return (
@@ -1290,7 +1318,7 @@ export default function BusinessSettingsPage() {
             <label className={labelCls}>Section</label>
             <select
               value={activeSection}
-              onChange={(e) => setActiveSection(e.target.value)}
+              onChange={(e) => scrollTo(e.target.value)}
               className={inp}
             >
               {SECTIONS.map((s) => (

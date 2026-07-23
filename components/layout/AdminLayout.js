@@ -139,9 +139,7 @@ function isNavChildActive(
 
   if (childPath.includes("tab=")) {
     const tab = childPath.split("tab=")[1]?.split("&")[0] || "";
-    return (
-      navPath.includes(base.split("?")[0]) && currentTab === tab
-    );
+    return navPath.includes(base.split("?")[0]) && currentTab === tab;
   }
 
   if (navPath !== childBase && !navPath.startsWith(`${childBase}/`))
@@ -217,7 +215,7 @@ const tenantNav = [
   },
   {
     path: "/riders",
-    label: "Riders",
+    label: "Riders Portal",
     icon: Truck,
     roles: ["restaurant_admin", "admin", "manager", "cashier"],
     permission: "staff.view_riders",
@@ -418,11 +416,43 @@ const tenantNav = [
 
   { type: "section", label: "SETTINGS" },
   {
-    path: "/business-settings",
     label: "Business Settings",
     icon: MapPin,
+    path: "/business-settings",
     roles: ["restaurant_admin", "admin"],
     permission: "settings.view",
+    children: [
+      {
+        path: "/business-settings",
+        label: "General",
+        icon: Settings2,
+      },
+      {
+        path: "/business-settings?section=tax",
+        label: "Tax",
+        icon: Receipt,
+      },
+      {
+        path: "/business-settings?section=branches",
+        label: "Branches",
+        icon: Building2,
+      },
+      {
+        path: "/business-settings?section=bill",
+        label: "Bill Settings",
+        icon: FileText,
+      },
+      {
+        path: "/business-settings?section=discounts",
+        label: "Discounts",
+        icon: Percent,
+      },
+      {
+        path: "/business-settings?section=payment-accounts",
+        label: "Payment Accounts",
+        icon: Wallet,
+      },
+    ],
   },
   {
     label: "Website",
@@ -800,12 +830,29 @@ export default function AdminLayout({
   // Restrict kitchen_staff to Kitchen (KDS) only – redirect away from overview/dashboard
   useEffect(() => {
     if (role !== "kitchen_staff") return;
-    const path =
-      (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
+    const path = getNavPath(router.asPath, router.pathname);
     if (path === "/overview") {
       router.replace("/kitchen");
     }
-  }, [role, router]);
+  }, [role, router.asPath, router.pathname, router]);
+
+  // Restrict legacy/default cashier-like roles away from analytics overview
+  useEffect(() => {
+    if (role !== "cashier" && role !== "default_cashier") return;
+    const path = getNavPath(router.asPath, router.pathname);
+    if (path === "/overview") {
+      router.replace("/pos");
+    }
+  }, [role, router.asPath, router.pathname, router]);
+
+  // Restrict delivery_rider to Rider Portal only
+  useEffect(() => {
+    if (role !== "delivery_rider") return;
+    const path = getNavPath(router.asPath, router.pathname);
+    if (path === "/overview" || path === "/pos" || path === "/kitchen") {
+      router.replace("/rider");
+    }
+  }, [role, router.asPath, router.pathname, router]);
 
   const whatsappNavRoles = [
     "restaurant_admin",
@@ -838,6 +885,7 @@ export default function AdminLayout({
       : orderNotifyRoles.includes(role) ||
         (!whatsappNavRoles.includes(role) &&
           !["kitchen_staff", "delivery_rider", "super_admin"].includes(role));
+
   useEffect(() => {
     if (!role || role === "super_admin" || !whatsappNavRoles.includes(role)) {
       setWhatsappNeedsHumanCount(0);
@@ -858,6 +906,7 @@ export default function AdminLayout({
       cancelled = true;
       clearInterval(intervalId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- role drives poll; role list is stable
   }, [role]);
 
   useEffect(() => {
@@ -920,26 +969,6 @@ export default function AdminLayout({
       clearInterval(intervalId);
     };
   }, [role, actingAsSlug]);
-
-  // Restrict legacy/default cashier-like roles away from analytics overview
-  useEffect(() => {
-    if (role !== "cashier" && role !== "default_cashier") return;
-    const path =
-      (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
-    if (path === "/overview") {
-      router.replace("/pos");
-    }
-  }, [role, router]);
-
-  // Restrict delivery_rider to Rider Portal only
-  useEffect(() => {
-    if (role !== "delivery_rider") return;
-    const path =
-      (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
-    if (path === "/overview" || path === "/pos" || path === "/kitchen") {
-      router.replace("/rider");
-    }
-  }, [role, router]);
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -1017,6 +1046,9 @@ export default function AdminLayout({
       if (getNavPath(router.asPath, router.pathname) === "/website-settings") {
         toExpand.push("/website-settings");
       }
+      if (getNavPath(router.asPath, router.pathname) === "/business-settings") {
+        toExpand.push("/business-settings");
+      }
       if (toExpand.length > 0) {
         setExpandedGroups(toExpand);
         sessionStorage.setItem(
@@ -1028,9 +1060,8 @@ export default function AdminLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cleanPath =
-    (router.asPath && router.asPath.split("?")[0]) || router.pathname || "";
-  const normalizedPath = cleanPath.replace(/^\/dashboard/, "");
+  const cleanPath = getNavPath(router.asPath, router.pathname);
+  const normalizedPath = cleanPath;
   const onSubscriptionPage = normalizedPath === "/subscription";
   const isSuperPath = !actingAsSlug && normalizedPath.startsWith("/super");
   const isSuperDashboard =
@@ -1124,7 +1155,7 @@ export default function AdminLayout({
               } md:transition-[width] md:duration-300 md:ease-in-out`}
             >
               {/* Logo Section */}
-              <div className="px-4 py-3 border-b-2 border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3">
+              <div className="px-4 py-2 border-b-2 border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="relative flex-shrink-0">
                     {restaurantLogoUrl && !isSuperDashboard ? (
@@ -1750,11 +1781,11 @@ export default function AdminLayout({
                 </Link>
               )}
               <div className="min-w-0">
-                <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white truncate bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-neutral-300 bg-clip-text text-transparent">
+                <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white truncate bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-neutral-300 bg-clip-text text-transparent">
                   {title}
                 </h1>
                 {resolvedSubtitle ? (
-                  <p className="text-xs text-gray-600 dark:text-neutral-400 mt-0.5 font-medium">
+                  <p className="text-xs text-gray-500 dark:text-neutral-400 font-medium">
                     {resolvedSubtitle}
                   </p>
                 ) : null}
@@ -1825,7 +1856,9 @@ export default function AdminLayout({
                       className={`${HEADER_TOOLBAR_BTN} border-transparent bg-gradient-to-r from-orange-500 to-orange-600 px-3 text-white hover:from-orange-600 hover:to-orange-700 hover:shadow-md`}
                     >
                       <ChefHat className="h-4 w-4" />
-                      <span className="hidden sm:inline">AI Kitchen Manager</span>
+                      <span className="hidden sm:inline">
+                        AI Kitchen Manager
+                      </span>
                       <span className="sm:hidden">AI Kitchen</span>
                     </button>
                   ) : role !== "super_admin" ? (
