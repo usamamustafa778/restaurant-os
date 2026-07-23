@@ -94,7 +94,7 @@ const BOARD_COLUMNS = [
 ];
 
 const SIMPLE_BILLING_COLUMNS = [
-  { status: "NEW_ORDER", label: "Open Orders" },
+  { status: "NEW_ORDER", label: "Open Orders", themeStatus: "READY" },
   { status: "AWAITING_PAYMENT", label: "Awaiting Payment" },
 ];
 
@@ -1069,7 +1069,32 @@ export default function OrdersPage() {
       }
       const updated = await recordOrderPayment(orderId, payload);
       updateOrderInList(orderId, updated);
-      toast.success("Payment recorded successfully!", { id: toastId });
+      const isSimple =
+        currentBranch?.orderWorkflow === "simple_billing";
+      const orderType = String(
+        paymentOrder?.type || paymentOrder?.orderType || "",
+      ).toUpperCase();
+      const isDelivery = orderType === "DELIVERY";
+      if (
+        isSimple &&
+        !isDelivery &&
+        paymentModalMode !== "riderCollect"
+      ) {
+        try {
+          const closed = await updateOrderStatus(orderId, "DELIVERED");
+          updateOrderInList(orderId, closed);
+          toast.success("Payment recorded — order finalized!", {
+            id: toastId,
+          });
+        } catch {
+          toast.success(
+            "Payment recorded. Tap Mark Served (or Hand to Customer) to close it.",
+            { id: toastId },
+          );
+        }
+      } else {
+        toast.success("Payment recorded successfully!", { id: toastId });
+      }
       closePaymentModal();
     } catch (err) {
       setPaymentError(err.message || "Failed to record payment");
@@ -1921,7 +1946,9 @@ export default function OrdersPage() {
                 {/* Mobile: stacked collapsible columns (closed by default) */}
                 <div className="lg:hidden flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-2">
                   {displayColumns.map((col) => {
-                    const theme = STATUS_THEME[col.status];
+                    const theme =
+                      STATUS_THEME[col.themeStatus || col.status] ||
+                      STATUS_THEME[col.status];
                     const allColOrders = getColumnOrders(
                       groupedOrders,
                       col.status,
@@ -2026,7 +2053,9 @@ export default function OrdersPage() {
                 {/* Desktop / tablet: multi-column board */}
                 <div className="hidden lg:flex flex-1 gap-2.5 overflow-x-auto min-h-0">
                   {displayColumns.map((col) => {
-                    const theme = STATUS_THEME[col.status];
+                    const theme =
+                      STATUS_THEME[col.themeStatus || col.status] ||
+                      STATUS_THEME[col.status];
                     const allColOrders = getColumnOrders(
                       groupedOrders,
                       col.status,
@@ -4005,6 +4034,11 @@ function OrderCard({
     normalizedTableLabel !== "walk in";
   const TypeIcon = ORDER_TYPE_ICON[typeLabel] || ShoppingBag;
   const status = orderStatusForTab(order.status);
+  // Simple billing Open Orders: use Ready status + actions (Mark Served, riders, etc.)
+  const effectiveStatus =
+    simpleBilling && ["NEW_ORDER", "PROCESSING", "READY"].includes(status)
+      ? "READY"
+      : status;
   const cancelReasonText = (
     order.cancelReason ||
     order.cancelledReason ||
@@ -4025,38 +4059,41 @@ function OrderCard({
         paymentStatus === "unpaid" &&
         ["DELIVERED", "COMPLETED"].includes(status)));
 
-  const nextStatuses = getNextStatuses(order.status, orderType);
+  const statusForNext =
+    simpleBilling && effectiveStatus === "READY" ? "READY" : order.status;
+  const nextStatuses = getNextStatuses(statusForNext, orderType);
   const primaryNext = nextStatuses[0];
-  const actionLabel = getActionLabel(primaryNext, order);
-  const kitchenNextStatuses = [
-    "PROCESSING",
-    "READY",
-    "OUT_FOR_DELIVERY",
-    "DELIVERED",
-  ];
+  const actionLabel = getActionLabel(primaryNext, {
+    ...order,
+    status: statusForNext,
+  });
+  // Skip Start Cooking / Mark Ready in simple billing; keep Ready→served/delivery actions.
+  const kitchenPipelineNext = ["PROCESSING", "READY"];
   const canAdvanceStatus =
     primaryNext &&
     actionLabel &&
     !(isCashier && primaryNext === "DELIVERED" && isDeliveryOrder(order)) &&
-    !(simpleBilling && kitchenNextStatuses.includes(primaryNext));
+    !(simpleBilling && kitchenPipelineNext.includes(primaryNext));
 
   const showAssignRider =
     isDeliveryOrder(order) &&
-    status === "READY" &&
+    effectiveStatus === "READY" &&
     !isOrderTaker &&
     !order.assignedRiderName;
   const showChangeRider =
     isDeliveryOrder(order) &&
-    status === "READY" &&
+    effectiveStatus === "READY" &&
     !isOrderTaker &&
     !!order.assignedRiderName;
   const showOutForDelivery =
     isDeliveryOrder(order) &&
-    status === "READY" &&
+    effectiveStatus === "READY" &&
     !isOrderTaker &&
     !!order.assignedRiderName;
   const showOutForDeliveryMarkDelivered =
-    isDeliveryOrder(order) && status === "OUT_FOR_DELIVERY" && canAdvanceStatus;
+    isDeliveryOrder(order) &&
+    status === "OUT_FOR_DELIVERY" &&
+    canAdvanceStatus;
   const showRiderReassignOutForDelivery =
     isDeliveryOrder(order) && status === "OUT_FOR_DELIVERY" && !isOrderTaker;
   const isAwaitingPayment =
@@ -4106,7 +4143,7 @@ function OrderCard({
     (hasPermission("pos.void_order") || hasPermission("orders.cancel"));
   const isServedUnpaid =
     paymentStatus === "unpaid" &&
-    ["READY", "DELIVERED", "COMPLETED"].includes(status);
+    ["READY", "DELIVERED", "COMPLETED"].includes(effectiveStatus);
   const canEditAfterServedPerm =
     isAdmin || hasPermission("orders.edit_after_served");
   const canShowEditButton =
