@@ -148,7 +148,9 @@ export default function SuperAccountingPage() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
   const [fxDraft, setFxDraft] = useState("280");
+  const [investedDraft, setInvestedDraft] = useState("6000");
   const [savingFx, setSavingFx] = useState(false);
+  const [savingInvested, setSavingInvested] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -169,6 +171,7 @@ export default function SuperAccountingPage() {
       const data = await getPlatformAccountingSummary({ month, year });
       setSummary(data);
       setFxDraft(String(data?.settings?.usdToPkrRate ?? 280));
+      setInvestedDraft(String(data?.settings?.totalInvestedUsd ?? 6000));
     } catch (err) {
       toast.error(err.message || "Failed to load accounting");
       setSummary(null);
@@ -284,6 +287,25 @@ export default function SuperAccountingPage() {
     }
   }
 
+  async function handleSaveInvested() {
+    if (!canManage) return;
+    const amount = Number(investedDraft);
+    if (!Number.isFinite(amount) || amount < 0) {
+      toast.error("Enter a valid total invested amount");
+      return;
+    }
+    try {
+      setSavingInvested(true);
+      await updatePlatformAccountingSettings({ totalInvestedUsd: amount });
+      toast.success("Total invested saved");
+      await load();
+    } catch (err) {
+      toast.error(err.message || "Failed to save investment");
+    } finally {
+      setSavingInvested(false);
+    }
+  }
+
   const netTone =
     (summary?.net?.pkr || 0) > 0
       ? "good"
@@ -352,7 +374,7 @@ export default function SuperAccountingPage() {
             </div>
           ) : summary ? (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
                 <StatCard
                   label={`Revenue · ${summary.period.label}`}
                   value={formatPkr(summary.revenue.pkr)}
@@ -377,7 +399,71 @@ export default function SuperAccountingPage() {
                   sub={`${summary.ytd.invoiceCount} paid · outstanding ${formatPkr(summary.outstanding.totalPkr)}`}
                   tone="info"
                 />
+                <StatCard
+                  label="Project invested"
+                  value={formatUsd(summary.investment?.totalUsd ?? 6000)}
+                  sub={
+                    summary.investment?.recovered
+                      ? `Payback complete · ${formatUsd(summary.investment.lifetimeRevenueUsd)} lifetime revenue`
+                      : `${summary.investment?.paybackPct ?? 0}% recovered · ${formatUsd(summary.investment?.remainingUsd ?? 0)} left`
+                  }
+                  tone={summary.investment?.recovered ? "good" : "warn"}
+                />
               </div>
+
+              {summary.investment ? (
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                    <div>
+                      <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        Investment payback
+                      </h2>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Lifetime paid invoices vs total spent building this
+                        project
+                      </p>
+                    </div>
+                    <p className="text-sm font-semibold tabular-nums">
+                      {formatUsd(summary.investment.lifetimeRevenueUsd)}
+                      <span className="text-gray-400 font-normal">
+                        {" "}
+                        / {formatUsd(summary.investment.totalUsd)}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-gray-100 dark:bg-neutral-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        summary.investment.recovered
+                          ? "bg-emerald-500"
+                          : "bg-[#FF5400]"
+                      }`}
+                      style={{
+                        width: `${Math.max(2, summary.investment.paybackPct || 0)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
+                    <span>
+                      Recovered{" "}
+                      <span className="font-medium text-gray-700 dark:text-neutral-300">
+                        {formatUsd(summary.investment.recoveredUsd)}
+                      </span>
+                    </span>
+                    <span>
+                      Remaining{" "}
+                      <span className="font-medium text-gray-700 dark:text-neutral-300">
+                        {formatUsd(summary.investment.remainingUsd)}
+                      </span>
+                    </span>
+                    <span>
+                      {summary.investment.lifetimeInvoiceCount} paid invoice
+                      {summary.investment.lifetimeInvoiceCount === 1 ? "" : "s"}{" "}
+                      all-time ({formatPkr(summary.investment.lifetimeRevenuePkr)})
+                    </span>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                 <div className="xl:col-span-2 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4">
@@ -402,40 +488,76 @@ export default function SuperAccountingPage() {
                   <TrendBars trend={summary.trend || []} />
                 </div>
 
-                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 space-y-3">
-                  <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-                    USD → PKR rate
-                  </h2>
-                  <p className="text-xs text-gray-500 dark:text-neutral-400">
-                    Used to convert your dollar costs into rupees for net
-                    earnings.
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      step="0.01"
-                      value={fxDraft}
-                      disabled={!canManage}
-                      onChange={(e) => setFxDraft(e.target.value)}
-                      className="flex-1 text-sm rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2 tabular-nums"
-                    />
-                    {canManage ? (
-                      <button
-                        type="button"
-                        disabled={savingFx}
-                        onClick={handleSaveFx}
-                        className="text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-50"
-                      >
-                        {savingFx ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          "Save"
-                        )}
-                      </button>
-                    ) : null}
+                <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4 space-y-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                      USD → PKR rate
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
+                      Used to convert dollar costs and investment into rupees.
+                    </p>
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="number"
+                        min={1}
+                        step="0.01"
+                        value={fxDraft}
+                        disabled={!canManage}
+                        onChange={(e) => setFxDraft(e.target.value)}
+                        className="flex-1 text-sm rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2 tabular-nums"
+                      />
+                      {canManage ? (
+                        <button
+                          type="button"
+                          disabled={savingFx}
+                          onClick={handleSaveFx}
+                          className="text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-50"
+                        >
+                          {savingFx ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            "Save"
+                          )}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500 space-y-1 pt-1 border-t border-gray-100 dark:border-neutral-800">
+
+                  <div className="pt-3 border-t border-gray-100 dark:border-neutral-800">
+                    <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Total invested (USD)
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
+                      Rough total spent on this project so far (~$6K).
+                    </p>
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        value={investedDraft}
+                        disabled={!canManage}
+                        onChange={(e) => setInvestedDraft(e.target.value)}
+                        className="flex-1 text-sm rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2 tabular-nums"
+                      />
+                      {canManage ? (
+                        <button
+                          type="button"
+                          disabled={savingInvested}
+                          onClick={handleSaveInvested}
+                          className="text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-900 disabled:opacity-50"
+                        >
+                          {savingInvested ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            "Save"
+                          )}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-gray-500 space-y-1 pt-3 border-t border-gray-100 dark:border-neutral-800">
                     <p>
                       Sent invoices:{" "}
                       <span className="font-medium text-gray-700 dark:text-neutral-300">
