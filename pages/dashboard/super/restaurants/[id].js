@@ -95,7 +95,7 @@ const MODULE_DEFINITIONS = [
     perBranch: true,
     requires: ["website"],
   },
-  { key: "rider", label: "Rider App", rate: 2500, perBranch: true },
+  { key: "rider", label: "Riders portal and app", rate: 2500, perBranch: true },
   { key: "inventory", label: "Inventory", rate: 2500, perBranch: true, includes: "recipes" },
   {
     key: "accounting",

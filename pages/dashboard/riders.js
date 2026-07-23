@@ -10,10 +10,12 @@ import {
   postRiderPayout,
   getRiders,
   updateUser,
+  checkRiderModuleAccess,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
 import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import { getBusinessDate, getBusinessDayRange, formatBusinessDate } from "../../lib/businessDay";
+import RidersLockedPresentation from "../../components/riders/RidersLockedPresentation";
 import {
   Truck,
   Loader2,
@@ -227,6 +229,7 @@ function hoursSpan(from, to) {
 export default function RidersPage() {
   const router = useRouter();
   const { currentBranch } = useBranch();
+  const [moduleLocked, setModuleLocked] = useState(null); // null = checking
   const [preset, setPreset] = useState(null);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -433,6 +436,29 @@ export default function RidersPage() {
 
   useEffect(() => {
     let cancelled = false;
+    async function checkAccess() {
+      try {
+        await checkRiderModuleAccess();
+        if (!cancelled) setModuleLocked(false);
+      } catch (e) {
+        if (cancelled) return;
+        const locked =
+          e?.details?.code === "MODULE_NOT_ACTIVE" ||
+          e?.details?.module === "rider" ||
+          e?.code === 403;
+        setModuleLocked(locked);
+        if (locked) setLoading(false);
+      }
+    }
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (moduleLocked !== false) return undefined;
+    let cancelled = false;
     (async () => {
       let loadedSessions = [];
       try {
@@ -448,9 +474,10 @@ export default function RidersPage() {
     return () => {
       cancelled = true;
     };
-  }, [currentBranch?.id]);
+  }, [currentBranch?.id, moduleLocked]);
 
   useEffect(() => {
+    if (moduleLocked !== false) return;
     if (preset == null) return;
     if (preset === "custom") {
       setAllOrders([]);
@@ -460,15 +487,16 @@ export default function RidersPage() {
     }
     setLoading(true);
     loadAll(preset, null);
-  }, [currentBranch?.id, preset, loadAll]);
+  }, [currentBranch?.id, preset, loadAll, moduleLocked]);
 
   useEffect(() => {
+    if (moduleLocked !== false) return undefined;
     autoRef.current = setInterval(() => {
       if (preset === "custom" || preset == null) return;
       loadAll(preset, null);
     }, 60000);
     return () => clearInterval(autoRef.current);
-  }, [preset, loadAll]);
+  }, [preset, loadAll, moduleLocked]);
 
   const activeDateRange = useMemo(() => {
     if (preset === "custom") {
@@ -1018,6 +1046,32 @@ export default function RidersPage() {
     lastUpdated != null
       ? Math.max(0, Math.floor((Date.now() - lastUpdated.getTime()) / 1000))
       : "—";
+
+  if (moduleLocked === true) {
+    return (
+      <AdminLayout title="Riders" subtitle="">
+        <div className="-mx-4 -mt-4 mb-[-6rem] min-h-[calc(100vh-3.5rem)] md:-mx-6 md:mb-[-1.5rem] md:min-h-[calc(100vh-4rem)]">
+          <RidersLockedPresentation />
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  if (moduleLocked === null) {
+    return (
+      <AdminLayout title="Riders" subtitle="">
+        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="w-16 h-16 rounded-2xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center mb-4">
+            <Truck className="w-8 h-8 text-orange-500 animate-pulse" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+            <p className="text-sm text-gray-500">Checking Riders access…</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout title="Riders">

@@ -38,7 +38,7 @@ const MODULE_LABELS = {
   reservations: "Reservations",
   website: "Website",
   websiteAnalytics: "Website Analytics",
-  rider: "Rider App",
+  rider: "Riders portal and app",
   inventory: "Inventory",
   accounting: "Accounting",
   aiReceptionist: "AI Receptionist",
