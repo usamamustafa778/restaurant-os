@@ -328,7 +328,21 @@ export default function CustomersPage() {
     try {
       const data = await getCustomerOrderHistory(c.id);
       if (data?.customer) {
-        setDetailCustomer({ ...c, ...data.customer });
+        setDetailCustomer({
+          ...c,
+          ...data.customer,
+          // Keep the stronger of list live-stats vs history (avoids flashing to 0)
+          totalOrders: Math.max(
+            Number(c.totalOrders) || 0,
+            Number(data.customer.totalOrders) || 0,
+          ),
+          totalSpent: Math.max(
+            Number(c.totalSpent) || 0,
+            Number(data.customer.totalSpent) || 0,
+          ),
+          lastOrderAt:
+            data.customer.lastOrderAt || c.lastOrderAt || null,
+        });
         setDetailNotes(data.customer.notes || c.notes || "");
       }
       setDetailHistory(data);
