@@ -66,6 +66,7 @@ import {
   QrCode,
   Share2,
   Search,
+  Cog,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
 import AiKitchenManagerSidebar from "../ai/AiKitchenManagerSidebar";
@@ -414,10 +415,10 @@ const tenantNav = [
     ],
   },
 
-  { type: "section", label: "SETTINGS" },
+  { type: "section", label: "BUSINESS SETTINGS" },
   {
-    label: "Business Settings",
-    icon: MapPin,
+    label: "Settings",
+    icon: Cog,
     path: "/business-settings",
     roles: ["restaurant_admin", "admin"],
     permission: "settings.view",
