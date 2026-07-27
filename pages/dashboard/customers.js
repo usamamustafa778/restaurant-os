@@ -35,12 +35,6 @@ const SEARCH_DEBOUNCE_MS = 400;
 const inputClass =
   "box-border w-full h-9 px-3 rounded-lg bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors";
 
-const toolbarSelectClass =
-  "box-border h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200";
-
-const toolbarBtnClass =
-  "box-border inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors";
-
 function formatDateTime(value) {
   if (!value) return "—";
   try {
@@ -434,10 +428,16 @@ export default function CustomersPage() {
         key: "sort",
         label:
           sortBy === "name"
-            ? "Sort: Name"
-            : sortBy === "spent"
-              ? "Sort: Spent"
-              : "Sort",
+            ? "Sort: Name A–Z"
+            : sortBy === "spent" || sortBy === "spent_desc"
+              ? "Sort: Most spent"
+              : sortBy === "spent_asc"
+                ? "Sort: Least spent"
+                : sortBy === "orders" || sortBy === "orders_desc"
+                  ? "Sort: Most orders"
+                  : sortBy === "orders_asc"
+                    ? "Sort: Least orders"
+                    : "Sort",
       });
     }
     if (allBranches && currentBranch)
@@ -587,7 +587,7 @@ export default function CustomersPage() {
           </div>
         ) : null}
 
-        <div ref={filtersRef} className="relative z-20">
+        <div className="relative z-20">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex min-w-[12rem] flex-1 items-center">
               <Search className="pointer-events-none absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -596,7 +596,7 @@ export default function CustomersPage() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search name, phone, or email…"
-                className={`${inputClass} pl-9 pr-9`}
+                className="h-9 w-full rounded-xl border-2 border-gray-200 bg-white pl-9 pr-9 text-sm text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-950 dark:text-white"
               />
               {searchInput ? (
                 <button
@@ -610,180 +610,210 @@ export default function CustomersPage() {
               ) : null}
             </div>
 
-            <select
-              value={sortBy}
-              onChange={(e) => {
-                setSortBy(e.target.value);
-                setPage(1);
-              }}
-              className={`${toolbarSelectClass} w-auto max-w-[10.5rem]`}
-              aria-label="Sort"
-            >
-              <option value="recent">Most recent</option>
-              <option value="name">Name A–Z</option>
-              <option value="spent">Total spent</option>
-            </select>
-
-            <button
-              type="button"
-              onClick={() => setFiltersOpen((v) => !v)}
-              aria-expanded={filtersOpen}
-              className={`${toolbarBtnClass} ${
-                filtersOpen || advancedFilterCount > 0
-                  ? "border-primary/30 bg-primary/5 text-primary"
-                  : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200 dark:hover:bg-neutral-900"
-              }`}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filters
-              {advancedFilterCount > 0 ? (
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white">
-                  {advancedFilterCount}
-                </span>
-              ) : (
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
-                />
-              )}
-            </button>
-
-            {activeFilters.length > 0 ? (
+            <div className="relative ml-auto shrink-0" ref={filtersRef}>
               <button
                 type="button"
-                onClick={clearAllFilters}
-                className={`${toolbarBtnClass} border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300`}
+                onClick={() => setFiltersOpen((v) => !v)}
+                aria-expanded={filtersOpen}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-all ${
+                  filtersOpen || advancedFilterCount > 0
+                    ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
+                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                }`}
               >
-                <X className="h-3.5 w-3.5" />
-                Clear
+                <SlidersHorizontal className="h-4 w-4 shrink-0" />
+                Filters
+                {advancedFilterCount > 0 ? (
+                  <span className="flex h-4.5 min-w-[1.125rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-white">
+                    {advancedFilterCount}
+                  </span>
+                ) : null}
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
+                />
               </button>
-            ) : null}
-          </div>
 
-          {filtersOpen ? (
-            <div className="absolute right-0 top-full z-50 mt-2 w-[min(100%,22rem)] rounded-xl border border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
-              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    Filters
-                  </p>
-                  <p className="text-[11px] text-gray-500 dark:text-neutral-400">
-                    Narrow the customer list
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setVerifiedOnly(false);
-                    setHasPhone(false);
-                    setHasEmail(false);
-                    setMinOrders("");
-                    setMinSpent("");
-                    setAllBranches(false);
-                    setPage(1);
-                  }}
-                  className="text-xs font-semibold text-gray-500 hover:text-primary dark:text-neutral-400"
-                >
-                  Reset
-                </button>
-              </div>
-
-              <div className="space-y-4 p-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block space-y-1.5">
-                    <span className="text-[11px] font-medium text-gray-500 dark:text-neutral-400">
-                      Min orders
+              {filtersOpen ? (
+                <div className="absolute right-0 left-auto top-full z-[100] mt-1.5 w-72 overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+                  <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                    <span className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                      Filters &amp; Sort
                     </span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={minOrders}
-                      onChange={(e) => setMinOrders(e.target.value)}
-                      placeholder="Any"
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-[11px] font-medium text-gray-500 dark:text-neutral-400">
-                      Min spent ({sym})
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      step="1"
-                      value={minSpent}
-                      onChange={(e) => setMinSpent(e.target.value)}
-                      placeholder="Any"
-                      className={inputClass}
-                    />
-                  </label>
-                </div>
-
-                <div>
-                  <p className="mb-2 text-[11px] font-medium text-gray-500 dark:text-neutral-400">
-                    Contact
-                  </p>
-                  <div className="flex flex-col gap-0.5">
-                    {[
-                      {
-                        key: "phone",
-                        label: "Has phone number",
-                        checked: hasPhone,
-                        onChange: setHasPhone,
-                      },
-                      {
-                        key: "email",
-                        label: "Has email address",
-                        checked: hasEmail,
-                        onChange: setHasEmail,
-                      },
-                      {
-                        key: "verified",
-                        label: "Verified website account",
-                        checked: verifiedOnly,
-                        onChange: setVerifiedOnly,
-                      },
-                      ...(currentBranch
-                        ? [
-                            {
-                              key: "branches",
-                              label: "All branches",
-                              checked: allBranches,
-                              onChange: setAllBranches,
-                            },
-                          ]
-                        : []),
-                    ].map((opt) => (
-                      <label
-                        key={opt.key}
-                        className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800/80"
+                    {advancedFilterCount > 0 || sortBy !== "recent" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerifiedOnly(false);
+                          setHasPhone(false);
+                          setHasEmail(false);
+                          setMinOrders("");
+                          setMinSpent("");
+                          setAllBranches(false);
+                          setSortBy("recent");
+                          setPage(1);
+                        }}
+                        className="text-xs font-semibold text-red-500 hover:text-red-600 dark:text-red-400"
                       >
-                        <input
-                          type="checkbox"
-                          checked={opt.checked}
-                          onChange={(e) => {
-                            opt.onChange(e.target.checked);
-                            setPage(1);
-                          }}
-                          className="rounded border-gray-300 text-primary focus:ring-primary/20 dark:border-neutral-600"
-                        />
-                        {opt.label}
-                      </label>
-                    ))}
+                        Reset all
+                      </button>
+                    ) : null}
                   </div>
-                </div>
-              </div>
 
-              <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-950/50">
-                <button
-                  type="button"
-                  onClick={() => setFiltersOpen(false)}
-                  className="h-8 rounded-lg px-3 text-xs font-semibold text-gray-600 hover:bg-white dark:text-neutral-300 dark:hover:bg-neutral-800"
-                >
-                  Done
-                </button>
-              </div>
+                  <div className="space-y-4 p-4">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                        Sort by
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          ["recent", "Most recent"],
+                          ["name", "Name A–Z"],
+                          ["spent_desc", "Most spent"],
+                          ["spent_asc", "Least spent"],
+                          ["orders_desc", "Most orders"],
+                          ["orders_asc", "Least orders"],
+                        ].map(([val, label]) => {
+                          const active =
+                            sortBy === val ||
+                            (val === "spent_desc" && sortBy === "spent") ||
+                            (val === "orders_desc" && sortBy === "orders");
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => {
+                                setSortBy(val);
+                                setPage(1);
+                              }}
+                              className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                                active
+                                  ? "bg-primary text-white shadow-sm"
+                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                        Minimums
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="mb-1 block text-[11px] text-gray-400 dark:text-neutral-500">
+                            Orders
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={minOrders}
+                            onChange={(e) => {
+                              setMinOrders(e.target.value);
+                              setPage(1);
+                            }}
+                            placeholder="Any"
+                            className="h-9 w-full rounded-xl border-2 border-gray-200 bg-white px-2.5 text-sm font-medium text-gray-800 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                          />
+                        </div>
+                        <div>
+                          <span className="mb-1 block text-[11px] text-gray-400 dark:text-neutral-500">
+                            Spent ({sym})
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step="1"
+                            value={minSpent}
+                            onChange={(e) => {
+                              setMinSpent(e.target.value);
+                              setPage(1);
+                            }}
+                            placeholder="Any"
+                            className="h-9 w-full rounded-xl border-2 border-gray-200 bg-white px-2.5 text-sm font-medium text-gray-800 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-gray-500 dark:text-neutral-400">
+                        Contact
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          {
+                            key: "phone",
+                            label: "Has phone",
+                            checked: hasPhone,
+                            onChange: setHasPhone,
+                          },
+                          {
+                            key: "email",
+                            label: "Has email",
+                            checked: hasEmail,
+                            onChange: setHasEmail,
+                          },
+                          {
+                            key: "verified",
+                            label: "Verified",
+                            checked: verifiedOnly,
+                            onChange: setVerifiedOnly,
+                          },
+                          ...(currentBranch
+                            ? [
+                                {
+                                  key: "branches",
+                                  label: "All branches",
+                                  checked: allBranches,
+                                  onChange: setAllBranches,
+                                },
+                              ]
+                            : []),
+                        ].map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => {
+                              opt.onChange(!opt.checked);
+                              setPage(1);
+                            }}
+                            className={`h-8 rounded-lg text-xs font-semibold transition-all ${
+                              opt.checked
+                                ? "bg-primary text-white shadow-sm"
+                                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {(advancedFilterCount > 0 ||
+                    sortBy !== "recent" ||
+                    searchInput.trim()) && (
+                    <div className="px-4 pb-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearAllFilters();
+                          setFiltersOpen(false);
+                        }}
+                        className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-xl bg-red-50 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+                      >
+                        <X className="h-3.5 w-3.5" /> Clear all filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          </div>
 
           {activeFilters.length > 0 ? (
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">

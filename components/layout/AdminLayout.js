@@ -67,6 +67,7 @@ import {
   Share2,
   Search,
   Cog,
+  Contact,
 } from "lucide-react";
 import AISidebar from "../ai/AISidebar";
 import AiKitchenManagerSidebar from "../ai/AiKitchenManagerSidebar";
@@ -556,6 +557,12 @@ const superNav = [
     label: "Tenant Users",
     icon: Users,
     permission: "platform.restaurants.view",
+  },
+  {
+    href: "/super/customers",
+    label: "Customers",
+    icon: Contact,
+    permission: "platform.customers.view",
   },
   {
     href: "/super/roles",
