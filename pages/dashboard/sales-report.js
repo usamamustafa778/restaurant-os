@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 
 import { useRouter } from "next/router";
 
@@ -77,13 +77,13 @@ const PRESETS = [
 ];
 
 const TABS = [
-  { id: "overview", label: "Overview", icon: BarChart3 },
+  { id: "overview", label: "Overview", shortLabel: "Overview", icon: BarChart3 },
 
-  { id: "orders", label: "Orders List", icon: ClipboardList },
+  { id: "orders", label: "Orders List", shortLabel: "Orders", icon: ClipboardList },
 
-  { id: "discounts", label: "Discounts", icon: Percent },
+  { id: "discounts", label: "Discounts", shortLabel: "Discounts", icon: Percent },
 
-  { id: "sessions", label: "Day Report", icon: CalendarDays },
+  { id: "sessions", label: "Day Report", shortLabel: "Days", icon: CalendarDays },
 ];
 
 const DISCOUNT_REASON_LABELS = {
@@ -329,17 +329,6 @@ function getSessionUnpaidBreakdown(sessionOrders) {
     otherCount,
   };
 }
-
-const ORDER_TYPE_CARD_COLORS = {
-  "Dine In":
-    "border-orange-200 dark:border-orange-500/30 bg-orange-50/60 dark:bg-orange-500/10 hover:border-orange-400 dark:hover:border-orange-500/50",
-
-  Delivery:
-    "border-blue-200 dark:border-blue-500/30 bg-blue-50/60 dark:bg-blue-500/10 hover:border-blue-400 dark:hover:border-blue-500/50",
-
-  Takeaway:
-    "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10 hover:border-emerald-400 dark:hover:border-emerald-500/50",
-};
 
 const ORDER_TYPE_FILTER_MAP = {
   "Dine In": TYPE_FILTERS.DINE_IN,
@@ -892,35 +881,162 @@ function Skeleton({ className = "" }) {
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  gradient,
-  shadow,
-  compact = false,
+function StaffAvatar({
+  name,
+  tone = "bg-sky-100 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400",
 }) {
   return (
-    <div className="group relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-3.5 sm:p-4 hover:shadow-md transition-all overflow-hidden">
-      {/* Colored top accent line */}
-      <div className={`absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r ${gradient} opacity-80`} />
-      <div className="flex items-start gap-3">
-        <div className={`bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md ${shadow} flex-shrink-0 h-9 w-9 sm:h-10 sm:w-10 rounded-xl`}>
-          <Icon className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-white" />
+    <div
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${tone}`}
+    >
+      {(name || "?").charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
+function MetricCell({ label, value, tone = "" }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+        {label}
+      </p>
+      <p
+        className={`mt-0.5 truncate text-xs font-bold tabular-nums sm:text-sm ${tone || "text-gray-900 dark:text-white"}`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function StatBar({ pct, barClass = "bg-primary" }) {
+  const width = Math.max(0, Math.min(100, Number(pct) || 0));
+  return (
+    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+      <div
+        className={`h-full rounded-full transition-all duration-700 ${barClass}`}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+}
+
+function StaffStatRow({
+  name,
+  avatarTone,
+  detail,
+  badge,
+  amount,
+  barPct,
+  barClass,
+  onClick,
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full cursor-pointer px-3.5 py-2.5 text-left transition-colors hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 sm:px-4"
+    >
+      <div className="flex items-center gap-3">
+        <StaffAvatar name={name} tone={avatarTone} />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
+                {name}
+              </span>
+              {detail ? (
+                <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-neutral-400">
+                  {detail}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {badge}
+              <span className="text-sm font-bold tabular-nums text-primary">
+                {amount}
+              </span>
+            </div>
+          </div>
+          <StatBar pct={barPct} barClass={barClass} />
         </div>
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none mb-1.5">
-            {label}
-          </p>
-          <p className="text-[15px] sm:text-lg font-extrabold text-gray-900 dark:text-white leading-tight">
-            {value}
-          </p>
-          {sub && (
-            <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-0.5 leading-tight">
-              {sub}
+      </div>
+    </button>
+  );
+}
+
+const ORDER_TYPE_BAR_COLORS = {
+  "Dine In": "bg-orange-500",
+  Delivery: "bg-blue-500",
+  Takeaway: "bg-emerald-500",
+};
+
+function RevenueHero({
+  periodLabel,
+  grandTotal,
+  salesAmount,
+  deliveryFees,
+  tax,
+  orderCount,
+  avgTicket,
+  fmtRs,
+}) {
+  const salesShare =
+    grandTotal > 0 ? Math.round((salesAmount / grandTotal) * 100) : 0;
+  const deliveryShare = Math.max(0, 100 - salesShare);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+      <div className="bg-gradient-to-br from-primary/[0.08] via-transparent to-transparent px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+              {periodLabel}
             </p>
-          )}
+            <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-400">
+              Completed & paid orders
+            </p>
+          </div>
+          <div className="rounded-full border border-gray-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-300">
+            {orderCount.toLocaleString()} orders · Avg {fmtRs(avgTicket)}
+          </div>
+        </div>
+
+        <p className="mt-4 text-[2rem] font-black tabular-nums leading-none tracking-tight text-gray-900 dark:text-white sm:text-4xl">
+          {fmtRs(grandTotal)}
+        </p>
+        <p className="mt-1.5 text-xs font-medium text-gray-500 dark:text-neutral-400">
+          Total revenue
+        </p>
+
+        <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+          <div className="flex h-full w-full">
+            <div
+              className="h-full bg-primary transition-all duration-700"
+              style={{ width: `${salesShare}%` }}
+              title="Item sales"
+            />
+            <div
+              className="h-full bg-sky-400 transition-all duration-700"
+              style={{ width: `${deliveryShare}%` }}
+              title="Delivery fees"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-gray-600 dark:text-neutral-300">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-primary" />
+            Items {fmtRs(salesAmount)} ({salesShare}%)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-sky-400" />
+            Delivery {fmtRs(deliveryFees)} ({deliveryShare}%)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-violet-400" />
+            Tax {fmtRs(tax)}
+          </span>
         </div>
       </div>
     </div>
@@ -929,56 +1045,29 @@ function KpiCard({
 
 function SalesReportScreenSkeleton() {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-950/90 shadow-sm p-1.5 w-[460px] max-w-full">
+        <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 dark:border-neutral-800 dark:bg-neutral-950">
           <div className="flex items-center gap-1">
+            <Skeleton className="h-9 w-24 rounded-xl" />
+            <Skeleton className="h-9 w-24 rounded-xl" />
             <Skeleton className="h-9 w-28 rounded-xl" />
-
-            <Skeleton className="h-9 w-28 rounded-xl" />
-
-            <Skeleton className="h-9 w-36 rounded-xl" />
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-9 w-28 rounded-xl" />
-
-          <Skeleton className="h-9 w-24 rounded-xl" />
-        </div>
+        <Skeleton className="hidden h-9 w-28 rounded-xl sm:block" />
       </div>
 
-      <div className="space-y-4 max-w-7xl mx-auto">
-        <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={`kpi-sk-${i}`}
-              className={`rounded-xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 sm:p-5 ${i === 4 ? "col-span-2 sm:col-span-1" : ""}`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <Skeleton className="h-3 w-24" />
-
-                  <Skeleton className="h-8 w-28" />
-
-                  <Skeleton className="h-3 w-20" />
-                </div>
-
-                <Skeleton className="h-9 w-9 sm:h-11 sm:w-11 rounded-xl sm:rounded-2xl" />
-              </div>
-            </div>
-          ))}
+      <div className="w-full space-y-3 sm:space-y-4">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="mt-4 h-10 w-48" />
+          <Skeleton className="mt-5 h-2.5 w-full rounded-full" />
+          <Skeleton className="mt-3 h-3 w-64" />
         </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <SectionSkeleton bodyHeightClass="h-24" />
-
-          <SectionSkeleton bodyHeightClass="h-24" />
+        <div className="grid gap-3 md:grid-cols-2">
+          <SectionSkeleton bodyHeightClass="h-28" />
+          <SectionSkeleton bodyHeightClass="h-28" />
         </div>
-
-        {Array.from({ length: 4 }).map((_, i) => (
-          <SectionSkeleton key={`section-sk-${i}`} bodyHeightClass="h-28" />
-        ))}
       </div>
     </div>
   );
@@ -1032,53 +1121,47 @@ function Section({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full px-4 py-3.5 sm:px-5 sm:py-4 flex items-center gap-3 hover:bg-gray-50/50 dark:hover:bg-neutral-900/30 transition-colors"
+        className="flex w-full items-center gap-2.5 px-3.5 py-3 transition-colors hover:bg-gray-50/60 dark:hover:bg-neutral-900/40 sm:gap-3 sm:px-5 sm:py-4"
       >
-        {/* Icon */}
-
         {Icon && (
           <div
-            className={`h-10 w-10 rounded-2xl flex items-center justify-center shadow-md flex-shrink-0 ${iconGradient || "bg-gray-200 dark:bg-neutral-800"}`}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-md sm:h-10 sm:w-10 sm:rounded-2xl ${iconGradient || "bg-gray-200 dark:bg-neutral-800"}`}
           >
-            <Icon className="w-4.5 h-4.5 w-[18px] h-[18px] text-white" />
+            <Icon className="h-4 w-4 text-white sm:h-[18px] sm:w-[18px]" />
           </div>
         )}
 
-        {/* Title + count (subtitle) */}
-
-        <div className="flex-1 min-w-0 text-left">
-          <h3 className="text-[15px] font-bold text-gray-900 dark:text-white leading-tight truncate">
+        <div className="min-w-0 flex-1 text-left">
+          <h3 className="truncate text-sm font-bold leading-tight text-gray-900 dark:text-white sm:text-[15px]">
             {title}
           </h3>
 
           {badge && (
-            <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5 leading-tight">
+            <p className="mt-0.5 text-[11px] leading-tight text-gray-400 dark:text-neutral-500">
               {badge}
             </p>
           )}
 
           {!badge && subtitle && (
-            <p className="text-[11px] text-gray-400 dark:text-neutral-500 mt-0.5 leading-tight hidden sm:block">
+            <p className="mt-0.5 hidden text-[11px] leading-tight text-gray-400 dark:text-neutral-500 sm:block">
               {subtitle}
             </p>
           )}
         </div>
 
-        {/* Amount + chevron */}
-
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           {badgeValue && (
-            <span className="text-sm font-bold text-primary tabular-nums">
+            <span className="text-xs font-bold tabular-nums text-primary sm:text-sm">
               {badgeValue}
             </span>
           )}
 
           <ChevronDown
-            className={`w-4 h-4 text-gray-300 dark:text-neutral-600 transition-transform flex-shrink-0 ${open ? "rotate-180" : ""}`}
+            className={`h-4 w-4 shrink-0 text-gray-300 transition-transform dark:text-neutral-600 ${open ? "rotate-180" : ""}`}
           />
         </div>
       </button>
@@ -1112,21 +1195,194 @@ function EmptyState({ icon: Icon, message, sub }) {
   );
 }
 
-function TopItemsList({ items, title, subtitle, onItemClick }) {
-  if (!items || items.length === 0)
-    return (
-      <EmptyState
-        icon={Award}
-        message="No item data"
-        sub="Try a different period"
-      />
-    );
+function getOrderTypeKey(order) {
+  const type = String(order?.type || order?.orderType || "")
+    .toUpperCase()
+    .replace(/[-\s]/g, "_");
+  if (type.includes("DINE")) return "dine_in";
+  if (type.includes("DELIVERY")) return "delivery";
+  if (type.includes("TAKEAWAY") || type.includes("TAKE_AWAY") || type.includes("PICKUP"))
+    return "takeaway";
+  return "other";
+}
 
-  const topRevenue = items[0]?.revenue || 1;
+function getOrderSourceKey(order) {
+  const source = String(order?.source || "POS").toUpperCase().trim();
+  const typeKey = getOrderTypeKey(order);
+  if (source === "WEBSITE") return "website";
+  if (source === "FOODPANDA") return "foodpanda";
+  if (source === "WHATSAPP") return "whatsapp";
+  // Delivery taken on POS / counter is treated as WhatsApp
+  if (typeKey === "delivery" && (source === "POS" || !order?.source)) {
+    return "whatsapp";
+  }
+  return "pos";
+}
 
-  const totalRevenue = items.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
+function orderMatchesTopItemFilter(order, filter) {
+  if (!filter || filter === "all") return true;
+  const typeKey = getOrderTypeKey(order);
+  const sourceKey = getOrderSourceKey(order);
+  if (filter === "dine_in" || filter === "delivery" || filter === "takeaway") {
+    return typeKey === filter;
+  }
+  if (
+    filter === "website" ||
+    filter === "whatsapp" ||
+    filter === "foodpanda" ||
+    filter === "pos"
+  ) {
+    return sourceKey === filter;
+  }
+  return true;
+}
 
-  const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
+function getItemLineQty(item) {
+  return Number(item?.qty ?? item?.quantity) || 0;
+}
+
+function getItemLineRevenue(item) {
+  const qty = getItemLineQty(item);
+  const line = Number(item?.lineTotal);
+  if (Number.isFinite(line) && line !== 0) return line;
+  return (Number(item?.unitPrice) || 0) * qty;
+}
+
+function buildTopItemsFromOrders(orders, filter = "all") {
+  const map = new Map();
+  for (const order of orders || []) {
+    if (!isRevenueOrderForReport(order)) continue;
+    if (!orderMatchesTopItemFilter(order, filter)) continue;
+    const typeKey = getOrderTypeKey(order);
+    const sourceKey = getOrderSourceKey(order);
+    const seenInOrder = new Set();
+    for (const item of order.items || []) {
+      const name = String(item?.name || "").trim();
+      if (!name) continue;
+      const qty = getItemLineQty(item);
+      const revenue = getItemLineRevenue(item);
+      if (qty <= 0 && revenue <= 0) continue;
+      const key = name.toLowerCase();
+      const existing = map.get(key) || {
+        name,
+        quantity: 0,
+        revenue: 0,
+        orderCount: 0,
+        byType: { dine_in: 0, delivery: 0, takeaway: 0, other: 0 },
+        bySource: {
+          website: 0,
+          whatsapp: 0,
+          foodpanda: 0,
+          pos: 0,
+        },
+      };
+      existing.quantity += qty;
+      existing.revenue += revenue;
+      if (!seenInOrder.has(key)) {
+        existing.orderCount += 1;
+        existing.byType[typeKey] = (existing.byType[typeKey] || 0) + 1;
+        existing.bySource[sourceKey] = (existing.bySource[sourceKey] || 0) + 1;
+        seenInOrder.add(key);
+      }
+      map.set(key, existing);
+    }
+  }
+  return Array.from(map.values())
+    .map((item) => ({
+      ...item,
+      revenue: Math.round(item.revenue),
+      avgPrice:
+        item.quantity > 0 ? Math.round(item.revenue / item.quantity) : 0,
+    }))
+    .sort((a, b) => b.quantity - a.quantity || b.revenue - a.revenue);
+}
+
+function countOrdersForTopItemFilter(orders, filter) {
+  let count = 0;
+  for (const order of orders || []) {
+    if (!isRevenueOrderForReport(order)) continue;
+    if (orderMatchesTopItemFilter(order, filter)) count += 1;
+  }
+  return count;
+}
+
+function TopItemsList({ orders, title, subtitle, onItemClick, loading }) {
+  const [filter, setFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("quantity");
+
+  const filterOptions = useMemo(() => {
+    const opts = [
+      { id: "all", label: "All", count: countOrdersForTopItemFilter(orders, "all") },
+      {
+        id: "dine_in",
+        label: "Dine In",
+        count: countOrdersForTopItemFilter(orders, "dine_in"),
+      },
+      {
+        id: "delivery",
+        label: "Delivery",
+        count: countOrdersForTopItemFilter(orders, "delivery"),
+      },
+      {
+        id: "takeaway",
+        label: "Takeaway",
+        count: countOrdersForTopItemFilter(orders, "takeaway"),
+      },
+      {
+        id: "website",
+        label: "Website",
+        count: countOrdersForTopItemFilter(orders, "website"),
+      },
+      {
+        id: "whatsapp",
+        label: "WhatsApp",
+        count: countOrdersForTopItemFilter(orders, "whatsapp"),
+      },
+      {
+        id: "pos",
+        label: "POS",
+        count: countOrdersForTopItemFilter(orders, "pos"),
+      },
+      {
+        id: "foodpanda",
+        label: "Foodpanda",
+        count: countOrdersForTopItemFilter(orders, "foodpanda"),
+      },
+    ];
+    return opts.filter((o) => o.id === "all" || o.count > 0);
+  }, [orders]);
+
+  useEffect(() => {
+    if (!filterOptions.some((o) => o.id === filter)) {
+      setFilter("all");
+    }
+  }, [filterOptions, filter]);
+
+  const items = useMemo(() => {
+    const list = buildTopItemsFromOrders(orders, filter);
+    if (sortBy === "revenue") {
+      return [...list].sort(
+        (a, b) => b.revenue - a.revenue || b.quantity - a.quantity,
+      );
+    }
+    if (sortBy === "orders") {
+      return [...list].sort(
+        (a, b) => b.orderCount - a.orderCount || b.quantity - a.quantity,
+      );
+    }
+    return list;
+  }, [orders, filter, sortBy]);
+
+  const activeFilterLabel =
+    filterOptions.find((o) => o.id === filter)?.label || "All";
+  const activeFilterCount =
+    filterOptions.find((o) => o.id === filter)?.count || 0;
+  const itemsRevenue = items.reduce((s, i) => s + (Number(i.revenue) || 0), 0);
+  const itemsQty = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+
+  if (loading) {
+    return <SectionSkeleton bodyHeightClass="h-40" />;
+  }
 
   return (
     <Section
@@ -1134,69 +1390,186 @@ function TopItemsList({ items, title, subtitle, onItemClick }) {
       subtitle={subtitle}
       icon={Award}
       iconGradient="bg-gradient-to-br from-primary to-secondary shadow-primary/25"
-      badge={`${items.length} items`}
+      badge={`${items.length.toLocaleString()} item${items.length !== 1 ? "s" : ""} · ${itemsQty.toLocaleString()} sold`}
+      badgeValue={fmtRs(itemsRevenue)}
+      defaultOpen
     >
-      <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-        {items.map((item, index) => {
-          const barPct = Math.round((item.revenue / topRevenue) * 100);
-
-          const sharePct = Math.round((item.revenue / totalRevenue) * 100);
-
-          return (
-            <button
-              key={item.name + index}
-              type="button"
-              onClick={() => onItemClick?.(item.name)}
-              className="w-full text-left px-4 py-2.5 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-7 text-center flex-shrink-0">
-                  {index < 3 ? (
-                    <span className="text-lg leading-none">
-                      {medals[index]}
+      <div className="border-b border-gray-100 bg-gradient-to-b from-gray-50/90 to-white px-3.5 py-3 dark:border-neutral-800 dark:from-neutral-900/70 dark:to-neutral-950 sm:px-5 sm:py-3.5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="mb-1.5 flex items-center gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-neutral-500">
+                Filter by channel
+              </p>
+              <span className="rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-gray-500 shadow-sm ring-1 ring-gray-200/80 dark:bg-neutral-900 dark:text-neutral-400 dark:ring-neutral-700">
+                {activeFilterLabel} · {activeFilterCount.toLocaleString()} orders
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {filterOptions.map((opt) => {
+                const active = filter === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setFilter(opt.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                      active
+                        ? "border-primary bg-primary text-white shadow-sm shadow-primary/25"
+                        : "border-gray-200/90 bg-white text-gray-600 hover:border-primary/35 hover:text-gray-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-primary/40 dark:hover:text-white"
+                    }`}
+                  >
+                    {opt.label}
+                    <span
+                      className={`rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums ${
+                        active
+                          ? "bg-white/20 text-white"
+                          : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
+                      }`}
+                    >
+                      {opt.count.toLocaleString()}
                     </span>
-                  ) : (
-                    <span className="text-xs font-bold text-gray-400 dark:text-neutral-500">
-                      #{index + 1}
-                    </span>
-                  )}
-                </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                      {item.name}
-                    </span>
+          <div className="shrink-0">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-neutral-500 lg:text-right">
+              Sort by
+            </p>
+            <div className="inline-flex rounded-xl border border-gray-200 bg-white p-0.5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
+              {[
+                { id: "quantity", label: "Qty" },
+                { id: "revenue", label: "Revenue" },
+                { id: "orders", label: "Orders" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setSortBy(opt.id)}
+                  className={`rounded-[10px] px-3 py-1.5 text-[11px] font-semibold transition-all ${
+                    sortBy === opt.id
+                      ? "bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900"
+                      : "text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded-md whitespace-nowrap">
-                        <ShoppingBag className="w-3 h-3" />
+      {items.length === 0 ? (
+        <div className="px-4 py-8">
+          <EmptyState
+            icon={Award}
+            message="No item data"
+            sub={
+              filter === "all"
+                ? "Try a different period"
+                : `No items for ${activeFilterLabel}`
+            }
+          />
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+          {items.map((item, index) => {
+            const topMetric =
+              sortBy === "revenue"
+                ? items[0]?.revenue || 1
+                : sortBy === "orders"
+                  ? items[0]?.orderCount || 1
+                  : items[0]?.quantity || 1;
+            const metric =
+              sortBy === "revenue"
+                ? item.revenue
+                : sortBy === "orders"
+                  ? item.orderCount
+                  : item.quantity;
+            const barPct = Math.round((metric / topMetric) * 100);
+            const totalRevenue =
+              items.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
+            const sharePct = Math.round((item.revenue / totalRevenue) * 100);
+            const mix = [
+              item.byType?.dine_in
+                ? `Dine ${item.byType.dine_in}`
+                : null,
+              item.byType?.delivery
+                ? `Del ${item.byType.delivery}`
+                : null,
+              item.byType?.takeaway
+                ? `Take ${item.byType.takeaway}`
+                : null,
+              item.bySource?.website
+                ? `Web ${item.bySource.website}`
+                : null,
+              item.bySource?.whatsapp
+                ? `WA ${item.bySource.whatsapp}`
+                : null,
+              item.bySource?.foodpanda
+                ? `FP ${item.bySource.foodpanda}`
+                : null,
+            ].filter(Boolean);
 
-                        {item.quantity}
-                      </span>
+            return (
+              <button
+                key={item.name + index}
+                type="button"
+                onClick={() => onItemClick?.(item.name)}
+                className="w-full cursor-pointer px-3.5 py-3 text-left transition-colors hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 sm:px-4 sm:py-2.5"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[11px] font-bold text-gray-500 dark:bg-neutral-800 dark:text-neutral-400">
+                    {index + 1}
+                  </div>
 
-                      <span className="text-[10px] text-gray-400 dark:text-neutral-500 font-medium hidden sm:block">
-                        {sharePct}%
-                      </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                      <div className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
+                          {item.name}
+                        </span>
+                        <p className="mt-0.5 truncate text-[10px] text-gray-400 dark:text-neutral-500">
+                          {item.orderCount} order
+                          {item.orderCount !== 1 ? "s" : ""} · Avg{" "}
+                          {fmtRs(item.avgPrice)}
+                          {mix.length > 0 ? ` · ${mix.join(" · ")}` : ""}
+                        </p>
+                      </div>
 
-                      <span className="text-sm font-bold text-primary tabular-nums">
-                        {fmtRs(item.revenue)}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold text-gray-600 dark:bg-neutral-800 dark:text-neutral-300">
+                          <ShoppingBag className="h-3 w-3" />
+                          {item.quantity}
+                        </span>
+
+                        <span className="hidden text-[10px] font-medium text-gray-400 dark:text-neutral-500 sm:inline">
+                          {sharePct}%
+                        </span>
+
+                        <span className="text-sm font-bold tabular-nums text-primary">
+                          {fmtRs(item.revenue)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-primary to-secondary transition-all duration-700"
+                        style={{ width: `${barPct}%` }}
+                      />
                     </div>
                   </div>
-
-                  <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-primary to-secondary transition-all duration-700"
-                      style={{ width: `${barPct}%` }}
-                    />
-                  </div>
                 </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </Section>
   );
 }
@@ -1248,6 +1621,10 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(false);
 
   const [ordersLoading, setOrdersLoading] = useState(true);
+
+  // Only the newest date/branch request may update the screen. Without this,
+  // slower responses from an old filter can overwrite the newly selected range.
+  const salesLoadIdRef = useRef(0);
 
   const [sessions, setSessions] = useState([]);
 
@@ -1491,69 +1868,77 @@ export default function HistoryPage() {
     }
   }
 
-  async function loadReport(input) {
-    try {
-      const data = await getSalesReport(input);
-
-      setReport(
-        Object.fromEntries(
-          Object.entries(DEFAULT_REPORT).map(([key, fallback]) => [
-            key,
-
-            data[key] ?? fallback,
-          ]),
-        ),
-      );
-    } catch (err) {
-      if (err instanceof SubscriptionInactiveError) setSuspended(true);
-      else toast.error(err.message || "Failed to load sales report");
-    } finally {
-      setPageLoading(false);
-
-      setLoading(false);
-    }
+  function normalizeSalesReport(data) {
+    return Object.fromEntries(
+      Object.entries(DEFAULT_REPORT).map(([key, fallback]) => [
+        key,
+        data?.[key] ?? fallback,
+      ]),
+    );
   }
 
-  async function loadOrders(dates) {
-    setOrdersLoading(true);
+  async function fetchAllReportOrders(dates) {
+    const params = { limit: 2000 };
+    if (dates?.from) params.from = dates.from;
+    if (dates?.to) params.to = dates.to;
+    if (dates?.daySessionId) params.daySessionId = dates.daySessionId;
 
-    try {
-      const params = { limit: 2000 };
-
-      if (dates?.from) params.from = dates.from;
-
-      if (dates?.to) params.to = dates.to;
-
-      if (dates?.daySessionId) params.daySessionId = dates.daySessionId;
-
-      const data = await getOrders(params);
-
-      if (data && typeof data === "object" && Array.isArray(data.orders)) {
-        let all = data.orders;
-
-        let pg = 1;
-
-        while (all.length < data.total && pg < 20) {
-          pg += 1;
-
-          const next = await getOrders({ ...params, page: pg });
-
-          if (!next?.orders?.length) break;
-
-          all = all.concat(next.orders);
-        }
-
-        setAllOrders(all);
-      } else {
-        setAllOrders(Array.isArray(data) ? data : []);
-      }
-    } catch (err) {
-      setAllOrders([]);
-
-      console.error("Failed to load orders:", err);
-    } finally {
-      setOrdersLoading(false);
+    const data = await getOrders(params);
+    if (!(data && typeof data === "object" && Array.isArray(data.orders))) {
+      return Array.isArray(data) ? data : [];
     }
+
+    let all = data.orders;
+    let pg = 1;
+    while (all.length < data.total && pg < 20) {
+      pg += 1;
+      const next = await getOrders({ ...params, page: pg });
+      if (!next?.orders?.length) break;
+      all = all.concat(next.orders);
+    }
+    return all;
+  }
+
+  function prepareSalesReload() {
+    const loadId = salesLoadIdRef.current + 1;
+    salesLoadIdRef.current = loadId;
+    setLoading(true);
+    setOrdersLoading(true);
+    // Never show totals from the previous period beneath a new filter label.
+    setReport(DEFAULT_REPORT);
+    setAllOrders([]);
+    return loadId;
+  }
+
+  async function loadSalesData(query) {
+    const loadId = prepareSalesReload();
+
+    const [reportResult, ordersResult] = await Promise.allSettled([
+      getSalesReport(query || {}),
+      fetchAllReportOrders(query || {}),
+    ]);
+
+    // A newer filter or branch was selected while this request was running.
+    if (loadId !== salesLoadIdRef.current) return;
+
+    if (reportResult.status === "fulfilled") {
+      setReport(normalizeSalesReport(reportResult.value));
+      setSuspended(false);
+    } else if (reportResult.reason instanceof SubscriptionInactiveError) {
+      setSuspended(true);
+    } else {
+      toast.error(reportResult.reason?.message || "Failed to load sales report");
+    }
+
+    if (ordersResult.status === "fulfilled") {
+      setAllOrders(ordersResult.value);
+    } else {
+      console.error("Failed to load orders:", ordersResult.reason);
+    }
+
+    setPageLoading(false);
+    setLoading(false);
+    setOrdersLoading(false);
   }
 
   useEffect(() => {
@@ -1605,13 +1990,11 @@ export default function HistoryPage() {
   }, [currentBranch?.id]);
 
   useEffect(() => {
-    if (!preset) return;
+    if (!preset || preset === "custom") return;
 
     const q = getSalesReportQuery(preset, sessions, cutoffHour);
 
-    loadReport(q);
-
-    loadOrders(q);
+    loadSalesData(q);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBranch?.id, preset, sessions, cutoffHour]);
@@ -1623,21 +2006,20 @@ export default function HistoryPage() {
 
     if (safeId === "custom") return;
 
-    const q = getSalesReportQuery(safeId, sessions, cutoffHour);
-
-    setLoading(true);
-
     setOrdersPage(0);
 
-    loadReport(q);
-
-    loadOrders(q);
+    if (safeId === preset) {
+      const q = getSalesReportQuery(safeId, sessions, cutoffHour);
+      loadSalesData(q);
+    } else {
+      // The preset effect starts the request; invalidate the current request
+      // immediately so it cannot flash stale totals in the meantime.
+      prepareSalesReload();
+    }
   }
 
   function applyCustom(e) {
     e.preventDefault();
-
-    setLoading(true);
 
     setOrdersPage(0);
 
@@ -1649,9 +2031,7 @@ export default function HistoryPage() {
       ? new Date(customTo + "T23:59:59.999").toISOString()
       : "";
 
-    loadReport({ from, to });
-
-    loadOrders({ from, to });
+    loadSalesData({ from, to });
   }
 
   useEffect(() => {
@@ -2728,229 +3108,365 @@ export default function HistoryPage() {
   function renderOverview() {
     if (loading) {
       return (
-        <div className="space-y-4 max-w-7xl mx-auto">
-          <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => (
+        <div className="w-full space-y-3 sm:space-y-4">
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="mt-4 h-10 w-52" />
+            <Skeleton className="mt-5 h-2.5 w-full rounded-full" />
+            <div className="mt-3 flex gap-4">
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="h-3 w-28" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={`overview-kpi-sk-${i}`}
-                className="rounded-xl border-2 border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 sm:p-5"
+                className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-950"
               >
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2">
-                    <Skeleton className="h-3 w-24" />
-
-                    <Skeleton className="h-8 w-28" />
-
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-
-                  <Skeleton className="h-9 w-9 sm:h-11 sm:w-11 rounded-xl sm:rounded-2xl" />
-                </div>
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="mt-2 h-6 w-24" />
               </div>
             ))}
           </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <SectionSkeleton bodyHeightClass="h-24" />
-
-            <SectionSkeleton bodyHeightClass="h-24" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <SectionSkeleton bodyHeightClass="h-28" />
+            <SectionSkeleton bodyHeightClass="h-28" />
           </div>
-
-          {Array.from({ length: 3 }).map((_, i) => (
-            <SectionSkeleton
-              key={`overview-section-sk-${i}`}
-              bodyHeightClass="h-28"
-            />
-          ))}
         </div>
       );
     }
 
+    const cash = paymentTotals.CASH || { amount: 0, orders: 0 };
+    const card = paymentTotals.CARD || { amount: 0, orders: 0 };
+    const online = paymentTotals.ONLINE || { amount: 0, orders: 0 };
+    const paymentTotalAmount =
+      (Number(cash.amount) || 0) +
+      (Number(card.amount) || 0) +
+      (Number(online.amount) || 0);
+    const paymentShare = (amount) =>
+      paymentTotalAmount > 0
+        ? Math.round((Number(amount) / paymentTotalAmount) * 100)
+        : 0;
+
     return (
-      <div className="space-y-4 max-w-7xl mx-auto">
-        <p className="text-xs font-medium text-gray-500 dark:text-neutral-400 -mb-1">
-          Completed & paid orders
-        </p>
+      <div className="w-full space-y-3 sm:space-y-4">
+        <RevenueHero
+          periodLabel={periodLabel}
+          grandTotal={revenueBreakdown.grandTotal}
+          salesAmount={revenueBreakdown.salesAmount}
+          deliveryFees={revenueBreakdown.deliveryFees}
+          tax={totalTaxForOverview}
+          orderCount={revenueBreakdown.orderCount}
+          avgTicket={avgTicket}
+          fmtRs={fmtRs}
+        />
 
-        <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          <KpiCard
-            label="Sales (items)"
-            value={fmtRs(revenueBreakdown.salesAmount)}
-            sub="Menu & food, excl. delivery"
-            icon={ShoppingBag}
-            gradient="from-violet-500 to-violet-600"
-            shadow="shadow-violet-500/30"
-          />
-
-          <KpiCard
-            label="Delivery fees"
-            value={fmtRs(revenueBreakdown.deliveryFees)}
-            sub="Rider / delivery charges"
-            icon={Bike}
-            gradient="from-sky-500 to-blue-600"
-            shadow="shadow-sky-500/30"
-          />
-
-          <KpiCard
-            label="Total revenue"
-            value={fmtRs(revenueBreakdown.grandTotal)}
-            sub="Sales + delivery fees"
-            icon={DollarSign}
-            gradient="from-primary to-secondary"
-            shadow="shadow-primary/30"
-          />
-
-          <KpiCard
-            label="Total tax"
-            value={fmtRs(totalTaxForOverview)}
-            sub="Sum of tax on orders"
-            icon={Percent}
-            gradient="from-indigo-500 to-indigo-600"
-            shadow="shadow-indigo-500/30"
-          />
-
-          <KpiCard
-            label="Total orders"
-            value={revenueBreakdown.orderCount.toLocaleString()}
-            sub="Completed & paid orders"
-            icon={Package}
-            gradient="from-amber-500 to-orange-600"
-            shadow="shadow-amber-500/30"
-          />
-
-          <KpiCard
-            label="Avg. ticket"
-            value={fmtRs(avgTicket)}
-            sub="revenue per order"
-            icon={TrendingUp}
-            gradient="from-emerald-500 to-emerald-600"
-            shadow="shadow-emerald-500/30"
-          />
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <Section
-            title="Payment Summary"
-            subtitle="How customers paid in this period"
-            icon={DollarSign}
-            iconGradient="bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/25"
-            defaultOpen
+        <div
+          className={`grid gap-3 lg:gap-4 ${
+            paymentAccountRows.length > 0 ? "lg:grid-cols-5" : ""
+          }`}
+        >
+          <div
+            className={
+              paymentAccountRows.length > 0 ? "lg:col-span-3" : "w-full"
+            }
           >
-            <div className="p-3 sm:p-5 grid gap-2 sm:gap-3 grid-cols-3">
-              {["CASH", "CARD", "ONLINE"].map((method) => {
-                const d = paymentTotals[method] || { amount: 0, orders: 0 };
-
-                const label =
-                  method === "CASH"
-                    ? "Cash"
-                    : method === "CARD"
-                      ? "Card"
-                      : "Online";
-
-                return (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() => goToOrders({ payment: label })}
-                    className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50/70 dark:bg-neutral-900/60 px-2.5 py-2.5 text-left cursor-pointer transition-all hover:border-primary/40 hover:shadow-sm"
-                  >
-                    <p className="text-[10px] font-semibold text-gray-500 dark:text-neutral-400 uppercase tracking-wider">
-                      {label}
-                    </p>
-
-                    <p className="mt-1 text-sm sm:text-lg font-extrabold text-gray-900 dark:text-white leading-tight">
-                      {fmtRs(d.amount)}
-                    </p>
-
-                    <p className="mt-0.5 text-[10px] text-gray-400 dark:text-neutral-500">
-                      {d.orders.toLocaleString()} orders
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
-
-          <Section
-            title="Online Payment Accounts"
-            subtitle="Breakdown by JazzCash, bank, etc."
-            icon={DollarSign}
-            iconGradient="bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/25"
-            defaultOpen
-          >
-            <div className="p-5">
-              {paymentAccountRows.length === 0 ? (
-                <div className="py-6 text-center text-xs text-gray-400 dark:text-neutral-500">
-                  No online payments in this period.
+            <Section
+              title="Payment mix"
+              subtitle="How customers paid"
+              icon={DollarSign}
+              iconGradient="bg-gradient-to-br from-primary to-secondary shadow-primary/25"
+              defaultOpen
+            >
+              <div className="space-y-4 p-4 sm:p-5">
+                <div className="flex h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-700"
+                    style={{ width: `${paymentShare(cash.amount)}%` }}
+                  />
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-700"
+                    style={{ width: `${paymentShare(card.amount)}%` }}
+                  />
+                  <div
+                    className="h-full bg-violet-500 transition-all duration-700"
+                    style={{ width: `${paymentShare(online.amount)}%` }}
+                  />
                 </div>
-              ) : (
-                <div className="divide-y divide-gray-100 dark:divide-neutral-800 text-xs">
-                  {paymentAccountRows.map((row) => (
-                    <div
-                      key={row.accountName}
-                      className="flex items-center justify-between py-2.5"
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {[
+                    {
+                      method: "CASH",
+                      label: "Cash",
+                      Icon: Banknote,
+                      amount: cash.amount,
+                      orders: cash.orders,
+                      dot: "bg-emerald-500",
+                      chip: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+                    },
+                    {
+                      method: "CARD",
+                      label: "Card",
+                      Icon: CreditCard,
+                      amount: card.amount,
+                      orders: card.orders,
+                      dot: "bg-blue-500",
+                      chip: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300",
+                    },
+                    {
+                      method: "ONLINE",
+                      label: "Online",
+                      Icon: Globe,
+                      amount: online.amount,
+                      orders: online.orders,
+                      dot: "bg-violet-500",
+                      chip: "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300",
+                    },
+                  ].map((row) => (
+                    <button
+                      key={row.method}
+                      type="button"
+                      onClick={() => goToOrders({ payment: row.label })}
+                      className="rounded-xl border border-gray-200 bg-gray-50/50 p-3 text-left transition-all hover:border-primary/40 hover:bg-white dark:border-neutral-800 dark:bg-neutral-900/50 dark:hover:bg-neutral-900"
                     >
-                      <p className="font-semibold text-gray-900 dark:text-white truncate">
-                        {row.accountName}
-                      </p>
-
-                      <div className="text-right">
-                        <p className="text-xs font-semibold text-gray-900 dark:text-white">
-                          {fmtRs(row.amount)}
-                        </p>
-
-                        <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                          {row.orders} orders
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${row.dot}`} />
+                        <row.Icon className="h-3.5 w-3.5 text-gray-400" />
+                        <span className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400">
+                          {row.label}
+                        </span>
+                        <span
+                          className={`ml-auto rounded-md px-1.5 py-0.5 text-[10px] font-bold ${row.chip}`}
+                        >
+                          {paymentShare(row.amount)}%
+                        </span>
                       </div>
-                    </div>
+                      <p className="mt-2 text-base font-extrabold tabular-nums text-gray-900 dark:text-white">
+                        {fmtRs(row.amount)}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-gray-400 dark:text-neutral-500">
+                        {Number(row.orders).toLocaleString()} orders
+                      </p>
+                    </button>
                   ))}
                 </div>
-              )}
+              </div>
+            </Section>
+          </div>
+
+          {paymentAccountRows.length > 0 && (
+            <div className="lg:col-span-2">
+              <Section
+                title="Online accounts"
+                subtitle="JazzCash, banks, etc."
+                icon={Globe}
+                iconGradient="bg-gradient-to-br from-violet-500 to-violet-600 shadow-violet-500/25"
+                defaultOpen
+              >
+                <div className="space-y-2.5 p-3 sm:p-4">
+                  {paymentAccountRows.map((row) => {
+                    const onlineTotal = paymentAccountRows.reduce(
+                      (s, r) => s + (Number(r.amount) || 0),
+                      0,
+                    );
+                    const share =
+                      onlineTotal > 0
+                        ? Math.round((Number(row.amount) / onlineTotal) * 100)
+                        : 0;
+                    return (
+                      <div
+                        key={row.accountName}
+                        className="rounded-xl border border-gray-100 px-3 py-2.5 dark:border-neutral-800"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-xs font-semibold text-gray-900 dark:text-white">
+                            {row.accountName}
+                          </p>
+                          <p className="shrink-0 text-xs font-bold tabular-nums text-gray-900 dark:text-white">
+                            {fmtRs(row.amount)}
+                          </p>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <div className="h-1 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                            <div
+                              className="h-full rounded-full bg-violet-500"
+                              style={{ width: `${share}%` }}
+                            />
+                          </div>
+                          <p className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-neutral-500">
+                            {row.orders} · {share}%
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
             </div>
-          </Section>
+          )}
         </div>
 
-        {/* Order Type Breakdown */}
+        <div className="grid gap-3 lg:grid-cols-2 lg:gap-4">
+          {orderTypeRows.length > 0 ? (
+            <Section
+              title="Order types"
+              subtitle={`${orderTypeRows.length} types`}
+              icon={ShoppingBag}
+              iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
+              defaultOpen
+            >
+              <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+                {orderTypeRows.map((row) => {
+                  const pct = parseFloat(String(row.percent)) || 0;
+                  const pctLabel = `${Math.round(pct)}%`;
+                  const ordersLabel = `${Number(row.orders) || 0} Order${Number(row.orders) === 1 ? "" : "s"}`;
+                  return (
+                    <button
+                      key={row.type}
+                      type="button"
+                      onClick={() =>
+                        goToOrders({
+                          type: ORDER_TYPE_FILTER_MAP[row.type] || FILTER_ALL,
+                        })
+                      }
+                      className="w-full cursor-pointer px-3.5 py-3 text-left transition-colors hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 sm:px-4"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                          {row.type}{" "}
+                          <span className="text-[10px] font-medium text-gray-400 dark:text-neutral-500">
+                            {pctLabel} - {ordersLabel}
+                          </span>
+                        </p>
+                        <span className="shrink-0 text-sm font-bold tabular-nums text-primary">
+                          {fmtRs(row.amount)}
+                        </span>
+                      </div>
+                      <StatBar
+                        pct={pct}
+                        barClass={
+                          ORDER_TYPE_BAR_COLORS[row.type] || "bg-amber-500"
+                        }
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+          ) : (
+            <div />
+          )}
 
-        {orderTypeRows.length > 0 && (
-          <Section
-            title="Order Type Breakdown"
-            subtitle={`${orderTypeRows.length} types`}
-            icon={ShoppingBag}
-            iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
-          >
-            <div className="p-3 sm:p-5 grid gap-2 sm:gap-3 grid-cols-3">
-              {orderTypeRows.map((row) => (
-                <button
-                  key={row.type}
-                  type="button"
-                  onClick={() =>
-                    goToOrders({
-                      type: ORDER_TYPE_FILTER_MAP[row.type] || FILTER_ALL,
-                    })
-                  }
-                  className={`rounded-xl border px-2.5 py-2.5 text-left cursor-pointer transition-all ${ORDER_TYPE_CARD_COLORS[row.type] || "border-gray-200 dark:border-neutral-800 bg-gray-50/60 hover:border-gray-400"}`}
-                >
-                  <p className="text-[10px] font-semibold text-gray-600 dark:text-neutral-300 leading-tight">
-                    {row.type}
-                  </p>
-
-                  <p className="text-sm sm:text-lg font-extrabold text-gray-900 dark:text-white mt-1 leading-tight">
-                    {fmtRs(row.amount)}
-                  </p>
-
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-0.5 leading-tight">
-                    {row.orders} · {row.percent}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </Section>
-        )}
+          {ordersLoading ? (
+            <SectionSkeleton bodyHeightClass="h-32" />
+          ) : websiteStats ? (
+            <Section
+              title="Website Orders"
+              subtitle="Online storefront"
+              icon={Globe}
+              iconGradient="bg-gradient-to-br from-sky-500 to-cyan-600 shadow-cyan-500/25"
+              badge={`${websiteStats.orders} order${websiteStats.orders !== 1 ? "s" : ""}${websiteStats.uniqueCustomers > 0 ? ` · ${websiteStats.uniqueCustomers} customers` : ""}`}
+              badgeValue={fmtRs(websiteStats.revenue)}
+              defaultOpen
+            >
+              <div className="space-y-3 px-4 py-3.5 sm:px-5">
+                {(() => {
+                  const total =
+                    (Number(websiteStats.salesRevenue) || 0) +
+                    (Number(websiteStats.deliveryFees) || 0);
+                  const salesPct =
+                    total > 0
+                      ? Math.round(
+                          (Number(websiteStats.salesRevenue) / total) * 100,
+                        )
+                      : 0;
+                  const deliveryPct = Math.max(0, 100 - salesPct);
+                  const paidPct =
+                    websiteStats.orders > 0
+                      ? Math.round(
+                          (websiteStats.paid / websiteStats.orders) * 100,
+                        )
+                      : 0;
+                  return (
+                    <>
+                      <div>
+                        <div className="mb-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                            Sales {fmtRs(websiteStats.salesRevenue)}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                            Delivery {fmtRs(websiteStats.deliveryFees)}
+                          </span>
+                        </div>
+                        <div className="flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                          <div
+                            className="h-full bg-sky-500 transition-all duration-700"
+                            style={{ width: `${salesPct}%` }}
+                          />
+                          <div
+                            className="h-full bg-cyan-400 transition-all duration-700"
+                            style={{ width: `${deliveryPct}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <MetricCell
+                          label="Sales"
+                          value={fmtRs(websiteStats.salesRevenue)}
+                        />
+                        <MetricCell
+                          label="Delivery"
+                          value={fmtRs(websiteStats.deliveryFees)}
+                        />
+                        <MetricCell
+                          label="Paid"
+                          value={`${websiteStats.paid} orders`}
+                          tone="text-emerald-600 dark:text-emerald-400"
+                        />
+                        <MetricCell
+                          label="Collected"
+                          value={fmtRs(websiteStats.revenue)}
+                          tone="text-primary"
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-1 flex items-center justify-between text-[10px] text-gray-400 dark:text-neutral-500">
+                          <span>Paid share</span>
+                          <span>{paidPct}%</span>
+                        </div>
+                        <StatBar pct={paidPct} barClass="bg-emerald-500" />
+                      </div>
+                    </>
+                  );
+                })()}
+                {(websiteStats.unpaid > 0 || websiteStats.cancelled > 0) && (
+                  <div className="flex flex-wrap gap-2">
+                    {websiteStats.unpaid > 0 && (
+                      <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+                        {websiteStats.unpaid} unpaid
+                      </span>
+                    )}
+                    {websiteStats.cancelled > 0 && (
+                      <span className="rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 dark:bg-red-500/10">
+                        {websiteStats.cancelled} cancelled
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Section>
+          ) : (
+            <div />
+          )}
+        </div>
 
         <TopItemsList
-          items={report.topItems}
+          orders={dateFilteredOrders}
+          loading={ordersLoading}
           title="Top Selling Items"
           subtitle="Best performers in selected period"
           onItemClick={(itemName) => goToOrders({ search: itemName })}
@@ -2974,76 +3490,53 @@ export default function HistoryPage() {
               defaultOpen
             >
               <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-                {riderStats.map((rider, idx) => {
-                  const topDeliveries = riderStats[0]?.deliveries || 1;
-
+                {riderStats.map((rider) => {
+                  const topRevenue =
+                    Number(riderStats[0]?.paidAmount) ||
+                    Number(riderStats[0]?.revenue) ||
+                    1;
                   const barPct = Math.round(
-                    (rider.deliveries / topDeliveries) * 100,
+                    ((Number(rider.paidAmount) || 0) / topRevenue) * 100,
                   );
-
+                  const detailParts = [
+                    `Items ${fmtRs(rider.salesRevenue)}`,
+                    `Fee ${fmtRs(rider.deliveryFees)}`,
+                  ];
                   return (
-                    <button
+                    <StaffStatRow
                       key={rider.name}
-                      type="button"
+                      name={rider.name}
                       onClick={() => goToOrders({ rider: rider.name })}
-                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-500/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-sky-600 dark:text-sky-400">
-                            {rider.name.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          {/* Name + cancelled + paid totals on one line */}
-
-                          <div className="flex items-center justify-between gap-2 mb-0.5">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                                {rider.name}
+                      detail={
+                        <>
+                          {detailParts.join(" · ")}
+                          {rider.unpaidDeliveries > 0 ? (
+                            <>
+                              {" · "}
+                              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                Unpaid {fmtRs(rider.unpaidAmount)}
                               </span>
-
-                              {rider.cancelled > 0 && (
-                                <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded flex-shrink-0">
-                                  {rider.cancelled} cancelled
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span className="inline-flex items-center font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/10 px-1.5 py-0.5 rounded-md leading-tight text-[10px]">
-                                {rider.paidDeliveries} del.
+                            </>
+                          ) : null}
+                          {rider.cancelled > 0 ? (
+                            <>
+                              {" · "}
+                              <span className="font-semibold text-red-500">
+                                {rider.cancelled} cancelled
                               </span>
-
-                              <span className="text-sm font-bold text-primary tabular-nums">
-                                {fmtRs(rider.paidAmount)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Items + delivery fee breakdown */}
-
-                          <p className="text-[10px] font-medium text-gray-400 dark:text-neutral-500 mb-1 tabular-nums">
-                            Items {fmtRs(rider.salesRevenue)} · Fee{" "}
-                            {fmtRs(rider.deliveryFees)}
-                            {rider.unpaidDeliveries > 0 && (
-                              <span className="text-amber-600 dark:text-amber-400">
-                                {" "}
-                                · Unpaid {fmtRs(rider.unpaidAmount)}
-                              </span>
-                            )}
-                          </p>
-
-                          <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-sky-400 to-blue-500 transition-all duration-700"
-                              style={{ width: `${barPct}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </button>
+                            </>
+                          ) : null}
+                        </>
+                      }
+                      badge={
+                        <span className="inline-flex items-center whitespace-nowrap rounded-md bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
+                          {rider.paidDeliveries} del.
+                        </span>
+                      }
+                      amount={fmtRs(rider.paidAmount)}
+                      barPct={barPct}
+                      barClass="bg-sky-500"
+                    />
                   );
                 })}
               </div>
@@ -3051,6 +3544,7 @@ export default function HistoryPage() {
           )
         )}
 
+        <div className="grid gap-3 lg:grid-cols-2 lg:gap-4">
         {/* Order Takers Overview */}
 
         {ordersLoading ? (
@@ -3064,61 +3558,37 @@ export default function HistoryPage() {
               iconGradient="bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/25"
               badge={`${waiterStats.length} order taker${waiterStats.length !== 1 ? "s" : ""} · ${waiterStats.reduce((s, w) => s + w.orders, 0)} orders`}
               badgeValue={fmtRs(waiterStats.reduce((s, w) => s + w.revenue, 0))}
+              defaultOpen
             >
               <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-                {waiterStats.map((waiter, idx) => {
-                  const topOrders = waiterStats[0]?.orders || 1;
-
-                  const barPct = Math.round((waiter.orders / topOrders) * 100);
-
+                {waiterStats.map((waiter) => {
+                  const topRevenue = Number(waiterStats[0]?.revenue) || 1;
+                  const barPct = Math.round(
+                    ((Number(waiter.revenue) || 0) / topRevenue) * 100,
+                  );
                   return (
-                    <button
+                    <StaffStatRow
                       key={waiter.name}
-                      type="button"
+                      name={waiter.name}
+                      avatarTone="bg-violet-100 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400"
                       onClick={() => goToOrders({ waiter: waiter.name })}
-                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-violet-600 dark:text-violet-400">
-                            {waiter.name.charAt(0).toUpperCase()}
+                      detail={
+                        waiter.cancelled > 0 ? (
+                          <span className="font-semibold text-red-500">
+                            {waiter.cancelled} cancelled
                           </span>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                              {waiter.name}
-                            </span>
-
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-1.5 py-0.5 rounded-md whitespace-nowrap">
-                                <Headset className="w-3 h-3" />
-
-                                {waiter.orders}
-                              </span>
-
-                              {waiter.cancelled > 0 && (
-                                <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
-                                  {waiter.cancelled} ✕
-                                </span>
-                              )}
-
-                              <span className="text-sm font-bold text-primary tabular-nums">
-                                {fmtRs(waiter.revenue)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-violet-400 to-purple-500 transition-all duration-700"
-                              style={{ width: `${barPct}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </button>
+                        ) : null
+                      }
+                      badge={
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-violet-50 px-1.5 py-0.5 text-[11px] font-semibold text-violet-600 dark:bg-violet-500/10 dark:text-violet-300">
+                          <Headset className="h-3 w-3" />
+                          {waiter.orders}
+                        </span>
+                      }
+                      amount={fmtRs(waiter.revenue)}
+                      barPct={barPct}
+                      barClass="bg-violet-500"
+                    />
                   );
                 })}
               </div>
@@ -3144,64 +3614,40 @@ export default function HistoryPage() {
             >
               <div className="divide-y divide-gray-100 dark:divide-neutral-800">
                 {cashierStats.map((cashier) => {
-                  const topOrders = cashierStats[0]?.orders || 1;
-
-                  const barPct = Math.round((cashier.orders / topOrders) * 100);
-
+                  const topRevenue = Number(cashierStats[0]?.revenue) || 1;
+                  const barPct = Math.round(
+                    ((Number(cashier.revenue) || 0) / topRevenue) * 100,
+                  );
                   return (
-                    <button
+                    <StaffStatRow
                       key={cashier.name}
-                      type="button"
+                      name={cashier.name}
+                      avatarTone="bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
                       onClick={() => goToOrders({ cashier: cashier.name })}
-                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-amber-700 dark:text-amber-300">
-                            {cashier.name.charAt(0).toUpperCase()}
+                      detail={
+                        cashier.cancelled > 0 ? (
+                          <span className="font-semibold text-red-500">
+                            {cashier.cancelled} cancelled
                           </span>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                              {cashier.name}
-                            </span>
-
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded-md whitespace-nowrap">
-                                <Headset className="w-3 h-3" />
-
-                                {cashier.orders}
-                              </span>
-
-                              {cashier.cancelled > 0 && (
-                                <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
-                                  {cashier.cancelled} ✕
-                                </span>
-                              )}
-
-                              <span className="text-sm font-bold text-primary tabular-nums">
-                                {fmtRs(cashier.revenue)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-700"
-                              style={{ width: `${barPct}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </button>
+                        ) : null
+                      }
+                      badge={
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                          <Headset className="h-3 w-3" />
+                          {cashier.orders}
+                        </span>
+                      }
+                      amount={fmtRs(cashier.revenue)}
+                      barPct={barPct}
+                      barClass="bg-amber-500"
+                    />
                   );
                 })}
               </div>
             </Section>
           )
         )}
+        </div>
 
         {/* Admins Overview */}
 
@@ -3219,125 +3665,35 @@ export default function HistoryPage() {
             >
               <div className="divide-y divide-gray-100 dark:divide-neutral-800">
                 {adminStats.map((admin) => {
-                  const topOrders = adminStats[0]?.orders || 1;
-
-                  const barPct = Math.round((admin.orders / topOrders) * 100);
-
+                  const topRevenue = Number(adminStats[0]?.revenue) || 1;
+                  const barPct = Math.round(
+                    ((Number(admin.revenue) || 0) / topRevenue) * 100,
+                  );
                   return (
-                    <button
+                    <StaffStatRow
                       key={admin.name}
-                      type="button"
+                      name={admin.name}
+                      avatarTone="bg-red-100 text-red-700 dark:bg-rose-500/10 dark:text-rose-300"
                       onClick={() => goToOrders({ admin: admin.name })}
-                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-rose-500/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-red-700 dark:text-rose-300">
-                            {admin.name.charAt(0).toUpperCase()}
+                      detail={
+                        admin.cancelled > 0 ? (
+                          <span className="font-semibold text-red-500">
+                            {admin.cancelled} cancelled
                           </span>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                              {admin.name}
-                            </span>
-
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 dark:text-rose-300 bg-red-50 dark:bg-rose-500/10 px-1.5 py-0.5 rounded-md whitespace-nowrap">
-                                <Headset className="w-3 h-3" />
-
-                                {admin.orders}
-                              </span>
-
-                              {admin.cancelled > 0 && (
-                                <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded">
-                                  {admin.cancelled} ✕
-                                </span>
-                              )}
-
-                              <span className="text-sm font-bold text-primary tabular-nums">
-                                {fmtRs(admin.revenue)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-red-400 to-rose-500 transition-all duration-700"
-                              style={{ width: `${barPct}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </button>
+                        ) : null
+                      }
+                      badge={
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">
+                          <Headset className="h-3 w-3" />
+                          {admin.orders}
+                        </span>
+                      }
+                      amount={fmtRs(admin.revenue)}
+                      barPct={barPct}
+                      barClass="bg-rose-500"
+                    />
                   );
                 })}
-              </div>
-            </Section>
-          )
-        )}
-
-        {/* Website Orders */}
-        {ordersLoading ? (
-          <SectionSkeleton bodyHeightClass="h-32" />
-        ) : (
-          websiteStats && (
-            <Section
-              title="Website Orders"
-              subtitle="Orders placed through the online storefront"
-              icon={Globe}
-              iconGradient="bg-gradient-to-br from-sky-500 to-cyan-600 shadow-cyan-500/25"
-              badge={`${websiteStats.orders} order${websiteStats.orders !== 1 ? "s" : ""}${websiteStats.uniqueCustomers > 0 ? ` · ${websiteStats.uniqueCustomers} customers` : ""}`}
-              badgeValue={fmtRs(websiteStats.revenue)}
-            >
-              <div className="divide-y divide-gray-100 dark:divide-neutral-800 px-4 py-1">
-                {/* Revenue breakdown row */}
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="text-[12px] text-gray-600 dark:text-neutral-400">Sales revenue</span>
-                  <span className="text-[12px] font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {fmtRs(websiteStats.salesRevenue)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="text-[12px] text-gray-600 dark:text-neutral-400">Delivery charges</span>
-                  <span className="text-[12px] font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {fmtRs(websiteStats.deliveryFees)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-gray-600 dark:text-neutral-400">Paid</span>
-                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded-md">
-                      {websiteStats.paid} orders
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {websiteStats.unpaid > 0 && (
-                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded-md">
-                        {websiteStats.unpaid} unpaid
-                      </span>
-                    )}
-                    {websiteStats.cancelled > 0 && (
-                      <span className="text-[10px] font-semibold text-red-500 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded-md">
-                        {websiteStats.cancelled} ✕
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {/* Revenue bar */}
-                <div className="py-2.5">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide">Total collected</span>
-                    <span className="text-[12px] font-bold text-primary tabular-nums">{fmtRs(websiteStats.revenue)}</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 transition-all duration-700"
-                      style={{ width: websiteStats.orders > 0 ? "100%" : "0%" }}
-                    />
-                  </div>
-                </div>
               </div>
             </Section>
           )
@@ -3432,6 +3788,35 @@ export default function HistoryPage() {
   }
 
   function renderOrders() {
+    if (ordersLoading) {
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div
+                key={`orders-kpi-loading-${index}`}
+                className="rounded-xl border border-gray-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950"
+              >
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="mt-2 h-7 w-16" />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
+            <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-neutral-400">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              Loading orders for the selected period…
+            </div>
+            <div className="space-y-3">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <Skeleton key={`orders-row-loading-${index}`} className="h-9 w-full" />
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const dateFiltered = dateFilteredOrders;
 
     const totalAll = dateFiltered.length;
@@ -5980,11 +6365,12 @@ export default function HistoryPage() {
       {pageLoading ? (
         <SalesReportScreenSkeleton />
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {/* ── Toolbar ── */}
-          <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl shadow-sm p-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="rounded-2xl border border-gray-200 bg-white p-2 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             {/* Tabs */}
-            <nav className="flex items-stretch sm:items-center gap-1" aria-label="Report views">
+            <nav className="flex items-stretch gap-1 overflow-x-auto pb-0.5 sm:items-center sm:overflow-visible sm:pb-0" aria-label="Report views">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -6006,27 +6392,25 @@ export default function HistoryPage() {
                       if (tab.id === "sessions" && sessionsList.length === 0)
                         loadSessions(0);
                     }}
-                    className={`flex-1 sm:flex-none inline-flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 rounded-xl px-2 sm:px-3 py-2 sm:py-1.5 text-[10px] sm:text-xs font-semibold transition-all ${
+                    className={`inline-flex shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-2.5 py-2 text-[10px] font-semibold transition-all sm:flex-none sm:flex-row sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs ${
                       isActive
                         ? "bg-orange-500 text-white shadow-md shadow-orange-500/20"
-                        : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800"
+                        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
                     }`}
                   >
-                    {/* Mobile: icon with superscript badge */}
                     <div className="relative sm:hidden">
-                      <Icon className={`w-4 h-4 ${isActive ? "opacity-100" : "opacity-60"}`} aria-hidden />
+                      <Icon className={`h-4 w-4 ${isActive ? "opacity-100" : "opacity-60"}`} aria-hidden />
                       {badge != null && (
-                        <span className={`absolute -top-1.5 -right-2 px-1 py-px rounded text-[9px] font-bold leading-none ${isActive ? "bg-white/30 text-white" : "bg-gray-200 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"}`}>
-                          {badge}
+                        <span className={`absolute -right-2 -top-1.5 rounded px-1 py-px text-[9px] font-bold leading-none ${isActive ? "bg-white/30 text-white" : "bg-gray-200 text-gray-600 dark:bg-neutral-700 dark:text-neutral-300"}`}>
+                          {badge > 999 ? "999+" : badge}
                         </span>
                       )}
                     </div>
-                    {/* Desktop: icon inline */}
-                    <Icon className={`hidden sm:block w-3.5 h-3.5 shrink-0 ${isActive ? "opacity-100" : "opacity-70"}`} aria-hidden />
-                    <span className="leading-none whitespace-nowrap">{tab.label}</span>
-                    {/* Desktop: badge pill after label */}
+                    <Icon className={`hidden h-3.5 w-3.5 shrink-0 sm:block ${isActive ? "opacity-100" : "opacity-70"}`} aria-hidden />
+                    <span className="whitespace-nowrap leading-none sm:hidden">{tab.shortLabel}</span>
+                    <span className="hidden whitespace-nowrap leading-none sm:inline">{tab.label}</span>
                     {badge != null && (
-                      <span className={`hidden sm:inline px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isActive ? "bg-white/25 text-white" : "bg-gray-200 dark:bg-neutral-700 text-gray-600 dark:text-neutral-300"}`}>
+                      <span className={`hidden rounded-md px-1.5 py-0.5 text-[10px] font-bold sm:inline ${isActive ? "bg-white/25 text-white" : "bg-gray-200 text-gray-600 dark:bg-neutral-700 dark:text-neutral-300"}`}>
                         {badge}
                       </span>
                     )}
@@ -6039,24 +6423,24 @@ export default function HistoryPage() {
             {activeTab !== "sessions" && (
               <div className="flex items-center gap-1.5 sm:flex-shrink-0">
                 {/* Date dropdown */}
-                <div className="relative flex-1 sm:flex-none">
+                <div className="relative min-w-0 flex-1 sm:flex-none">
                   <button
                     type="button"
                     onClick={() => {
                       setShowDateDropdown((v) => !v);
                       setShowExportDropdown(false);
                     }}
-                    className="w-full sm:w-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:border-primary/40 hover:text-gray-900 dark:hover:text-white transition-all"
+                    className="inline-flex h-9 w-full items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-700 transition-all hover:border-primary/40 hover:text-gray-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:text-white sm:h-8 sm:w-auto"
                   >
-                    <Calendar className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                    <span className="flex-1 text-left truncate">
+                    <Calendar className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate text-left">
                       {periodLabel}
                     </span>
                     {loading && (
-                      <Loader2 className="w-3 h-3 animate-spin text-primary flex-shrink-0" />
+                      <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
                     )}
                     <ChevronDown
-                      className={`w-3 h-3 text-gray-400 transition-transform flex-shrink-0 ${showDateDropdown ? "rotate-180" : ""}`}
+                      className={`h-3 w-3 shrink-0 text-gray-400 transition-transform ${showDateDropdown ? "rotate-180" : ""}`}
                     />
                   </button>
                   {showDateDropdown && (
@@ -6134,12 +6518,12 @@ export default function HistoryPage() {
                       setShowExportDropdown((v) => !v);
                       setShowDateDropdown(false);
                     }}
-                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 text-xs font-semibold text-gray-700 dark:text-neutral-300 hover:border-primary/40 hover:text-gray-900 dark:hover:text-white transition-all"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-all hover:border-primary/40 hover:text-gray-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:text-white sm:h-8 sm:bg-gray-50"
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    <Download className="h-3.5 w-3.5" />
                     Export
                     <ChevronDown
-                      className={`w-3 h-3 text-gray-400 transition-transform ${showExportDropdown ? "rotate-180" : ""}`}
+                      className={`h-3 w-3 text-gray-400 transition-transform ${showExportDropdown ? "rotate-180" : ""}`}
                     />
                   </button>
                   {showExportDropdown && (
@@ -6257,10 +6641,10 @@ export default function HistoryPage() {
                 <button
                   type="button"
                   onClick={() => setShowHelpModal(true)}
-                  className="h-8 w-8 rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 flex items-center justify-center text-gray-400 hover:text-primary hover:border-primary/40 transition-all flex-shrink-0"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-400 transition-all hover:border-primary/40 hover:text-primary dark:border-neutral-700 dark:bg-neutral-900 sm:h-8 sm:w-8 sm:bg-gray-50"
                   title="How does date filtering work?"
                 >
-                  <HelpCircle className="w-3.5 h-3.5" />
+                  <HelpCircle className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}
@@ -6431,6 +6815,7 @@ export default function HistoryPage() {
                 </button>
               </div>
             )}
+            </div>
           </div>
 
           {/* ── Active tab content ── */}
