@@ -56,6 +56,7 @@ import {
   Layers,
   Percent,
   Globe,
+  MapPin,
 } from "lucide-react";
 
 import toast from "react-hot-toast";
@@ -986,8 +987,8 @@ function RevenueHero({
   const deliveryShare = Math.max(0, 100 - salesShare);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
-      <div className="bg-gradient-to-br from-primary/[0.08] via-transparent to-transparent px-4 py-4 sm:px-6 sm:py-5">
+    <div className="flex h-full overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+      <div className="flex w-full flex-col justify-between bg-gradient-to-br from-primary/[0.08] via-transparent to-transparent px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
@@ -1375,8 +1376,6 @@ function TopItemsList({ orders, title, subtitle, onItemClick, loading }) {
 
   const activeFilterLabel =
     filterOptions.find((o) => o.id === filter)?.label || "All";
-  const activeFilterCount =
-    filterOptions.find((o) => o.id === filter)?.count || 0;
   const itemsRevenue = items.reduce((s, i) => s + (Number(i.revenue) || 0), 0);
   const itemsQty = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
 
@@ -1392,74 +1391,40 @@ function TopItemsList({ orders, title, subtitle, onItemClick, loading }) {
       iconGradient="bg-gradient-to-br from-primary to-secondary shadow-primary/25"
       badge={`${items.length.toLocaleString()} item${items.length !== 1 ? "s" : ""} · ${itemsQty.toLocaleString()} sold`}
       badgeValue={fmtRs(itemsRevenue)}
-      defaultOpen
     >
-      <div className="border-b border-gray-100 bg-gradient-to-b from-gray-50/90 to-white px-3.5 py-3 dark:border-neutral-800 dark:from-neutral-900/70 dark:to-neutral-950 sm:px-5 sm:py-3.5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1.5 flex items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-neutral-500">
-                Filter by channel
-              </p>
-              <span className="rounded-md bg-white px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-gray-500 shadow-sm ring-1 ring-gray-200/80 dark:bg-neutral-900 dark:text-neutral-400 dark:ring-neutral-700">
-                {activeFilterLabel} · {activeFilterCount.toLocaleString()} orders
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {filterOptions.map((opt) => {
-                const active = filter === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setFilter(opt.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                      active
-                        ? "border-primary bg-primary text-white shadow-sm shadow-primary/25"
-                        : "border-gray-200/90 bg-white text-gray-600 hover:border-primary/35 hover:text-gray-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-primary/40 dark:hover:text-white"
-                    }`}
-                  >
-                    {opt.label}
-                    <span
-                      className={`rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums ${
-                        active
-                          ? "bg-white/20 text-white"
-                          : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
-                      }`}
-                    >
-                      {opt.count.toLocaleString()}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-3 py-2.5 dark:border-neutral-800 sm:px-4">
+        <FilterSelect
+          small
+          value={filter}
+          active={filter !== "all"}
+          onChange={(e) => setFilter(e.target.value)}
+        >
+          {filterOptions.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label} ({opt.count.toLocaleString()})
+            </option>
+          ))}
+        </FilterSelect>
 
-          <div className="shrink-0">
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-neutral-500 lg:text-right">
-              Sort by
-            </p>
-            <div className="inline-flex rounded-xl border border-gray-200 bg-white p-0.5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-              {[
-                { id: "quantity", label: "Qty" },
-                { id: "revenue", label: "Revenue" },
-                { id: "orders", label: "Orders" },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setSortBy(opt.id)}
-                  className={`rounded-[10px] px-3 py-1.5 text-[11px] font-semibold transition-all ${
-                    sortBy === opt.id
-                      ? "bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900"
-                      : "text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-200"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="ml-auto inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+          {[
+            { id: "quantity", label: "Qty" },
+            { id: "revenue", label: "Revenue" },
+            { id: "orders", label: "Orders" },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setSortBy(opt.id)}
+              className={`rounded-md px-2.5 py-1 text-[10px] font-semibold transition-all ${
+                sortBy === opt.id
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-neutral-800 dark:text-white"
+                  : "text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1476,7 +1441,7 @@ function TopItemsList({ orders, title, subtitle, onItemClick, loading }) {
           />
         </div>
       ) : (
-        <div className="divide-y divide-gray-100 dark:divide-neutral-800">
+        <div className="max-h-[28rem] divide-y divide-gray-100 overflow-y-auto dark:divide-neutral-800">
           {items.map((item, index) => {
             const topMetric =
               sortBy === "revenue"
@@ -1495,21 +1460,11 @@ function TopItemsList({ orders, title, subtitle, onItemClick, loading }) {
               items.reduce((s, i) => s + (i.revenue || 0), 0) || 1;
             const sharePct = Math.round((item.revenue / totalRevenue) * 100);
             const mix = [
-              item.byType?.dine_in
-                ? `Dine ${item.byType.dine_in}`
-                : null,
-              item.byType?.delivery
-                ? `Del ${item.byType.delivery}`
-                : null,
-              item.byType?.takeaway
-                ? `Take ${item.byType.takeaway}`
-                : null,
-              item.bySource?.website
-                ? `Web ${item.bySource.website}`
-                : null,
-              item.bySource?.whatsapp
-                ? `WA ${item.bySource.whatsapp}`
-                : null,
+              item.byType?.dine_in ? `Dine ${item.byType.dine_in}` : null,
+              item.byType?.delivery ? `Del ${item.byType.delivery}` : null,
+              item.byType?.takeaway ? `Take ${item.byType.takeaway}` : null,
+              item.bySource?.website ? `Web ${item.bySource.website}` : null,
+              item.bySource?.whatsapp ? `WA ${item.bySource.whatsapp}` : null,
               item.bySource?.foodpanda
                 ? `FP ${item.bySource.foodpanda}`
                 : null,
@@ -1566,6 +1521,279 @@ function TopItemsList({ orders, title, subtitle, onItemClick, loading }) {
                   </div>
                 </div>
               </button>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function buildDeliveryZoneRows(orders, deliveryLocations, sourceFilter = "all") {
+  const zones = new Map();
+  const zoneKeyByName = new Map();
+  const configuredZones = [];
+
+  for (const [index, zone] of (
+    Array.isArray(deliveryLocations) ? deliveryLocations : []
+  ).entries()) {
+    const id = String(zone?._id ?? zone?.id ?? "").trim();
+    const name = String(zone?.name || "").trim();
+    if (!name) continue;
+
+    const key = id ? `id:${id}` : `name:${name.toLowerCase()}`;
+    zones.set(key, {
+      id,
+      name,
+      orders: 0,
+      sortOrder: Number(zone?.sortOrder) || index,
+      configured: true,
+    });
+    zoneKeyByName.set(name.toLowerCase(), key);
+    configuredZones.push({ key, name, nameLower: name.toLowerCase() });
+  }
+
+  configuredZones.sort((a, b) => b.name.length - a.name.length);
+
+  for (const order of orders || []) {
+    if (getOrderTypeKey(order) !== "delivery") continue;
+    if (!isCompletedSaleOrder(order)) continue;
+    if (sourceFilter !== "all" && getOrderSourceKey(order) !== sourceFilter) {
+      continue;
+    }
+
+    const locationId = String(order.deliveryLocationId || "").trim();
+    const locationName = String(order.deliveryLocationName || "").trim();
+    const address = String(order.deliveryAddress || "").trim();
+    const idKey = locationId ? `id:${locationId}` : "";
+    const nameKey = locationName
+      ? zoneKeyByName.get(locationName.toLowerCase())
+      : "";
+
+    let addressKey = "";
+    if (!((idKey && zones.has(idKey)) || nameKey) && address) {
+      const addressLower = address.toLowerCase();
+      const matched = configuredZones.find(
+        (zone) =>
+          addressLower === zone.nameLower ||
+          addressLower.startsWith(`${zone.nameLower} —`) ||
+          addressLower.startsWith(`${zone.nameLower} -`) ||
+          addressLower.startsWith(`${zone.nameLower},`),
+      );
+      if (matched) addressKey = matched.key;
+    }
+
+    const key =
+      (idKey && zones.has(idKey) && idKey) ||
+      nameKey ||
+      addressKey ||
+      (locationName
+        ? `name:${locationName.toLowerCase()}`
+        : address
+          ? `addr:${address.toLowerCase()}`
+          : "unassigned-zone");
+
+    const current = zones.get(key) || {
+      id: locationId,
+      name: locationName || address || "Unassigned zone",
+      orders: 0,
+      sortOrder: Number.MAX_SAFE_INTEGER,
+      configured: false,
+    };
+    current.orders += 1;
+    zones.set(key, current);
+  }
+
+  return Array.from(zones.values());
+}
+
+function DeliveryZonesList({ orders, deliveryLocations, loading }) {
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [visibility, setVisibility] = useState("with_orders");
+  const [sortBy, setSortBy] = useState("orders");
+  const [search, setSearch] = useState("");
+
+  const allRows = useMemo(
+    () => buildDeliveryZoneRows(orders, deliveryLocations, sourceFilter),
+    [orders, deliveryLocations, sourceFilter],
+  );
+
+  const sourceOptions = useMemo(() => {
+    const base = buildDeliveryZoneRows(orders, deliveryLocations, "all");
+    const total = base.reduce((s, z) => s + z.orders, 0);
+    const opts = [
+      { id: "all", label: "All sources", count: total },
+      {
+        id: "website",
+        label: "Website",
+        count: buildDeliveryZoneRows(orders, deliveryLocations, "website").reduce(
+          (s, z) => s + z.orders,
+          0,
+        ),
+      },
+      {
+        id: "whatsapp",
+        label: "WhatsApp",
+        count: buildDeliveryZoneRows(orders, deliveryLocations, "whatsapp").reduce(
+          (s, z) => s + z.orders,
+          0,
+        ),
+      },
+      {
+        id: "pos",
+        label: "POS",
+        count: buildDeliveryZoneRows(
+          orders,
+          deliveryLocations,
+          "pos",
+        ).reduce((s, z) => s + z.orders, 0),
+      },
+      {
+        id: "foodpanda",
+        label: "Foodpanda",
+        count: buildDeliveryZoneRows(
+          orders,
+          deliveryLocations,
+          "foodpanda",
+        ).reduce((s, z) => s + z.orders, 0),
+      },
+    ];
+    return opts.filter((o) => o.id === "all" || o.count > 0);
+  }, [orders, deliveryLocations]);
+
+  useEffect(() => {
+    if (!sourceOptions.some((o) => o.id === sourceFilter)) {
+      setSourceFilter("all");
+    }
+  }, [sourceOptions, sourceFilter]);
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = allRows.filter((zone) => {
+      if (visibility === "with_orders" && zone.orders <= 0) return false;
+      if (visibility === "zero" && zone.orders > 0) return false;
+      if (q && !zone.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    if (sortBy === "name") {
+      list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      list = [...list].sort(
+        (a, b) =>
+          b.orders - a.orders ||
+          a.sortOrder - b.sortOrder ||
+          a.name.localeCompare(b.name),
+      );
+    }
+    return list;
+  }, [allRows, visibility, search, sortBy]);
+
+  const totalOrders = allRows.reduce((s, z) => s + z.orders, 0);
+  const zonesWithOrders = allRows.filter((z) => z.orders > 0).length;
+
+  if (loading) {
+    return <SectionSkeleton bodyHeightClass="h-40" />;
+  }
+
+  if (allRows.length === 0) return null;
+
+  return (
+    <Section
+      title="Top Delivery Zones"
+      subtitle="Delivery orders by zone"
+      icon={MapPin}
+      iconGradient="bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/25"
+      badge={`${zonesWithOrders.toLocaleString()} active · ${totalOrders.toLocaleString()} orders`}
+    >
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-3 py-2.5 dark:border-neutral-800 sm:px-4">
+        <FilterSelect
+          small
+          value={sourceFilter}
+          active={sourceFilter !== "all"}
+          onChange={(e) => setSourceFilter(e.target.value)}
+        >
+          {sourceOptions.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label} ({opt.count.toLocaleString()})
+            </option>
+          ))}
+        </FilterSelect>
+
+        <FilterSelect
+          small
+          value={visibility}
+          active={visibility !== "with_orders"}
+          onChange={(e) => setVisibility(e.target.value)}
+        >
+          <option value="with_orders">With orders</option>
+          <option value="all">All zones</option>
+          <option value="zero">Zero only</option>
+        </FilterSelect>
+
+        <div className="relative min-w-[8.5rem] flex-1">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search zone"
+            className="h-7 w-full rounded-lg border border-gray-200 bg-gray-50 py-0 pl-7 pr-2 text-[10px] font-medium text-gray-700 outline-none transition-all placeholder:text-gray-400 hover:border-primary/40 focus:border-primary/50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+          />
+        </div>
+
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+          {[
+            { id: "orders", label: "Orders" },
+            { id: "name", label: "A–Z" },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setSortBy(opt.id)}
+              className={`rounded-md px-2.5 py-1 text-[10px] font-semibold transition-all ${
+                sortBy === opt.id
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-neutral-800 dark:text-white"
+                  : "text-gray-500 hover:text-gray-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="px-4 py-8">
+          <EmptyState
+            icon={MapPin}
+            message="No zones match"
+            sub="Try another filter or search"
+          />
+        </div>
+      ) : (
+        <div className="max-h-[28rem] divide-y divide-gray-100 overflow-y-auto dark:divide-neutral-800">
+          {rows.map((zone) => {
+            const share =
+              totalOrders > 0
+                ? Math.round((zone.orders / totalOrders) * 100)
+                : 0;
+            return (
+              <div key={zone.id || zone.name} className="px-3.5 py-3 sm:px-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                    {zone.name}
+                  </p>
+                  <p className="shrink-0 text-sm font-bold tabular-nums text-primary">
+                    {zone.orders.toLocaleString()} order
+                    {zone.orders !== 1 ? "s" : ""}
+                    <span className="ml-1.5 text-[10px] font-medium text-gray-400 dark:text-neutral-500">
+                      {share}%
+                    </span>
+                  </p>
+                </div>
+                <StatBar pct={share} barClass="bg-emerald-500" />
+              </div>
             );
           })}
         </div>
@@ -3151,16 +3379,85 @@ export default function HistoryPage() {
 
     return (
       <div className="w-full space-y-3 sm:space-y-4">
-        <RevenueHero
-          periodLabel={periodLabel}
-          grandTotal={revenueBreakdown.grandTotal}
-          salesAmount={revenueBreakdown.salesAmount}
-          deliveryFees={revenueBreakdown.deliveryFees}
-          tax={totalTaxForOverview}
-          orderCount={revenueBreakdown.orderCount}
-          avgTicket={avgTicket}
-          fmtRs={fmtRs}
-        />
+        <div
+          className={`grid items-stretch gap-3 lg:gap-4 ${
+            orderTypeRows.length > 0 ? "lg:grid-cols-5" : ""
+          }`}
+        >
+          <div
+            className={
+              orderTypeRows.length > 0 ? "lg:col-span-3" : "w-full"
+            }
+          >
+            <RevenueHero
+              periodLabel={periodLabel}
+              grandTotal={revenueBreakdown.grandTotal}
+              salesAmount={revenueBreakdown.salesAmount}
+              deliveryFees={revenueBreakdown.deliveryFees}
+              tax={totalTaxForOverview}
+              orderCount={revenueBreakdown.orderCount}
+              avgTicket={avgTicket}
+              fmtRs={fmtRs}
+            />
+          </div>
+
+          {orderTypeRows.length > 0 && (
+            <div className="lg:col-span-2">
+              <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+                <div className="flex items-center gap-2.5 px-3.5 py-3 sm:gap-3 sm:px-5 sm:py-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-md shadow-amber-500/25 sm:h-10 sm:w-10 sm:rounded-2xl">
+                    <ShoppingBag className="h-4 w-4 text-white sm:h-[18px] sm:w-[18px]" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-sm font-bold leading-tight text-gray-900 dark:text-white sm:text-[15px]">
+                      Order types
+                    </h3>
+                    <p className="mt-0.5 text-[11px] leading-tight text-gray-400 dark:text-neutral-500">
+                      {orderTypeRows.length} types
+                    </p>
+                  </div>
+                </div>
+                <div className="divide-y divide-gray-100 border-t border-gray-100 dark:divide-neutral-800 dark:border-neutral-800">
+                  {orderTypeRows.map((row) => {
+                    const pct = parseFloat(String(row.percent)) || 0;
+                    const pctLabel = `${Math.round(pct)}%`;
+                    const ordersLabel = `${Number(row.orders) || 0} Order${Number(row.orders) === 1 ? "" : "s"}`;
+                    return (
+                      <button
+                        key={row.type}
+                        type="button"
+                        onClick={() =>
+                          goToOrders({
+                            type: ORDER_TYPE_FILTER_MAP[row.type] || FILTER_ALL,
+                          })
+                        }
+                        className="w-full cursor-pointer px-3.5 py-3 text-left transition-colors hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 sm:px-4"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                            {row.type}{" "}
+                            <span className="text-[10px] font-medium text-gray-400 dark:text-neutral-500">
+                              {pctLabel} - {ordersLabel}
+                            </span>
+                          </p>
+                          <span className="shrink-0 text-sm font-bold tabular-nums text-primary">
+                            {fmtRs(row.amount)}
+                          </span>
+                        </div>
+                        <StatBar
+                          pct={pct}
+                          barClass={
+                            ORDER_TYPE_BAR_COLORS[row.type] || "bg-amber-500"
+                          }
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div
           className={`grid gap-3 lg:gap-4 ${
@@ -3177,7 +3474,6 @@ export default function HistoryPage() {
               subtitle="How customers paid"
               icon={DollarSign}
               iconGradient="bg-gradient-to-br from-primary to-secondary shadow-primary/25"
-              defaultOpen
             >
               <div className="space-y-4 p-4 sm:p-5">
                 <div className="flex h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
@@ -3263,7 +3559,6 @@ export default function HistoryPage() {
                 subtitle="JazzCash, banks, etc."
                 icon={Globe}
                 iconGradient="bg-gradient-to-br from-violet-500 to-violet-600 shadow-violet-500/25"
-                defaultOpen
               >
                 <div className="space-y-2.5 p-3 sm:p-4">
                   {paymentAccountRows.map((row) => {
@@ -3308,169 +3603,122 @@ export default function HistoryPage() {
           )}
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-2 lg:gap-4">
-          {orderTypeRows.length > 0 ? (
-            <Section
-              title="Order types"
-              subtitle={`${orderTypeRows.length} types`}
-              icon={ShoppingBag}
-              iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
-              defaultOpen
-            >
-              <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-                {orderTypeRows.map((row) => {
-                  const pct = parseFloat(String(row.percent)) || 0;
-                  const pctLabel = `${Math.round(pct)}%`;
-                  const ordersLabel = `${Number(row.orders) || 0} Order${Number(row.orders) === 1 ? "" : "s"}`;
-                  return (
-                    <button
-                      key={row.type}
-                      type="button"
-                      onClick={() =>
-                        goToOrders({
-                          type: ORDER_TYPE_FILTER_MAP[row.type] || FILTER_ALL,
-                        })
-                      }
-                      className="w-full cursor-pointer px-3.5 py-3 text-left transition-colors hover:bg-gray-50/70 dark:hover:bg-neutral-900/40 sm:px-4"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
-                          {row.type}{" "}
-                          <span className="text-[10px] font-medium text-gray-400 dark:text-neutral-500">
-                            {pctLabel} - {ordersLabel}
-                          </span>
-                        </p>
-                        <span className="shrink-0 text-sm font-bold tabular-nums text-primary">
-                          {fmtRs(row.amount)}
+        {ordersLoading ? (
+          <SectionSkeleton bodyHeightClass="h-32" />
+        ) : websiteStats ? (
+          <Section
+            title="Website Orders"
+            subtitle="Online storefront"
+            icon={Globe}
+            iconGradient="bg-gradient-to-br from-sky-500 to-cyan-600 shadow-cyan-500/25"
+            badge={`${websiteStats.orders} order${websiteStats.orders !== 1 ? "s" : ""}${websiteStats.uniqueCustomers > 0 ? ` · ${websiteStats.uniqueCustomers} customers` : ""}`}
+            badgeValue={fmtRs(websiteStats.revenue)}
+          >
+            <div className="space-y-3 px-4 py-3.5 sm:px-5">
+              {(() => {
+                const total =
+                  (Number(websiteStats.salesRevenue) || 0) +
+                  (Number(websiteStats.deliveryFees) || 0);
+                const salesPct =
+                  total > 0
+                    ? Math.round(
+                        (Number(websiteStats.salesRevenue) / total) * 100,
+                      )
+                    : 0;
+                const deliveryPct = Math.max(0, 100 - salesPct);
+                const paidPct =
+                  websiteStats.orders > 0
+                    ? Math.round(
+                        (websiteStats.paid / websiteStats.orders) * 100,
+                      )
+                    : 0;
+                return (
+                  <>
+                    <div>
+                      <div className="mb-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                          Sales {fmtRs(websiteStats.salesRevenue)}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                          Delivery {fmtRs(websiteStats.deliveryFees)}
                         </span>
                       </div>
-                      <StatBar
-                        pct={pct}
-                        barClass={
-                          ORDER_TYPE_BAR_COLORS[row.type] || "bg-amber-500"
-                        }
+                      <div className="flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                        <div
+                          className="h-full bg-sky-500 transition-all duration-700"
+                          style={{ width: `${salesPct}%` }}
+                        />
+                        <div
+                          className="h-full bg-cyan-400 transition-all duration-700"
+                          style={{ width: `${deliveryPct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <MetricCell
+                        label="Sales"
+                        value={fmtRs(websiteStats.salesRevenue)}
                       />
-                    </button>
-                  );
-                })}
-              </div>
-            </Section>
-          ) : (
-            <div />
-          )}
+                      <MetricCell
+                        label="Delivery"
+                        value={fmtRs(websiteStats.deliveryFees)}
+                      />
+                      <MetricCell
+                        label="Paid"
+                        value={`${websiteStats.paid} orders`}
+                        tone="text-emerald-600 dark:text-emerald-400"
+                      />
+                      <MetricCell
+                        label="Collected"
+                        value={fmtRs(websiteStats.revenue)}
+                        tone="text-primary"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 flex items-center justify-between text-[10px] text-gray-400 dark:text-neutral-500">
+                        <span>Paid share</span>
+                        <span>{paidPct}%</span>
+                      </div>
+                      <StatBar pct={paidPct} barClass="bg-emerald-500" />
+                    </div>
+                  </>
+                );
+              })()}
+              {(websiteStats.unpaid > 0 || websiteStats.cancelled > 0) && (
+                <div className="flex flex-wrap gap-2">
+                  {websiteStats.unpaid > 0 && (
+                    <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+                      {websiteStats.unpaid} unpaid
+                    </span>
+                  )}
+                  {websiteStats.cancelled > 0 && (
+                    <span className="rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 dark:bg-red-500/10">
+                      {websiteStats.cancelled} cancelled
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </Section>
+        ) : null}
 
-          {ordersLoading ? (
-            <SectionSkeleton bodyHeightClass="h-32" />
-          ) : websiteStats ? (
-            <Section
-              title="Website Orders"
-              subtitle="Online storefront"
-              icon={Globe}
-              iconGradient="bg-gradient-to-br from-sky-500 to-cyan-600 shadow-cyan-500/25"
-              badge={`${websiteStats.orders} order${websiteStats.orders !== 1 ? "s" : ""}${websiteStats.uniqueCustomers > 0 ? ` · ${websiteStats.uniqueCustomers} customers` : ""}`}
-              badgeValue={fmtRs(websiteStats.revenue)}
-              defaultOpen
-            >
-              <div className="space-y-3 px-4 py-3.5 sm:px-5">
-                {(() => {
-                  const total =
-                    (Number(websiteStats.salesRevenue) || 0) +
-                    (Number(websiteStats.deliveryFees) || 0);
-                  const salesPct =
-                    total > 0
-                      ? Math.round(
-                          (Number(websiteStats.salesRevenue) / total) * 100,
-                        )
-                      : 0;
-                  const deliveryPct = Math.max(0, 100 - salesPct);
-                  const paidPct =
-                    websiteStats.orders > 0
-                      ? Math.round(
-                          (websiteStats.paid / websiteStats.orders) * 100,
-                        )
-                      : 0;
-                  return (
-                    <>
-                      <div>
-                        <div className="mb-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-medium text-gray-500 dark:text-neutral-400">
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
-                            Sales {fmtRs(websiteStats.salesRevenue)}
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                            Delivery {fmtRs(websiteStats.deliveryFees)}
-                          </span>
-                        </div>
-                        <div className="flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
-                          <div
-                            className="h-full bg-sky-500 transition-all duration-700"
-                            style={{ width: `${salesPct}%` }}
-                          />
-                          <div
-                            className="h-full bg-cyan-400 transition-all duration-700"
-                            style={{ width: `${deliveryPct}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <MetricCell
-                          label="Sales"
-                          value={fmtRs(websiteStats.salesRevenue)}
-                        />
-                        <MetricCell
-                          label="Delivery"
-                          value={fmtRs(websiteStats.deliveryFees)}
-                        />
-                        <MetricCell
-                          label="Paid"
-                          value={`${websiteStats.paid} orders`}
-                          tone="text-emerald-600 dark:text-emerald-400"
-                        />
-                        <MetricCell
-                          label="Collected"
-                          value={fmtRs(websiteStats.revenue)}
-                          tone="text-primary"
-                        />
-                      </div>
-                      <div>
-                        <div className="mb-1 flex items-center justify-between text-[10px] text-gray-400 dark:text-neutral-500">
-                          <span>Paid share</span>
-                          <span>{paidPct}%</span>
-                        </div>
-                        <StatBar pct={paidPct} barClass="bg-emerald-500" />
-                      </div>
-                    </>
-                  );
-                })()}
-                {(websiteStats.unpaid > 0 || websiteStats.cancelled > 0) && (
-                  <div className="flex flex-wrap gap-2">
-                    {websiteStats.unpaid > 0 && (
-                      <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
-                        {websiteStats.unpaid} unpaid
-                      </span>
-                    )}
-                    {websiteStats.cancelled > 0 && (
-                      <span className="rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 dark:bg-red-500/10">
-                        {websiteStats.cancelled} cancelled
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </Section>
-          ) : (
-            <div />
-          )}
+        <div className="grid items-start gap-3 lg:grid-cols-2 lg:gap-4">
+          <TopItemsList
+            orders={dateFilteredOrders}
+            loading={ordersLoading}
+            title="Top Selling Items"
+            subtitle="Best performers in selected period"
+            onItemClick={(itemName) => goToOrders({ search: itemName })}
+          />
+
+          <DeliveryZonesList
+            orders={dateFilteredOrders}
+            deliveryLocations={currentBranch?.deliveryLocations}
+            loading={ordersLoading}
+          />
         </div>
-
-        <TopItemsList
-          orders={dateFilteredOrders}
-          loading={ordersLoading}
-          title="Top Selling Items"
-          subtitle="Best performers in selected period"
-          onItemClick={(itemName) => goToOrders({ search: itemName })}
-        />
 
         {/* Riders Overview */}
 
@@ -3487,7 +3735,6 @@ export default function HistoryPage() {
               badgeValue={fmtRs(
                 riderStats.reduce((s, r) => s + Number(r.revenue || 0), 0),
               )}
-              defaultOpen
             >
               <div className="divide-y divide-gray-100 dark:divide-neutral-800">
                 {riderStats.map((rider) => {
@@ -3558,7 +3805,6 @@ export default function HistoryPage() {
               iconGradient="bg-gradient-to-br from-violet-500 to-purple-600 shadow-violet-500/25"
               badge={`${waiterStats.length} order taker${waiterStats.length !== 1 ? "s" : ""} · ${waiterStats.reduce((s, w) => s + w.orders, 0)} orders`}
               badgeValue={fmtRs(waiterStats.reduce((s, w) => s + w.revenue, 0))}
-              defaultOpen
             >
               <div className="divide-y divide-gray-100 dark:divide-neutral-800">
                 {waiterStats.map((waiter) => {
