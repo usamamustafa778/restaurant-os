@@ -52,6 +52,7 @@ import {
   Film,
   BarChart2,
   QrCode,
+  LockKeyhole,
 } from "lucide-react";
 import DigitalMenuQrPanel from "../../components/website/DigitalMenuQrPanel";
 
@@ -219,15 +220,8 @@ function SectionCard({
   );
 }
 
-/** Labeled switch for website visibility / ordering preferences (default-on fields). */
-function PreferenceSwitch({
-  enabled,
-  onToggle,
-  onLabel = "On",
-  offLabel = "Off",
-  ariaLabel,
-  compact = false,
-}) {
+/** Switch matching the control used in the POS settings sidebar. */
+function PreferenceSwitch({ enabled, onToggle, ariaLabel }) {
   return (
     <button
       type="button"
@@ -235,22 +229,17 @@ function PreferenceSwitch({
       aria-checked={enabled}
       aria-label={ariaLabel}
       onClick={onToggle}
-      className={`relative inline-flex shrink-0 items-center rounded-full font-semibold transition-colors ${
-        compact
-          ? "h-7 gap-1.5 pl-1 pr-2.5 text-[11px]"
-          : "h-9 gap-2 pl-1.5 pr-3 text-xs"
-      } ${
+      className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${
         enabled
-          ? "bg-emerald-500 text-white"
-          : "bg-gray-200 dark:bg-neutral-700 text-gray-700 dark:text-neutral-200"
+          ? "bg-primary"
+          : "bg-gray-200 dark:bg-neutral-700"
       }`}
     >
       <span
-        className={`inline-block rounded-full bg-white shadow-sm ${
-          compact ? "h-5 w-5" : "h-6 w-6"
+        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+          enabled ? "translate-x-4" : "translate-x-0"
         }`}
       />
-      <span>{enabled ? onLabel : offLabel}</span>
     </button>
   );
 }
@@ -506,6 +495,14 @@ export default function WebsiteSettingsPage() {
   }
 
   async function handleSave() {
+    if (
+      typeof ws.accessPassword === "string" &&
+      ws.accessPassword.length > 0 &&
+      ws.accessPassword.length < 6
+    ) {
+      toast.error("Website password must be at least 6 characters");
+      return;
+    }
     setSaving(true);
     const toastId = toast.loading("Saving website settings...");
     try {
@@ -1086,10 +1083,7 @@ export default function WebsiteSettingsPage() {
             </span>
             <PreferenceSwitch
               enabled={ws.isPublic !== false}
-              onLabel="Visible"
-              offLabel="Hidden"
               ariaLabel="Website visibility"
-              compact
               onToggle={() => update("isPublic", ws.isPublic === false)}
             />
           </div>
@@ -3325,20 +3319,84 @@ export default function WebsiteSettingsPage() {
                           <p className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-neutral-300">
                             {isPublic
                               ? "Your storefront is public and reachable from your website URL."
-                              : "Your storefront is hidden. Visitors will not see the live site until you turn this back on."}
+                              : ws.hasAccessPassword || ws.accessPassword
+                                ? "Your storefront is hidden from the public. Visitors with the password can still open it."
+                                : "Your storefront is hidden and cannot be opened by visitors."}
                           </p>
                         </div>
                       </div>
                       <PreferenceSwitch
                         enabled={isPublic}
-                        onLabel="Visible"
-                        offLabel="Hidden"
                         ariaLabel="Website visibility"
                         onToggle={() =>
                           update("isPublic", ws.isPublic === false)
                         }
                       />
                     </div>
+
+                    {!isPublic ? (
+                      <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-5 dark:border-neutral-800 dark:bg-neutral-900/50">
+                        <div className="flex items-start gap-3.5">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                            <LockKeyhole className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                Visitor password
+                              </p>
+                              {ws.hasAccessPassword ? (
+                                <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">
+                                  Password set
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-400">
+                              People who know this password can view and use the
+                              hidden website.
+                            </p>
+                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                              <input
+                                type="password"
+                                value={ws.accessPassword || ""}
+                                onChange={(e) =>
+                                  setWs((prev) => ({
+                                    ...prev,
+                                    accessPassword: e.target.value,
+                                    clearAccessPassword: false,
+                                  }))
+                                }
+                                minLength={6}
+                                maxLength={128}
+                                autoComplete="new-password"
+                                placeholder={
+                                  ws.hasAccessPassword
+                                    ? "Enter a new password to replace it"
+                                    : "Set a password (minimum 6 characters)"
+                                }
+                                className={`${inp} flex-1`}
+                              />
+                              {ws.hasAccessPassword ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setWs((prev) => ({
+                                      ...prev,
+                                      accessPassword: "",
+                                      hasAccessPassword: false,
+                                      clearAccessPassword: true,
+                                    }))
+                                  }
+                                  className={btnSecondary}
+                                >
+                                  Remove password
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div>
                       <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
