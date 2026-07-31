@@ -9,6 +9,7 @@ import { OrderNotificationProvider } from "../contexts/OrderNotificationContext"
 import { PermissionProvider } from "../contexts/PermissionContext";
 import { Toaster } from "react-hot-toast";
 import RouteProgressBar from "../components/RouteProgressBar";
+import AuthAnalytics from "../components/AuthAnalytics";
 
 export default function MyApp({ Component, pageProps }) {
   return (
@@ -19,6 +20,7 @@ export default function MyApp({ Component, pageProps }) {
             <WhatsAppNotificationProvider>
               <OrderNotificationProvider>
                 <PermissionProvider>
+                  <AuthAnalytics />
                   <RouteProgressBar />
                   <Component {...pageProps} />
                   <Toaster

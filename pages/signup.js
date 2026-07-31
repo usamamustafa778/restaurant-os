@@ -3,6 +3,7 @@ import Link from "next/link";
 import { registerRestaurant } from "../lib/apiClient";
 import { Loader2, Eye, EyeOff, ArrowRight, ArrowLeft, Plus, Trash2, CheckCircle2 } from "lucide-react";
 import SEO from "../components/SEO";
+import { trackAuthEvent } from "../components/AuthAnalytics";
 
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL || "https://eatsdesk.com";
@@ -154,9 +155,25 @@ export default function SignupPage() {
           return digits ? `${dial}${digits}` : undefined;
         })(),
         branches: validBranches.map((b) => ({ name: b.name.trim() })),
+        campaign: (() => {
+          const params = new URLSearchParams(window.location.search);
+          return {
+            source: params.get("utm_source") || "",
+            medium: params.get("utm_medium") || "",
+            name: params.get("utm_campaign") || "",
+            term: params.get("utm_term") || "",
+            content: params.get("utm_content") || "",
+            landingPage: `${window.location.pathname}${window.location.search}`,
+            referrer: document.referrer || "",
+          };
+        })(),
       };
 
       const data = await registerRestaurant(payload);
+      trackAuthEvent("sign_up", {
+        method: "website",
+        branch_count: validBranches.length,
+      });
       setSignupSuccess({
         restaurantName:
           data.restaurant?.name || restaurantName.trim(),

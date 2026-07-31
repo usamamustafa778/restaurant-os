@@ -2199,6 +2199,30 @@ export default function SuperLeadsPage() {
                           formatLabel(selectedLead.source)}
                       </span>
                     </p>
+                    {selectedLead.campaign?.source ? (
+                      <div className="space-y-1 text-xs text-gray-500 dark:text-neutral-400">
+                        <p>
+                          Campaign:{" "}
+                          <span className="text-gray-800 dark:text-neutral-200">
+                            {[
+                              selectedLead.campaign.source,
+                              selectedLead.campaign.medium,
+                              selectedLead.campaign.name,
+                            ]
+                              .filter(Boolean)
+                              .join(" / ")}
+                          </span>
+                        </p>
+                        {selectedLead.campaign.landingPage ? (
+                          <p className="break-all">
+                            Landing page:{" "}
+                            <span className="text-gray-800 dark:text-neutral-200">
+                              {selectedLead.campaign.landingPage}
+                            </span>
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </section>
 
                   {/* Activity & notes */}
