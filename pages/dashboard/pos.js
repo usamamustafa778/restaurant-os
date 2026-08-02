@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
@@ -81,6 +82,8 @@ import {
   Coffee,
   Globe,
   SlidersHorizontal,
+  Check,
+  Search,
 } from "lucide-react";
 
 // ─── Board configuration ────────────────────────────────────────────────────
@@ -709,13 +712,28 @@ export default function OrdersPage() {
     };
   }, []);
 
+  const refreshRiders = useCallback((opts = {}) => {
+    const { silent = false } = opts;
+    if (!silent) setRidersLoading(true);
+    return getDeliveryRiders()
+      .then((data) => {
+        setRiders(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        setRiders([]);
+      })
+      .finally(() => {
+        if (!silent) setRidersLoading(false);
+      });
+  }, []);
+
   // Load delivery riders once on mount so inline dropdowns are ready
   useEffect(() => {
     let cancelled = false;
     setRidersLoading(true);
     getDeliveryRiders()
       .then((data) => {
-        if (!cancelled) setRiders(data);
+        if (!cancelled) setRiders(Array.isArray(data) ? data : []);
       })
       .catch(() => {
         if (!cancelled) setRiders([]);
@@ -2035,6 +2053,7 @@ export default function OrdersPage() {
                                   ridersLoading={ridersLoading}
                                   assigningOrderId={assigningOrderId}
                                   onAssignRider={handleInlineAssignRider}
+                                  onRefreshRiders={refreshRiders}
                                   onOpenCollect={openCollectPaymentModal}
                                   onPrint={openPrintBill}
                                   onEdit={(order) =>
@@ -2125,6 +2144,7 @@ export default function OrdersPage() {
                                 ridersLoading={ridersLoading}
                                 assigningOrderId={assigningOrderId}
                                 onAssignRider={handleInlineAssignRider}
+                                onRefreshRiders={refreshRiders}
                                 onOpenCollect={openCollectPaymentModal}
                                 onPrint={openPrintBill}
                                 onEdit={(order) =>
@@ -2216,6 +2236,7 @@ export default function OrdersPage() {
                           ridersLoading={ridersLoading}
                           assigningOrderId={assigningOrderId}
                           onAssignRider={handleInlineAssignRider}
+                          onRefreshRiders={refreshRiders}
                           onOpenCollect={openCollectPaymentModal}
                           onPrint={openPrintBill}
                           onEdit={(order) => openPOS(order.id || order._id)}
@@ -2269,6 +2290,7 @@ export default function OrdersPage() {
                           ridersLoading={ridersLoading}
                           assigningOrderId={assigningOrderId}
                           onAssignRider={handleInlineAssignRider}
+                          onRefreshRiders={refreshRiders}
                           onOpenCollect={openCollectPaymentModal}
                           onPrint={openPrintBill}
                           onEdit={(order) => openPOS(order.id || order._id)}
@@ -3801,21 +3823,88 @@ function RiderPickerDropdown({
   ridersLoading,
   isAssigning,
   onAssign,
+  onRefreshRiders,
   label = "Assign rider",
   fullWidth = false,
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [query, setQuery] = useState("");
+  const [menuPos, setMenuPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
   const currentId = order.assignedRiderId ? String(order.assignedRiderId) : "";
 
+  const visibleRiders = useMemo(() => {
+    const list = Array.isArray(riders) ? riders : [];
+    return list.filter(
+      (r) => r && (r.isActive !== false || String(r.id) === currentId),
+    );
+  }, [riders, currentId]);
+
+  const filteredRiders = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return visibleRiders;
+    return visibleRiders.filter((r) => {
+      const name = String(r.name || "").toLowerCase();
+      const phone = String(r.phone || "").toLowerCase();
+      return name.includes(q) || phone.includes(q);
+    });
+  }, [visibleRiders, query]);
+
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = 208;
+    const estimatedHeader = visibleRiders.length > 5 ? 72 : 36;
+    const maxPanel = 200;
+    const gap = 6;
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const spaceAbove = rect.top - gap;
+    const openUp = spaceAbove > spaceBelow && spaceBelow < 160;
+    const available = Math.max(120, openUp ? spaceAbove : spaceBelow);
+    const maxHeight = Math.min(maxPanel, available);
+    const left = Math.min(
+      Math.max(8, rect.right - menuWidth),
+      window.innerWidth - menuWidth - 8,
+    );
+
+    setMenuPos({
+      left,
+      width: menuWidth,
+      maxHeight,
+      listMaxHeight: Math.max(80, maxHeight - estimatedHeader),
+      openUp,
+      top: openUp ? undefined : rect.bottom + gap,
+      bottom: openUp ? window.innerHeight - rect.top + gap : undefined,
+    });
+  }, [visibleRiders.length]);
+
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setQuery("");
+      setMenuPos(null);
+      return;
+    }
+    onRefreshRiders?.({ silent: true });
+    updateMenuPosition();
+
     const onDocClick = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (triggerRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
+    const onReposition = () => updateMenuPosition();
+
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open, onRefreshRiders, updateMenuPosition]);
 
   const triggerLabel = isAssigning
     ? "Assigning…"
@@ -3823,12 +3912,103 @@ function RiderPickerDropdown({
       ? "Loading…"
       : label;
 
+  const menu =
+    open && menuPos
+      ? createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              left: menuPos.left,
+              width: menuPos.width,
+              maxHeight: menuPos.maxHeight,
+              top: menuPos.top,
+              bottom: menuPos.bottom,
+              zIndex: 200,
+            }}
+            className="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            <div className="shrink-0 border-b border-gray-100 px-3 py-2 dark:border-neutral-800">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-neutral-500">
+                Select rider
+              </p>
+              {visibleRiders.length > 5 && (
+                <div className="relative mt-2">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search rider"
+                    autoFocus
+                    className="h-8 w-full rounded-lg border border-gray-200 bg-gray-50 py-0 pl-8 pr-2.5 text-[11px] font-medium text-gray-700 outline-none placeholder:text-gray-400 focus:border-primary/40 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1"
+              style={{ maxHeight: menuPos.listMaxHeight }}
+            >
+              {ridersLoading ? (
+                <p className="px-3 py-3 text-xs text-gray-500">Loading…</p>
+              ) : filteredRiders.length === 0 ? (
+                <p className="px-3 py-3 text-xs text-gray-500">
+                  {visibleRiders.length === 0
+                    ? "No active riders"
+                    : "No riders match"}
+                </p>
+              ) : (
+                filteredRiders.map((r) => {
+                  const selected = String(r.id) === currentId;
+                  const inactive = r.isActive === false;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      disabled={isAssigning || selected || inactive}
+                      onClick={() => {
+                        setOpen(false);
+                        onAssign(order, r.id);
+                      }}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${
+                        selected
+                          ? "bg-primary/10"
+                          : "hover:bg-gray-50 dark:hover:bg-neutral-800"
+                      } disabled:cursor-default`}
+                    >
+                      <p
+                        className={`min-w-0 flex-1 truncate text-xs font-semibold ${
+                          selected
+                            ? "text-primary"
+                            : "text-gray-900 dark:text-white"
+                        }`}
+                      >
+                        {r.name}
+                        {inactive ? (
+                          <span className="ml-1.5 text-[10px] font-medium text-red-500">
+                            Inactive
+                          </span>
+                        ) : null}
+                      </p>
+                      {selected ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      ) : null}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div
-      className={`relative ${fullWidth ? "w-full" : "flex-shrink-0"}`}
-      ref={ref}
-    >
+    <div className={fullWidth ? "w-full" : "flex-shrink-0"}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={isAssigning || ridersLoading}
@@ -3865,42 +4045,7 @@ function RiderPickerDropdown({
           <Bike className="w-4 h-4" />
         )}
       </button>
-      {open && (
-        <div className="absolute right-0 bottom-full mb-1 z-30 min-w-[11rem] max-h-48 overflow-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg py-1">
-          {ridersLoading ? (
-            <p className="px-3 py-2 text-xs text-gray-500">Loading…</p>
-          ) : riders.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-gray-500">No riders</p>
-          ) : (
-            riders.map((r) => {
-              const selected = String(r.id) === currentId;
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  disabled={isAssigning || selected}
-                  onClick={() => {
-                    setOpen(false);
-                    onAssign(order, r.id);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-60 ${
-                    selected
-                      ? "font-bold text-primary bg-primary/5"
-                      : "text-gray-800 dark:text-neutral-200"
-                  }`}
-                >
-                  {r.name}
-                  {r.phone ? (
-                    <span className="text-gray-400 dark:text-neutral-500 ml-1">
-                      · {r.phone}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
+      {menu}
     </div>
   );
 }
@@ -4012,6 +4157,7 @@ function OrderCard({
   ridersLoading,
   assigningOrderId,
   onAssignRider,
+  onRefreshRiders,
   onOpenCollect,
   onPrint,
   onEdit,
@@ -4526,6 +4672,7 @@ function OrderCard({
               ridersLoading={ridersLoading}
               isAssigning={assigningOrderId === orderId}
               onAssign={onAssignRider}
+              onRefreshRiders={onRefreshRiders}
               label="— Assign rider —"
               fullWidth
             />
@@ -4538,6 +4685,7 @@ function OrderCard({
                   ridersLoading={ridersLoading}
                   isAssigning={assigningOrderId === orderId}
                   onAssign={onAssignRider}
+                  onRefreshRiders={onRefreshRiders}
                   label={
                     order.assignedRiderName
                       ? `${order.assignedRiderName} · Change`
@@ -4577,6 +4725,7 @@ function OrderCard({
                   ridersLoading={ridersLoading}
                   isAssigning={assigningOrderId === orderId}
                   onAssign={onAssignRider}
+                  onRefreshRiders={onRefreshRiders}
                 />
               )}
             </div>
