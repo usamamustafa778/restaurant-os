@@ -42,7 +42,7 @@ const VIEW_MODES = [
 
 /** Suggested subgroup names when creating / bulk-assigning (by group). */
 const SUGGESTED_SUBGROUPS = {
-  POS: ["Access", "Orders", "Status", "Money", "Session", "Print"],
+  POS: ["Access", "Orders", "Edit Order", "Status", "Money", "Session", "Print"],
   Accounts: ["View", "Manage"],
   Inventory: ["View", "Manage"],
   Staff: ["View", "Manage"],
@@ -466,15 +466,18 @@ export default function SuperPermissionsPage() {
     const ok = await confirm({
       title: "Apply catalog subgroups?",
       message:
-        "This sets group and subgroup labels from the built-in catalog for all matching permission keys. It does not create new keys or change role assignments.",
-      confirmLabel: "Apply subgroups",
+        "This creates any missing catalog keys and sets group/subgroup labels from the built-in catalog. It does not change role assignments.",
+      confirmLabel: "Apply catalog",
     });
     if (!ok) return;
     setApplyingCatalog(true);
     try {
       const result = await applyCatalogSubgroupsForSuperAdmin();
+      const created = result.upserted ?? 0;
       toast.success(
-        `Updated ${result.modified ?? 0} permission(s) from catalog`,
+        created
+          ? `Updated ${result.modified ?? 0}, created ${created} permission(s)`
+          : `Updated ${result.modified ?? 0} permission(s) from catalog`,
       );
       loadPermissions();
     } catch (err) {

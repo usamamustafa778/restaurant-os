@@ -45,6 +45,12 @@ import {
 } from "../../lib/apiClient";
 import { printBillReceipt } from "../../lib/printBillReceipt";
 import {
+  canOpenOrderEdit,
+  canAddOrderItems,
+  canRemoveOrderItems,
+  canEditOrderAtStatus,
+} from "../../lib/orderEditPermissions";
+import {
   buildInitialModifierSelections,
   buildPosCartLine,
   buildCartItemAfterVariationChange,
@@ -378,16 +384,22 @@ export default function POSView({
     "admin",
     "super_admin",
   ].includes(currentUser?.role);
-  const canEditAfterServed =
-    isAdminRole ||
-    hasPermission("orders.edit_after_served") ||
-    hasPermission("pos.modify_paid_order");
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
-  const servedUnpaidEdit = isServedUnpaidOrder(editingOrder);
-  const canModifyServedOrderItems = !servedUnpaidEdit || canEditAfterServed;
+  const editingStatus = String(
+    editingOrder?.status || editingOrder?.orderStatus || "",
+  ).toUpperCase();
+  const canEditAtStage =
+    isAdminRole || canEditOrderAtStatus(hasPermission, editingStatus);
+  const canAddItemsOnEdit =
+    isAdminRole || canAddOrderItems(hasPermission, editingStatus);
+  const canRemoveItemsOnEdit =
+    isAdminRole || canRemoveOrderItems(hasPermission);
+  const canModifyOrderItems =
+    !editingOrderId ||
+    (canEditAtStage && (canAddItemsOnEdit || canRemoveItemsOnEdit));
   const [originalOrderItems, setOriginalOrderItems] = useState([]);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
   /** Ref avoids React treating the callback as a functional setState updater. */
@@ -962,11 +974,11 @@ export default function POSView({
   /** Called from the "Clear all" button in the cart sidebar. Shows a toast; wraps clearCart(). */
   function clearAllCartItems() {
     if (cart.length === 0) return;
-    if (!canModifyServedOrderItems) {
-      toast.error("You don't have permission to edit served orders.");
+    if (editingOrderId && !canEditAtStage) {
+      toast.error("You don't have permission to edit orders at this status.");
       return;
     }
-    if (!isPrivilegedEditor) {
+    if (editingOrderId && !canRemoveItemsOnEdit) {
       toast.error("You don't have permission to remove items");
       return;
     }
@@ -1006,12 +1018,6 @@ export default function POSView({
   useEffect(() => {
     const editId = propEditOrderId;
     if (!editId || !menu?.items?.length) return;
-    if (!hasPermission("orders.edit")) {
-      toast.error("You don't have permission to edit orders");
-      onClose?.();
-      return;
-    }
-
     let cancelled = false;
     setLoadingEditOrder(true);
 
@@ -1019,11 +1025,13 @@ export default function POSView({
       .then((order) => {
         if (cancelled) return;
         if (
-          isServedUnpaidOrder(order) &&
           !isAdminRole &&
-          !hasPermission("orders.edit_after_served")
+          !canOpenOrderEdit(hasPermission, order.status) &&
+          !hasPermission("pos.modify_paid_order")
         ) {
-          toast.error("You don't have permission to edit served orders.");
+          toast.error(
+            "You don't have permission to edit orders at this status.",
+          );
           onClose?.();
           return;
         }
@@ -1804,10 +1812,10 @@ export default function POSView({
     return matchesCategory && matchesSearch && matchesDietary && isAvailable;
   });
 
-  const isPrivilegedEditor = hasPermission("orders.delete_items");
+  const isPrivilegedEditor = canRemoveItemsOnEdit;
 
   function canDecreaseCartQuantity(cartKey, currentQty) {
-    if (editingOrderId && servedUnpaidEdit && !canEditAfterServed) return false;
+    if (editingOrderId && !canEditAtStage) return false;
     const newQty = currentQty - 1;
     if (newQty <= 0) return isPrivilegedEditor;
     if (editingOrderId) {
@@ -1984,8 +1992,12 @@ export default function POSView({
   };
 
   const addToCart = (item, qty = 1) => {
-    if (editingOrderId && servedUnpaidEdit && !canEditAfterServed) {
-      toast.error("You don't have permission to edit served orders.");
+    if (editingOrderId && !canEditAtStage) {
+      toast.error("You don't have permission to edit orders at this status.");
+      return;
+    }
+    if (editingOrderId && !canAddItemsOnEdit) {
+      toast.error("You don't have permission to add items to this order.");
       return;
     }
 
@@ -2079,6 +2091,10 @@ export default function POSView({
       const item = cart.find((i) => (i._cartKey || i.id) === cartKey);
       if (item && !canDecreaseCartQuantity(cartKey, item.quantity)) return;
     }
+    if (change > 0 && editingOrderId && !canAddItemsOnEdit) {
+      toast.error("You don't have permission to add items to this order.");
+      return;
+    }
     setCart(
       cart
         .map((item) => {
@@ -2098,7 +2114,7 @@ export default function POSView({
   };
 
   const changeCartItemVariation = (cartKey, groupId, optionId) => {
-    if (!canModifyServedOrderItems) return;
+    if (!canModifyOrderItems) return;
     const itemIndex = cart.findIndex((i) => (i._cartKey || i.id) === cartKey);
     if (itemIndex < 0) return;
 
@@ -3596,7 +3612,7 @@ export default function POSView({
                       );
                       const menuCanDecrease =
                         inCart &&
-                        canModifyServedOrderItems &&
+                        canModifyOrderItems &&
                         canDecreaseCartQuantity(cardKey, inCart.quantity);
                       const outOfStock = item.inventorySufficient === false;
                       const category = menu.categories.find(
@@ -3623,7 +3639,7 @@ export default function POSView({
                               onClick={() =>
                                 !outOfStock &&
                                 !inCart &&
-                                canModifyServedOrderItems &&
+                                canModifyOrderItems &&
                                 addToCart(item, bulkAddQty)
                               }
                             >
@@ -3681,7 +3697,7 @@ export default function POSView({
                                 !showItemImages &&
                                 !outOfStock &&
                                 !inCart &&
-                                canModifyServedOrderItems
+                                canModifyOrderItems
                               ) {
                                 addToCart(item, bulkAddQty);
                               }
@@ -3720,7 +3736,7 @@ export default function POSView({
                               </div>
 
                               {!outOfStock &&
-                                canModifyServedOrderItems &&
+                                canModifyOrderItems &&
                                 (inCart ? (
                                   <div
                                     className="flex items-center gap-0.5 bg-gray-100 dark:bg-neutral-800 rounded p-0.5"
@@ -3932,7 +3948,7 @@ export default function POSView({
               <div className="flex items-center gap-3 flex-shrink-0">
                 {cart.length > 0 &&
                   isPrivilegedEditor &&
-                  canModifyServedOrderItems && (
+                  canModifyOrderItems && (
                     <button
                       type="button"
                       onClick={clearAllCartItems}
@@ -4033,7 +4049,7 @@ export default function POSView({
                                 </div>
                               ))}
                           </div>
-                          {isPrivilegedEditor && canModifyServedOrderItems && (
+                          {isPrivilegedEditor && canModifyOrderItems && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -4073,12 +4089,12 @@ export default function POSView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!canModifyServedOrderItems) return;
+                                if (!canModifyOrderItems) return;
                                 updateQuantity(item._cartKey || item.id, 1);
                               }}
-                              disabled={!canModifyServedOrderItems}
+                              disabled={!canModifyOrderItems}
                               className={`w-4 h-4 flex items-center justify-center bg-primary hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors ${
-                                !canModifyServedOrderItems
+                                !canModifyOrderItems
                                   ? "opacity-30 cursor-not-allowed"
                                   : ""
                               }`}
@@ -4099,7 +4115,7 @@ export default function POSView({
                                     <select
                                       key={group.id}
                                       value={selected}
-                                      disabled={!canModifyServedOrderItems}
+                                      disabled={!canModifyOrderItems}
                                       onChange={(e) =>
                                         changeCartItemVariation(
                                           cartKey,
@@ -4424,8 +4440,7 @@ export default function POSView({
 
               {/* Place Order / Update Order Button */}
               {editingOrderId
-                ? hasPermission("orders.edit") &&
-                  canModifyServedOrderItems && (
+                ? canModifyOrderItems && (
                     <button
                       onClick={handleUpdateOrder}
                       disabled={loading || cart.length === 0}
@@ -7306,7 +7321,13 @@ export default function POSView({
             </div>
             <div className="px-6 pb-6 pt-4 space-y-3 bg-white dark:bg-neutral-950">
               <div className="grid grid-cols-3 gap-2.5">
-                {hasPermission("orders.edit") && (
+                {(isAdminRole ||
+                  canOpenOrderEdit(
+                    hasPermission,
+                    orderConfirmation.status ||
+                      orderConfirmation.orderStatus ||
+                      "NEW_ORDER",
+                  )) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -7317,6 +7338,15 @@ export default function POSView({
                         setEditingOrderId(id);
                         getOrder(id)
                           .then((order) => {
+                            if (
+                              !isAdminRole &&
+                              !canOpenOrderEdit(hasPermission, order.status)
+                            ) {
+                              toast.error(
+                                "You don't have permission to edit orders at this status.",
+                              );
+                              return;
+                            }
                             setEditingOrder(order);
                             const items = order.items || [];
                             const menuItems = menu.items || [];

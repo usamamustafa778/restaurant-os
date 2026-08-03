@@ -47,6 +47,7 @@ import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
 import { useSocket } from "../../contexts/SocketContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
+import { canOpenOrderEdit } from "../../lib/orderEditPermissions";
 import { playPosFeedbackSound } from "../../lib/posAddSounds";
 import toast from "react-hot-toast";
 import {
@@ -582,10 +583,21 @@ export default function OrdersPage() {
   const [posInitialTableName, setPosInitialTableName] = useState("");
 
   const openPOS = useCallback(
-    (editId = null, tableName = "") => {
-      if (editId && !hasPermission("orders.edit")) {
-        toast.error("You don't have permission to edit orders");
-        return;
+    (editId = null, tableName = "", orderStatus = null) => {
+      if (editId) {
+        const allowed = orderStatus
+          ? canOpenOrderEdit(hasPermission, orderStatus) ||
+            hasPermission("pos.modify_paid_order")
+          : canOpenOrderEdit(hasPermission, "NEW_ORDER") ||
+            canOpenOrderEdit(hasPermission, "PROCESSING") ||
+            canOpenOrderEdit(hasPermission, "READY") ||
+            canOpenOrderEdit(hasPermission, "DELIVERED") ||
+            canOpenOrderEdit(hasPermission, "OUT_FOR_DELIVERY") ||
+            hasPermission("pos.modify_paid_order");
+        if (!allowed) {
+          toast.error("You don't have permission to edit orders");
+          return;
+        }
       }
       playPosFeedbackSound(currentBranch);
       setPosEditOrderId(editId);
@@ -2064,7 +2076,11 @@ export default function OrdersPage() {
                                   onOpenCollect={openCollectPaymentModal}
                                   onPrint={openPrintBill}
                                   onEdit={(order) =>
-                                    openPOS(order.id || order._id)
+                                    openPOS(
+                                      order.id || order._id,
+                                      "",
+                                      order.status,
+                                    )
                                   }
                                 />
                               ))
@@ -2155,7 +2171,11 @@ export default function OrdersPage() {
                                 onOpenCollect={openCollectPaymentModal}
                                 onPrint={openPrintBill}
                                 onEdit={(order) =>
-                                  openPOS(order.id || order._id)
+                                  openPOS(
+                                    order.id || order._id,
+                                    "",
+                                    order.status,
+                                  )
                                 }
                               />
                             ))
@@ -2246,7 +2266,9 @@ export default function OrdersPage() {
                           onRefreshRiders={refreshRiders}
                           onOpenCollect={openCollectPaymentModal}
                           onPrint={openPrintBill}
-                          onEdit={(order) => openPOS(order.id || order._id)}
+                          onEdit={(order) =>
+                            openPOS(order.id || order._id, "", order.status)
+                          }
                         />
                       ))}
                     </div>
@@ -2300,7 +2322,9 @@ export default function OrdersPage() {
                           onRefreshRiders={refreshRiders}
                           onOpenCollect={openCollectPaymentModal}
                           onPrint={openPrintBill}
-                          onEdit={(order) => openPOS(order.id || order._id)}
+                          onEdit={(order) =>
+                            openPOS(order.id || order._id, "", order.status)
+                          }
                         />
                       ))}
                     </div>
@@ -4300,19 +4324,13 @@ function OrderCard({
   const canCancelPerm =
     canCancel &&
     (hasPermission("pos.void_order") || hasPermission("orders.cancel"));
-  const isServedUnpaid =
-    paymentStatus === "unpaid" &&
-    ["READY", "DELIVERED", "COMPLETED"].includes(effectiveStatus);
-  const canEditAfterServedPerm =
-    isAdmin || hasPermission("orders.edit_after_served");
   const canShowEditButton =
     status !== "CANCELLED" &&
-    hasPermission("orders.edit") &&
-    (isServedUnpaid
-      ? canEditAfterServedPerm
-      : isAdmin ||
-        (paymentStatus === "unpaid" &&
-          !["DELIVERED", "COMPLETED"].includes(status)));
+    (isAdmin ||
+      (paymentStatus === "unpaid" &&
+        canOpenOrderEdit(hasPermission, effectiveStatus || status)) ||
+      (paymentStatus === "paid" &&
+        hasPermission("pos.modify_paid_order")));
 
   const sourceKey = String(order.source || "POS").toUpperCase();
   const sourceMeta = (() => {

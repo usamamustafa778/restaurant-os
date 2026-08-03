@@ -16,6 +16,11 @@ import { useBranch } from "../../contexts/BranchContext";
 import { useSocket } from "../../contexts/SocketContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { usePermissions } from "../../contexts/PermissionContext";
+import {
+  canEditOrderAtStatus,
+  canAddOrderItems,
+  canRemoveOrderItems,
+} from "../../lib/orderEditPermissions";
 import { useOrderNotifications } from "../../contexts/OrderNotificationContext";
 import WhatsAppNotificationBell from "../../components/whatsapp/WhatsAppNotificationBell";
 import {
@@ -234,10 +239,16 @@ function canEditOrderNotes(order) {
   return true;
 }
 
-/** Full edit of existing lines (qty / remove) — only while still a new order. */
-function canFullyEditExistingItems(order) {
+/** Full edit of existing lines (qty / remove) when stage + Remove Items allow. */
+function canFullyEditExistingItems(order, hasPermission) {
   if (!order || isOrderLocked(order)) return false;
-  return String(order.status || "").toUpperCase() === "NEW_ORDER";
+  if (typeof hasPermission !== "function") {
+    return String(order.status || "").toUpperCase() === "NEW_ORDER";
+  }
+  return (
+    canEditOrderAtStatus(hasPermission, order.status) &&
+    canRemoveOrderItems(hasPermission)
+  );
 }
 
 /** Group raw order lines into deal cards + regular items for the edit cart. */
@@ -457,9 +468,6 @@ export default function OrderTakerPage() {
     toggleTheme: () => {},
   };
   const { hasPermission } = usePermissions();
-  const canEditAfterServed = hasPermission("orders.edit_after_served");
-  const canAddItemsAfterServed = hasPermission("orders.add_items_after_served");
-
   const [activeTab, setActiveTab] = useState(TABS.HOME);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef(null);
@@ -492,10 +500,13 @@ export default function OrderTakerPage() {
 
   const canAppendItemsToOrder = useCallback(
     (order) => {
-      if (!isServedUnpaidOrder(order)) return true;
-      return canEditAfterServed || canAddItemsAfterServed;
+      if (!order || isOrderLocked(order)) return false;
+      return (
+        canEditOrderAtStatus(hasPermission, order.status) &&
+        canAddOrderItems(hasPermission, order.status)
+      );
     },
-    [canEditAfterServed, canAddItemsAfterServed],
+    [hasPermission],
   );
 
   // Active orders state
@@ -520,9 +531,8 @@ export default function OrderTakerPage() {
     !appendTargetOrder || canAppendItemsToOrder(appendTargetOrder);
   const appendAddOnlyMode =
     !!appendTargetOrder &&
-    isServedUnpaidOrder(appendTargetOrder) &&
-    canAddItemsAfterServed &&
-    !canEditAfterServed;
+    canAddOrderItems(hasPermission, appendTargetOrder.status) &&
+    !canRemoveOrderItems(hasPermission);
 
   useEffect(() => {
     const auth = getStoredAuth();
@@ -1016,7 +1026,7 @@ export default function OrderTakerPage() {
   }
 
   function updateExistingOrderItemQty(itemIndex, delta) {
-    if (!appendTargetOrder || !canFullyEditExistingItems(appendTargetOrder)) {
+    if (!appendTargetOrder || !canFullyEditExistingItems(appendTargetOrder, hasPermission)) {
       return;
     }
     setAppendTargetOrder((prev) => {
@@ -1045,7 +1055,7 @@ export default function OrderTakerPage() {
   }
 
   function removeExistingOrderItem(itemIndex) {
-    if (!appendTargetOrder || !canFullyEditExistingItems(appendTargetOrder)) {
+    if (!appendTargetOrder || !canFullyEditExistingItems(appendTargetOrder, hasPermission)) {
       return;
     }
     setAppendTargetOrder((prev) => {
@@ -1064,7 +1074,7 @@ export default function OrderTakerPage() {
     if (
       !name ||
       !appendTargetOrder ||
-      !canFullyEditExistingItems(appendTargetOrder)
+      !canFullyEditExistingItems(appendTargetOrder, hasPermission)
     ) {
       return;
     }
@@ -1105,7 +1115,7 @@ export default function OrderTakerPage() {
     if (
       !name ||
       !appendTargetOrder ||
-      !canFullyEditExistingItems(appendTargetOrder)
+      !canFullyEditExistingItems(appendTargetOrder, hasPermission)
     ) {
       return;
     }
@@ -1424,8 +1434,8 @@ export default function OrderTakerPage() {
   function canAppendOrder(order) {
     if (isOrderLocked(order)) return false;
     const status = String(order?.status || "").toUpperCase();
-    if (status === "CANCELLED" || status === "OUT_FOR_DELIVERY") return false;
-    return true;
+    if (status === "CANCELLED") return false;
+    return canAppendItemsToOrder(order);
   }
 
   function orderCanAppend(order) {
@@ -1468,12 +1478,8 @@ export default function OrderTakerPage() {
       0,
     );
     const canAppend = canAppendOrder(order);
-    const canAddItems =
-      canAppend &&
-      (!isServedUnpaidOrder(order) ||
-        canEditAfterServed ||
-        canAddItemsAfterServed);
-    const canFullyEdit = canFullyEditExistingItems(order);
+    const canAddItems = canAppend;
+    const canFullyEdit = canFullyEditExistingItems(order, hasPermission);
     const orderStatus = String(order.status || "").toUpperCase();
     const appendProminent =
       orderStatus === "READY" ||
@@ -1745,7 +1751,9 @@ export default function OrderTakerPage() {
       tableName,
     });
     // Full edit (new orders): open cart with existing items; otherwise go to menu to add.
-    setStep(canFullyEditExistingItems(order) ? STEPS.CART : STEPS.MENU);
+    setStep(
+      canFullyEditExistingItems(order, hasPermission) ? STEPS.CART : STEPS.MENU,
+    );
     setActiveTab(TABS.NEW_ORDER);
   }
 
@@ -3056,7 +3064,7 @@ export default function OrderTakerPage() {
                       <p className="mt-0.5 text-[10px] text-orange-600/80 dark:text-orange-400/80">
                         {appendEditDetailsOnly
                           ? "Update guest or table below, then save."
-                          : canFullyEditExistingItems(appendTargetOrder)
+                          : canFullyEditExistingItems(appendTargetOrder, hasPermission)
                             ? "Change quantities, remove items, add more from the menu, then save."
                             : "Add items from the menu or edit notes on existing items, then save."}
                       </p>
@@ -3137,7 +3145,7 @@ export default function OrderTakerPage() {
                         <div className="mb-3">
                           {(() => {
                             const canEditExisting =
-                              canFullyEditExistingItems(appendTargetOrder);
+                              canFullyEditExistingItems(appendTargetOrder, hasPermission);
                             return (
                               <>
                           <button
@@ -3855,7 +3863,7 @@ export default function OrderTakerPage() {
                       <>
                         {appendEditDetailsOnly && cart.length === 0
                           ? "Save details"
-                          : canFullyEditExistingItems(appendTargetOrder)
+                          : canFullyEditExistingItems(appendTargetOrder, hasPermission)
                             ? "Update order"
                             : cart.length === 0
                               ? "Save notes"
