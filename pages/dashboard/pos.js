@@ -472,8 +472,8 @@ function getStatusAdvancePermission(primaryNext, order) {
   if (primaryNext === "OUT_FOR_DELIVERY") return "orders.send_delivery";
   if (primaryNext === "DELIVERED") {
     const s = orderStatusForTab(order?.status);
-    // Rider completed delivery — still uses edit; counter "Mark Served" is separate
-    if (s === "OUT_FOR_DELIVERY") return "orders.edit";
+    // Counter Mark Delivered for out-for-delivery orders (not Mark Served)
+    if (s === "OUT_FOR_DELIVERY") return "orders.mark_delivered";
     return "pos.mark_served";
   }
   return "orders.edit";
@@ -4246,14 +4246,11 @@ function OrderCard({
   });
   // Skip Start Cooking / Mark Ready in simple billing; keep Ready→served/delivery actions.
   const kitchenPipelineNext = ["PROCESSING", "READY"];
+  // Mark Delivered for delivery is gated by orders.mark_delivered (not role).
   const canAdvanceStatus =
     primaryNext &&
     actionLabel &&
-    !(
-      isLimitedPosStaff &&
-      primaryNext === "DELIVERED" &&
-      isDeliveryOrder(order)
-    ) && !(simpleBilling && kitchenPipelineNext.includes(primaryNext));
+    !(simpleBilling && kitchenPipelineNext.includes(primaryNext));
 
   const showAssignRider =
     isDeliveryOrder(order) &&
@@ -4376,6 +4373,7 @@ function OrderCard({
       showOutForDeliveryPerm ||
       showAssignRiderPerm ||
       showOutForDeliveryMarkDeliveredPerm ||
+      showRiderReassignPerm ||
       canAdvanceWithPermission);
 
   return (
@@ -4757,9 +4755,25 @@ function OrderCard({
                   isAssigning={assigningOrderId === orderId}
                   onAssign={onAssignRider}
                   onRefreshRiders={onRefreshRiders}
+                  label="Reassign"
                 />
               )}
             </div>
+          ) : showRiderReassignPerm ? (
+            <RiderPickerDropdown
+              order={order}
+              riders={riders}
+              ridersLoading={ridersLoading}
+              isAssigning={assigningOrderId === orderId}
+              onAssign={onAssignRider}
+              onRefreshRiders={onRefreshRiders}
+              label={
+                order.assignedRiderName
+                  ? `${order.assignedRiderName} · Reassign`
+                  : "— Reassign rider —"
+              }
+              fullWidth
+            />
           ) : canAdvanceWithPermission ? (
             <button
               type="button"
