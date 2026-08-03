@@ -17,6 +17,10 @@ import { ChevronDown, ChevronRight, Loader2, Plus, Search, X } from "lucide-reac
 import toast from "react-hot-toast";
 import { usePermissions } from "../../../contexts/PermissionContext";
 import { useConfirmDialog } from "../../../contexts/ConfirmDialogContext";
+import {
+  partitionBySubgroup,
+  subgroupExpandKey,
+} from "../../../lib/permissionGroups";
 
 const TEMPLATE_LABELS = {
   platform_admin: "Platform admin",
@@ -55,6 +59,7 @@ export default function SuperRolesPage() {
   const [selectedPermissions, setSelectedPermissions] = useState([]);
   const [permSearch, setPermSearch] = useState("");
   const [expandedGroups, setExpandedGroups] = useState({});
+  const [expandedSubgroups, setExpandedSubgroups] = useState({});
   const [drawerSaving, setDrawerSaving] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -109,7 +114,8 @@ export default function SuperRolesPage() {
       const items = (groupedPerms[group] || []).filter(
         (p) =>
           (p.name || "").toLowerCase().includes(q) ||
-          (p.key || "").toLowerCase().includes(q),
+          (p.key || "").toLowerCase().includes(q) ||
+          (p.subgroup || "").toLowerCase().includes(q),
       );
       if (items.length) next[group] = items;
     }
@@ -159,6 +165,7 @@ export default function SuperRolesPage() {
     setDrawerRole(role);
     setPermSearch("");
     setExpandedGroups({});
+    setExpandedSubgroups({});
     setSelectedPermissions(
       initialPermissions !== undefined
         ? [...initialPermissions]
@@ -189,6 +196,7 @@ export default function SuperRolesPage() {
     setSelectedPermissions([]);
     setPermSearch("");
     setExpandedGroups({});
+    setExpandedSubgroups({});
   }
 
   async function handleCreateRole(e) {
@@ -247,10 +255,21 @@ export default function SuperRolesPage() {
   function toggleExpandAll() {
     if (allGroupsExpanded) {
       setExpandedGroups({});
+      setExpandedSubgroups({});
     } else {
-      const next = {};
-      for (const g of filteredPermissionGroups) next[g] = true;
-      setExpandedGroups(next);
+      const nextGroups = {};
+      const nextSubgroups = {};
+      for (const g of filteredPermissionGroups) {
+        nextGroups[g] = true;
+        const { subgroups } = partitionBySubgroup(
+          filteredGroupedPerms[g] || [],
+        );
+        for (const sg of subgroups) {
+          nextSubgroups[subgroupExpandKey(g, sg.name)] = true;
+        }
+      }
+      setExpandedGroups(nextGroups);
+      setExpandedSubgroups(nextSubgroups);
     }
   }
 
@@ -524,6 +543,31 @@ export default function SuperRolesPage() {
                     const expanded = expandedGroups[group] === true;
                     const selected = keys.filter((k) => selectedPermissions.includes(k)).length;
                     const allSelected = keys.length > 0 && selected === keys.length;
+                    const { ungrouped, subgroups } = partitionBySubgroup(items);
+                    const hasSubgroups = subgroups.length > 0;
+
+                    const renderPermRow = (p) => (
+                      <label
+                        key={p.key}
+                        className={`flex items-start gap-2.5 text-xs ${canManage ? "cursor-pointer" : "cursor-default opacity-90"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedPermissions.includes(p.key)}
+                          onChange={() => togglePermission(p.key)}
+                          disabled={!canManage}
+                          className="mt-0.5 rounded border-gray-300 disabled:opacity-60"
+                        />
+                        <span className="min-w-0">
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {p.name}
+                          </span>
+                          <code className="block text-[10px] text-neutral-500 font-mono mt-0.5">
+                            {p.key}
+                          </code>
+                        </span>
+                      </label>
+                    );
 
                     return (
                       <div key={group}>
@@ -557,28 +601,77 @@ export default function SuperRolesPage() {
                         </div>
                         {expanded && (
                           <div className="px-5 pb-3 space-y-2">
-                            {items.map((p) => (
-                              <label
-                                key={p.key}
-                                className={`flex items-start gap-2.5 text-xs ${canManage ? "cursor-pointer" : "cursor-default opacity-90"}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPermissions.includes(p.key)}
-                                  onChange={() => togglePermission(p.key)}
-                                  disabled={!canManage}
-                                  className="mt-0.5 rounded border-gray-300 disabled:opacity-60"
-                                />
-                                <span className="min-w-0">
-                                  <span className="font-medium text-gray-900 dark:text-white">
-                                    {p.name}
-                                  </span>
-                                  <code className="block text-[10px] text-neutral-500 font-mono mt-0.5">
-                                    {p.key}
-                                  </code>
-                                </span>
-                              </label>
-                            ))}
+                            {!hasSubgroups
+                              ? (
+                                  <div className="ml-4 space-y-2">
+                                    {items.map(renderPermRow)}
+                                  </div>
+                                )
+                              : (
+                                  <>
+                                    {ungrouped.length > 0 && (
+                                      <div className="ml-4 space-y-2">
+                                        {ungrouped.map(renderPermRow)}
+                                      </div>
+                                    )}
+                                    {subgroups.map((sg) => {
+                                      const sgKey = subgroupExpandKey(group, sg.name);
+                                      const sgExpanded = expandedSubgroups[sgKey] === true;
+                                      const sgKeys = sg.items.map((p) => p.key);
+                                      const sgSelected = sgKeys.filter((k) =>
+                                        selectedPermissions.includes(k),
+                                      ).length;
+                                      const sgAllSelected =
+                                        sgKeys.length > 0 && sgSelected === sgKeys.length;
+
+                                      return (
+                                        <div
+                                          key={sgKey}
+                                          className="ml-4 rounded-lg border border-gray-100 dark:border-neutral-800"
+                                        >
+                                          <div className="flex items-center gap-2 px-2.5 py-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setExpandedSubgroups((prev) => ({
+                                                  ...prev,
+                                                  [sgKey]: !sgExpanded,
+                                                }))
+                                              }
+                                              className="flex items-center gap-1.5 flex-1 min-w-0 text-left text-[11px] font-semibold text-neutral-600 dark:text-neutral-300 hover:text-primary"
+                                            >
+                                              {sgExpanded ? (
+                                                <ChevronDown className="w-3 h-3 shrink-0" />
+                                              ) : (
+                                                <ChevronRight className="w-3 h-3 shrink-0" />
+                                              )}
+                                              <span className="truncate">{sg.name}</span>
+                                            </button>
+                                            <span className="text-[10px] text-neutral-500 shrink-0">
+                                              {sgSelected}/{sgKeys.length}
+                                            </span>
+                                            {canManage && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  setGroupPermissions(sgKeys, !sgAllSelected)
+                                                }
+                                                className="text-[10px] font-medium text-primary hover:underline shrink-0"
+                                              >
+                                                {sgAllSelected ? "None" : "All"}
+                                              </button>
+                                            )}
+                                          </div>
+                                          {sgExpanded && (
+                                            <div className="px-2.5 pb-2 space-y-2">
+                                              {sg.items.map(renderPermRow)}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </>
+                                )}
                           </div>
                         )}
                       </div>

@@ -465,9 +465,16 @@ function getActionLabel(primaryNext, order) {
   return primaryNext;
 }
 
-function getStatusAdvancePermission(primaryNext) {
+function getStatusAdvancePermission(primaryNext, order) {
   if (primaryNext === "PROCESSING") return "orders.start_cooking";
   if (primaryNext === "READY") return "orders.mark_ready";
+  if (primaryNext === "OUT_FOR_DELIVERY") return "orders.send_delivery";
+  if (primaryNext === "DELIVERED") {
+    const s = orderStatusForTab(order?.status);
+    // Rider completed delivery — still uses edit; counter "Mark Served" is separate
+    if (s === "OUT_FOR_DELIVERY") return "orders.edit";
+    return "pos.mark_served";
+  }
   return "orders.edit";
 }
 
@@ -4265,7 +4272,10 @@ function OrderCard({
   const hiddenCount = displayItems.length - 3;
 
   const statusAdvancePerm = primaryNext
-    ? getStatusAdvancePermission(primaryNext)
+    ? getStatusAdvancePermission(primaryNext, {
+        ...order,
+        status: statusForNext,
+      })
     : null;
   const canAdvanceWithPermission =
     canAdvanceStatus && statusAdvancePerm && hasPermission(statusAdvancePerm);
@@ -4274,7 +4284,7 @@ function OrderCard({
   const showChangeRiderPerm =
     showChangeRider && hasPermission("orders.assign_rider");
   const showOutForDeliveryPerm =
-    showOutForDelivery && hasPermission("orders.edit");
+    showOutForDelivery && hasPermission("orders.send_delivery");
   const showOutForDeliveryMarkDeliveredPerm =
     showOutForDeliveryMarkDelivered &&
     statusAdvancePerm &&
