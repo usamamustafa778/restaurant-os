@@ -94,17 +94,13 @@ function humanizeRoleSlug(slug) {
 }
 
 function getRoleLabelFromSlug(role) {
+  // Prefer API roleName in the UI. This is only a fallback for known system slugs.
   const labels = {
     super_admin: "Super Admin",
     restaurant_admin: "Owner",
-    admin: "Admin",
-    product_manager: "Product Manager",
-    cashier: "Cashier",
-    manager: "Manager",
     kitchen_staff: "Kitchen Staff",
-    order_taker: "Order Taker",
+    order_taker: "Waiter",
     delivery_rider: "Delivery Rider",
-    staff: "Staff",
   };
   return labels[role] || humanizeRoleSlug(role);
 }
@@ -167,16 +163,14 @@ function isNavChildActive(
 const HEADER_TOOLBAR_BTN =
   "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold leading-none shadow-sm transition-all";
 
-// Single tenant nav:
-// Admin: all. Manager: all except Branches, Subscription. Product manager: Overview, Categories, Items, Inventory, Profile.
-// Cashier: POS, Orders, Customers, Profile only. Kitchen: KDS, Profile.
-// Order taker uses dedicated /order-taker mobile UI and does not see the dashboard sidebar.
+// Tenant nav is permission-gated. System apps (kitchen / waiter / rider) use dedicated UIs;
+// custom roles see whatever their permission keys allow. Profile is always available.
 const tenantNav = [
   {
     path: "/overview",
     label: "Dashboard",
     icon: LayoutDashboard,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
+    permission: "reports.view_sales",
   },
 
   { type: "section", label: "OPERATIONS" },
@@ -184,42 +178,36 @@ const tenantNav = [
     path: "/pos",
     label: "POS",
     icon: ClipboardList,
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
-    permission: "orders.view",
+    permission: "pos.view",
   },
   {
     path: "/kitchen",
     label: "Kitchen (KDS)",
     icon: ChefHat,
-    roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
     permission: "orders.start_cooking",
   },
   {
     path: "/whatsapp",
     label: "AI Receptionist",
     icon: MessageCircle,
-    roles: ["restaurant_admin", "admin", "manager", "kitchen_staff"],
     permission: "whatsapp.conversations.view",
   },
   {
     path: "/tables",
     label: "Tables",
     icon: UtensilsCrossed,
-    roles: ["restaurant_admin", "admin", "manager"],
     permission: "tables.view",
   },
   {
     path: "/reservations",
     label: "Reservations",
     icon: History,
-    roles: ["restaurant_admin", "admin", "manager"],
     permission: "reservations.view",
   },
   {
     path: "/riders",
     label: "Riders Portal",
     icon: Truck,
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
     permission: "staff.view_riders",
   },
 
@@ -228,28 +216,24 @@ const tenantNav = [
     path: "/categories",
     label: "Categories",
     icon: FolderOpen,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "menu.manage_categories",
   },
   {
     path: "/menu-items",
     label: "Menu Items",
     icon: ShoppingBag,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "menu.manage",
   },
   {
     path: "/modifier-groups",
     label: "Modifier Groups",
     icon: Layers,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "menu.manage",
   },
   {
     path: "/deals",
     label: "Deals",
     icon: Percent,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "deals_modifiers.manage",
   },
 
@@ -258,7 +242,6 @@ const tenantNav = [
     path: "/inventory",
     label: "Stock Items",
     icon: Boxes,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     exact: true,
     permission: "inventory.view",
   },
@@ -266,21 +249,18 @@ const tenantNav = [
     path: "/inventory/purchase-orders",
     label: "Purchase Orders",
     icon: ShoppingCart,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "inventory.purchase_orders",
   },
   {
     path: "/inventory/receive-stock",
     label: "Receive Stock",
     icon: PackageCheck,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "inventory.receive_stock",
   },
   {
     path: "/inventory/purchase-history",
     label: "Purchase History",
     icon: ClipboardList,
-    roles: ["restaurant_admin", "admin", "manager", "product_manager"],
     permission: "inventory.purchase_orders",
   },
 
@@ -289,21 +269,19 @@ const tenantNav = [
     path: "/customers",
     label: "Customers",
     icon: UserCheck,
-    roles: ["restaurant_admin", "admin", "manager"],
     permission: "customers.view",
   },
   {
     path: "/users",
     label: "Staff Management",
     icon: Users,
-    roles: ["restaurant_admin", "admin", "manager"],
     permission: "staff.view",
   },
   {
     path: "/settings/roles",
     label: "Staff Roles",
     icon: UserCog,
-    roles: ["restaurant_admin", "admin", "manager"],
+    permission: "staff.manage",
   },
 
   { type: "section", label: "FINANCE" },
@@ -311,14 +289,12 @@ const tenantNav = [
     path: "/sales-report",
     label: "Sales",
     icon: BarChart3,
-    roles: ["restaurant_admin", "admin", "manager"],
     permission: "reports.view_sales",
   },
   {
     path: "/accounting",
     label: "Accounts Board",
     icon: LayoutGrid,
-    roles: ["restaurant_admin", "admin", "manager"],
     exact: true,
     permission: "accounting.access",
   },
@@ -326,7 +302,6 @@ const tenantNav = [
     label: "Vouchers",
     icon: Receipt,
     path: "/accounting/vouchers",
-    roles: ["restaurant_admin", "admin", "manager", "cashier"],
     permission: "accounts.create_vouchers",
     children: [
       {
@@ -361,7 +336,7 @@ const tenantNav = [
     label: "Reports",
     icon: BarChart2,
     path: "/accounting/reports/day-book",
-    roles: ["restaurant_admin", "admin", "manager"],
+    permission: "accounting.access",
     children: [
       {
         path: "/accounting/reports/day-book",
@@ -405,7 +380,7 @@ const tenantNav = [
     label: "Setup",
     icon: Settings2,
     path: "/accounting/chart-of-accounts",
-    roles: ["restaurant_admin", "admin", "manager"],
+    permission: "accounting.access",
     children: [
       {
         path: "/accounting/chart-of-accounts",
@@ -421,7 +396,6 @@ const tenantNav = [
     label: "Settings",
     icon: Cog,
     path: "/business-settings",
-    roles: ["restaurant_admin", "admin"],
     permission: "settings.view",
     children: [
       {
@@ -460,7 +434,6 @@ const tenantNav = [
     label: "Website",
     icon: Globe,
     path: "/website-settings",
-    roles: ["restaurant_admin", "admin", "manager"],
     permission: "settings.view",
     children: [
       { path: "/website-settings", label: "Content", icon: LayoutGrid },
@@ -486,28 +459,19 @@ const tenantNav = [
     path: "/integrations",
     label: "Integrations / API",
     icon: Plug,
-    roles: ["restaurant_admin", "admin", "manager"],
     permission: "settings.view",
   },
   {
     path: "/subscription",
     label: "Subscription",
     icon: CreditCard,
-    roles: ["restaurant_admin", "admin"],
+    // Owner-only billing relationship with EatsDesk
+    roles: ["restaurant_admin"],
   },
   {
     path: "/profile",
     label: "Profile",
     icon: UserCircle2,
-    roles: [
-      "restaurant_admin",
-      "admin",
-      "manager",
-      "product_manager",
-      "cashier",
-      "kitchen_staff",
-      "delivery_rider",
-    ],
   },
 ];
 
@@ -845,14 +809,71 @@ export default function AdminLayout({
     }
   }, [role, router.asPath, router.pathname, router]);
 
-  // Restrict legacy/default cashier-like roles away from analytics overview
+  // Dashboard requires sales-report permission; otherwise POS or profile
   useEffect(() => {
-    if (role !== "cashier" && role !== "default_cashier") return;
+    if (!permissionsLoaded || !role) return;
+    if (role === "super_admin" && !actingAsSlug) return;
     const path = getNavPath(router.asPath, router.pathname);
-    if (path === "/overview") {
-      router.replace("/pos");
+    if (path === "/overview" && !hasPermission("reports.view_sales")) {
+      router.replace(hasPermission("pos.view") ? "/pos" : "/profile");
     }
-  }, [role, router.asPath, router.pathname, router]);
+  }, [
+    role,
+    actingAsSlug,
+    router.asPath,
+    router.pathname,
+    router,
+    permissionsLoaded,
+    hasPermission,
+  ]);
+
+  // Users without the required permission should not stay on gated pages
+  useEffect(() => {
+    if (!permissionsLoaded) return;
+    if (role === "super_admin" && !actingAsSlug) return;
+    const path = getNavPath(router.asPath, router.pathname);
+    if (path === "/profile" || path === "/login") return;
+
+    const gatedPaths = [
+      ["/overview", "reports.view_sales"],
+      ["/pos", "pos.view"],
+      ["/kitchen", "orders.start_cooking"],
+      ["/riders", "staff.view_riders"],
+      ["/customers", "customers.view"],
+      ["/whatsapp", "whatsapp.conversations.view"],
+      ["/tables", "tables.view"],
+      ["/reservations", "reservations.view"],
+      ["/categories", "menu.manage_categories"],
+      ["/menu-items", "menu.manage"],
+      ["/modifier-groups", "menu.manage"],
+      ["/deals", "deals_modifiers.manage"],
+      ["/inventory", "inventory.view"],
+      ["/users", "staff.view"],
+      ["/settings/roles", "staff.manage"],
+      ["/sales-report", "reports.view_sales"],
+      ["/accounting", "accounting.access"],
+      ["/business-settings", "settings.view"],
+      ["/website-settings", "settings.view"],
+      ["/integrations", "settings.view"],
+    ];
+
+    for (const [prefix, key] of gatedPaths) {
+      if (path === prefix || path.startsWith(`${prefix}/`)) {
+        if (!hasPermission(key)) {
+          router.replace("/profile");
+        }
+        return;
+      }
+    }
+  }, [
+    role,
+    actingAsSlug,
+    router.asPath,
+    router.pathname,
+    router,
+    permissionsLoaded,
+    hasPermission,
+  ]);
 
   // Restrict delivery_rider to Rider Portal only
   useEffect(() => {
@@ -863,40 +884,31 @@ export default function AdminLayout({
     }
   }, [role, router.asPath, router.pathname, router]);
 
-  const whatsappNavRoles = [
-    "restaurant_admin",
-    "admin",
-    "manager",
-    "kitchen_staff",
-  ];
-  const orderNotifyRoles = [
-    "restaurant_admin",
-    "admin",
-    "manager",
-    "default_manager",
-    "cashier",
-    "default_cashier",
-    "order_taker",
-  ];
+  // App-bound kitchen/rider UIs don't use the tenant notification bell
+  const isDedicatedAppRole =
+    role === "kitchen_staff" || role === "delivery_rider";
   const showNotificationBell =
     Boolean(role) &&
     (role !== "super_admin" || Boolean(actingAsSlug)) &&
     (role === "super_admin"
       ? Boolean(actingAsSlug)
-      : whatsappNavRoles.includes(role) ||
-        orderNotifyRoles.includes(role) ||
-        !["kitchen_staff", "delivery_rider", "super_admin"].includes(role));
+      : !isDedicatedAppRole);
   const showWhatsAppInBell =
-    role !== "super_admin" && whatsappNavRoles.includes(role);
+    role !== "super_admin" &&
+    permissionsLoaded &&
+    hasPermission("whatsapp.conversations.view");
   const showOrdersInBell =
     role === "super_admin"
       ? Boolean(actingAsSlug)
-      : orderNotifyRoles.includes(role) ||
-        (!whatsappNavRoles.includes(role) &&
-          !["kitchen_staff", "delivery_rider", "super_admin"].includes(role));
+      : !isDedicatedAppRole;
 
   useEffect(() => {
-    if (!role || role === "super_admin" || !whatsappNavRoles.includes(role)) {
+    if (
+      !role ||
+      role === "super_admin" ||
+      !permissionsLoaded ||
+      !hasPermission("whatsapp.conversations.view")
+    ) {
       setWhatsappNeedsHumanCount(0);
       return;
     }
@@ -915,16 +927,14 @@ export default function AdminLayout({
       cancelled = true;
       clearInterval(intervalId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- role drives poll; role list is stable
-  }, [role]);
+  }, [role, permissionsLoaded, hasPermission]);
 
   useEffect(() => {
     const canFetchSubscriptionSummary =
       role === "restaurant_admin" ||
-      role === "admin" ||
-      role === "manager" ||
-      role === "default_manager" ||
-      (role === "super_admin" && Boolean(actingAsSlug));
+      (role === "super_admin" && Boolean(actingAsSlug)) ||
+      (permissionsLoaded &&
+        (hasPermission("settings.view") || hasPermission("staff.view")));
     if (!canFetchSubscriptionSummary) {
       setPendingInvoiceCount(0);
       setPendingInvoiceAmount(0);
@@ -977,7 +987,7 @@ export default function AdminLayout({
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [role, actingAsSlug]);
+  }, [role, actingAsSlug, permissionsLoaded, hasPermission]);
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -1077,19 +1087,21 @@ export default function AdminLayout({
     isSuperPath || Boolean(role === "super_admin" && !actingAsSlug);
 
   const rawNavItems = isSuperDashboard ? superNav : tenantNav;
-  // When super_admin is acting as a tenant, show full tenant nav (treat as restaurant_admin)
+  // When super_admin is acting as a tenant, treat as owner for owner-only items (e.g. subscription)
   const navRole =
     role === "super_admin" && actingAsSlug ? "restaurant_admin" : role;
   const canSeeNavItem = (item) => {
     if (item.type === "section") return true;
     if (item.ownerOnly) return isPlatformOwner;
     if (item.permission) {
+      if (!permissionsLoaded) return false;
       return item.permission.endsWith(".view")
         ? hasViewOrManage(item.permission)
         : hasPermission(item.permission);
     }
-    if (!item.roles) return true;
-    return item.roles.includes(navRole);
+    // Rare owner-only items (subscription) still use an explicit roles list
+    if (item.roles) return item.roles.includes(navRole);
+    return true;
   };
   const isNavChildVisible = (child) => {
     if (!child?.moduleKey) return true;
@@ -2175,48 +2187,26 @@ export default function AdminLayout({
             )}
           </main>
 
-          {/* ─── Bottom nav bar — mobile only ───────────────────────────── */}
-          {[
-            "restaurant_admin",
-            "admin",
-            "manager",
-            "product_manager",
-            "cashier",
-          ].includes(role) && (
+          {/* ─── Bottom nav bar — mobile only (permission-gated) ─────────── */}
+          {permissionsLoaded &&
+            (hasPermission("pos.view") ||
+              hasPermission("reports.view_sales")) && (
             <nav
               className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex items-stretch shadow-[0_-1px_8px_rgba(0,0,0,0.06)]"
               style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
             >
               {[
-                [
-                  "restaurant_admin",
-                  "admin",
-                  "manager",
-                  "default_manager",
-                  "product_manager",
-                ].includes(role) && {
+                hasPermission("reports.view_sales") && {
                   path: "/overview",
                   label: "Home",
                   icon: LayoutDashboard,
                 },
-                [
-                  "restaurant_admin",
-                  "admin",
-                  "manager",
-                  "default_manager",
-                  "cashier",
-                  "default_cashier",
-                ].includes(role) && {
+                hasPermission("pos.view") && {
                   path: "/pos",
                   label: "Orders",
                   icon: ClipboardList,
                 },
-                [
-                  "restaurant_admin",
-                  "admin",
-                  "manager",
-                  "default_manager",
-                ].includes(role) && {
+                hasPermission("reports.view_sales") && {
                   path: "/sales-report",
                   label: "Sales",
                   icon: BarChart3,

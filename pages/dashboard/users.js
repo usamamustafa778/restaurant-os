@@ -34,15 +34,15 @@ import { usePermissions } from "../../contexts/PermissionContext";
 import toast from "react-hot-toast";
 
 const ROLE_OPTIONS = [
-  { value: "restaurant_admin", label: "Owner", tab: "manager", desc: "Restaurant owner with full access" },
-  { value: "order_taker", label: "Waiter", tab: "waiter", desc: "Can take orders and manage table flow" },
-  { value: "kitchen_staff", label: "Kitchen Staff", tab: "kitchen", desc: "Can view and update kitchen order status" },
-  { value: "delivery_rider", label: "Delivery Rider", tab: "rider", desc: "Access to rider app only" },
+  { value: "restaurant_admin", label: "Owner", desc: "Restaurant owner with full access" },
+  { value: "order_taker", label: "Waiter", desc: "Can take orders and manage table flow" },
+  { value: "kitchen_staff", label: "Kitchen Staff", desc: "Can view and update kitchen order status" },
+  { value: "delivery_rider", label: "Delivery Rider", desc: "Access to rider app only" },
 ];
 
 /**
  * App-bound system roles only (owner + operational apps).
- * Cashier / Manager / Admin / Product Manager are assigned via Custom Roles.
+ * Manager / Admin / Product Manager / Cashier-like access → Custom Roles.
  */
 const SYSTEM_ROLE_DROPDOWN = [
   { value: "restaurant_admin", label: "Owner" },
@@ -76,24 +76,23 @@ function asCustomRoles(customRoles) {
   return Array.isArray(customRoles) ? customRoles : [];
 }
 
-const ROLE_TAB_MAP = {
-  all: () => true,
-  manager: (u, customRoles = []) => {
-    if (["manager", "product_manager", "admin", "restaurant_admin", "default_manager"].includes(u.role)) {
-      return true;
-    }
-    const custom = asCustomRoles(customRoles).find((r) => r.slug === u.role);
-    return custom?.baseRole === "manager" || custom?.baseRole === "admin";
-  },
-  cashier: (u, customRoles = []) => {
-    if (u.role === "cashier" || u.role === "default_cashier") return true;
-    const custom = asCustomRoles(customRoles).find((r) => r.slug === u.role);
-    return custom?.baseRole === "cashier";
-  },
-  waiter: (u) => u.role === "order_taker",
-  kitchen: (u) => u.role === "kitchen_staff",
-  rider: (u) => u.role === "delivery_rider",
-};
+function isManagerLikeRole(role, customRoles = []) {
+  if (
+    ["manager", "product_manager", "admin", "restaurant_admin", "default_manager"].includes(
+      role,
+    )
+  ) {
+    return true;
+  }
+  const custom = asCustomRoles(customRoles).find((r) => r.slug === role);
+  return custom?.baseRole === "manager" || custom?.baseRole === "admin";
+}
+
+function tracksOrderStats(role, customRoles = []) {
+  if (role === "order_taker" || role === "cashier") return true;
+  const custom = asCustomRoles(customRoles).find((r) => r.slug === role);
+  return custom?.baseRole === "cashier";
+}
 
 function getRoleLabel(role, customRoles = []) {
   const custom = asCustomRoles(customRoles).find((r) => r.slug === role);
@@ -103,7 +102,7 @@ function getRoleLabel(role, customRoles = []) {
 
 function getRoleDescription(role, customRoles = []) {
   const custom = asCustomRoles(customRoles).find((r) => r.slug === role);
-  if (custom) return custom.description || `Custom role (base: ${custom.baseRole || "cashier"})`;
+  if (custom) return custom.description || `Custom role${custom.baseRole ? ` (base: ${custom.baseRole})` : ""}`;
   return ROLE_OPTIONS.find((r) => r.value === role)?.desc || "";
 }
 
@@ -229,8 +228,6 @@ export default function UsersPage() {
   }, [isManager, form.role, riderModuleActive]);
 
   const defaultCreateRole = useMemo(() => {
-    const cashier = customRoles.find((r) => r.slug === "default_cashier");
-    if (cashier) return cashier.slug;
     if (customRoles[0]?.slug) return customRoles[0].slug;
     return "order_taker";
   }, [customRoles]);
@@ -313,7 +310,7 @@ export default function UsersPage() {
   async function openDetail(u) {
     setSelectedUser(u);
     setSelectedStats({ ordersToday: 0, ordersThisWeek: 0 });
-    if (["cashier", "default_cashier", "order_taker"].includes(u.role) || customRoles.find((r) => r.slug === u.role)?.baseRole === "cashier") {
+    if (tracksOrderStats(u.role, customRoles)) {
       setStatsLoading(true);
       try {
         const s = await getUserOrderStats(u.id);
@@ -418,6 +415,45 @@ export default function UsersPage() {
     setUsers((prev) => prev.filter((u) => u.id !== id));
   }
 
+  const roleFilterTabs = useMemo(() => {
+    const tabs = [{ key: "all", label: "All" }];
+    const seen = new Set(["all"]);
+
+    for (const r of SYSTEM_ROLE_DROPDOWN) {
+      if (
+        r.value === "delivery_rider" &&
+        riderModuleActive === false &&
+        !users.some((u) => u.role === "delivery_rider")
+      ) {
+        continue;
+      }
+      seen.add(r.value);
+      tabs.push({ key: r.value, label: r.label });
+    }
+
+    for (const r of asCustomRoles(customRoles)) {
+      if (!r?.slug || seen.has(r.slug)) continue;
+      seen.add(r.slug);
+      tabs.push({ key: r.slug, label: r.name || r.slug });
+    }
+
+    // Legacy / unknown roles still assigned to staff
+    for (const u of users) {
+      if (!u.role || seen.has(u.role)) continue;
+      seen.add(u.role);
+      tabs.push({ key: u.role, label: getRoleLabel(u.role, customRoles) });
+    }
+
+    return tabs;
+  }, [customRoles, users, riderModuleActive]);
+
+  useEffect(() => {
+    if (roleTab === "all") return;
+    if (!roleFilterTabs.some((t) => t.key === roleTab)) {
+      setRoleTab("all");
+    }
+  }, [roleTab, roleFilterTabs]);
+
   const filtered = useMemo(() => {
     return users.filter((u) => {
       const q = search.trim().toLowerCase();
@@ -426,19 +462,18 @@ export default function UsersPage() {
         const b = (u.branches || []).map((x) => String(x.branchId));
         if (!b.includes(String(currentBranch.id))) return false;
       }
-      if (!ROLE_TAB_MAP[roleTab]?.(u, customRoles)) return false;
+      if (roleTab !== "all" && u.role !== roleTab) return false;
       if (!showInactive && u.isActive === false) return false;
       return true;
     });
-  }, [users, search, showAllBranches, currentBranch, roleTab, showInactive, customRoles]);
+  }, [users, search, showAllBranches, currentBranch, roleTab, showInactive]);
 
   const topStats = useMemo(() => {
     const total = users.length;
     const neverLoggedIn = users.filter((u) => !getStaffLastActive(u) && u.isActive !== false).length;
     const riders = users.filter((u) => u.role === "delivery_rider" && u.isActive !== false).length;
     const managers = users.filter(
-      (u) =>
-        ROLE_TAB_MAP.manager(u, customRoles) && u.isActive !== false,
+      (u) => isManagerLikeRole(u.role, customRoles) && u.isActive !== false,
     ).length;
     const inactive = users.filter((u) => u.isActive === false).length;
     return { total, neverLoggedIn, riders, managers, inactive };
@@ -452,15 +487,13 @@ export default function UsersPage() {
       }
       return u.isActive !== false;
     });
-    return {
-      all: base.length,
-      manager: base.filter((u) => ROLE_TAB_MAP.manager(u, customRoles)).length,
-      cashier: base.filter((u) => ROLE_TAB_MAP.cashier(u, customRoles)).length,
-      waiter: base.filter(ROLE_TAB_MAP.waiter).length,
-      kitchen: base.filter(ROLE_TAB_MAP.kitchen).length,
-      rider: base.filter(ROLE_TAB_MAP.rider).length,
-    };
-  }, [users, showAllBranches, currentBranch, customRoles]);
+    const counts = { all: base.length };
+    for (const tab of roleFilterTabs) {
+      if (tab.key === "all") continue;
+      counts[tab.key] = base.filter((u) => u.role === tab.key).length;
+    }
+    return counts;
+  }, [users, showAllBranches, currentBranch, roleFilterTabs]);
 
   const neverLoggedInCount = useMemo(
     () => users.filter((u) => !getStaffLastActive(u) && u.isActive !== false).length,
@@ -552,16 +585,9 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* ── Role filter tabs with active counts ────────────── */}
+      {/* ── Role filter tabs: system roles + custom roles (+ legacy if present) */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {[
-          { key: "all", label: "All" },
-          { key: "manager", label: "Manager" },
-          { key: "cashier", label: "Cashier" },
-          { key: "waiter", label: "Waiter" },
-          { key: "kitchen", label: "Kitchen" },
-          { key: "rider", label: "Rider" },
-        ].map(({ key, label }) => (
+        {roleFilterTabs.map(({ key, label }) => (
           <button
             key={key}
             type="button"
@@ -573,7 +599,7 @@ export default function UsersPage() {
             }`}
           >
             {label}
-            {tabCounts[key] > 0 && (
+            {(tabCounts[key] || 0) > 0 && (
               <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${roleTab === key ? "bg-primary/20 text-primary" : "bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400"}`}>
                 {tabCounts[key]}
               </span>
@@ -593,7 +619,11 @@ export default function UsersPage() {
           <div className="py-20 text-center">
             <Users className="w-10 h-10 text-gray-300 dark:text-neutral-700 mx-auto mb-3" />
             <p className="font-semibold text-gray-800 dark:text-white">
-              No {roleTab === "all" ? "" : roleTab + " "}staff members{showInactive ? "" : " found"}
+              No{" "}
+              {roleTab === "all"
+                ? ""
+                : `${roleFilterTabs.find((t) => t.key === roleTab)?.label || roleTab} `}
+              staff members{showInactive ? "" : " found"}
             </p>
             <p className="text-sm text-gray-500 dark:text-neutral-500 mt-1">
               {showInactive ? "Try a different search or filter." : "Add your first team member or adjust the filters."}
@@ -835,10 +865,7 @@ export default function UsersPage() {
                   </div>
                 ))}
               </div>
-              {(
-                ["cashier", "default_cashier", "order_taker"].includes(selectedUser.role) ||
-                customRoles.find((r) => r.slug === selectedUser.role)?.baseRole === "cashier"
-              ) && (
+              {tracksOrderStats(selectedUser.role, customRoles) && (
                 <div className="rounded-xl border border-gray-200 dark:border-neutral-800 p-3">
                   <p className="text-xs font-semibold text-gray-600 dark:text-neutral-300 mb-2">Orders handled</p>
                   {statsLoading ? (

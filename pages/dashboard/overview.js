@@ -21,8 +21,8 @@ import {
   getProfitLoss,
   getTables,
   getReservations,
-  getStoredAuth,
 } from "../../lib/apiClient";
+import { usePermissions } from "../../contexts/PermissionContext";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { localISODate, localToday } from "../../lib/accountingFormat";
 import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
@@ -1004,15 +1004,12 @@ export default function OverviewPage() {
     INR: "₹",
     GBP: "£",
   };
-  const DRAWER_ALLOWED_ROLES = new Set([
-    "restaurant_admin",
-    "admin",
-    "manager",
-    "cashier",
-    "super_admin",
-  ]);
-  const userRole = String(getStoredAuth()?.user?.role || "").toLowerCase();
-  const canOpenDrawer = DRAWER_ALLOWED_ROLES.has(userRole);
+  const { hasPermission, permissionsLoaded } = usePermissions();
+  const canOpenDrawer =
+    permissionsLoaded &&
+    (hasPermission("orders.collect_payment") ||
+      hasPermission("session.manage") ||
+      hasPermission("pos.close_business_day"));
 
   const buildGenericRows = () => [];
   const [currencyCode, setCurrencyCode] = useState(null);

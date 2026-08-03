@@ -118,7 +118,7 @@ Defined in `.env` (template at `.env.example`):
 | `name` | String | yes | — | — | trim |
 | `email` | String | yes | yes | — | lowercase, trim |
 | `password` | String | yes | — | — | minlength: 6 |
-| `role` | String | — | — | `'manager'` | enum: `super_admin`, `restaurant_admin`, `staff` (legacy), `admin`, `product_manager`, `cashier`, `manager`, `kitchen_staff`, `order_taker` |
+| `role` | String | — | — | `'kitchen_staff'` | App-bound: `restaurant_admin`, `kitchen_staff`, `order_taker`, `delivery_rider` (+ `super_admin`). Also custom role slugs and legacy fixed roles (`admin`, `manager`, `product_manager`, `cashier`, `staff`). |
 | `profileImageUrl` | String | — | — | `null` | — |
 | `restaurant` | ObjectId → Restaurant | — | — | — | nullable (super_admin has none) |
 | `emailVerified` | Boolean | — | — | `false` | — |
@@ -640,17 +640,19 @@ MongoDB does not enforce foreign keys. All relationships use Mongoose `ref` for 
 
 ### Role-Based Access Control
 
+**App-bound system roles** (separate apps / primary assignment):
+
 | Role | Scope | Description |
 |---|---|---|
 | `super_admin` | Platform-wide | Can act as any restaurant tenant |
 | `restaurant_admin` | Restaurant-wide | Owner; full access to all branches |
-| `admin` | Restaurant-wide | Full access to all branches |
-| `manager` | Branch-scoped | Default role |
-| `product_manager` | Branch-scoped | Menu/inventory management |
-| `cashier` | Branch-scoped | POS operations |
-| `kitchen_staff` | Branch-scoped | Kitchen display |
-| `order_taker` | Branch-scoped | Order entry |
-| `staff` | — | Legacy role, still in enum |
+| `kitchen_staff` | Branch-scoped | Kitchen display (KDS) |
+| `order_taker` | Branch-scoped | Waiter / order entry app |
+| `delivery_rider` | Branch-scoped | Rider portal |
+
+**Custom roles** (tenant `CustomRole` slugs) control POS/manager/etc. via permissions. Template `baseRole` values such as `cashier` / `manager` are prefill tiers only — not assignable system roles.
+
+**Legacy fixed roles** (edit-only until migrated): `admin`, `manager`, `product_manager`, `cashier`, `staff`.
 
 ### Branch Access Control
 - `UserBranch` model maps users to branches with per-branch roles

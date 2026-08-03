@@ -324,7 +324,7 @@ export default function SuperPermissionsPage() {
                     onChange={(e) =>
                       setForm((f) => ({ ...f, key: e.target.value }))
                     }
-                    placeholder="orders.view"
+                    placeholder="pos.view"
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-sm"
                   />
                 </div>

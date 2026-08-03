@@ -557,8 +557,8 @@ export default function OrdersPage() {
 
   const [role] = useState(() => getStoredAuth()?.user?.role);
   const isOrderTaker = role === "order_taker";
-  // Phase 4: permission-based cashiers (custom default_cashier, not literal role)
-  const isCashier =
+  // Limited POS operator: can create orders but not void / view all-staff sales
+  const isLimitedPosStaff =
     !hasPermission("reports.view_all_staff_sales") &&
     !hasPermission("pos.void_order") &&
     hasPermission("orders.create");
@@ -1124,9 +1124,9 @@ export default function OrdersPage() {
 
   // ── Computed values ────────────────────────────────────────────────────
 
-  const cashierBaseOrders = useMemo(() => {
+  const boardOrders = useMemo(() => {
     const list = Array.isArray(orders) ? orders : [];
-    if (!isCashier) return list;
+    if (!isLimitedPosStaff) return list;
     if (datePreset !== "today") return list;
     const todayStr = new Date().toISOString().slice(0, 10);
     return list.filter((o) => {
@@ -1141,7 +1141,7 @@ export default function OrdersPage() {
         isDeliveryPaymentPending(o);
       return isToday || isActive || isAwaitingPayment || needsRiderHandIn;
     });
-  }, [orders, isCashier, datePreset]);
+  }, [orders, isLimitedPosStaff, datePreset]);
 
   const cutoffHour = currentBranch?.businessDayCutoffHour ?? 4;
   const businessDateStr = getBusinessDate(new Date(), cutoffHour);
@@ -1289,7 +1289,7 @@ export default function OrdersPage() {
   useEffect(() => {
     if (typeof window === "undefined" || !todayReportData?.orders?.length)
       return;
-    if (isCashier) return;
+    if (isLimitedPosStaff) return;
     try {
       if (window.localStorage.getItem("DEBUG_SESSION_PAYMENTS") !== "1") return;
       const audit = auditSessionReportPayments(todayReportData.orders);
@@ -1300,7 +1300,7 @@ export default function OrdersPage() {
     } catch (e) {
       console.warn("[Today's session report — payment audit failed]", e);
     }
-  }, [todayReportData, todayReportBreakdown, isCashier]);
+  }, [todayReportData, todayReportBreakdown, isLimitedPosStaff]);
   useEffect(() => {
     if (!todayReportData?.meta?.startAt) {
       setTodayReportCurrency({});
@@ -1417,7 +1417,7 @@ export default function OrdersPage() {
   }, [currentBranch?.id]);
 
   const baseFiltered = useMemo(() => {
-    const base = Array.isArray(cashierBaseOrders) ? cashierBaseOrders : [];
+    const base = Array.isArray(boardOrders) ? boardOrders : [];
     const term = search.trim().toLowerCase();
     const hasDateRange = dateRange && (dateRange.from || dateRange.to);
     const fromMs =
@@ -1474,7 +1474,7 @@ export default function OrdersPage() {
     );
     return filtered;
   }, [
-    cashierBaseOrders,
+    boardOrders,
     search,
     orderTypeFilter,
     statusFilter,
@@ -1552,7 +1552,7 @@ export default function OrdersPage() {
       subtitle="Manage orders and payments"
       suspended={suspended}
     >
-      <PermissionGate permission="orders.view">
+      <PermissionGate permission="pos.view">
         {/* ── POS View ──────────────────────────────────────────────── */}
         <div style={{ display: activeView === "pos" ? "block" : "none" }}>
           <POSView
@@ -2042,7 +2042,7 @@ export default function OrdersPage() {
                                   now={now}
                                   theme={theme}
                                   isOrderTaker={isOrderTaker}
-                                  isCashier={isCashier}
+                                  isLimitedPosStaff={isLimitedPosStaff}
                                   isAdmin={isAdmin}
                                   simpleBilling={isSimpleBilling}
                                   updatingId={updatingId}
@@ -2133,7 +2133,7 @@ export default function OrdersPage() {
                                 now={now}
                                 theme={theme}
                                 isOrderTaker={isOrderTaker}
-                                isCashier={isCashier}
+                                isLimitedPosStaff={isLimitedPosStaff}
                                 isAdmin={isAdmin}
                                 simpleBilling={isSimpleBilling}
                                 updatingId={updatingId}
@@ -2227,7 +2227,7 @@ export default function OrdersPage() {
                           now={now}
                           theme={STATUS_THEME.DELIVERED}
                           isOrderTaker={isOrderTaker}
-                          isCashier={isCashier}
+                          isLimitedPosStaff={isLimitedPosStaff}
                           updatingId={updatingId}
                           onUpdateStatus={handleUpdateStatus}
                           onOpenCancel={openCancelModal}
@@ -2281,7 +2281,7 @@ export default function OrdersPage() {
                           now={now}
                           theme={STATUS_THEME.CANCELLED}
                           isOrderTaker={isOrderTaker}
-                          isCashier={isCashier}
+                          isLimitedPosStaff={isLimitedPosStaff}
                           updatingId={updatingId}
                           onUpdateStatus={handleUpdateStatus}
                           onOpenCancel={openCancelModal}
@@ -2919,7 +2919,7 @@ export default function OrdersPage() {
                     <>
                       {todayReportBreakdown && (
                         <>
-                          {/* KPI row — cashiers: total sales only (no order count) */}
+                          {/* KPI row — limited POS staff: total sales only (no order count) */}
                           <div
                             className={`grid gap-2 ${showFullSessionReport ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
                           >
@@ -4146,7 +4146,7 @@ function OrderCard({
   now,
   theme,
   isOrderTaker,
-  isCashier,
+  isLimitedPosStaff,
   isAdmin,
   simpleBilling = false,
   updatingId,
@@ -4218,8 +4218,11 @@ function OrderCard({
   const canAdvanceStatus =
     primaryNext &&
     actionLabel &&
-    !(isCashier && primaryNext === "DELIVERED" && isDeliveryOrder(order)) &&
-    !(simpleBilling && kitchenPipelineNext.includes(primaryNext));
+    !(
+      isLimitedPosStaff &&
+      primaryNext === "DELIVERED" &&
+      isDeliveryOrder(order)
+    ) && !(simpleBilling && kitchenPipelineNext.includes(primaryNext));
 
   const showAssignRider =
     isDeliveryOrder(order) &&

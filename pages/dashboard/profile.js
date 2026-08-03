@@ -32,6 +32,7 @@ const ROLE_LABELS = {
   admin: "Admin",
   product_manager: "Product Manager",
   cashier: "Cashier",
+  default_cashier: "Cashier",
   manager: "Manager",
   kitchen_staff: "Kitchen Staff",
   order_taker: "Waiter",

@@ -17,7 +17,6 @@ const SYSTEM_ROLES = [
   "staff",
   "admin",
   "product_manager",
-  "cashier",
   "manager",
   "kitchen_staff",
   "order_taker",
@@ -228,6 +227,12 @@ export async function middleware(request) {
         url.pathname = "/rider";
         return NextResponse.redirect(url);
       }
+      // Kitchen staff → KDS
+      if (payload.role === "kitchen_staff") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/kitchen";
+        return NextResponse.redirect(url);
+      }
       // Super admin without "acting as" → super overview
       if (payload.role === "super_admin") {
         const actingAs = request.cookies.get("restaurantos_acting_as")?.value;
@@ -238,10 +243,18 @@ export async function middleware(request) {
         }
       }
       const url = request.nextUrl.clone();
-      if (!SYSTEM_ROLES.includes(payload.role)) {
-        url.pathname = "/pos";
-      } else {
+      // App-bound system roles → overview; custom roles → profile (permissions drive the rest)
+      if (
+        payload.role === "restaurant_admin" ||
+        payload.role === "admin" ||
+        payload.role === "manager" ||
+        payload.role === "product_manager" ||
+        payload.role === "staff" ||
+        payload.role === "super_admin"
+      ) {
         url.pathname = "/overview";
+      } else {
+        url.pathname = "/profile";
       }
       return NextResponse.redirect(url);
     }

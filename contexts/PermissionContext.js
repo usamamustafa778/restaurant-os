@@ -44,7 +44,8 @@ export function PermissionProvider({ children }) {
 
   const hasPermission = useCallback(
     (key) => {
-      if (!permissionsLoaded) return true;
+      // Fail closed until loaded so empty custom roles don't briefly grant access
+      if (!permissionsLoaded) return false;
       return permissionMatches(permissions, key);
     },
     [permissions, permissionsLoaded],
@@ -53,7 +54,7 @@ export function PermissionProvider({ children }) {
   /** Phase 2 transition: permission key OR fixed-role fallback. */
   const hasPermissionOrRole = useCallback(
     (key, allowRoles = []) => {
-      if (!permissionsLoaded) return true;
+      if (!permissionsLoaded) return false;
       if (roleAllows(userRole, allowRoles)) return true;
       return permissionMatches(permissions, key);
     },
@@ -63,7 +64,7 @@ export function PermissionProvider({ children }) {
   /** True when user has the view key and/or the paired *.manage key (e.g. platform.roles.view | .manage). */
   const hasViewOrManage = useCallback(
     (viewKey) => {
-      if (!permissionsLoaded) return true;
+      if (!permissionsLoaded) return false;
       if (permissions.includes("*")) return true;
       if (permissionMatches(permissions, viewKey)) return true;
       if (!String(viewKey || "").endsWith(".view")) return false;

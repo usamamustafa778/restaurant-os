@@ -24,12 +24,8 @@ const POPUP_DURATION_MS = 8000;
 /** Roles that should not hear FOH order-ready alerts. */
 const ORDER_READY_SKIP_ROLES = new Set(["kitchen_staff", "delivery_rider"]);
 
-/** Staff who should only hear ready alerts for orders they created. */
-const ORDER_READY_OWN_ONLY_ROLES = new Set([
-  "order_taker",
-  "cashier",
-  "default_cashier",
-]);
+/** App-bound waiter role — only hears ready alerts for orders they created. */
+const ORDER_READY_OWN_ONLY_ROLES = new Set(["order_taker"]);
 
 /** Managers/admins hear all ready alerts in their current branch scope. */
 const ORDER_READY_ALL_ROLES = new Set([
@@ -69,21 +65,18 @@ function shouldNotifyOrderReady(data) {
       ? String(data.createdById)
       : "";
 
-  // Order-takers / cashiers: only their own tickets (or unassigned website
-  // orders for cashiers so the counter still hears pickups).
+  // Waiters: only their own tickets.
   if (ORDER_READY_OWN_ONLY_ROLES.has(role)) {
-    if (!creatorId) {
-      return role === "cashier" || role === "default_cashier";
-    }
+    if (!creatorId) return false;
     return Boolean(myId) && creatorId === myId;
   }
 
   // Known managers/admins: all ready in joined rooms (branch-scoped by socket).
   if (ORDER_READY_ALL_ROLES.has(role)) return true;
 
-  // Custom / unknown roles: only own orders when creator is known.
+  // Custom roles: own orders, or unassigned (website/counter pickups).
   if (creatorId) return Boolean(myId) && creatorId === myId;
-  return false;
+  return true;
 }
 
 function isDeliveryRider() {

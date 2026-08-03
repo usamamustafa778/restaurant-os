@@ -1,7 +1,7 @@
 # POS Transactions & Drafts API Documentation
 
 ## Overview
-This document outlines the backend API requirements for the POS (Point of Sale) Transactions and Drafts feature. The system allows cashiers to view previous sales transactions, save orders as drafts, and manage both through a unified interface.
+This document outlines the backend API requirements for the POS (Point of Sale) Transactions and Drafts feature. Staff with the right permissions can view previous sales transactions, save orders as drafts, and manage both through a unified interface.
 
 ---
 
@@ -521,11 +521,10 @@ async function generateUniqueDraftRef() {
 ### Authorization Rules
 1. **Tenant Isolation**: Users can only access transactions/drafts from their own restaurant
 2. **Branch Filtering**: If `x-branch-id` header is present, filter results by branch
-3. **Role-Based Access**:
-   - `CASHIER`: Can create, read, update, delete their own drafts and transactions
-   - `MANAGER`: Can view all transactions/drafts in their branch
-   - `OWNER`: Can view all transactions/drafts across all branches
-   - `SUPER_ADMIN`: Can view all transactions/drafts (not recommended for production)
+3. **Access**:
+   - Custom / operational POS roles: create, read, update, delete their own drafts and transactions (permission-gated)
+   - Managers / owners: can view all transactions/drafts in their branch (or all branches for owner)
+   - `SUPER_ADMIN`: can view all when acting as a tenant (not recommended as day-to-day POS use)
 
 ### Validation
 - Validate all numeric fields (prices, quantities, totals)

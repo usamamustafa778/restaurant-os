@@ -109,6 +109,25 @@ function formatDiscountReasonLabel(key) {
 
 const FILTER_ALL = "ALL";
 
+/** Non–POS-counter roles (waiters/managers/apps). Everything else counts as counter staff for sales filters. */
+const NON_COUNTER_CREATED_BY_ROLES = new Set([
+  "order_taker",
+  "restaurant_admin",
+  "admin",
+  "manager",
+  "default_manager",
+  "product_manager",
+  "super_admin",
+  "staff",
+  "kitchen_staff",
+  "delivery_rider",
+]);
+
+function isCounterStaffCreatedByRole(role) {
+  if (!role) return false;
+  return !NON_COUNTER_CREATED_BY_ROLES.has(role);
+}
+
 const STATUS_FILTERS = {
   ALL: "ALL",
 
@@ -1954,7 +1973,7 @@ export default function HistoryPage() {
 
   const [ordersWaiterFilter, setOrdersWaiterFilter] = useState(FILTER_ALL);
 
-  const [ordersCashierFilter, setOrdersCashierFilter] = useState(FILTER_ALL);
+  const [ordersPosStaffFilter, setOrdersPosStaffFilter] = useState(FILTER_ALL);
 
   const [ordersAdminFilter, setOrdersAdminFilter] = useState(FILTER_ALL);
 
@@ -2486,7 +2505,7 @@ export default function HistoryPage() {
 
     setOrdersWaiterFilter(FILTER_ALL);
 
-    setOrdersCashierFilter(FILTER_ALL);
+    setOrdersPosStaffFilter(FILTER_ALL);
 
     setOrdersAdminFilter(FILTER_ALL);
 
@@ -2506,7 +2525,7 @@ export default function HistoryPage() {
 
     waiter,
 
-    cashier,
+    posStaff,
 
     admin,
   } = {}) {
@@ -2526,7 +2545,7 @@ export default function HistoryPage() {
 
     if (waiter) setOrdersWaiterFilter(waiter);
 
-    if (cashier) setOrdersCashierFilter(cashier);
+    if (posStaff) setOrdersPosStaffFilter(posStaff);
 
     if (admin) setOrdersAdminFilter(admin);
 
@@ -2697,11 +2716,11 @@ export default function HistoryPage() {
       );
     }
 
-    if (ordersCashierFilter !== FILTER_ALL) {
+    if (ordersPosStaffFilter !== FILTER_ALL) {
       filtered = filtered.filter(
         (o) =>
-          (o.orderTakerName || "") === ordersCashierFilter &&
-          o.createdByRole === "cashier" || o.createdByRole === "default_cashier",
+          (o.orderTakerName || "") === ordersPosStaffFilter &&
+          isCounterStaffCreatedByRole(o.createdByRole),
       );
     }
 
@@ -2749,7 +2768,7 @@ export default function HistoryPage() {
 
     ordersWaiterFilter,
 
-    ordersCashierFilter,
+    ordersPosStaffFilter,
 
     ordersAdminFilter,
 
@@ -2892,17 +2911,15 @@ export default function HistoryPage() {
     return Object.values(map).sort((a, b) => b.orders - a.orders);
   }, [dateFilteredOrders]);
 
-  const cashierStats = useMemo(() => {
+  const posStaffStats = useMemo(() => {
     const map = {};
 
     for (const o of dateFilteredOrders) {
       const name = o.orderTakerName;
 
-      if (!name || (o.createdByRole !== "cashier" && o.createdByRole !== "default_cashier")) continue;
+      if (!name || !isCounterStaffCreatedByRole(o.createdByRole)) continue;
 
-      // Prevent overlap with Riders Overview:
-
-      // Cashier overview should focus on non-delivery orders only.
+      // Prevent overlap with Riders Overview — POS staff view is non-delivery.
 
       if (o.type === "delivery") continue;
 
@@ -3047,8 +3064,8 @@ export default function HistoryPage() {
         ? `Waiter: ${ordersWaiterFilter}`
         : null,
 
-      ordersCashierFilter !== FILTER_ALL
-        ? `Cashier: ${ordersCashierFilter}`
+      ordersPosStaffFilter !== FILTER_ALL
+        ? `POS staff: ${ordersPosStaffFilter}`
         : null,
 
       ordersAdminFilter !== FILTER_ALL ? `Admin: ${ordersAdminFilter}` : null,
@@ -3842,48 +3859,48 @@ export default function HistoryPage() {
           )
         )}
 
-        {/* Cashiers Overview */}
+        {/* POS Staff Overview — custom roles / counter staff (not a system role) */}
 
         {ordersLoading ? (
           <SectionSkeleton bodyHeightClass="h-32" />
         ) : (
-          cashierStats.length > 0 && (
+          posStaffStats.length > 0 && (
             <Section
-              title="Cashiers Overview"
-              subtitle="Cashier performance in selected period"
+              title="POS Staff"
+              subtitle="Counter staff performance in selected period"
               icon={Headset}
               iconGradient="bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/25"
-              badge={`${cashierStats.length} cashier${cashierStats.length !== 1 ? "s" : ""} · ${cashierStats.reduce((s, c) => s + c.orders, 0)} orders`}
+              badge={`${posStaffStats.length} staff · ${posStaffStats.reduce((s, c) => s + c.orders, 0)} orders`}
               badgeValue={fmtRs(
-                cashierStats.reduce((s, c) => s + c.revenue, 0),
+                posStaffStats.reduce((s, c) => s + c.revenue, 0),
               )}
             >
               <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-                {cashierStats.map((cashier) => {
-                  const topRevenue = Number(cashierStats[0]?.revenue) || 1;
+                {posStaffStats.map((staff) => {
+                  const topRevenue = Number(posStaffStats[0]?.revenue) || 1;
                   const barPct = Math.round(
-                    ((Number(cashier.revenue) || 0) / topRevenue) * 100,
+                    ((Number(staff.revenue) || 0) / topRevenue) * 100,
                   );
                   return (
                     <StaffStatRow
-                      key={cashier.name}
-                      name={cashier.name}
+                      key={staff.name}
+                      name={staff.name}
                       avatarTone="bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-                      onClick={() => goToOrders({ cashier: cashier.name })}
+                      onClick={() => goToOrders({ posStaff: staff.name })}
                       detail={
-                        cashier.cancelled > 0 ? (
+                        staff.cancelled > 0 ? (
                           <span className="font-semibold text-red-500">
-                            {cashier.cancelled} cancelled
+                            {staff.cancelled} cancelled
                           </span>
                         ) : null
                       }
                       badge={
                         <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
                           <Headset className="h-3 w-3" />
-                          {cashier.orders}
+                          {staff.orders}
                         </span>
                       }
-                      amount={fmtRs(cashier.revenue)}
+                      amount={fmtRs(staff.revenue)}
                       barPct={barPct}
                       barClass="bg-amber-500"
                     />
@@ -4097,11 +4114,11 @@ export default function HistoryPage() {
       ),
     ].sort();
 
-    const availableCashiers = [
+    const availablePosStaff = [
       ...new Set(
         dateFiltered
 
-          .filter((o) => o.orderTakerName && (o.createdByRole === "cashier" || o.createdByRole === "default_cashier"))
+          .filter((o) => o.orderTakerName && isCounterStaffCreatedByRole(o.createdByRole))
 
           .map((o) => o.orderTakerName),
       ),
@@ -4131,7 +4148,7 @@ export default function HistoryPage() {
       ordersPaidFilter !== FILTER_ALL ||
       ordersRiderFilter !== FILTER_ALL ||
       ordersWaiterFilter !== FILTER_ALL ||
-      ordersCashierFilter !== FILTER_ALL ||
+      ordersPosStaffFilter !== FILTER_ALL ||
       ordersAdminFilter !== FILTER_ALL ||
       ordersSearch.trim();
 
@@ -4310,7 +4327,7 @@ export default function HistoryPage() {
               onChange={(e) => {
                 setOrdersWaiterFilter(e.target.value);
 
-                setOrdersCashierFilter(FILTER_ALL);
+                setOrdersPosStaffFilter(FILTER_ALL);
 
                 setOrdersPage(0);
               }}
@@ -4325,21 +4342,23 @@ export default function HistoryPage() {
             </FilterSelect>
           )}
 
-          {availableCashiers.length > 0 && (
+          {availablePosStaff.length > 0 && (
             <FilterSelect
-              value={ordersCashierFilter}
-              active={ordersCashierFilter !== FILTER_ALL}
+              value={ordersPosStaffFilter}
+              active={ordersPosStaffFilter !== FILTER_ALL}
               onChange={(e) => {
-                setOrdersCashierFilter(e.target.value);
+                setOrdersPosStaffFilter(e.target.value);
 
                 setOrdersWaiterFilter(FILTER_ALL);
+
+                setOrdersAdminFilter(FILTER_ALL);
 
                 setOrdersPage(0);
               }}
             >
-              <option value="ALL">All Cashiers</option>
+              <option value="ALL">All POS Staff</option>
 
-              {availableCashiers.map((name) => (
+              {availablePosStaff.map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
@@ -4356,7 +4375,7 @@ export default function HistoryPage() {
 
                 setOrdersWaiterFilter(FILTER_ALL);
 
-                setOrdersCashierFilter(FILTER_ALL);
+                setOrdersPosStaffFilter(FILTER_ALL);
 
                 setOrdersPage(0);
               }}

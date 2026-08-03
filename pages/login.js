@@ -29,7 +29,6 @@ const SYSTEM_ROLES = [
   "restaurant_admin",
   "admin",
   "manager",
-  "cashier",
   "kitchen_staff",
   "order_taker",
   "delivery_rider",
@@ -174,21 +173,27 @@ export default function LoginPage() {
     let target = "/overview";
     const fromQuery = router.query.from;
 
+    // App-bound system roles only — custom roles land on profile (permissions drive nav).
     if (user.role === "order_taker") {
       target = "/order-taker";
     } else if (user.role === "delivery_rider") {
       target = "/rider";
-    } else if (user.role === "cashier" || user.role === "default_cashier") {
-      target = "/pos";
     } else if (user.role === "kitchen_staff") {
       target = "/kitchen";
     } else if (typeof fromQuery === "string" && fromQuery.startsWith("/")) {
       target = fromQuery;
     } else if (user.role === "super_admin") {
       target = "/super/overview";
-    } else if (!SYSTEM_ROLES.includes(user.role)) {
-      // Custom role slug — default to POS (cashiers / ops templates)
-      target = "/pos";
+    } else if (
+      user.role === "restaurant_admin" ||
+      user.role === "admin" ||
+      user.role === "manager" ||
+      user.role === "product_manager" ||
+      user.role === "staff"
+    ) {
+      target = "/overview";
+    } else {
+      target = "/profile";
     }
 
     if (typeof window !== "undefined") {

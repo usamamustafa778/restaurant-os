@@ -27,7 +27,8 @@ const TEMPLATE_LABELS = {
   admin: "Admin",
   manager: "Manager",
   product_manager: "Product Manager",
-  cashier: "Cashier",
+  // Prefill template for POS / counter custom roles (not a system role)
+  cashier: "POS Staff",
   kitchen_staff: "Kitchen Staff",
   order_taker: "Order Taker",
   delivery_rider: "Delivery Rider",
