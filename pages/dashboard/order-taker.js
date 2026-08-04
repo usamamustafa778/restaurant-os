@@ -61,11 +61,24 @@ import {
   UserCircle2,
   MoreVertical,
   Pencil,
+  Settings,
+  Image as ImageIcon,
+  ImageOff,
+  Volume2,
+  VolumeX,
+  Vibrate,
+  VibrateOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
 import OrderBillReceiptModal from "../../components/order-taker/OrderBillReceiptModal";
 import PosDealCustomizeModal from "../../components/pos/PosDealCustomizeModal";
+import {
+  DEFAULT_OT_SETTINGS,
+  loadOrderTakerSettings,
+  saveOrderTakerSettings,
+} from "../../lib/orderTakerSettings";
+import { playPosFeedbackSound } from "../../lib/posAddSounds";
 import {
   buildDealSelectionsFingerprint,
   getComboItemType,
@@ -512,8 +525,8 @@ export default function OrderTakerPage() {
   // Active orders state
   const [activeOrders, setActiveOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [activeFilter, setActiveFilter] = useState("new");
-  const [historyFilter, setHistoryFilter] = useState("pending_payment");
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [historyFilter, setHistoryFilter] = useState("all");
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
   const [appendTargetOrder, setAppendTargetOrder] = useState(null);
@@ -526,6 +539,43 @@ export default function OrderTakerPage() {
   const [otCustomerPhone, setOtCustomerPhone] = useState("");
   const [otTableName, setOtTableName] = useState("");
   const editBaselineRef = useRef(null);
+  /** Inline special-instructions editor (replaces window.prompt). */
+  const [noteEditor, setNoteEditor] = useState(null);
+  /** Busy table choice: { table, order } */
+  const [busyTableSheet, setBusyTableSheet] = useState(null);
+  /** Confirm before Send to Kitchen */
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
+  const [noteEditorSaving, setNoteEditorSaving] = useState(false);
+  const [otSettings, setOtSettings] = useState(() => loadOrderTakerSettings());
+  const [showOtSettings, setShowOtSettings] = useState(false);
+  const showMenuImages = otSettings.showMenuImages !== false;
+  const soundOnAdd = otSettings.soundOnAdd !== false;
+  const hapticsOnAdd = otSettings.hapticsOnAdd !== false;
+
+  function updateOtSettings(patch) {
+    setOtSettings((prev) => {
+      const next = { ...DEFAULT_OT_SETTINGS, ...prev, ...patch };
+      saveOrderTakerSettings(next);
+      return next;
+    });
+  }
+
+  function playAddFeedback() {
+    if (soundOnAdd) {
+      playPosFeedbackSound(null, {
+        force: true,
+        volume: 65,
+        beepId: "click",
+      });
+    }
+    if (hapticsOnAdd && typeof navigator !== "undefined") {
+      try {
+        navigator.vibrate?.(12);
+      } catch {
+        /* unsupported */
+      }
+    }
+  }
 
   const appendCanModifyItems =
     !appendTargetOrder || canAppendItemsToOrder(appendTargetOrder);
@@ -533,6 +583,14 @@ export default function OrderTakerPage() {
     !!appendTargetOrder &&
     canAddOrderItems(hasPermission, appendTargetOrder.status) &&
     !canRemoveOrderItems(hasPermission, appendTargetOrder.status);
+  const isUpdateTicket = !!appendTargetOrder;
+  /** Hide tab bar during Menu/Cart (and whole Update Ticket flow) — one primary CTA. */
+  const hideBottomNav =
+    activeTab === TABS.NEW_ORDER &&
+    (isUpdateTicket || step === STEPS.MENU || step === STEPS.CART);
+  const fabBottomClass = hideBottomNav
+    ? "fixed bottom-0 inset-x-0 z-20 ot-safe-bottom"
+    : "fixed bottom-16 inset-x-0 z-20";
 
   useEffect(() => {
     const auth = getStoredAuth();
@@ -741,10 +799,55 @@ export default function OrderTakerPage() {
     }
   }, [selectedCategory, dealMenuItems.length]);
 
+  /** Sum qty across all cart lines for this menu item (incl. modifier variants). */
   const getCartQty = useCallback(
-    (itemId) => cart.find((c) => c.id === itemId)?.quantity || 0,
+    (itemId) =>
+      cart
+        .filter((c) => String(c.id) === String(itemId))
+        .reduce((sum, c) => sum + (Number(c.quantity) || 0), 0),
     [cart],
   );
+
+  function openNoteEditor({ title, initialValue = "", apply }) {
+    setNoteEditor({
+      title: title || "Special instructions",
+      value: String(initialValue || ""),
+      apply,
+    });
+  }
+
+  async function commitNoteEditor() {
+    if (!noteEditor?.apply) {
+      setNoteEditor(null);
+      return;
+    }
+    const trimmed = String(noteEditor.value || "").trim();
+    setNoteEditorSaving(true);
+    try {
+      await noteEditor.apply(trimmed);
+      setNoteEditor(null);
+    } catch (err) {
+      toast.error(err?.message || "Could not save note");
+    } finally {
+      setNoteEditorSaving(false);
+    }
+  }
+
+  function selectTableForNewOrder(table) {
+    if (
+      cart.length > 0 &&
+      selectedTable &&
+      String(selectedTable.name || selectedTable.label || "") !==
+        String(table?.name || table?.label || "")
+    ) {
+      const ok = window.confirm(
+        "You already have items in the cart. Change table and keep these items?",
+      );
+      if (!ok) return;
+    }
+    setSelectedTable(table);
+    setStep(STEPS.MENU);
+  }
 
   function addDealToCart(deal, qty = 1, selectionsBySlot = {}) {
     if (appendTargetOrder && !appendCanModifyItems) {
@@ -785,6 +888,7 @@ export default function OrderTakerPage() {
         },
       ];
     });
+    playAddFeedback();
     setDealCustomizeTarget(null);
   }
 
@@ -848,6 +952,7 @@ export default function OrderTakerPage() {
         },
       ];
     });
+    playAddFeedback();
   }
 
   function confirmModifierSelection() {
@@ -953,6 +1058,7 @@ export default function OrderTakerPage() {
         },
       ];
     });
+    playAddFeedback();
     setModifierPickerItem(null);
     setModifierSelections({});
   }
@@ -981,18 +1087,24 @@ export default function OrderTakerPage() {
         )
         .filter((c) => c.quantity > 0),
     );
+    if (delta > 0) playAddFeedback();
   }
 
   function addNoteToItem(cartKey) {
     const item = cart.find((c) => (c._cartKey || c.id) === cartKey);
-    const existing = item?.note || "";
-    const note = window.prompt("Add special instructions for this item:", existing);
-    if (note === null) return;
-    setCart((prev) =>
-      prev.map((c) =>
-        (c._cartKey || c.id) === cartKey ? { ...c, note: note.trim() } : c,
-      ),
-    );
+    openNoteEditor({
+      title: item?.name
+        ? `Instructions · ${item.name}`
+        : "Special instructions",
+      initialValue: item?.note || "",
+      apply: (trimmed) => {
+        setCart((prev) =>
+          prev.map((c) =>
+            (c._cartKey || c.id) === cartKey ? { ...c, note: trimmed } : c,
+          ),
+        );
+      },
+    });
   }
 
   function addNoteToExistingOrderItem(itemIndex) {
@@ -1010,18 +1122,23 @@ export default function OrderTakerPage() {
     const existing = isDealComp
       ? getDealCustomerNote(item.note)
       : item.note || "";
-    const note = window.prompt("Add special instructions for this item:", existing);
-    if (note === null) return;
-    const trimmed = note.trim();
-    setAppendTargetOrder((prev) => {
-      if (!prev) return prev;
-      const nextItems = (prev.items || []).map((it, idx) => {
-        if (idx !== itemIndex) return it;
-        if (!isDealComp) return { ...it, note: trimmed };
-        const meta = getDealMetadataNote(it.note) || dealName;
-        return { ...it, note: joinDealNote(meta, trimmed) };
-      });
-      return { ...prev, items: nextItems };
+    openNoteEditor({
+      title: item?.name
+        ? `Instructions · ${item.name}`
+        : "Special instructions",
+      initialValue: existing,
+      apply: (trimmed) => {
+        setAppendTargetOrder((prev) => {
+          if (!prev) return prev;
+          const nextItems = (prev.items || []).map((it, idx) => {
+            if (idx !== itemIndex) return it;
+            if (!isDealComp) return { ...it, note: trimmed };
+            const meta = getDealMetadataNote(it.note) || dealName;
+            return { ...it, note: joinDealNote(meta, trimmed) };
+          });
+          return { ...prev, items: nextItems };
+        });
+      },
     });
   }
 
@@ -1142,22 +1259,22 @@ export default function OrderTakerPage() {
         .filter((it) => isDealComponentItem(it, name))
         .map((it) => getDealCustomerNote(it.note))
         .find(Boolean) || "";
-    const note = window.prompt(
-      "Add special instructions for this deal:",
-      existing,
-    );
-    if (note === null) return;
-    const trimmed = note.trim();
-    setAppendTargetOrder((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        items: (prev.items || []).map((it) => {
-          if (!isDealComponentItem(it, name)) return it;
-          const meta = getDealMetadataNote(it.note) || name;
-          return { ...it, note: joinDealNote(meta, trimmed) };
-        }),
-      };
+    openNoteEditor({
+      title: `Instructions · ${name}`,
+      initialValue: existing,
+      apply: (trimmed) => {
+        setAppendTargetOrder((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: (prev.items || []).map((it) => {
+              if (!isDealComponentItem(it, name)) return it;
+              const meta = getDealMetadataNote(it.note) || name;
+              return { ...it, note: joinDealNote(meta, trimmed) };
+            }),
+          };
+        });
+      },
     });
   }
 
@@ -1171,37 +1288,37 @@ export default function OrderTakerPage() {
         .filter((it) => isDealComponentItem(it, name))
         .map((it) => getDealCustomerNote(it.note))
         .find(Boolean) || "";
-    const note = window.prompt(
-      "Add special instructions for this deal:",
-      existing,
-    );
-    if (note === null) return;
-    const trimmed = note.trim();
-    const noteKey = `${orderId}-deal-${name}`;
-    setSavingItemNoteKey(noteKey);
-    try {
-      const payloadItems = mapOrderItemsForUpdate(items).map((it) => {
-        if (!isDealComponentItem(it, name)) return it;
-        const meta = getDealMetadataNote(it.note) || name;
-        return { ...it, note: joinDealNote(meta, trimmed) };
-      });
-      const updated = await updateOrder(orderId, { items: payloadItems });
-      setActiveOrders((prev) =>
-        prev.map((o) =>
-          o.id === order.id || o._id === order._id ? { ...o, ...updated } : o,
-        ),
-      );
-      setAppendTargetOrder((prev) => {
-        if (!prev) return prev;
-        if (prev.id !== order.id && prev._id !== order._id) return prev;
-        return { ...prev, ...updated };
-      });
-      toast.success(trimmed ? "Note saved" : "Note removed");
-    } catch (err) {
-      toast.error(err.message || "Could not save note");
-    } finally {
-      setSavingItemNoteKey(null);
-    }
+    openNoteEditor({
+      title: `Instructions · ${name}`,
+      initialValue: existing,
+      apply: async (trimmed) => {
+        const noteKey = `${orderId}-deal-${name}`;
+        setSavingItemNoteKey(noteKey);
+        try {
+          const payloadItems = mapOrderItemsForUpdate(items).map((it) => {
+            if (!isDealComponentItem(it, name)) return it;
+            const meta = getDealMetadataNote(it.note) || name;
+            return { ...it, note: joinDealNote(meta, trimmed) };
+          });
+          const updated = await updateOrder(orderId, { items: payloadItems });
+          setActiveOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id || o._id === order._id
+                ? { ...o, ...updated }
+                : o,
+            ),
+          );
+          setAppendTargetOrder((prev) => {
+            if (!prev) return prev;
+            if (prev.id !== order.id && prev._id !== order._id) return prev;
+            return { ...prev, ...updated };
+          });
+          toast.success(trimmed ? "Note saved" : "Note removed");
+        } finally {
+          setSavingItemNoteKey(null);
+        }
+      },
+    });
   }
 
   async function saveOrderItemNote(order, itemIndex) {
@@ -1218,32 +1335,37 @@ export default function OrderTakerPage() {
       return;
     }
     const existing = item.note || "";
-    const note = window.prompt("Add special instructions for this item:", existing);
-    if (note === null) return;
-    const trimmed = note.trim();
-    const noteKey = `${orderId}-${itemIndex}`;
-    setSavingItemNoteKey(noteKey);
-    try {
-      const payloadItems = mapOrderItemsForUpdate(items).map((it, idx) =>
-        idx === itemIndex ? { ...it, note: trimmed } : it,
-      );
-      const updated = await updateOrder(orderId, { items: payloadItems });
-      setActiveOrders((prev) =>
-        prev.map((o) =>
-          o.id === order.id || o._id === order._id ? { ...o, ...updated } : o,
-        ),
-      );
-      setAppendTargetOrder((prev) => {
-        if (!prev) return prev;
-        if (prev.id !== order.id && prev._id !== order._id) return prev;
-        return { ...prev, ...updated };
-      });
-      toast.success(trimmed ? "Note saved" : "Note removed");
-    } catch (err) {
-      toast.error(err.message || "Could not save note");
-    } finally {
-      setSavingItemNoteKey(null);
-    }
+    openNoteEditor({
+      title: item?.name
+        ? `Instructions · ${item.name}`
+        : "Special instructions",
+      initialValue: existing,
+      apply: async (trimmed) => {
+        const noteKey = `${orderId}-${itemIndex}`;
+        setSavingItemNoteKey(noteKey);
+        try {
+          const payloadItems = mapOrderItemsForUpdate(items).map((it, idx) =>
+            idx === itemIndex ? { ...it, note: trimmed } : it,
+          );
+          const updated = await updateOrder(orderId, { items: payloadItems });
+          setActiveOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id || o._id === order._id
+                ? { ...o, ...updated }
+                : o,
+            ),
+          );
+          setAppendTargetOrder((prev) => {
+            if (!prev) return prev;
+            if (prev.id !== order.id && prev._id !== order._id) return prev;
+            return { ...prev, ...updated };
+          });
+          toast.success(trimmed ? "Note saved" : "Note removed");
+        } finally {
+          setSavingItemNoteKey(null);
+        }
+      },
+    });
   }
 
   function removeFromCart(cartKey) {
@@ -1316,17 +1438,33 @@ export default function OrderTakerPage() {
 
   async function handlePlaceOrder() {
     if (cart.length === 0) return;
+    setShowSendConfirm(false);
     setPlacing(true);
+    const tableName = selectedTable?.name || selectedTable?.label || "";
+    const placedTotal = subtotal;
+    const guestName = otCustomerName.trim();
+    const guestPhone = otCustomerPhone.trim();
     try {
       const result = await createPosOrder({
         items: cart.map((c) => mapPosCartLineToOrderUpdatePayload(c)),
         orderType: "DINE_IN",
         paymentMethod: "PENDING",
-        tableName: selectedTable?.name || selectedTable?.label || "",
+        tableName,
+        customerName: guestName || undefined,
+        customerPhone: guestPhone || undefined,
         branchId: currentBranch?.id ?? undefined,
       });
-      setOrderPlaced(result);
+      const displayTotal =
+        Number(result?.grandTotal ?? result?.total) || placedTotal;
+      setOrderPlaced({
+        ...result,
+        _displayTotal: displayTotal,
+        _tableName: tableName || "Walk-in",
+        _itemCount: cartBadge,
+      });
       setCart([]);
+      setOtCustomerName("");
+      setOtCustomerPhone("");
       fetchActiveOrders();
     } catch (err) {
       if (isBranchRequiredError(err.message) && branches?.length > 0) {
@@ -1341,11 +1479,50 @@ export default function OrderTakerPage() {
 
   function handleNewOrder() {
     setOrderPlaced(null);
+    setShowSendConfirm(false);
+    setBusyTableSheet(null);
+    setNoteEditor(null);
     cancelAppendFlow();
     setSelectedTable(null);
+    setCart([]);
+    setOtCustomerName("");
+    setOtCustomerPhone("");
+    setOtTableName("");
     setSearchQuery("");
     setSelectedCategory("all");
     setStep(STEPS.TABLE);
+    setActiveTab(TABS.NEW_ORDER);
+  }
+
+  function handleAddMoreToPlacedTable() {
+    const tableName = orderPlaced?._tableName || selectedTable?.name || "";
+    const placedId = String(orderPlaced?._id || orderPlaced?.id || "");
+    setOrderPlaced(null);
+    setShowSendConfirm(false);
+    const openOrders = activeOrders.filter(
+      (o) => !["CANCELLED", "DELIVERED", "COMPLETED"].includes(o.status),
+    );
+    const match =
+      (placedId &&
+        openOrders.find(
+          (o) => String(o._id || o.id) === placedId && canAppendOrder(o),
+        )) ||
+      (tableName &&
+        tableName !== "Walk-in" &&
+        openOrders.find(
+          (o) =>
+            String(o.tableName || "").trim().toLowerCase() ===
+              tableName.trim().toLowerCase() && canAppendOrder(o),
+        ));
+    if (match) {
+      startAppendItems(match);
+      return;
+    }
+    setSelectedTable({ name: tableName || "Walk-in" });
+    setCart([]);
+    setOtCustomerName("");
+    setOtCustomerPhone("");
+    setStep(STEPS.MENU);
     setActiveTab(TABS.NEW_ORDER);
   }
 
@@ -1368,9 +1545,6 @@ export default function OrderTakerPage() {
     )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  const historyRevenue = historyOrders
-    .filter((o) => o.status === "DELIVERED" || o.status === "COMPLETED")
-    .reduce((sum, o) => sum + getOrderTotal(o), 0);
   const paymentPendingOrders = historyOrders.filter(
     (o) =>
       (o.status === "DELIVERED" || o.status === "COMPLETED") &&
@@ -1405,24 +1579,6 @@ export default function OrderTakerPage() {
         : activeFilter === "ready"
           ? "ready"
           : "new";
-  const activeRevenue = nonCancelledOrders.reduce(
-    (sum, o) => sum + (Number(o.grandTotal ?? o.total) || 0),
-    0,
-  );
-  const cancelledCount = activeOrders.filter(
-    (o) => o.status === "CANCELLED",
-  ).length;
-  const clearedRevenue = Math.max(0, historyRevenue - paymentPendingTotal);
-  const completedHistoryCount = historyOrders.filter(
-    (o) => o.status === "DELIVERED" || o.status === "COMPLETED",
-  ).length;
-  const servedCount = historyOrders.filter(
-    (o) => o.status === "DELIVERED",
-  ).length;
-  const completedClosedCount = historyOrders.filter(
-    (o) => o.status === "COMPLETED" || o.status === "CANCELLED",
-  ).length;
-
   function toggleOrderDetails(orderKey) {
     setExpandedOrderIds((prev) =>
       prev.includes(orderKey)
@@ -1436,6 +1592,20 @@ export default function OrderTakerPage() {
     const status = String(order?.status || "").toUpperCase();
     if (status === "CANCELLED") return false;
     return canAppendItemsToOrder(order);
+  }
+
+  function findOpenOrderForTable(table) {
+    const name = String(
+      table?.name || table?.label || (table?.number != null ? `T-${table.number}` : ""),
+    )
+      .trim()
+      .toLowerCase();
+    if (!name) return null;
+    return (
+      nonCancelledOrders.find(
+        (o) => String(o.tableName || "").trim().toLowerCase() === name,
+      ) || null
+    );
   }
 
   function orderCanAppend(order) {
@@ -1576,6 +1746,22 @@ export default function OrderTakerPage() {
             )}
           </div>
 
+          {canMarkServed && (
+            <button
+              type="button"
+              onClick={() => markOrderServed(order)}
+              disabled={!!markingServedId}
+              className="w-full min-h-[48px] mb-2 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-md shadow-emerald-600/25 active:scale-[0.98] transition-transform"
+            >
+              {isMarkingServed ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <PackageCheck className="w-4 h-4" />
+              )}
+              Mark as Served
+            </button>
+          )}
+
           <div className="flex gap-2 mb-1 items-stretch">
             {canAddItems && (
               <button
@@ -1583,12 +1769,12 @@ export default function OrderTakerPage() {
                 onClick={() => startAppendItems(order)}
                 title={
                   canFullyEdit
-                    ? "Edit order"
+                    ? "Update ticket"
                     : appendSubtle
-                      ? "Order still being prepared"
+                      ? "Order still being prepared — add items only"
                       : "Add items"
                 }
-                className={`min-w-0 flex-[1.4] py-2 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform ${
+                className={`min-w-0 flex-[1.4] py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 active:scale-[0.98] transition-transform ${
                   orderStatus === "PROCESSING"
                     ? "border-blue-500/30 bg-blue-500/5 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
                     : "border-orange-500/30 bg-orange-500/5 dark:bg-orange-500/10 text-orange-500"
@@ -1597,7 +1783,7 @@ export default function OrderTakerPage() {
                 {canFullyEdit ? (
                   <>
                     <Pencil className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Edit order</span>
+                    <span className="truncate">Update ticket</span>
                   </>
                 ) : (
                   <>
@@ -1612,7 +1798,7 @@ export default function OrderTakerPage() {
                 type="button"
                 onClick={() => setBillOrder(order)}
                 title="Receipt"
-                className="min-w-0 flex-1 py-2 px-2 rounded-xl border border-stone-200 bg-white text-stone-800 text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                className="min-w-0 flex-1 py-2.5 px-2 rounded-xl border border-stone-200 bg-white text-stone-800 text-xs font-bold flex items-center justify-center gap-1 shadow-sm active:scale-[0.98] transition-transform dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
               >
                 <Receipt className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">Receipt</span>
@@ -1623,7 +1809,7 @@ export default function OrderTakerPage() {
               onClick={() => toggleOrderDetails(orderKey)}
               title={isExpanded ? "Hide details" : "Show details"}
               aria-label={isExpanded ? "Hide details" : "Show details"}
-              className={`w-10 shrink-0 py-2 rounded-xl text-[11px] font-bold flex items-center justify-center border transition-colors ${
+              className={`w-11 shrink-0 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center border transition-colors ${
                 isExpanded
                   ? orderStatus === "PROCESSING"
                     ? "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
@@ -1640,13 +1826,13 @@ export default function OrderTakerPage() {
           {isExpanded && (
             <>
               {(order.customerPhone || order.phone) && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2">
+                <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400 mb-2 mt-2">
                   <Phone className="w-3 h-3 shrink-0" />
                   {order.customerPhone || order.phone}
                 </div>
               )}
 
-              <div className="mb-2 space-y-1.5 rounded-lg bg-gray-50 px-2.5 py-2 dark:bg-neutral-900/80">
+              <div className="mb-2 mt-2 space-y-1.5 rounded-lg bg-gray-50 px-2.5 py-2 dark:bg-neutral-900/80">
                 {formatReceiptItemsForBill(order).map((item, idx) => {
                   const originalIdx = findOriginalItemIndexForNote(order, item);
                   const dealNoteKey = item.isDealLine
@@ -1679,22 +1865,6 @@ export default function OrderTakerPage() {
                 })}
               </div>
             </>
-          )}
-
-          {canMarkServed && (
-            <button
-              type="button"
-              onClick={() => markOrderServed(order)}
-              disabled={!!markingServedId}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm shadow-emerald-600/20 active:scale-[0.98] transition-transform"
-            >
-              {isMarkingServed ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <PackageCheck className="w-4 h-4" />
-              )}
-              Mark as Served
-            </button>
           )}
         </div>
       </div>
@@ -2044,19 +2214,37 @@ export default function OrderTakerPage() {
               {orderPlaced.orderNumber || orderPlaced._id?.slice(-6)}
             </div>
             <p className="text-sm text-gray-500 dark:text-neutral-400 mb-2">
-              {selectedTable?.name || "Walk-in"}
+              {orderPlaced._tableName || selectedTable?.name || "Walk-in"}
+              {orderPlaced._itemCount
+                ? ` · ${orderPlaced._itemCount} item${orderPlaced._itemCount !== 1 ? "s" : ""}`
+                : ""}
             </p>
             <p className="text-3xl font-black text-gray-900 dark:text-white mb-8 tracking-tight">
-              Rs. {(orderPlaced.total ?? subtotal).toLocaleString()}
+              Rs.{" "}
+              {(
+                orderPlaced._displayTotal ??
+                orderPlaced.grandTotal ??
+                orderPlaced.total ??
+                0
+              ).toLocaleString()}
             </p>
             <div className="space-y-2.5">
               <button
+                type="button"
                 onClick={handleNewOrder}
                 className="w-full min-h-[48px] py-4 rounded-2xl bg-orange-500 text-white font-bold text-base active:scale-[0.98] transition-transform"
               >
                 Take Next Order
               </button>
               <button
+                type="button"
+                onClick={handleAddMoreToPlacedTable}
+                className="w-full min-h-[48px] py-3.5 rounded-2xl bg-white dark:bg-neutral-900 border border-orange-500/30 text-sm font-bold text-orange-600 dark:text-orange-400 active:scale-[0.98] transition-transform"
+              >
+                Add more to {orderPlaced._tableName || selectedTable?.name || "this order"}
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setOrderPlaced(null);
                   setActiveTab(TABS.HOME);
@@ -2081,11 +2269,25 @@ export default function OrderTakerPage() {
         <header className={`relative flex-shrink-0 bg-white/95 dark:bg-neutral-950/95 backdrop-blur-md border-b border-gray-100 dark:border-neutral-800/80 ot-safe-top ${headerMenuOpen ? "z-50" : "z-30"}`}>
           <div className="flex items-center justify-between gap-3 px-4 h-[56px]">
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              {activeTab === TABS.NEW_ORDER && step !== STEPS.TABLE ? (
+              {activeTab === TABS.NEW_ORDER &&
+              (step !== STEPS.TABLE || isUpdateTicket) ? (
                 <button
                   type="button"
                   onClick={() => {
-                    if (appendTargetOrder) {
+                    if (isUpdateTicket) {
+                      // Step back within Update Ticket; cancel only from Menu with empty cart
+                      if (step === STEPS.CART) {
+                        if (appendEditDetailsOnly && cart.length === 0) {
+                          requestCancelAppendFlow();
+                          return;
+                        }
+                        if (appendCanModifyItems) {
+                          setStep(STEPS.MENU);
+                          return;
+                        }
+                        requestCancelAppendFlow();
+                        return;
+                      }
                       requestCancelAppendFlow();
                       return;
                     }
@@ -2093,7 +2295,7 @@ export default function OrderTakerPage() {
                     else setStep(STEPS.TABLE);
                   }}
                   className="w-9 h-9 -ml-1 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-neutral-900 active:scale-90 transition-all shrink-0"
-                  aria-label={appendTargetOrder ? "Cancel edit" : "Go back"}
+                  aria-label="Go back"
                 >
                   <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-neutral-300" />
                 </button>
@@ -2119,65 +2321,42 @@ export default function OrderTakerPage() {
                       : "Order taker"
                     : activeTab === TABS.HISTORY
                       ? "Order History"
-                      : step === STEPS.TABLE
-                        ? restaurantBranding.name || "Eats Desk"
-                        : step === STEPS.MENU
-                          ? selectedTable?.name || "Menu"
-                          : "Review Order"}
+                      : isUpdateTicket
+                        ? `Update #${
+                            appendTargetOrder.tokenNumber ||
+                            getDisplayOrderId(appendTargetOrder)
+                              .toString()
+                              .slice(-4)
+                          }`
+                        : step === STEPS.TABLE
+                          ? restaurantBranding.name || "Eats Desk"
+                          : step === STEPS.MENU
+                            ? selectedTable?.name || "Menu"
+                            : "Review Order"}
                 </h1>
                 <p className="text-[11px] text-gray-500 dark:text-neutral-400 truncate leading-tight">
                   {activeTab === TABS.HOME
                     ? restaurantBranding.name || "Restaurant"
                     : activeTab === TABS.HISTORY
-                      ? "Today's summary"
-                      : step === STEPS.TABLE
-                        ? userName || "Order Taker"
-                        : step === STEPS.MENU
-                          ? `${filteredItems.length} item${filteredItems.length !== 1 ? "s" : ""} available`
-                          : `${
-                              appendTargetOrder
-                                ? otTableName ||
-                                  appendTargetOrder.tableName ||
-                                  "Walk-in"
-                                : selectedTable?.name || "Walk-in"
-                            } · ${reviewItemCount} item${reviewItemCount !== 1 ? "s" : ""}`}
+                      ? "Past orders today"
+                      : isUpdateTicket
+                        ? appendEditDetailsOnly
+                          ? "Guest & table details"
+                          : appendAddOnlyMode
+                            ? "Adding items only"
+                            : step === STEPS.MENU
+                              ? "Pick items to add"
+                              : "Review & save"
+                        : step === STEPS.TABLE
+                          ? userName || "Order Taker"
+                          : step === STEPS.MENU
+                            ? `${filteredItems.length} item${filteredItems.length !== 1 ? "s" : ""} available`
+                            : `${selectedTable?.name || "Walk-in"} · ${reviewItemCount} item${reviewItemCount !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              {activeTab === TABS.NEW_ORDER &&
-                step === STEPS.MENU &&
-                cartBadge > 0 && (
-                  <button
-                    onClick={() => setStep(STEPS.CART)}
-                    className="relative h-9 pl-3 pr-3.5 rounded-full bg-orange-500 text-white flex items-center gap-1.5 active:scale-95 transition-transform"
-                  >
-                    <ShoppingCart className="w-4 h-4" />
-                    <span className="text-xs font-extrabold">{cartBadge}</span>
-                  </button>
-                )}
-              {activeTab === TABS.NEW_ORDER &&
-                step === STEPS.MENU &&
-                cartBadge === 0 && (
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-gray-300 dark:text-neutral-600">
-                    <ShoppingCart className="w-4 h-4" />
-                  </div>
-                )}
-              {activeTab === TABS.NEW_ORDER &&
-                appendTargetOrder &&
-                step === STEPS.MENU && (
-                <button
-                  type="button"
-                  onClick={() => requestCancelAppendFlow()}
-                  className="h-9 px-3 rounded-full flex items-center gap-1.5 text-orange-600 dark:text-orange-400 hover:bg-orange-500/10 transition-colors text-xs font-semibold"
-                  title="Cancel editing this order"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  Cancel edit
-                </button>
-              )}
-
               {/* Compact actions: bell + overflow menu */}
               <div className="flex items-center rounded-full bg-gray-50 dark:bg-neutral-900/80 p-0.5 border border-gray-100 dark:border-neutral-800">
                 <WhatsAppNotificationBell
@@ -2243,6 +2422,17 @@ export default function OrderTakerPage() {
                           )}
                           {theme === "light" ? "Dark mode" : "Light mode"}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false);
+                            setShowOtSettings(true);
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                        >
+                          <Settings className="w-4 h-4" />
+                          Settings
+                        </button>
                         <div className="border-t border-gray-100 dark:border-neutral-800" />
                         <button
                           type="button"
@@ -2262,8 +2452,8 @@ export default function OrderTakerPage() {
             </div>
           </div>
 
-          {/* Step indicator — only on ORDER tab */}
-          {activeTab === TABS.NEW_ORDER && (
+          {/* Step indicator — new order wizard only (not Update Ticket) */}
+          {activeTab === TABS.NEW_ORDER && !isUpdateTicket && (
             <div className="flex gap-1 px-4 pb-2.5">
               {[STEPS.TABLE, STEPS.MENU, STEPS.CART].map((s, i) => (
                 <div
@@ -2275,6 +2465,44 @@ export default function OrderTakerPage() {
                   }`}
                 />
               ))}
+            </div>
+          )}
+          {activeTab === TABS.NEW_ORDER && isUpdateTicket && (
+            <div className="px-4 pb-2.5 flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                  appendAddOnlyMode
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : appendEditDetailsOnly
+                      ? "bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-neutral-300"
+                      : "bg-orange-500/15 text-orange-600 dark:text-orange-400"
+                }`}
+              >
+                {appendEditDetailsOnly
+                  ? "Details only"
+                  : appendAddOnlyMode
+                    ? "Add items only"
+                    : "Full edit"}
+              </span>
+              <div className="flex flex-1 gap-1">
+                {[STEPS.MENU, STEPS.CART].map((s, i) => (
+                  <div
+                    key={s}
+                    className={`h-[3px] flex-1 rounded-full transition-all duration-300 ${
+                      i <= [STEPS.MENU, STEPS.CART].indexOf(step)
+                        ? "bg-orange-500"
+                        : "bg-gray-200 dark:bg-neutral-800"
+                    }`}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => requestCancelAppendFlow()}
+                className="text-[11px] font-bold text-gray-500 dark:text-neutral-400 hover:text-orange-500"
+              >
+                Cancel
+              </button>
             </div>
           )}
         </header>
@@ -2289,47 +2517,53 @@ export default function OrderTakerPage() {
                   <button
                     type="button"
                     onClick={() => setActiveFilter("ready")}
-                    className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-orange-500 text-white font-bold text-sm text-left active:scale-[0.98] transition-transform"
+                    className="w-full min-h-[52px] px-4 py-3.5 rounded-2xl bg-emerald-600 text-white font-bold text-sm text-left active:scale-[0.98] transition-transform shadow-md shadow-emerald-600/20 flex items-center justify-between gap-2"
                   >
-                    ⚡ {readyOrders.length} order
-                    {readyOrders.length !== 1 ? "s" : ""} ready to serve
+                    <span>
+                      {readyOrders.length} ready to serve
+                    </span>
+                    <PackageCheck className="w-5 h-5 shrink-0 opacity-90" />
                   </button>
                 )}
 
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     {
+                      key: "ready",
                       label: "READY",
                       value: readyOrders.length,
                       dot: readyOrders.length > 0,
                     },
                     {
-                      label: "SERVED",
-                      value: servedCount,
-                      dot: servedCount > 0,
+                      key: "preparing",
+                      label: "PREPARING",
+                      value: preparingOrders.length,
+                      dot: false,
                     },
                     {
-                      label: "COMPLETED",
-                      value: completedClosedCount,
+                      key: "new",
+                      label: "NEW",
+                      value: newOrders.length,
                       dot: false,
                     },
                   ].map((cell) => (
-                    <div
+                    <button
                       key={cell.label}
-                      className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-1.5 py-2 text-center"
+                      type="button"
+                      onClick={() => setActiveFilter(cell.key)}
+                      className={`rounded-xl border px-1.5 py-2 text-center transition-colors ${
+                        activeFilter === cell.key
+                          ? "border-orange-500/40 bg-orange-500/5 dark:bg-orange-500/10"
+                          : "border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950"
+                      }`}
                     >
                       <p className="text-[8px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500 leading-none">
                         {cell.label}
                       </p>
-                      {cell.subLabel && (
-                        <p className="text-[7px] font-bold uppercase tracking-wide text-gray-400 dark:text-neutral-500 leading-none mt-0.5">
-                          {cell.subLabel}
-                        </p>
-                      )}
                       <div className="flex items-center justify-center gap-1 mt-0.5">
                         {cell.dot && (
                           <span
-                            className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0 animate-pulse"
+                            className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 animate-pulse"
                             aria-hidden
                           />
                         )}
@@ -2337,42 +2571,44 @@ export default function OrderTakerPage() {
                           {cell.value}
                         </p>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
 
                 {paymentPendingOrders.length > 0 && (
-                  <div className="rounded-xl border border-dashed border-gray-400/60 dark:border-neutral-600 bg-neutral-100/40 dark:bg-neutral-900/50 p-3">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-600 dark:text-neutral-400">
-                      Collect at counter
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHistoryFilter("pending_payment");
+                      setActiveTab(TABS.HISTORY);
+                    }}
+                    className="w-full rounded-xl border border-amber-300/80 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2.5 text-left active:scale-[0.99] transition-transform"
+                  >
+                    <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                      {paymentPendingOrders.length} served · unpaid at counter
+                      <span className="float-right font-bold text-amber-700 dark:text-amber-300 tabular-nums">
+                        Rs. {Math.round(paymentPendingTotal).toLocaleString()}
+                      </span>
                     </p>
-                    <p className="text-xl font-black tabular-nums text-orange-600 dark:text-orange-400 mt-1 tracking-tight">
-                      Rs. {Math.round(paymentPendingTotal).toLocaleString()}
-                    </p>
-                    <p className="text-[10px] text-gray-500 dark:text-neutral-500 mt-1">
-                      {paymentPendingOrders.length} order
-                      {paymentPendingOrders.length !== 1 ? "s" : ""} awaiting
-                      payment
-                    </p>
-                  </div>
+                  </button>
                 )}
               </div>
 
               <div className="px-4 pt-1">
                 <div className="flex gap-2 mb-3 overflow-x-auto ot-no-scrollbar">
                   {[
-                    {
-                      key: "all",
-                      label: "All",
-                      count: nonCancelledOrders.length,
-                    },
-                    { key: "new", label: "New", count: newOrders.length },
+                    { key: "ready", label: "Ready", count: readyOrders.length },
                     {
                       key: "preparing",
                       label: "Preparing",
                       count: preparingOrders.length,
                     },
-                    { key: "ready", label: "Ready", count: readyOrders.length },
+                    { key: "new", label: "New", count: newOrders.length },
+                    {
+                      key: "all",
+                      label: "All",
+                      count: nonCancelledOrders.length,
+                    },
                   ].map((f) => (
                     <button
                       key={f.key}
@@ -2380,7 +2616,9 @@ export default function OrderTakerPage() {
                       onClick={() => setActiveFilter(f.key)}
                       className={`flex-shrink-0 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                         activeFilter === f.key
-                          ? "bg-orange-500 text-white shadow-sm shadow-orange-500/20"
+                          ? f.key === "ready"
+                            ? "bg-emerald-600 text-white shadow-sm shadow-emerald-600/20"
+                            : "bg-orange-500 text-white shadow-sm shadow-orange-500/20"
                           : "bg-white dark:bg-neutral-950 text-gray-500 dark:text-neutral-400 border border-gray-200 dark:border-neutral-800"
                       }`}
                     >
@@ -2405,8 +2643,20 @@ export default function OrderTakerPage() {
                       <ClipboardList className="w-7 h-7 text-gray-300 dark:text-neutral-700" />
                     </div>
                     <p className="text-sm font-bold text-gray-500 dark:text-neutral-400 mb-1">
-                      No active orders right now.
+                      {activeFilter === "ready"
+                        ? "Nothing ready to serve"
+                        : "No orders in this view"}
                     </p>
+                    {activeFilter === "ready" &&
+                      (preparingOrders.length > 0 || newOrders.length > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveFilter("all")}
+                          className="mt-3 text-xs font-bold text-orange-500"
+                        >
+                          View all active orders
+                        </button>
+                      )}
                   </div>
                 ) : (
                   <>
@@ -2418,16 +2668,29 @@ export default function OrderTakerPage() {
                       </div>
                     )}
 
-                    {servedAwaitingPayment.length > 0 && (
+                    {servedAwaitingPayment.length > 0 &&
+                      activeFilter === "all" && (
                       <div
                         className={
-                          filteredActiveOrders.length > 0 ? "mt-8" : ""
+                          filteredActiveOrders.length > 0 ? "mt-6" : ""
                         }
                       >
-                        <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-orange-600 dark:text-orange-400">
-                          Served — Awaiting Payment
-                        </h3>
-                        <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHistoryFilter("pending_payment");
+                            setActiveTab(TABS.HISTORY);
+                          }}
+                          className="mb-3 flex w-full items-center justify-between text-left"
+                        >
+                          <h3 className="text-xs font-bold uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                            Served · unpaid at counter
+                          </h3>
+                          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                            History →
+                          </span>
+                        </button>
+                        <div className="space-y-2 opacity-90">
                           {servedAwaitingPayment.map((order) =>
                             renderActiveOrderCard(order),
                           )}
@@ -2461,43 +2724,48 @@ export default function OrderTakerPage() {
                     <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-neutral-800">
                       <div className="p-3.5 sm:p-4">
                         <p className="text-xs font-bold text-gray-500 dark:text-neutral-400 uppercase tracking-widest">
-                          Cleared
+                          Orders today
                         </p>
                         <p className="text-base sm:text-lg font-black text-gray-900 dark:text-white tabular-nums leading-tight mt-1">
-                          Rs. {Math.round(clearedRevenue).toLocaleString()}
+                          {historyOrders.length}
                         </p>
                         <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1 leading-snug">
-                          Prepaid + submitted
+                          Completed + cancelled
                         </p>
                       </div>
                       <div
                         className={`p-3.5 sm:p-4 ${
-                          paymentPendingTotal > 0
-                            ? "bg-orange-50 dark:bg-orange-500/10"
+                          paymentPendingOrders.length > 0
+                            ? "bg-amber-50 dark:bg-amber-500/10"
                             : ""
                         }`}
                       >
                         <p
                           className={`text-xs font-bold uppercase tracking-widest ${
-                            paymentPendingTotal > 0
-                              ? "text-orange-700 dark:text-orange-300"
+                            paymentPendingOrders.length > 0
+                              ? "text-amber-700 dark:text-amber-300"
                               : "text-gray-500 dark:text-neutral-400"
                           }`}
                         >
-                          To submit
+                          Unpaid at counter
                         </p>
                         <p
                           className={`text-base sm:text-lg font-black tabular-nums leading-tight mt-1 ${
-                            paymentPendingTotal > 0
-                              ? "text-orange-600 dark:text-orange-400"
+                            paymentPendingOrders.length > 0
+                              ? "text-amber-700 dark:text-amber-300"
                               : "text-gray-900 dark:text-white"
                           }`}
                         >
-                          Rs. {Math.round(paymentPendingTotal).toLocaleString()}
+                          {paymentPendingOrders.length}
                         </p>
-                        <p className="text-[10px] text-gray-500 dark:text-neutral-400 mt-1">
-                          {paymentPendingOrders.length} order
-                          {paymentPendingOrders.length !== 1 ? "s" : ""}
+                        <p
+                          className={`text-[10px] mt-1 ${
+                            paymentPendingOrders.length > 0
+                              ? "text-amber-700/80 dark:text-amber-300/80"
+                              : "text-gray-500 dark:text-neutral-400"
+                          }`}
+                        >
+                          Counter collects payment
                         </p>
                       </div>
                     </div>
@@ -2506,22 +2774,23 @@ export default function OrderTakerPage() {
                   <div className="flex gap-2 overflow-x-auto ot-no-scrollbar">
                     {[
                       {
-                        key: "pending_payment",
-                        label: "Pending",
-                        count: paymentPendingOrders.length,
-                      },
-                      {
                         key: "all",
                         label: "All",
                         count: historyOrders.length,
                       },
                       {
+                        key: "pending_payment",
+                        label: "Unpaid",
+                        count: paymentPendingOrders.length,
+                      },
+                      {
                         key: "cleared",
-                        label: "Cleared",
+                        label: "Paid",
                         count: clearedHistoryOrders.length,
                       },
                     ].map((f) => {
                       const active = historyFilter === f.key;
+                      const isUnpaid = f.key === "pending_payment";
                       return (
                         <button
                           key={f.key}
@@ -2529,13 +2798,23 @@ export default function OrderTakerPage() {
                           onClick={() => setHistoryFilter(f.key)}
                           className={`flex-shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1 ${
                             active
-                              ? "bg-orange-500 text-white"
-                              : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
+                              ? isUnpaid
+                                ? "bg-amber-500 text-white shadow-sm shadow-amber-500/25"
+                                : "bg-orange-500 text-white"
+                              : isUnpaid && f.count > 0
+                                ? "bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                                : "bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-400"
                           }`}
                         >
                           {f.label}
                           <span
-                            className={`text-xs font-black tabular-nums ${active ? "text-white/90" : "opacity-70"}`}
+                            className={`text-xs font-black tabular-nums ${
+                              active
+                                ? "text-white/90"
+                                : isUnpaid && f.count > 0
+                                  ? "text-amber-700 dark:text-amber-300"
+                                  : "opacity-70"
+                            }`}
                           >
                             {f.count}
                           </span>
@@ -2544,7 +2823,13 @@ export default function OrderTakerPage() {
                     })}
                   </div>
 
-                  <p className="text-[10px] text-gray-400 dark:text-neutral-500 px-0.5 -mt-1">
+                  <p
+                    className={`text-[10px] px-0.5 -mt-1 ${
+                      historyFilter === "pending_payment"
+                        ? "text-amber-700/90 dark:text-amber-300/90 font-medium"
+                        : "text-gray-400 dark:text-neutral-500"
+                    }`}
+                  >
                     {historyFilter === "pending_payment"
                       ? "Completed orders still marked “To be paid” — collect cash and submit at the counter."
                       : historyFilter === "cleared"
@@ -2596,10 +2881,10 @@ export default function OrderTakerPage() {
                       const StatusIcon = paymentPending ? Wallet : sc.icon;
                       const orderId = order.id || order._id;
                       const headerBg = paymentPending
-                        ? "bg-orange-50 dark:bg-orange-500/10"
+                        ? "bg-amber-50 dark:bg-amber-500/15"
                         : sc.bgLight;
                       const headerText = paymentPending
-                        ? "text-orange-700 dark:text-orange-300"
+                        ? "text-amber-800 dark:text-amber-300"
                         : sc.text;
                       const itemCount = (order.items || []).reduce(
                         (sum, item) =>
@@ -2609,7 +2894,11 @@ export default function OrderTakerPage() {
                       return (
                         <div
                           key={orderId}
-                          className="bg-white dark:bg-neutral-900 rounded-2xl overflow-hidden border border-gray-200 dark:border-neutral-800"
+                          className={`bg-white dark:bg-neutral-900 rounded-2xl overflow-hidden border ${
+                            paymentPending
+                              ? "border-amber-300/80 dark:border-amber-500/40"
+                              : "border-gray-200 dark:border-neutral-800"
+                          }`}
                         >
                           <div
                             className={`px-3.5 py-2 flex items-center justify-between ${headerBg}`}
@@ -2645,7 +2934,7 @@ export default function OrderTakerPage() {
                               <span
                                 className={`text-sm font-black tabular-nums shrink-0 ${
                                   paymentPending
-                                    ? "text-orange-600 dark:text-orange-400"
+                                    ? "text-amber-700 dark:text-amber-300"
                                     : "text-gray-900 dark:text-white"
                                 }`}
                               >
@@ -2671,7 +2960,7 @@ export default function OrderTakerPage() {
                               )}
                             </div>
                             {paymentPending && (
-                              <p className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 mt-1.5">
+                              <p className="mt-1.5 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                                 Collect at counter — still marked &quot;To be
                                 paid&quot; in POS
                               </p>
@@ -2710,10 +2999,10 @@ export default function OrderTakerPage() {
                         You can still take orders without selecting a table
                       </p>
                       <button
-                        onClick={() => {
-                          setSelectedTable({ name: "Walk-in" });
-                          setStep(STEPS.MENU);
-                        }}
+                        type="button"
+                        onClick={() =>
+                          selectTableForNewOrder({ name: "Walk-in" })
+                        }
                         className="px-6 py-3 rounded-2xl bg-orange-500 text-white text-sm font-bold active:scale-95 transition-transform flex items-center gap-2 min-h-[48px]"
                       >
                         Start Order
@@ -2722,15 +3011,38 @@ export default function OrderTakerPage() {
                     </div>
                   ) : (
                     <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          selectTableForNewOrder({ name: "Walk-in" })
+                        }
+                        className="mb-3 w-full min-h-[48px] py-3.5 rounded-2xl bg-orange-500 text-white text-sm font-bold active:scale-[0.98] transition-transform flex items-center justify-center gap-2 shadow-sm shadow-orange-500/20"
+                      >
+                        Walk-in / No Table
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-neutral-500 mb-2 px-0.5">
+                        Or pick a table
+                      </p>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                         {tables.map((table) => {
                           const occupied = table.status === "occupied";
+                          const openOrder = occupied
+                            ? findOpenOrderForTable(table)
+                            : null;
                           return (
                             <button
                               key={table.id || table._id}
+                              type="button"
                               onClick={() => {
-                                setSelectedTable(table);
-                                setStep(STEPS.MENU);
+                                if (openOrder) {
+                                  setBusyTableSheet({
+                                    table,
+                                    order: openOrder,
+                                  });
+                                  return;
+                                }
+                                selectTableForNewOrder(table);
                               }}
                               className={`group relative flex flex-col items-center justify-center py-5 px-2 rounded-2xl border-2 transition-all active:scale-[0.93] ${
                                 occupied
@@ -2758,33 +3070,21 @@ export default function OrderTakerPage() {
                                   table.label ||
                                   `T-${table.number}`}
                               </span>
-                              {table.capacity && (
+                              {table.capacity && !occupied && (
                                 <span className="text-[10px] text-gray-400 dark:text-neutral-600 flex items-center gap-0.5 mt-1">
                                   <User className="w-2.5 h-2.5" />
                                   {table.capacity}
                                 </span>
                               )}
                               {occupied && (
-                                <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-amber-400/20">
-                                  <span className="text-[8px] font-bold text-amber-600 dark:text-amber-400 uppercase">
-                                    Busy
-                                  </span>
-                                </div>
+                                <span className="mt-1 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+                                  Busy
+                                </span>
                               )}
                             </button>
                           );
                         })}
                       </div>
-                      <button
-                        onClick={() => {
-                          setSelectedTable({ name: "Walk-in" });
-                          setStep(STEPS.MENU);
-                        }}
-                        className="mt-4 w-full min-h-[48px] py-3.5 rounded-2xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 text-sm font-bold text-gray-600 dark:text-neutral-300 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-                      >
-                        Walk-in / No Table
-                        <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
-                      </button>
                     </>
                   )}
                 </div>
@@ -2793,36 +3093,19 @@ export default function OrderTakerPage() {
               {/* MENU */}
               {step === STEPS.MENU && (
                 <div className="flex flex-col h-full">
-                  {appendTargetOrder && (
-                    <div className="mx-3 mt-3 mb-1 rounded-xl border border-orange-500/20 bg-orange-500/5 dark:bg-orange-500/10 px-3 py-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
-                            Appending to order #
-                            {appendTargetOrder.tokenNumber ||
-                              getDisplayOrderId(appendTargetOrder)
-                                .toString()
-                                .slice(-4)}
-                          </p>
-                          <p className="text-[10px] text-orange-600/80 dark:text-orange-400/80">
-                            {appendAddOnlyMode
-                              ? "Add-only — pick new items below. Existing lines cannot be changed."
-                              : "Existing lines stay on the ticket. New picks merge in when you confirm."}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => requestCancelAppendFlow()}
-                          className="flex-shrink-0 rounded-lg bg-white px-2.5 py-1.5 text-[11px] font-bold text-gray-700 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-gray-50 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-800"
-                        >
-                          Cancel edit
-                        </button>
-                      </div>
+                  {appendTargetOrder && appendAddOnlyMode && (
+                    <div className="mx-3 mt-3 mb-1 rounded-xl border border-amber-500/25 bg-amber-500/5 dark:bg-amber-500/10 px-3 py-2">
+                      <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                        Adding only — existing items stay as they are
+                      </p>
+                      <p className="text-[10px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                        Pick new items below, then review and save.
+                      </p>
                     </div>
                   )}
                   <div className="sticky top-0 z-10 bg-white dark:bg-neutral-950 border-b border-gray-200 dark:border-neutral-800">
-                    <div className="px-4 pt-3 pb-2">
-                      <div className="relative">
+                    <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+                      <div className="relative flex-1 min-w-0">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
                         <input
                           ref={searchRef}
@@ -2834,6 +3117,7 @@ export default function OrderTakerPage() {
                         />
                         {searchQuery && (
                           <button
+                            type="button"
                             onClick={() => {
                               setSearchQuery("");
                               searchRef.current?.focus();
@@ -2844,6 +3128,15 @@ export default function OrderTakerPage() {
                           </button>
                         )}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowOtSettings(true)}
+                        className="h-10 w-10 shrink-0 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex items-center justify-center text-gray-500 dark:text-neutral-400 hover:text-orange-500"
+                        title="Settings"
+                        aria-label="Settings"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
                     </div>
                     <div
                       ref={categoryScrollRef}
@@ -2886,7 +3179,13 @@ export default function OrderTakerPage() {
                         </p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-2.5">
+                      <div
+                        className={
+                          showMenuImages
+                            ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-2.5"
+                            : "grid grid-cols-1 sm:grid-cols-2 gap-2"
+                        }
+                      >
                         {filteredItems.map((item) => {
                           const qty = getCartQty(item.id);
                           const price = item.isDeal
@@ -2934,65 +3233,93 @@ export default function OrderTakerPage() {
                                   (appendTargetOrder && !appendCanModifyItems)
                                 }
                               >
-                                <div className="relative w-full aspect-[4/3] md:aspect-square bg-gray-100 dark:bg-neutral-900 overflow-hidden">
-                                  <div
-                                    className={`absolute inset-0 ${cannotAdd ? "opacity-60" : ""}`}
-                                    aria-hidden
-                                  >
-                                    {item.isDeal && !cannotAdd && (
-                                      <div className="absolute top-1.5 left-1.5 z-[2] flex items-center gap-0.5 rounded-md bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
-                                        <Tag className="w-2.5 h-2.5" />
-                                        Deal
-                                      </div>
-                                    )}
-                                    {item.imageUrl ? (
-                                      <img
-                                        src={item.imageUrl}
-                                        alt={item.name}
-                                        className={`w-full h-full object-cover ${cannotAdd ? "grayscale" : ""}`}
-                                        loading="lazy"
-                                      />
-                                    ) : (
-                                      <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 dark:from-neutral-900 dark:to-neutral-950 flex items-center justify-center">
-                                        <Utensils className="w-8 h-8 md:w-7 md:h-7 text-gray-200 dark:text-neutral-800" />
+                                {showMenuImages && (
+                                  <div className="relative w-full aspect-[4/3] md:aspect-square bg-gray-100 dark:bg-neutral-900 overflow-hidden">
+                                    <div
+                                      className={`absolute inset-0 ${cannotAdd ? "opacity-60" : ""}`}
+                                      aria-hidden
+                                    >
+                                      {item.isDeal && !cannotAdd && (
+                                        <div className="absolute top-1.5 left-1.5 z-[2] flex items-center gap-0.5 rounded-md bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
+                                          <Tag className="w-2.5 h-2.5" />
+                                          Deal
+                                        </div>
+                                      )}
+                                      {item.imageUrl ? (
+                                        <img
+                                          src={item.imageUrl}
+                                          alt={item.name}
+                                          className={`w-full h-full object-cover ${cannotAdd ? "grayscale" : ""}`}
+                                          loading="lazy"
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 dark:from-neutral-900 dark:to-neutral-950 flex items-center justify-center">
+                                          <Utensils className="w-8 h-8 md:w-7 md:h-7 text-gray-200 dark:text-neutral-800" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    {stockLabel && (
+                                      <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 pointer-events-none">
+                                        <span
+                                          className={`px-2.5 py-1 rounded-md text-white text-[10px] md:text-[11px] font-bold shadow-md ${
+                                            outOfStock
+                                              ? "bg-red-600"
+                                              : "bg-gray-700"
+                                          }`}
+                                        >
+                                          {stockLabel}
+                                        </span>
                                       </div>
                                     )}
                                   </div>
-                                  {stockLabel && (
-                                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 pointer-events-none">
-                                      <span
-                                        className={`px-2.5 py-1 rounded-md text-white text-[10px] md:text-[11px] font-bold shadow-md ${
-                                          outOfStock
-                                            ? "bg-red-600"
-                                            : "bg-gray-700"
-                                        }`}
-                                      >
-                                        {stockLabel}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
+                                )}
                                 <div
-                                  className={`px-2.5 md:px-2 pt-1.5 md:pt-1 pb-2 md:pb-1.5 ${cannotAdd ? "opacity-60" : ""}`}
+                                  className={`px-2.5 md:px-3 ${
+                                    showMenuImages
+                                      ? "pt-1.5 md:pt-1 pb-2 md:pb-1.5"
+                                      : "py-3 flex items-center justify-between gap-2"
+                                  } ${cannotAdd ? "opacity-60" : ""}`}
                                 >
-                                  <p
-                                    className={`text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 pb-0.5 ${
-                                      cannotAdd
-                                        ? "text-gray-400 dark:text-neutral-500"
-                                        : ""
-                                    }`}
-                                  >
-                                    {item.name}
-                                  </p>
-                                  <p
-                                    className={`text-xs md:text-[11px] font-extrabold ${
-                                      cannotAdd
-                                        ? "text-gray-400"
-                                        : "text-orange-500"
-                                    }`}
-                                  >
-                                    Rs. {price.toLocaleString()}
-                                  </p>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {!showMenuImages && item.isDeal && !cannotAdd && (
+                                        <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                                          Deal
+                                        </span>
+                                      )}
+                                      {!showMenuImages && stockLabel && (
+                                        <span
+                                          className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+                                            outOfStock
+                                              ? "bg-red-500/15 text-red-600"
+                                              : "bg-gray-200 text-gray-600 dark:bg-neutral-800 dark:text-neutral-400"
+                                          }`}
+                                        >
+                                          {stockLabel}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p
+                                      className={`text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 ${
+                                        showMenuImages ? "pb-0.5" : "mt-0.5"
+                                      } ${
+                                        cannotAdd
+                                          ? "text-gray-400 dark:text-neutral-500"
+                                          : ""
+                                      }`}
+                                    >
+                                      {item.name}
+                                    </p>
+                                    <p
+                                      className={`text-xs md:text-[11px] font-extrabold ${
+                                        cannotAdd
+                                          ? "text-gray-400"
+                                          : "text-orange-500"
+                                      }`}
+                                    >
+                                      Rs. {price.toLocaleString()}
+                                    </p>
+                                  </div>
                                 </div>
                               </button>
 
@@ -3052,25 +3379,6 @@ export default function OrderTakerPage() {
               {/* CART */}
               {step === STEPS.CART && (
                 <div className="p-4 pb-44">
-                  {appendTargetOrder && (
-                    <div className="mb-3 rounded-xl border border-orange-500/20 bg-orange-500/5 px-3 py-2 dark:bg-orange-500/10">
-                      <p className="text-[11px] font-bold text-orange-600 dark:text-orange-400">
-                        Update order #
-                        {appendTargetOrder.tokenNumber ||
-                          getDisplayOrderId(appendTargetOrder)
-                            .toString()
-                            .slice(-4)}
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-orange-600/80 dark:text-orange-400/80">
-                        {appendEditDetailsOnly
-                          ? "Update guest or table below, then save."
-                          : canFullyEditExistingItems(appendTargetOrder, hasPermission)
-                            ? "Change quantities, remove items, add more from the menu, then save."
-                            : "Add items from the menu or edit notes on existing items, then save."}
-                      </p>
-                    </div>
-                  )}
-
                   {(appendTargetOrder ||
                     selectedTable ||
                     cart.length > 0) && (
@@ -3096,17 +3404,7 @@ export default function OrderTakerPage() {
                             Clear
                           </button>
                         ) : null}
-                        {appendTargetOrder ? (
-                          <button
-                            type="button"
-                            onClick={() => requestCancelAppendFlow()}
-                            className="flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-orange-600 transition-colors hover:bg-orange-500/10 dark:text-orange-400"
-                            title="Cancel editing this order"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            Cancel edit
-                          </button>
-                        ) : cart.length > 0 ? (
+                        {!appendTargetOrder && cart.length > 0 ? (
                           <button
                             type="button"
                             onClick={() => cancelNewOrderDraft()}
@@ -3159,13 +3457,13 @@ export default function OrderTakerPage() {
                               {canEditExisting ? (
                                 <Pencil className="h-3.5 w-3.5 flex-shrink-0 text-orange-500" />
                               ) : (
-                                <Lock className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                                <Lock className="h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
                               )}
                               <div className="min-w-0">
                                 <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
                                   {canEditExisting
                                     ? "Items in order"
-                                    : "Already in order"}
+                                    : "On ticket (view only)"}
                                 </p>
                                 {!existingItemsOpen && (
                                   <p className="text-[11px] text-gray-500 dark:text-neutral-500 truncate">
@@ -3261,17 +3559,18 @@ export default function OrderTakerPage() {
                                         className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900"
                                       >
                                         <div className="flex gap-3">
-                                          {dealImage ? (
-                                            <img
-                                              src={dealImage}
-                                              alt={group.dealName}
-                                              className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
-                                            />
-                                          ) : (
-                                            <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
-                                              <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
-                                            </div>
-                                          )}
+                                          {showMenuImages &&
+                                            (dealImage ? (
+                                              <img
+                                                src={dealImage}
+                                                alt={group.dealName}
+                                                className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
+                                              />
+                                            ) : (
+                                              <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+                                                <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
+                                              </div>
+                                            ))}
                                           <div className="min-w-0 flex-1">
                                             <div className="flex items-start justify-between gap-2">
                                               <div className="min-w-0">
@@ -3280,9 +3579,6 @@ export default function OrderTakerPage() {
                                                   <span className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-orange-500">
                                                     Deal
                                                   </span>
-                                                  {!canEditExisting ? (
-                                                    <Lock className="ml-1.5 inline h-3.5 w-3.5 align-middle text-gray-400" />
-                                                  ) : null}
                                                 </p>
                                                 {children.length > 0 ? (
                                                   <div className="mt-0.5 space-y-0.5">
@@ -3424,24 +3720,22 @@ export default function OrderTakerPage() {
                                       className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900"
                                     >
                                       <div className="flex gap-3">
-                                        {itemImage ? (
-                                          <img
-                                            src={itemImage}
-                                            alt={item.name}
-                                            className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
-                                          />
-                                        ) : (
-                                          <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
-                                            <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
-                                          </div>
-                                        )}
+                                        {showMenuImages &&
+                                          (itemImage ? (
+                                            <img
+                                              src={itemImage}
+                                              alt={item.name}
+                                              className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
+                                            />
+                                          ) : (
+                                            <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+                                              <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
+                                            </div>
+                                          ))}
                                         <div className="min-w-0 flex-1">
                                           <div className="min-w-0">
                                               <p className="truncate text-[15px] font-bold leading-tight text-gray-900 dark:text-white">
                                                 {item.name}
-                                                {!canEditExisting ? (
-                                                  <Lock className="ml-1.5 inline h-3.5 w-3.5 align-middle text-gray-400" />
-                                                ) : null}
                                               </p>
                                               {variant ? (
                                                 <p className="mt-0.5 truncate text-[12px] leading-snug text-gray-500 dark:text-neutral-400">
@@ -3615,17 +3909,18 @@ export default function OrderTakerPage() {
                                 className="rounded-2xl border border-gray-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900"
                               >
                                 <div className="flex gap-3">
-                                  {item.imageUrl ? (
-                                    <img
-                                      src={item.imageUrl}
-                                      alt={item.name}
-                                      className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
-                                    />
-                                  ) : (
-                                    <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
-                                      <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
-                                    </div>
-                                  )}
+                                  {showMenuImages &&
+                                    (item.imageUrl ? (
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        className="h-[72px] w-[72px] flex-shrink-0 rounded-lg object-cover"
+                                      />
+                                    ) : (
+                                      <div className="flex h-[72px] w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-800">
+                                        <Utensils className="h-6 w-6 text-gray-300 dark:text-neutral-600" />
+                                      </div>
+                                    ))}
 
                                   <div className="min-w-0 flex-1">
                                     <div className="min-w-0">
@@ -3762,6 +4057,27 @@ export default function OrderTakerPage() {
                           />
                         </div>
                       )}
+                      {!appendTargetOrder && cart.length > 0 && (
+                        <div className="mt-4 rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-3 space-y-3">
+                          <p className="text-xs font-bold text-gray-900 dark:text-white">
+                            Guest (optional)
+                          </p>
+                          <input
+                            type="text"
+                            value={otCustomerName}
+                            onChange={(e) => setOtCustomerName(e.target.value)}
+                            placeholder="Guest name"
+                            className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-800 text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder-neutral-500 outline-none focus:ring-2 focus:ring-orange-500/20 border-0"
+                          />
+                          <input
+                            type="tel"
+                            value={otCustomerPhone}
+                            onChange={(e) => setOtCustomerPhone(e.target.value)}
+                            placeholder="Phone"
+                            className="w-full px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-800 text-sm font-medium text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder-neutral-500 outline-none focus:ring-2 focus:ring-orange-500/20 border-0"
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -3775,17 +4091,18 @@ export default function OrderTakerPage() {
         {activeTab === TABS.NEW_ORDER &&
           step === STEPS.MENU &&
           cartBadge > 0 && (
-            <div className="fixed bottom-16 inset-x-0 z-20">
+            <div className={fabBottomClass}>
               <div className="px-4 pb-3 pt-2">
                 <button
+                  type="button"
                   onClick={() => setStep(STEPS.CART)}
-                  className="w-full min-h-[48px] flex items-center justify-between py-3.5 px-5 rounded-2xl bg-orange-500 text-white font-bold text-sm active:scale-[0.98] transition-transform"
+                  className="w-full min-h-[48px] flex items-center justify-between py-3.5 px-5 rounded-2xl bg-orange-500 text-white font-bold text-sm active:scale-[0.98] transition-transform shadow-lg shadow-orange-500/25"
                 >
                   <span className="flex items-center gap-2.5">
                     <span className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center text-[11px] font-black">
                       {cartBadge}
                     </span>
-                    View Order
+                    {isUpdateTicket ? "Review update" : "View Order"}
                   </span>
                   <span className="font-extrabold">
                     Rs. {subtotal.toLocaleString()}
@@ -3798,7 +4115,13 @@ export default function OrderTakerPage() {
         {activeTab === TABS.NEW_ORDER &&
           step === STEPS.CART &&
           (cart.length > 0 || !!appendTargetOrder) && (
-            <div className="fixed bottom-16 inset-x-0 z-20">
+            <div className={fabBottomClass}>
+              <p className="bg-gray-50 pb-1 pt-1.5 text-center text-[10px] font-medium text-gray-400 dark:bg-neutral-950 dark:text-neutral-600 select-none">
+                Powered by{" "}
+                <span className="font-semibold text-gray-500 dark:text-neutral-500">
+                  EatsDesk
+                </span>
+              </p>
               <div className="border-t border-gray-200 bg-white px-4 py-2 dark:border-neutral-800 dark:bg-neutral-900">
                 <div className="mb-1.5 flex items-end justify-between gap-3">
                   <div className="min-w-0">
@@ -3846,10 +4169,11 @@ export default function OrderTakerPage() {
                     </button>
                   )}
                   <button
+                    type="button"
                     onClick={
                       appendTargetOrder
                         ? handleAppendOrUpdateOrder
-                        : handlePlaceOrder
+                        : () => setShowSendConfirm(true)
                     }
                     disabled={placing || !!appendingOrderId}
                     className="flex min-h-[40px] flex-[2.5] items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
@@ -3882,17 +4206,17 @@ export default function OrderTakerPage() {
             </div>
           )}
 
-        {/* ── Bottom Tab Bar ─────────────────────────────────────────── */}
+        {/* ── Bottom Tab Bar (hidden during Menu/Cart / Update Ticket) ─ */}
+        {!hideBottomNav && (
         <div className="flex-shrink-0">
-          <p className="pb-1 text-center text-[10px] font-medium text-gray-400 dark:text-neutral-600 select-none">
-            Powered by{" "}
-            <span className="font-semibold text-gray-500 dark:text-neutral-500">
-              EatsDesk
-            </span>
-          </p>
           <nav className="bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex ot-safe-bottom">
           <button
+            type="button"
             onClick={() => {
+              if (isUpdateTicket) {
+                requestCancelAppendFlow();
+                return;
+              }
               setActiveTab(TABS.HOME);
               fetchActiveOrders();
             }}
@@ -3905,13 +4229,22 @@ export default function OrderTakerPage() {
             <div className="relative">
               <Home className="w-5 h-5" />
               {readyOrders.length > 0 && (
-                <span className="absolute -top-0.5 -right-1.5 w-2 h-2 rounded-full bg-orange-500 ring-2 ring-white dark:ring-neutral-950" />
+                <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-[9px] font-black leading-4 text-white text-center ring-2 ring-white dark:ring-neutral-950">
+                  {readyOrders.length > 9 ? "9+" : readyOrders.length}
+                </span>
               )}
             </div>
             <span className="text-[10px] font-bold">Home</span>
           </button>
           <button
-            onClick={() => setActiveTab(TABS.NEW_ORDER)}
+            type="button"
+            onClick={() => {
+              if (isUpdateTicket) {
+                requestCancelAppendFlow();
+              }
+              cancelNewOrderDraft();
+              setActiveTab(TABS.NEW_ORDER);
+            }}
             className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors min-h-[56px] ${
               activeTab === TABS.NEW_ORDER
                 ? "text-orange-500"
@@ -3922,7 +4255,12 @@ export default function OrderTakerPage() {
             <span className="text-[10px] font-bold">New Order</span>
           </button>
           <button
+            type="button"
             onClick={() => {
+              if (isUpdateTicket) {
+                requestCancelAppendFlow();
+                return;
+              }
               setActiveTab(TABS.HISTORY);
               fetchActiveOrders();
             }}
@@ -3932,17 +4270,319 @@ export default function OrderTakerPage() {
                 : "text-gray-400 dark:text-neutral-600"
             }`}
           >
-            <span className="relative inline-flex">
-              <ClipboardList className="w-5 h-5" />
-              {paymentPendingOrders.length > 0 && (
-                <span className="absolute -right-1 -top-0.5 w-2 h-2 rounded-full bg-orange-500 ring-2 ring-white dark:ring-neutral-950" />
-              )}
-            </span>
+            <ClipboardList className="w-5 h-5" />
             <span className="text-[10px] font-bold">History</span>
           </button>
         </nav>
         </div>
+        )}
       </div>
+
+      {/* Order Taker settings */}
+      {showOtSettings && (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close"
+            onClick={() => setShowOtSettings(false)}
+          />
+          <div className="relative w-full max-w-md rounded-t-3xl sm:rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900 ot-safe-bottom">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3.5 dark:border-neutral-800">
+              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                Settings
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowOtSettings(false)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              {[
+                {
+                  key: "showMenuImages",
+                  on: showMenuImages,
+                  title: "Menu item images",
+                  onHint: "Photos shown on menu and cart",
+                  offHint: "Text-only menu — denser list",
+                  IconOn: ImageIcon,
+                  IconOff: ImageOff,
+                  toggle: () =>
+                    updateOtSettings({ showMenuImages: !showMenuImages }),
+                },
+                {
+                  key: "soundOnAdd",
+                  on: soundOnAdd,
+                  title: "Sound on add",
+                  onHint: "Short click when items are added",
+                  offHint: "Silent when adding items",
+                  IconOn: Volume2,
+                  IconOff: VolumeX,
+                  toggle: () => {
+                    const next = !soundOnAdd;
+                    updateOtSettings({ soundOnAdd: next });
+                    if (next) {
+                      playPosFeedbackSound(null, {
+                        force: true,
+                        volume: 65,
+                        beepId: "click",
+                      });
+                    }
+                  },
+                },
+                {
+                  key: "hapticsOnAdd",
+                  on: hapticsOnAdd,
+                  title: "Haptics on add",
+                  onHint: "Vibrate when items are added",
+                  offHint: "No vibration on add",
+                  IconOn: Vibrate,
+                  IconOff: VibrateOff,
+                  toggle: () => {
+                    const next = !hapticsOnAdd;
+                    updateOtSettings({ hapticsOnAdd: next });
+                    if (next && typeof navigator !== "undefined") {
+                      try {
+                        navigator.vibrate?.(18);
+                      } catch {
+                        /* unsupported */
+                      }
+                    }
+                  },
+                },
+              ].map((row) => {
+                const Icon = row.on ? row.IconOn : row.IconOff;
+                return (
+                  <button
+                    key={row.key}
+                    type="button"
+                    onClick={row.toggle}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-3.5 py-3.5 text-left dark:border-neutral-800 dark:bg-neutral-950"
+                  >
+                    <div
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                        row.on
+                          ? "bg-orange-500/15 text-orange-500"
+                          : "bg-gray-200 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"
+                      }`}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-gray-900 dark:text-white">
+                        {row.title}
+                      </p>
+                      <p className="text-[11px] text-gray-500 dark:text-neutral-400">
+                        {row.on ? row.onHint : row.offHint}
+                      </p>
+                    </div>
+                    <span
+                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                        row.on
+                          ? "bg-orange-500"
+                          : "bg-gray-300 dark:bg-neutral-700"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                          row.on ? "left-5" : "left-0.5"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                );
+              })}
+              <p className="px-1 text-[10px] text-gray-400 dark:text-neutral-500">
+                Saved on this device for your account. Haptics need a phone that
+                supports vibration.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Special instructions sheet */}
+      {noteEditor && (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close"
+            onClick={() => !noteEditorSaving && setNoteEditor(null)}
+          />
+          <div className="relative w-full max-w-md rounded-t-3xl sm:rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900 ot-safe-bottom">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3.5 dark:border-neutral-800">
+              <p className="min-w-0 truncate text-sm font-bold text-gray-900 dark:text-white">
+                {noteEditor.title}
+              </p>
+              <button
+                type="button"
+                disabled={noteEditorSaving}
+                onClick={() => setNoteEditor(null)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-neutral-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <textarea
+                autoFocus
+                rows={4}
+                value={noteEditor.value}
+                onChange={(e) =>
+                  setNoteEditor((prev) =>
+                    prev ? { ...prev, value: e.target.value } : prev,
+                  )
+                }
+                placeholder="e.g. No onions, extra spicy…"
+                className="w-full resize-none rounded-xl border-0 bg-gray-100 px-3 py-3 text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-orange-500/20 dark:bg-neutral-800 dark:text-white dark:placeholder-neutral-500"
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  disabled={noteEditorSaving}
+                  onClick={() => setNoteEditor(null)}
+                  className="flex-1 rounded-xl bg-gray-100 py-3 text-sm font-bold text-gray-700 dark:bg-neutral-800 dark:text-neutral-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={noteEditorSaving}
+                  onClick={commitNoteEditor}
+                  className="flex-[1.6] rounded-xl bg-orange-500 py-3 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {noteEditorSaving ? (
+                    <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Busy table choice */}
+      {busyTableSheet && (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close"
+            onClick={() => setBusyTableSheet(null)}
+          />
+          <div className="relative w-full max-w-md rounded-t-3xl sm:rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900 ot-safe-bottom">
+            <div className="border-b border-gray-100 px-4 py-3.5 dark:border-neutral-800">
+              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                {busyTableSheet.table?.name ||
+                  busyTableSheet.table?.label ||
+                  "Table"}{" "}
+                is busy
+              </p>
+              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-neutral-400">
+                Token #
+                {busyTableSheet.order?.tokenNumber ||
+                  getDisplayOrderId(busyTableSheet.order)
+                    .toString()
+                    .slice(-4)}{" "}
+                ·{" "}
+                {String(busyTableSheet.order?.status || "")
+                  .replace(/_/g, " ")
+                  .toLowerCase()}
+              </p>
+            </div>
+            <div className="space-y-2 p-4">
+              {canAppendOrder(busyTableSheet.order) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const order = busyTableSheet.order;
+                    setBusyTableSheet(null);
+                    startAppendItems(order);
+                  }}
+                  className="w-full rounded-xl bg-orange-500 py-3.5 text-sm font-bold text-white active:scale-[0.98]"
+                >
+                  Update open ticket
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setBusyTableSheet(null);
+                  setActiveFilter("all");
+                  setActiveTab(TABS.HOME);
+                }}
+                className="w-full rounded-xl bg-gray-100 py-3 text-sm font-bold text-gray-700 dark:bg-neutral-800 dark:text-neutral-300"
+              >
+                View on Home
+              </button>
+              <button
+                type="button"
+                onClick={() => setBusyTableSheet(null)}
+                className="w-full rounded-xl py-3 text-sm font-bold text-gray-500 dark:text-neutral-400"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send to Kitchen confirm */}
+      {showSendConfirm && !appendTargetOrder && (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close"
+            onClick={() => !placing && setShowSendConfirm(false)}
+          />
+          <div className="relative w-full max-w-md rounded-t-3xl sm:rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900 ot-safe-bottom">
+            <div className="border-b border-gray-100 px-4 py-3.5 dark:border-neutral-800">
+              <p className="text-sm font-bold text-gray-900 dark:text-white">
+                Send to Kitchen?
+              </p>
+              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-neutral-400">
+                {selectedTable?.name || selectedTable?.label || "Walk-in"}
+                {" · "}
+                {cartBadge} item{cartBadge !== 1 ? "s" : ""}
+                {" · "}
+                Rs. {subtotal.toLocaleString()}
+                {otCustomerName.trim()
+                  ? ` · ${otCustomerName.trim()}`
+                  : ""}
+              </p>
+            </div>
+            <div className="flex gap-2 p-4">
+              <button
+                type="button"
+                disabled={placing}
+                onClick={() => setShowSendConfirm(false)}
+                className="flex-1 rounded-xl bg-gray-100 py-3.5 text-sm font-bold text-gray-700 dark:bg-neutral-800 dark:text-neutral-300"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={placing}
+                onClick={handlePlaceOrder}
+                className="flex-[1.8] rounded-xl bg-emerald-600 py-3.5 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {placing ? (
+                  <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                ) : (
+                  "Confirm & send"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBranchModal && branches?.length > 0 && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -4061,7 +4701,7 @@ export default function OrderTakerPage() {
           >
             <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
               <div className="flex items-start gap-4">
-                {modifierPickerItem.imageUrl && (
+                {showMenuImages && modifierPickerItem.imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={modifierPickerItem.imageUrl}
