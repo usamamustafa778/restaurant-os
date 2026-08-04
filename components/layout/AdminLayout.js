@@ -800,13 +800,13 @@ export default function AdminLayout({
     }
   }, []);
 
-  // Restrict kitchen_staff to Kitchen (KDS) only – redirect away from overview/dashboard
+  // Kitchen staff is a dedicated KDS app — only /kitchen (and profile for account/logout)
   useEffect(() => {
     if (role !== "kitchen_staff") return;
     const path = getNavPath(router.asPath, router.pathname);
-    if (path === "/overview") {
-      router.replace("/kitchen");
-    }
+    if (path === "/kitchen" || path.startsWith("/kitchen/")) return;
+    if (path === "/profile") return;
+    router.replace("/kitchen");
   }, [role, router.asPath, router.pathname, router]);
 
   // Dashboard requires sales-report permission; otherwise POS or profile
@@ -884,7 +884,7 @@ export default function AdminLayout({
     }
   }, [role, router.asPath, router.pathname, router]);
 
-  // App-bound kitchen/rider UIs don't use the tenant notification bell
+  // Kitchen / rider are dedicated apps (no sidebar / bottom nav). Kitchen still gets the order bell.
   const isDedicatedAppRole =
     role === "kitchen_staff" || role === "delivery_rider";
   const showNotificationBell =
@@ -892,15 +892,17 @@ export default function AdminLayout({
     (role !== "super_admin" || Boolean(actingAsSlug)) &&
     (role === "super_admin"
       ? Boolean(actingAsSlug)
-      : !isDedicatedAppRole);
+      : role !== "delivery_rider");
   const showWhatsAppInBell =
     role !== "super_admin" &&
+    role !== "kitchen_staff" &&
+    role !== "delivery_rider" &&
     permissionsLoaded &&
     hasPermission("whatsapp.conversations.view");
   const showOrdersInBell =
     role === "super_admin"
       ? Boolean(actingAsSlug)
-      : !isDedicatedAppRole;
+      : role !== "delivery_rider";
 
   useEffect(() => {
     if (
@@ -1131,8 +1133,12 @@ export default function AdminLayout({
     window.location.href = "/login";
   }
 
-  const hideSidebarForKitchenStaff =
-    role === "kitchen_staff" && cleanPath === "/kitchen";
+  // Dedicated app roles: no sidebar / bottom nav (KDS and Rider are standalone apps)
+  const hideChromeForDedicatedApp = isDedicatedAppRole;
+  const showMobileBottomNav =
+    permissionsLoaded &&
+    !isDedicatedAppRole &&
+    (hasPermission("pos.view") || hasPermission("reports.view_sales"));
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";
   const resolvedSubtitle =
     subtitle !== undefined
@@ -1157,7 +1163,7 @@ export default function AdminLayout({
         noindex={true}
       />
       <div className="h-screen overflow-hidden bg-gray-50 dark:bg-black flex text-gray-900 dark:text-white text-sm">
-        {!hideSidebarForKitchenStaff && (
+        {!hideChromeForDedicatedApp && (
           <>
             {/* Backdrop for mobile sidebar */}
             <div
@@ -1617,6 +1623,116 @@ export default function AdminLayout({
         )}
 
         <div className="flex-1 flex flex-col min-w-0">
+          {/* Kitchen staff — dedicated KDS mobile header (no overlapping title) */}
+          {role === "kitchen_staff" ? (
+            <header className="sticky top-0 z-30 flex-shrink-0 md:hidden flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                {restaurantLogoUrl ? (
+                  <div className="h-9 w-9 rounded-xl overflow-hidden border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={restaurantLogoUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-xs font-bold shadow-sm flex-shrink-0">
+                    {(restaurantName || "K").slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 dark:text-white truncate leading-tight">
+                    {restaurantName || "Kitchen"}
+                  </p>
+                  <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-400 truncate leading-tight mt-0.5">
+                    Kitchen Display
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {showNotificationBell && (
+                  <WhatsAppNotificationBell
+                    showWhatsApp={false}
+                    showOrders={true}
+                    popupHost="mobile"
+                    variant="ghost"
+                    popupPlacement="top-center"
+                  />
+                )}
+                <div className="relative flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setUserMenuOpen((prev) => !prev)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-xs font-bold text-white shadow-sm"
+                    title={userName || "Account"}
+                    aria-label="Account menu"
+                  >
+                    {userInitials || userName?.charAt(0)?.toUpperCase() || "U"}
+                  </button>
+                  {userMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        aria-hidden
+                        onClick={() => setUserMenuOpen(false)}
+                      />
+                      <div className="absolute right-0 top-full z-50 mt-2 min-w-[180px] overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900">
+                        <div className="border-b-2 border-gray-100 p-3 dark:border-neutral-800">
+                          <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-neutral-400">
+                            Account
+                          </p>
+                          {userName ? (
+                            <p className="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                              {userName}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="space-y-1 p-2">
+                          <Link
+                            href={profileHref}
+                            onClick={() => setUserMenuOpen(false)}
+                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                          >
+                            <UserCircle2 className="h-4 w-4" />
+                            <span>Profile</span>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              toggleTheme();
+                              setUserMenuOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                          >
+                            {theme === "light" ? (
+                              <Moon className="h-4 w-4" />
+                            ) : (
+                              <Sun className="h-4 w-4" />
+                            )}
+                            <span>
+                              {theme === "light" ? "Dark mode" : "Light mode"}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              handleLogout();
+                            }}
+                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-red-600 transition-all hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            <span>Logout</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </header>
+          ) : (
           <header className="sticky top-0 z-30 flex-shrink-0 md:hidden flex items-center px-3 py-2 border-b border-gray-100 dark:border-neutral-800 bg-white dark:bg-neutral-950">
             {/* Left — logo + restaurant name (or back button) */}
             <div className="flex items-center gap-1.5 z-10">
@@ -1790,6 +1906,7 @@ export default function AdminLayout({
               </div>
             </div>
           </header>
+          )}
 
           <header className="sticky top-0 z-30 flex-shrink-0 hidden md:flex items-center justify-between px-8 py-2 border-b-2 border-gray-100 dark:border-neutral-800 bg-gradient-to-r from-white via-white to-gray-50 dark:from-neutral-950 dark:via-neutral-950 dark:to-black shadow-sm">
             <div className="flex items-center gap-4 min-w-0">
@@ -2112,7 +2229,11 @@ export default function AdminLayout({
             </div>
           </header>
 
-          <main className="relative flex-1 px-4 md:px-6 pt-4 pb-24 md:pb-6 overflow-y-auto bg-gray-100 dark:bg-black">
+          <main
+            className={`relative flex-1 px-4 md:px-6 pt-4 overflow-y-auto bg-gray-100 dark:bg-black ${
+              showMobileBottomNav ? "pb-24 md:pb-6" : "pb-6"
+            }`}
+          >
             {!suspended && children}
 
             {showBranchRequiredModal && (
@@ -2187,10 +2308,8 @@ export default function AdminLayout({
             )}
           </main>
 
-          {/* ─── Bottom nav bar — mobile only (permission-gated) ─────────── */}
-          {permissionsLoaded &&
-            (hasPermission("pos.view") ||
-              hasPermission("reports.view_sales")) && (
+          {/* ─── Bottom nav bar — mobile only (not for KDS / Rider system apps) ─ */}
+          {showMobileBottomNav && (
             <nav
               className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex items-stretch shadow-[0_-1px_8px_rgba(0,0,0,0.06)]"
               style={{ paddingBottom: "env(safe-area-inset-bottom)" }}

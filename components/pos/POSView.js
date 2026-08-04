@@ -396,7 +396,7 @@ export default function POSView({
   const canAddItemsOnEdit =
     isAdminRole || canAddOrderItems(hasPermission, editingStatus);
   const canRemoveItemsOnEdit =
-    isAdminRole || canRemoveOrderItems(hasPermission);
+    isAdminRole || canRemoveOrderItems(hasPermission, editingStatus);
   const canModifyOrderItems =
     !editingOrderId ||
     (canEditAtStage && (canAddItemsOnEdit || canRemoveItemsOnEdit));

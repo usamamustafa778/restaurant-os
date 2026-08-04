@@ -42,7 +42,7 @@ const VIEW_MODES = [
 
 /** Suggested subgroup names when creating / bulk-assigning (by group). */
 const SUGGESTED_SUBGROUPS = {
-  POS: ["Access", "Orders", "Edit Order", "Status", "Money", "Session", "Print"],
+  POS: ["Access", "Orders", "Edit Order", "Status", "Money", "Session", "Print", "Legacy"],
   Accounts: ["View", "Manage"],
   Inventory: ["View", "Manage"],
   Staff: ["View", "Manage"],

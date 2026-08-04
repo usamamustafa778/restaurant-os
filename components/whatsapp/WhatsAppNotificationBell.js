@@ -49,6 +49,10 @@ function isRiderRole() {
   return getStoredAuth()?.user?.role === "delivery_rider";
 }
 
+function isKitchenRole() {
+  return getStoredAuth()?.user?.role === "kitchen_staff";
+}
+
 function OrderAlertIcon({ type, className = "h-4 w-4" }) {
   if (type === "delivery_assigned") return <Bike className={className} />;
   return <ChefHat className={className} />;
@@ -462,12 +466,16 @@ export default function WhatsAppNotificationBell({
                   <p className="text-sm font-medium text-gray-700 dark:text-neutral-300">
                     {isRiderRole()
                       ? "No delivery alerts yet"
-                      : "No ready orders yet"}
+                      : isKitchenRole()
+                        ? "No new kitchen tickets yet"
+                        : "No ready orders yet"}
                   </p>
                   <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-neutral-500">
                     {isRiderRole()
                       ? "When POS assigns you a delivery, it will show up here with a sound."
-                      : "You'll hear a sound and see alerts here when kitchen marks an order ready."}
+                      : isKitchenRole()
+                        ? "New orders will appear here with a sound when they hit the kitchen."
+                        : "You'll hear a sound and see alerts here when kitchen marks an order ready."}
                   </p>
                 </div>
               ) : (

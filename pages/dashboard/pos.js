@@ -588,11 +588,7 @@ export default function OrdersPage() {
         const allowed = orderStatus
           ? canOpenOrderEdit(hasPermission, orderStatus) ||
             hasPermission("pos.modify_paid_order")
-          : canOpenOrderEdit(hasPermission, "NEW_ORDER") ||
-            canOpenOrderEdit(hasPermission, "PROCESSING") ||
-            canOpenOrderEdit(hasPermission, "READY") ||
-            canOpenOrderEdit(hasPermission, "DELIVERED") ||
-            canOpenOrderEdit(hasPermission, "OUT_FOR_DELIVERY") ||
+          : hasPermission("orders.edit") ||
             hasPermission("pos.modify_paid_order");
         if (!allowed) {
           toast.error("You don't have permission to edit orders");

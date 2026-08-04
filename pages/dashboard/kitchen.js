@@ -3,6 +3,7 @@ import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
 import { getOrders, getNextStatuses, updateOrderStatus, recallKitchenOrder, getDaySessions, checkKitchenModuleAccess } from "../../lib/apiClient";
 import { useSocket } from "../../contexts/SocketContext";
+import { useOrderNotifications } from "../../contexts/OrderNotificationContext";
 import { playKitchenNewOrderSound, unlockNotificationAudio } from "../../lib/playNotificationSound";
 import KdsLockedPresentation from "../../components/kitchen/KdsLockedPresentation";
 import KdsSettingsPanel from "../../components/kitchen/KdsSettingsPanel";
@@ -486,6 +487,7 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
 
 export default function KitchenPage() {
   const { socket } = useSocket() || {};
+  const { pushKitchenNewOrderAlert } = useOrderNotifications();
   const [orders, setOrders] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [moduleLocked, setModuleLocked] = useState(null); // null = checking
@@ -547,22 +549,34 @@ export default function KitchenPage() {
       return;
     }
 
-    let hasNew = false;
+    const arrived = [];
     for (const id of currentIds) {
-      if (!knownNewOrderIdsRef.current.has(id)) {
-        hasNew = true;
-        break;
-      }
+      if (!knownNewOrderIdsRef.current.has(id)) arrived.push(id);
+    }
+    knownNewOrderIdsRef.current = currentIds;
+
+    if (arrived.length === 0) return;
+
+    for (const id of arrived) {
+      const order = orders.find((o) => String(o._id || o.id || "") === id);
+      if (order) pushKitchenNewOrderAlert(order, { showPopup: true });
     }
 
-    knownNewOrderIdsRef.current = currentIds;
-    if (hasNew && kdsPrefs.soundEnabled) {
+    if (kdsPrefs.soundEnabled) {
       playKitchenNewOrderSound({
         soundType: kdsPrefs.soundType,
         volume: kdsPrefs.soundVolume,
       });
     }
-  }, [orders, pageLoading, kdsPrefs.soundEnabled, kdsPrefs.soundType, kdsPrefs.soundVolume]);
+  }, [
+    orders,
+    pageLoading,
+    moduleLocked,
+    kdsPrefs.soundEnabled,
+    kdsPrefs.soundType,
+    kdsPrefs.soundVolume,
+    pushKitchenNewOrderAlert,
+  ]);
 
   // Repeat-until-seen: re-alert while New Orders column is non-empty.
   useEffect(() => {

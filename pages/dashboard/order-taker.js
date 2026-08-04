@@ -239,7 +239,7 @@ function canEditOrderNotes(order) {
   return true;
 }
 
-/** Full edit of existing lines (qty / remove) when stage + Remove Items allow. */
+/** Full edit of existing lines (qty / remove) when Edit + stage Remove allow. */
 function canFullyEditExistingItems(order, hasPermission) {
   if (!order || isOrderLocked(order)) return false;
   if (typeof hasPermission !== "function") {
@@ -247,7 +247,7 @@ function canFullyEditExistingItems(order, hasPermission) {
   }
   return (
     canEditOrderAtStatus(hasPermission, order.status) &&
-    canRemoveOrderItems(hasPermission)
+    canRemoveOrderItems(hasPermission, order.status)
   );
 }
 
@@ -532,7 +532,7 @@ export default function OrderTakerPage() {
   const appendAddOnlyMode =
     !!appendTargetOrder &&
     canAddOrderItems(hasPermission, appendTargetOrder.status) &&
-    !canRemoveOrderItems(hasPermission);
+    !canRemoveOrderItems(hasPermission, appendTargetOrder.status);
 
   useEffect(() => {
     const auth = getStoredAuth();

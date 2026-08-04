@@ -307,6 +307,49 @@ export function OrderNotificationProvider({ children }) {
     [upsertAlert, pushPopup, showBrowserNotification],
   );
 
+  /**
+   * KDS new-ticket alert — fills the notification bell (+ optional popup).
+   * Sound is usually handled by the kitchen page from KDS settings.
+   */
+  const pushKitchenNewOrderAlert = useCallback(
+    (data, opts = {}) => {
+      const { showPopup = true, silent = false } = opts;
+      const orderId = resolveOrderId(data);
+      if (!orderId) return false;
+
+      const token = formatTokenLabel(data);
+      const typeLabel = orderTypeLabel(data?.orderType);
+      const tablePart = data?.tableName ? ` · ${data.tableName}` : "";
+      const timestamp = new Date().toISOString();
+      const alert = {
+        id: `kds-new-${orderId}-${timestamp}`,
+        orderId,
+        type: "kitchen_new_order",
+        title: `${token} — new order`,
+        body: `${typeLabel}${tablePart} — start cooking`,
+        orderNumber: data?.orderNumber || null,
+        tokenNumber: data?.tokenNumber || null,
+        orderType: data?.orderType || null,
+        tableName: data?.tableName || "",
+        timestamp,
+        read: silent,
+      };
+
+      upsertAlert(alert);
+      if (!silent && showPopup) pushPopup(alert);
+      if (!silent) {
+        showBrowserNotification({
+          title: `New order ${token}`,
+          body: alert.body,
+          orderId,
+          tagPrefix: "kds-new",
+        });
+      }
+      return true;
+    },
+    [upsertAlert, pushPopup, showBrowserNotification],
+  );
+
   // FOH: order became READY
   useEffect(() => {
     if (!socket) return;
@@ -403,6 +446,7 @@ export function OrderNotificationProvider({ children }) {
         openOrder,
         setOrderClickHandler,
         pushDeliveryAssignedAlert,
+        pushKitchenNewOrderAlert,
       }}
     >
       {children}
@@ -423,6 +467,7 @@ export function useOrderNotifications() {
       openOrder: () => {},
       setOrderClickHandler: () => {},
       pushDeliveryAssignedAlert: () => false,
+      pushKitchenNewOrderAlert: () => false,
     };
   }
   return ctx;
