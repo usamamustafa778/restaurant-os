@@ -3183,7 +3183,7 @@ export default function OrderTakerPage() {
                         className={
                           showMenuImages
                             ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-2.5"
-                            : "grid grid-cols-1 sm:grid-cols-2 gap-2"
+                            : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2"
                         }
                       >
                         {filteredItems.map((item) => {
@@ -3277,7 +3277,7 @@ export default function OrderTakerPage() {
                                   className={`px-2.5 md:px-3 ${
                                     showMenuImages
                                       ? "pt-1.5 md:pt-1 pb-2 md:pb-1.5"
-                                      : "py-3 flex items-center justify-between gap-2"
+                                      : "pt-2.5 pb-2.5 pr-10 min-h-[4.5rem]"
                                   } ${cannotAdd ? "opacity-60" : ""}`}
                                 >
                                   <div className="min-w-0">
@@ -3300,8 +3300,8 @@ export default function OrderTakerPage() {
                                       )}
                                     </div>
                                     <p
-                                      className={`text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 ${
-                                        showMenuImages ? "pb-0.5" : "mt-0.5"
+                                      className={`text-[13px] md:text-[12px] font-bold leading-snug line-clamp-2 pb-0.5 ${
+                                        !showMenuImages ? "pr-0.5" : ""
                                       } ${
                                         cannotAdd
                                           ? "text-gray-400 dark:text-neutral-500"
