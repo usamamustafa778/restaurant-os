@@ -23,7 +23,7 @@ import {
 import {
   User, ChefHat, Loader2, CheckCircle2, RefreshCw,
   Package, UtensilsCrossed, Headset, ShoppingBag, Truck, MapPin,
-  Trash2, EyeOff, Settings, VolumeX,
+  Trash2, EyeOff, Settings, VolumeX, ChevronDown,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -444,7 +444,7 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
               type="button"
               disabled={isUpdating}
               onClick={() => onRecall(order)}
-              className="w-full py-1 rounded-lg text-[11px] font-semibold text-gray-400 border border-gray-200 dark:border-neutral-700 hover:text-orange-400 hover:border-orange-500/50 transition-colors disabled:opacity-50"
+              className="w-full py-2 lg:py-1 rounded-lg text-xs lg:text-[11px] font-semibold text-gray-400 border border-gray-200 dark:border-neutral-700 hover:text-orange-400 hover:border-orange-500/50 transition-colors disabled:opacity-50"
             >
               ↩ Back to Preparing
             </button>
@@ -454,7 +454,7 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
               type="button"
               disabled={isUpdating}
               onClick={() => onAdvance(order)}
-              className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-white text-[11px] font-bold transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${column.advanceCls}`}
+              className={`w-full flex items-center justify-center gap-1.5 py-2.5 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-white text-xs lg:text-[11px] font-bold transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${column.advanceCls}`}
             >
               {isUpdating ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -470,7 +470,7 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
             <button
               type="button"
               onClick={() => onDismiss(order.id || order._id)}
-              className="w-full flex items-center justify-center gap-1 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-[11px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
+              className="w-full flex items-center justify-center gap-1 py-2 lg:py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-500 dark:text-neutral-400 text-xs lg:text-[11px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors"
             >
               <EyeOff className="w-3 h-3" />
               Dismiss
@@ -495,6 +495,8 @@ export default function KitchenPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [sessionStart, setSessionStart] = useState(null);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  /** Phone board: which status columns are expanded (accordion, like POS). */
+  const [mobileOpenColumns, setMobileOpenColumns] = useState({});
 
   // KDS preferences (persisted to localStorage per user)
   const [kdsPrefs, setKdsPrefs] = useState(() => loadKdsSettings());
@@ -830,75 +832,78 @@ export default function KitchenPage() {
     );
   }
 
+  const renderColumnCards = (col, colOrs) => {
+    const { EmptyIcon } = col;
+    if (colOrs.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-10 opacity-40">
+          <EmptyIcon className="w-9 h-9 text-gray-400 dark:text-neutral-600 mb-2" />
+          <p className="text-xs text-gray-400 dark:text-neutral-600">
+            {col.emptyLabel}
+          </p>
+        </div>
+      );
+    }
+    return colOrs.map((order) => {
+      const orderId = order.id || order._id;
+      return (
+        <OrderCard
+          key={orderId}
+          order={order}
+          column={col}
+          isUpdating={updatingOrderId === orderId}
+          onAdvance={handleStatusAdvance}
+          onDismiss={handleDismiss}
+          onRecall={col.key === "ready" ? recallOrder : null}
+          prefs={kdsPrefs}
+        />
+      );
+    });
+  };
+
   return (
     <AdminLayout title="Kitchen Display System" subtitle="">
       <PermissionGate permission="orders.start_cooking">
-      <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 110px)" }}>
+      {/* Phone: natural page scroll only (AdminLayout main). Desktop: fixed-height board. */}
+      <div className="flex flex-col gap-2.5 md:gap-3 lg:h-[calc(100vh-110px)] lg:min-h-0">
 
         {/* ── Top bar ────────────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 flex-shrink-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Filter presets */}
-            <div className="flex rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5 flex-wrap">
-              {KDS_FILTER_PRESETS.map((f) => (
+        <div className="flex flex-col gap-2 flex-shrink-0">
+          {/* Phone: actions on their own row so filters get full width below */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              {staleReadyCount > 0 ? (
                 <button
-                  key={f.id}
                   type="button"
-                  onClick={() => setTypeFilter(f.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    typeFilter === f.id
-                      ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
-                      : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
-                  }`}
+                  onClick={handleClearStaleReady}
+                  className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors whitespace-nowrap"
+                  title="Dismiss all Ready orders older than 2 hours from KDS view (does not change order status)"
                 >
-                  {f.label}
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear {staleReadyCount} stale
                 </button>
-              ))}
+              ) : (
+                <span className="hidden md:inline text-[11px] text-gray-400 dark:text-neutral-500">
+                  Updated {refreshLabel}
+                </span>
+              )}
             </div>
-
-            {/* Clear stale Ready orders */}
-            {staleReadyCount > 0 && (
-              <button
-                type="button"
-                onClick={handleClearStaleReady}
-                className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
-                title="Dismiss all Ready orders older than 2 hours from KDS view (does not change order status)"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Clear {staleReadyCount} stale
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden lg:flex items-center gap-3 text-[10px] text-gray-400 dark:text-neutral-500">
-              {[
-                { cls: "bg-gray-400", label: `< ${kdsPrefs.urgencyWarning}m` },
-                { cls: "bg-amber-400", label: `${kdsPrefs.urgencyWarning}-${kdsPrefs.urgencyUrgent}m` },
-                { cls: "bg-orange-400", label: `${kdsPrefs.urgencyUrgent}-${kdsPrefs.urgencyCritical}m` },
-                { cls: "bg-red-500 animate-pulse", label: `> ${kdsPrefs.urgencyCritical}m` },
-              ].map((u) => (
-                <div key={u.label} className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${u.cls}`} />
-                  {u.label}
-                </div>
-              ))}
-            </div>
-
-            {/* Sound muted indicator */}
-            {!kdsPrefs.soundEnabled && (
-              <span className="hidden sm:flex items-center gap-1 text-[10px] text-gray-400 dark:text-neutral-500" title="Sound is off">
-                <VolumeX className="w-3 h-3" />
-              </span>
-            )}
-
-            <div className="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-neutral-500">
-              <span className="hidden sm:inline">Updated {refreshLabel}</span>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {!kdsPrefs.soundEnabled && (
+                <span className="hidden sm:flex items-center gap-1 text-[10px] text-gray-400 dark:text-neutral-500" title="Sound is off">
+                  <VolumeX className="w-3 h-3" />
+                </span>
+              )}
+              {staleReadyCount > 0 && (
+                <span className="hidden md:inline text-[11px] text-gray-400 dark:text-neutral-500">
+                  Updated {refreshLabel}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={handleManualRefresh}
                 disabled={refreshing}
-                className="p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-primary transition-colors disabled:opacity-50"
+                className="p-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-primary transition-colors disabled:opacity-50"
                 title="Refresh orders"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
@@ -909,62 +914,170 @@ export default function KitchenPage() {
                   setKdsDraft({ ...kdsPrefs });
                   setShowSettingsPanel(true);
                 }}
-                className="p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-primary transition-colors"
+                className="p-2 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-500 hover:text-primary transition-colors"
                 title="KDS settings"
               >
                 <Settings className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
+
+          {/* Full-width filter strip — scrolls horizontally on narrow screens */}
+          <div className="kds-no-scrollbar -mx-0.5 overflow-x-auto">
+            <div className="inline-flex min-w-max rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1 gap-0.5">
+              {KDS_FILTER_PRESETS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setTypeFilter(f.id)}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                    typeFilter === f.id
+                      ? "bg-gradient-to-r from-primary to-secondary text-white shadow-sm"
+                      : "text-gray-500 dark:text-neutral-400 hover:text-gray-900 dark:hover:text-white"
+                  }`}
+                >
+                  <span className="sm:hidden">{f.shortLabel || f.label}</span>
+                  <span className="hidden sm:inline">{f.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="hidden lg:flex items-center gap-3 text-[10px] text-gray-400 dark:text-neutral-500">
+            {[
+              { cls: "bg-gray-400", label: `< ${kdsPrefs.urgencyWarning}m` },
+              { cls: "bg-amber-400", label: `${kdsPrefs.urgencyWarning}-${kdsPrefs.urgencyUrgent}m` },
+              { cls: "bg-orange-400", label: `${kdsPrefs.urgencyUrgent}-${kdsPrefs.urgencyCritical}m` },
+              { cls: "bg-red-500 animate-pulse", label: `> ${kdsPrefs.urgencyCritical}m` },
+            ].map((u) => (
+              <div key={u.label} className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${u.cls}`} />
+                {u.label}
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* ── Kanban columns ────────────────────────────────────────── */}
-        <div className={`flex-1 grid grid-cols-1 ${activeColumns.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"} gap-3 min-h-0`}>
+        {/* ── Phone: stacked collapsible columns — page scroll only ─── */}
+        <div className="lg:hidden space-y-2.5 pb-2">
           {activeColumns.map((col, colIdx) => {
             const colOrs = columnOrders[colIdx];
-            const { EmptyIcon } = col;
-            const staleInCol = col.key === "ready" ? colOrs.filter(isStaleReady).length : 0;
+            const isOpen = !!mobileOpenColumns[col.key];
+            const staleInCol =
+              col.key === "ready" ? colOrs.filter(isStaleReady).length : 0;
+            return (
+              <div
+                key={col.key}
+                className={`flex flex-col rounded-xl border ${col.colBorder} ${col.colBg} overflow-hidden`}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMobileOpenColumns((prev) => ({
+                      ...prev,
+                      [col.key]: !prev[col.key],
+                    }))
+                  }
+                  className={`flex w-full items-center gap-2 px-3 py-3 text-left transition-colors min-h-[48px] ${
+                    isOpen ? `border-b ${col.colBorder}` : ""
+                  }`}
+                >
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${col.header} flex-shrink-0`}
+                  />
+                  <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">
+                    {col.title}
+                  </span>
+                  <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                    {staleInCol > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400">
+                        {staleInCol} stale
+                      </span>
+                    )}
+                    <span
+                      className={`text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${col.countBg}`}
+                    >
+                      {colOrs.length}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-gray-400 transition-transform ${
+                        isOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </span>
+                </button>
+
+                {isOpen && (
+                  <div
+                    className={
+                      kdsPrefs.density === "compact"
+                        ? "p-2 space-y-1.5"
+                        : "p-2.5 space-y-2"
+                    }
+                  >
+                    {renderColumnCards(col, colOrs)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Desktop / tablet: multi-column board ───────────────────── */}
+        <div
+          className={`hidden lg:grid flex-1 gap-3 min-h-0 ${
+            activeColumns.length === 2 ? "grid-cols-2" : "grid-cols-3"
+          }`}
+        >
+          {activeColumns.map((col, colIdx) => {
+            const colOrs = columnOrders[colIdx];
+            const staleInCol =
+              col.key === "ready" ? colOrs.filter(isStaleReady).length : 0;
             return (
               <div
                 key={col.key}
                 className={`flex flex-col rounded-2xl border ${col.colBorder} ${col.colBg} overflow-hidden min-h-0`}
               >
-                <div className={`flex items-center gap-2 px-4 py-2.5 flex-shrink-0 border-b ${col.colBorder}`}>
-                  <span className={`w-2.5 h-2.5 rounded-full ${col.header} flex-shrink-0`} />
-                  <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">{col.title}</span>
-                  <span className={`ml-auto text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${col.countBg}`}>
+                <div
+                  className={`flex items-center gap-2 px-4 py-2.5 flex-shrink-0 border-b ${col.colBorder}`}
+                >
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${col.header} flex-shrink-0`}
+                  />
+                  <span className="text-[13px] font-bold text-gray-800 dark:text-neutral-200 truncate">
+                    {col.title}
+                  </span>
+                  <span
+                    className={`ml-auto text-[11px] font-bold min-w-[24px] text-center px-1.5 py-0.5 rounded-full ${col.countBg}`}
+                  >
                     {colOrs.length}
                   </span>
                   {staleInCol > 0 && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400"
-                      title={`${staleInCol} order${staleInCol !== 1 ? "s" : ""} waiting over 2 hours`}>
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400"
+                      title={`${staleInCol} order${staleInCol !== 1 ? "s" : ""} waiting over 2 hours`}
+                    >
                       {staleInCol} stale
                     </span>
                   )}
                 </div>
 
-                <div className={`flex-1 overflow-y-auto min-h-0 ${kdsPrefs.density === "compact" ? "p-2 space-y-1.5" : "p-2.5 space-y-2"}`}>
+                <div
+                  className={`flex-1 overflow-y-auto min-h-0 ${
+                    kdsPrefs.density === "compact"
+                      ? "p-2 space-y-1.5"
+                      : "p-2.5 space-y-2"
+                  }`}
+                >
                   {colOrs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[120px] opacity-40">
-                      <EmptyIcon className="w-10 h-10 text-gray-400 dark:text-neutral-600 mb-2" />
-                      <p className="text-xs text-gray-400 dark:text-neutral-600">{col.emptyLabel}</p>
+                      <col.EmptyIcon className="w-10 h-10 text-gray-400 dark:text-neutral-600 mb-2" />
+                      <p className="text-xs text-gray-400 dark:text-neutral-600">
+                        {col.emptyLabel}
+                      </p>
                     </div>
                   ) : (
-                    colOrs.map((order) => {
-                      const orderId = order.id || order._id;
-                      return (
-                        <OrderCard
-                          key={orderId}
-                          order={order}
-                          column={col}
-                          isUpdating={updatingOrderId === orderId}
-                          onAdvance={handleStatusAdvance}
-                          onDismiss={handleDismiss}
-                          onRecall={col.key === "ready" ? recallOrder : null}
-                          prefs={kdsPrefs}
-                        />
-                      );
-                    })
+                    renderColumnCards(col, colOrs)
                   )}
                 </div>
               </div>
@@ -992,6 +1105,15 @@ export default function KitchenPage() {
           toast.success("Settings reset to defaults");
         }}
       />
+      <style jsx global>{`
+        .kds-no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .kds-no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
       </PermissionGate>
     </AdminLayout>
   );
