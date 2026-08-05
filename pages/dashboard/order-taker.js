@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useRouter } from "next/router";
 import {
   getMenu,
   getDeals,
@@ -68,6 +69,8 @@ import {
   VolumeX,
   Vibrate,
   VibrateOff,
+  BellRing,
+  BellOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SEO from "../../components/SEO";
@@ -79,6 +82,17 @@ import {
   saveOrderTakerSettings,
 } from "../../lib/orderTakerSettings";
 import { playPosFeedbackSound } from "../../lib/posAddSounds";
+import {
+  supportsHaptics,
+  triggerHaptic,
+  hapticsUnsupportedHint,
+} from "../../lib/haptics";
+import {
+  isWebPushSupported,
+  enableWebPush,
+  disableWebPush,
+  syncWebPushIfGranted,
+} from "../../lib/webPushClient";
 import {
   buildDealSelectionsFingerprint,
   getComboItemType,
@@ -468,6 +482,7 @@ function WaiterOrderItemRow({
 }
 
 export default function OrderTakerPage() {
+  const router = useRouter();
   const {
     currentBranch,
     branches,
@@ -551,6 +566,8 @@ export default function OrderTakerPage() {
   const showMenuImages = otSettings.showMenuImages !== false;
   const soundOnAdd = otSettings.soundOnAdd !== false;
   const hapticsOnAdd = otSettings.hapticsOnAdd !== false;
+  const pushOnReady = otSettings.pushOnReady !== false;
+  const [pushBusy, setPushBusy] = useState(false);
 
   function updateOtSettings(patch) {
     setOtSettings((prev) => {
@@ -561,19 +578,16 @@ export default function OrderTakerPage() {
   }
 
   function playAddFeedback() {
+    // Haptic first — must stay inside the tap gesture; longer pulse so Android feels it
+    if (hapticsOnAdd) {
+      triggerHaptic("light");
+    }
     if (soundOnAdd) {
       playPosFeedbackSound(null, {
         force: true,
         volume: 65,
         beepId: "click",
       });
-    }
-    if (hapticsOnAdd && typeof navigator !== "undefined") {
-      try {
-        navigator.vibrate?.(12);
-      } catch {
-        /* unsupported */
-      }
     }
   }
 
@@ -623,6 +637,45 @@ export default function OrderTakerPage() {
     });
     return () => setOrderClickHandler(null);
   }, [setOrderClickHandler]);
+
+  // Open Home → Ready when arriving from a push / deep link
+  useEffect(() => {
+    if (!router.isReady) return;
+    const focus = router.query?.focusOrder;
+    if (!focus) return;
+    setActiveTab(TABS.HOME);
+    setActiveFilter("ready");
+    const nextQuery = { ...router.query };
+    delete nextQuery.focusOrder;
+    router.replace(
+      { pathname: router.pathname, query: nextQuery },
+      undefined,
+      { shallow: true },
+    );
+  }, [router.isReady, router.query?.focusOrder]);
+
+  // Service worker click while app already open
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+      return undefined;
+    }
+    const onMessage = (event) => {
+      if (event.data?.type !== "PUSH_NOTIFICATION_CLICK") return;
+      setActiveTab(TABS.HOME);
+      setActiveFilter("ready");
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, []);
+
+  // Keep push subscription in sync when enabled + permission already granted
+  useEffect(() => {
+    if (!pushOnReady || !isWebPushSupported()) return;
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    syncWebPushIfGranted({ client: "order_taker" }).catch(() => {});
+  }, [pushOnReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2526,6 +2579,46 @@ export default function OrderTakerPage() {
                   </button>
                 )}
 
+                {pushOnReady &&
+                  isWebPushSupported() &&
+                  typeof Notification !== "undefined" &&
+                  Notification.permission !== "granted" && (
+                    <button
+                      type="button"
+                      disabled={pushBusy}
+                      onClick={async () => {
+                        setPushBusy(true);
+                        try {
+                          await enableWebPush({ client: "order_taker" });
+                          updateOtSettings({ pushOnReady: true });
+                          toast.success("Background alerts on");
+                        } catch (err) {
+                          toast.error(
+                            err?.message ||
+                              "Allow notifications to get ready alerts when the app is closed.",
+                          );
+                        } finally {
+                          setPushBusy(false);
+                        }
+                      }}
+                      className="w-full flex items-center gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-3.5 py-3 text-left dark:border-orange-500/30 dark:bg-orange-500/10"
+                    >
+                      <BellRing className="h-5 w-5 shrink-0 text-orange-500" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-bold text-gray-900 dark:text-white">
+                          Enable ready alerts
+                        </span>
+                        <span className="block text-[11px] text-gray-500 dark:text-neutral-400">
+                          Get notified when kitchen marks your order ready —
+                          even if this app is closed
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs font-bold text-orange-600">
+                        {pushBusy ? "…" : "Allow"}
+                      </span>
+                    </button>
+                  )}
+
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     {
@@ -4337,19 +4430,65 @@ export default function OrderTakerPage() {
                   key: "hapticsOnAdd",
                   on: hapticsOnAdd,
                   title: "Haptics on add",
-                  onHint: "Vibrate when items are added",
-                  offHint: "No vibration on add",
+                  onHint: supportsHaptics()
+                    ? "Vibrate when items are added"
+                    : hapticsUnsupportedHint() ||
+                      "Vibrate when items are added",
+                  offHint: supportsHaptics()
+                    ? "No vibration on add"
+                    : hapticsUnsupportedHint() || "No vibration on add",
                   IconOn: Vibrate,
                   IconOff: VibrateOff,
                   toggle: () => {
                     const next = !hapticsOnAdd;
                     updateOtSettings({ hapticsOnAdd: next });
-                    if (next && typeof navigator !== "undefined") {
+                    if (next) triggerHaptic("medium");
+                  },
+                },
+                {
+                  key: "pushOnReady",
+                  on: pushOnReady,
+                  title: "Ready alerts (background)",
+                  onHint: isWebPushSupported()
+                    ? "Notify even when Order Taker is closed"
+                    : "Not supported in this browser",
+                  offHint: "Only alert while the app is open",
+                  IconOn: BellRing,
+                  IconOff: BellOff,
+                  toggle: async () => {
+                    if (pushBusy) return;
+                    const next = !pushOnReady;
+                    if (!next) {
+                      setPushBusy(true);
                       try {
-                        navigator.vibrate?.(18);
-                      } catch {
-                        /* unsupported */
+                        await disableWebPush();
+                        updateOtSettings({ pushOnReady: false });
+                        toast.success("Background alerts off");
+                      } catch (err) {
+                        toast.error(err?.message || "Could not disable alerts");
+                      } finally {
+                        setPushBusy(false);
                       }
+                      return;
+                    }
+                    if (!isWebPushSupported()) {
+                      toast.error(
+                        "Install Order Taker to your home screen first, then try again.",
+                      );
+                      return;
+                    }
+                    setPushBusy(true);
+                    try {
+                      await enableWebPush({ client: "order_taker" });
+                      updateOtSettings({ pushOnReady: true });
+                      toast.success("Background alerts on");
+                    } catch (err) {
+                      toast.error(
+                        err?.message ||
+                          "Could not enable alerts. Allow notifications when prompted.",
+                      );
+                    } finally {
+                      setPushBusy(false);
                     }
                   },
                 },
@@ -4396,8 +4535,12 @@ export default function OrderTakerPage() {
                 );
               })}
               <p className="px-1 text-[10px] text-gray-400 dark:text-neutral-500">
-                Saved on this device for your account. Haptics need a phone that
-                supports vibration.
+                Saved on this device for your account.
+                {pushOnReady
+                  ? " Background alerts need notification permission (open from the home-screen icon on iPhone)."
+                  : !supportsHaptics()
+                    ? ` ${hapticsUnsupportedHint()}`
+                    : ""}
               </p>
             </div>
           </div>

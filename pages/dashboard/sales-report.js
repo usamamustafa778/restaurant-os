@@ -2211,6 +2211,20 @@ export default function HistoryPage() {
   }, [router.isReady, router.query.tab, router.query.source]);
 
   useEffect(() => {
+    if (!router.isReady || ordersLoading) return;
+    const hash =
+      (typeof window !== "undefined" && window.location.hash.replace(/^#/, "")) ||
+      String(router.asPath.split("#")[1] || "");
+    if (hash !== "top-selling-items") return;
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById("top-selling-items")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [router.isReady, router.asPath, ordersLoading]);
+
+  useEffect(() => {
     let cancelled = false;
 
     (async () => {
@@ -3722,13 +3736,15 @@ export default function HistoryPage() {
         ) : null}
 
         <div className="grid items-start gap-3 lg:grid-cols-2 lg:gap-4">
-          <TopItemsList
-            orders={dateFilteredOrders}
-            loading={ordersLoading}
-            title="Top Selling Items"
-            subtitle="Best performers in selected period"
-            onItemClick={(itemName) => goToOrders({ search: itemName })}
-          />
+          <div id="top-selling-items" className="scroll-mt-24">
+            <TopItemsList
+              orders={dateFilteredOrders}
+              loading={ordersLoading}
+              title="Top Selling Items"
+              subtitle="Best performers in selected period"
+              onItemClick={(itemName) => goToOrders({ search: itemName })}
+            />
+          </div>
 
           <DeliveryZonesList
             orders={dateFilteredOrders}

@@ -1,0 +1,25 @@
+{
+  "name": "EatsDesk",
+  "short_name": "EatsDesk",
+  "description": "Restaurant operations — Order Taker, Kitchen, POS",
+  "start_url": "/order-taker",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f0f0f",
+  "theme_color": "#FF5400",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

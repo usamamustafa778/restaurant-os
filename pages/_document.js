@@ -6,6 +6,13 @@ export default function Document() {
       <Head>
         <link rel="icon" type="image/jpeg" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/favicon.png" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <meta name="theme-color" content="#FF5400" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"

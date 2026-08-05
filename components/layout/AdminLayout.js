@@ -1135,10 +1135,15 @@ export default function AdminLayout({
 
   // Dedicated app roles: no sidebar / bottom nav (KDS and Rider are standalone apps)
   const hideChromeForDedicatedApp = isDedicatedAppRole;
+  // Tenant FOH bottom tabs (not used on superadmin)
   const showMobileBottomNav =
     permissionsLoaded &&
     !isDedicatedAppRole &&
+    !isSuperDashboard &&
     (hasPermission("pos.view") || hasPermission("reports.view_sales"));
+  // Superadmin mobile tabs: Home · Restaurants · Invoices · Menu
+  const showSuperMobileBottomNav =
+    permissionsLoaded && !isDedicatedAppRole && isSuperDashboard;
   const sidebarWidthClass = collapsed ? "w-16" : "w-56";
   const resolvedSubtitle =
     subtitle !== undefined
@@ -2231,7 +2236,9 @@ export default function AdminLayout({
 
           <main
             className={`relative flex-1 px-4 md:px-6 pt-4 overflow-y-auto bg-gray-100 dark:bg-black ${
-              showMobileBottomNav ? "pb-24 md:pb-6" : "pb-6"
+              showMobileBottomNav || showSuperMobileBottomNav
+                ? "pb-24 md:pb-6"
+                : "pb-6"
             }`}
           >
             {!suspended && children}
@@ -2308,7 +2315,7 @@ export default function AdminLayout({
             )}
           </main>
 
-          {/* ─── Bottom nav bar — mobile only (not for KDS / Rider system apps) ─ */}
+          {/* ─── Bottom nav — tenant FOH (mobile) ─ */}
           {showMobileBottomNav && (
             <nav
               className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex items-stretch shadow-[0_-1px_8px_rgba(0,0,0,0.06)]"
@@ -2322,7 +2329,7 @@ export default function AdminLayout({
                 },
                 hasPermission("pos.view") && {
                   path: "/pos",
-                  label: "Orders",
+                  label: "POS",
                   icon: ClipboardList,
                 },
                 hasPermission("reports.view_sales") && {
@@ -2365,7 +2372,6 @@ export default function AdminLayout({
                   );
                 })}
 
-              {/* More — always last, opens full sidebar */}
               <button
                 type="button"
                 onClick={() => setMobileSidebarOpen(true)}
@@ -2374,6 +2380,83 @@ export default function AdminLayout({
                 <Menu className="w-5 h-5" />
                 <span className="text-[10px] font-semibold leading-none mt-1">
                   More
+                </span>
+              </button>
+            </nav>
+          )}
+
+          {/* ─── Bottom nav — superadmin (mobile) ─ */}
+          {showSuperMobileBottomNav && (
+            <nav
+              className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-neutral-950 border-t border-gray-200 dark:border-neutral-800 flex items-stretch shadow-[0_-1px_8px_rgba(0,0,0,0.06)]"
+              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+            >
+              {[
+                {
+                  path: "/super/overview",
+                  label: "Home",
+                  icon: LayoutDashboard,
+                  match: (p) =>
+                    p === "/super/overview" ||
+                    p.startsWith("/super/overview?") ||
+                    p === "/super" ||
+                    p === "/super/",
+                },
+                {
+                  path: "/super/restaurants",
+                  label: "Restaurants",
+                  icon: Factory,
+                  match: (p) => p.startsWith("/super/restaurants"),
+                },
+                {
+                  path: "/super/invoices",
+                  label: "Invoices",
+                  icon: Receipt,
+                  match: (p) => p.startsWith("/super/invoices"),
+                },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const path = router.asPath.split("#")[0];
+                const active = tab.match(path);
+                return (
+                  <Link
+                    key={tab.path}
+                    href={tab.path}
+                    className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+                      active
+                        ? "text-primary"
+                        : "text-gray-400 dark:text-neutral-500 hover:text-gray-700 dark:hover:text-neutral-300"
+                    }`}
+                  >
+                    <div className="relative">
+                      <Icon
+                        className={`w-5 h-5 transition-transform ${active ? "scale-110" : ""}`}
+                      />
+                      {active && (
+                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
+                      )}
+                    </div>
+                    <span
+                      className={`text-[10px] font-semibold leading-none mt-1 ${active ? "text-primary" : ""}`}
+                    >
+                      {tab.label}
+                    </span>
+                  </Link>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen(true)}
+                className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+                  mobileSidebarOpen
+                    ? "text-primary"
+                    : "text-gray-400 dark:text-neutral-500 hover:text-gray-700 dark:hover:text-neutral-300"
+                }`}
+              >
+                <Menu className="w-5 h-5" />
+                <span className="text-[10px] font-semibold leading-none mt-1">
+                  Menu
                 </span>
               </button>
             </nav>

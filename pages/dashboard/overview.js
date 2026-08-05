@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useId } from "react";
 import Link from "next/link";
 import AdminLayout from "../../components/layout/AdminLayout";
 import {
@@ -21,11 +21,17 @@ import {
   getProfitLoss,
   getTables,
   getReservations,
+  getTenantSubscriptionSummary,
+  getUsers,
+  getPurchaseOrders,
 } from "../../lib/apiClient";
 import { usePermissions } from "../../contexts/PermissionContext";
 import { getBusinessDate, formatBusinessDate } from "../../lib/businessDay";
 import { localISODate, localToday } from "../../lib/accountingFormat";
 import { getDefaultReportPreset } from "../../lib/reportPresetDefault";
+import PremiumModulesPanel, {
+  PremiumModuleCard,
+} from "../../components/overview/PremiumModulesPanel";
 
 /**
  * Derive the P&L calendar date range for a given period.
@@ -142,25 +148,24 @@ import { useBranch } from "../../contexts/BranchContext";
 import {
   ShoppingBag,
   TrendingUp,
-  DollarSign,
   Package,
   CreditCard,
-  BarChart3,
   Loader2,
   Clock,
   Wallet,
-  Activity,
   X,
-  Zap,
   Power,
   ChevronDown,
   Banknote,
   Coins,
   Pencil,
-  Utensils,
-  CalendarClock,
   ArrowRight,
   Globe,
+  Crown,
+  Users,
+  Sparkles,
+  ClipboardList,
+  Wrench,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -172,15 +177,17 @@ function SalesAreaChart({
   remainingHoursStart,
   hourBucketSize = 1,
   hourStartHours = null,
+  currencySymbol = "Rs",
 }) {
-  const W = 1000,
-    H = 260;
-  const pL = 58,
-    pR = 16,
-    pT = 20,
-    pB = 36;
-  const iW = W - pL - pR,
-    iH = H - pT - pB;
+  const uid = useId().replace(/:/g, "");
+  const W = 640;
+  const H = 240;
+  const pL = 44;
+  const pR = 14;
+  const pT = 28;
+  const pB = 32;
+  const iW = W - pL - pR;
+  const iH = H - pT - pB;
 
   const isMonthly = period === "monthly";
   const data = isMonthly
@@ -216,15 +223,16 @@ function SalesAreaChart({
   const n = data.length;
   if (n === 0)
     return (
-      <div
-        style={{ height: H }}
-        className="flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600"
-      >
+      <div className="h-[200px] sm:h-[240px] flex items-center justify-center text-sm text-gray-400 dark:text-neutral-500">
         No data for this period
       </div>
     );
 
   const maxY = Math.max(...data.map((d) => d.y), 1);
+  const peakIdx = data.reduce(
+    (best, d, i) => (d.y > data[best].y ? i : best),
+    0,
+  );
   const xOf = (i) => pL + (n > 1 ? (i / (n - 1)) * iW : iW / 2);
   const yOf = (v) => pT + iH - (Math.min(v, maxY) / maxY) * iH;
   const pts = data.map((d, i) => ({ x: xOf(i), y: yOf(d.y) }));
@@ -235,10 +243,10 @@ function SalesAreaChart({
     const k = 0.3;
     let d = `M ${arr[0].x.toFixed(1)},${arr[0].y.toFixed(1)}`;
     for (let i = 0; i < arr.length - 1; i++) {
-      const a = arr[Math.max(0, i - 1)],
-        b = arr[i],
-        c = arr[i + 1],
-        e = arr[Math.min(arr.length - 1, i + 2)];
+      const a = arr[Math.max(0, i - 1)];
+      const b = arr[i];
+      const c = arr[i + 1];
+      const e = arr[Math.min(arr.length - 1, i + 2)];
       d += ` C ${(b.x + (c.x - a.x) * k).toFixed(1)},${(b.y + (c.y - a.y) * k).toFixed(1)} ${(c.x - (e.x - b.x) * k).toFixed(1)},${(c.y - (e.y - b.y) * k).toFixed(1)} ${c.x.toFixed(1)},${c.y.toFixed(1)}`;
     }
     return d;
@@ -259,181 +267,167 @@ function SalesAreaChart({
         : v >= 1000
           ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`
           : String(Math.round(v));
+  const fmtMoney = (v) =>
+    `${currencySymbol} ${Math.round(v).toLocaleString()}`;
+
+  const fillId = `ovFill-${uid}`;
+  const lineId = `ovLine-${uid}`;
+  const solidId = `ovSolid-${uid}`;
+  const remId = `ovRem-${uid}`;
+
+  const nonZeroCount = data.filter((d) => d.y > 0).length;
+  const useBars = !isMonthly && nonZeroCount > 0 && nonZeroCount <= 6;
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full"
-      style={{ height: H }}
-      preserveAspectRatio="xMidYMid meet"
-    >
-      <defs>
-        <linearGradient id="ovFill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#f97316" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#f97316" stopOpacity="0.01" />
-        </linearGradient>
-        <linearGradient id="ovLine" x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor="#f97316" />
-          <stop offset="100%" stopColor="#ef4444" />
-        </linearGradient>
-        <clipPath id="ovSolid">
-          <rect x={pL} y={0} width={Math.max(0, splitX - pL)} height={H} />
-        </clipPath>
-        <clipPath id="ovRem">
-          <rect x={Math.max(pL, splitX - 1)} y={0} width={W} height={H} />
-        </clipPath>
-      </defs>
-      {yTicks.map((v, i) => (
-        <g key={i}>
-          <line
-            x1={pL}
-            y1={yOf(v)}
-            x2={W - pR}
-            y2={yOf(v)}
-            stroke="#e5e7eb"
-            strokeWidth={i === 0 ? 1 : 0.5}
-            strokeDasharray={i > 0 ? "4 7" : "none"}
-            className="dark:stroke-neutral-800"
-          />
-          <text
-            x={pL - 8}
-            y={yOf(v)}
-            textAnchor="end"
-            dominantBaseline="middle"
-            fontSize="11"
-            fill="#9ca3af"
-          >
-            {fmt(v)}
-          </text>
-        </g>
-      ))}
-      {areaPath && (
-        <path d={areaPath} fill="url(#ovFill)" clipPath="url(#ovSolid)" />
-      )}
-      {linePath && (
-        <path
-          d={linePath}
-          fill="none"
-          stroke="url(#ovLine)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          clipPath="url(#ovSolid)"
-        />
-      )}
-      {linePath && splitIdx >= 0 && (
-        <path
-          d={linePath}
-          fill="none"
-          stroke="#d1d5db"
-          strokeWidth="1.5"
-          strokeDasharray="5 6"
-          strokeLinecap="round"
-          clipPath="url(#ovRem)"
-          className="dark:stroke-neutral-700"
-        />
-      )}
-      {splitIdx > 0 &&
-        (() => {
-          const py = yOf(data[splitIdx - 1]?.y ?? 0);
-          return (
-            <g>
-              <circle cx={splitX} cy={py} r="6" fill="#f97316" opacity="0.2" />
-              <circle
-                cx={splitX}
-                cy={py}
-                r="3.5"
-                fill="#f97316"
-                stroke="white"
-                strokeWidth="2"
-              />
-            </g>
-          );
-        })()}
-      {data.map((d, i) =>
-        d.show && d.label ? (
-          <text
-            key={i}
-            x={xOf(i)}
-            y={H - 8}
-            textAnchor="middle"
-            fontSize="11"
-            fill={d.isRem ? "#d1d5db" : "#9ca3af"}
-            className={
-              d.isRem ? "dark:fill-neutral-700" : "dark:fill-neutral-500"
-            }
-          >
-            {d.label}
-          </text>
-        ) : null,
-      )}
-    </svg>
-  );
-}
-
-// ── Donut ring chart ──────────────────────────────────────────────────────────
-function DonutChart({ segments, size = 100 }) {
-  const total = segments.reduce((s, g) => s + g.value, 0) || 1;
-  const r = Math.round(size * 0.36);
-  const sw = Math.round(size * 0.17);
-  const c = size / 2;
-  const circ = 2 * Math.PI * r;
-  let acc = 0;
-  return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      width={size}
-      height={size}
-      className="flex-shrink-0"
-    >
-      <circle
-        cx={c}
-        cy={c}
-        r={r}
-        fill="none"
-        stroke="#f3f4f6"
-        strokeWidth={sw}
-        className="dark:stroke-neutral-800"
-      />
-      {segments.map((seg, i) => {
-        const frac = seg.value / total;
-        if (frac < 0.005) {
-          acc += seg.value;
-          return null;
-        }
-        const dash = frac * circ,
-          gap = circ - dash;
-        const rot = (acc / total) * 360 - 90;
-        acc += seg.value;
-        return (
-          <circle
-            key={i}
-            cx={c}
-            cy={c}
-            r={r}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth={sw}
-            strokeDasharray={`${dash.toFixed(2)} ${gap.toFixed(2)}`}
-            transform={`rotate(${rot.toFixed(2)} ${c} ${c})`}
-          />
-        );
-      })}
-    </svg>
+    <div className="relative w-full overflow-hidden rounded-xl bg-gray-50/80 dark:bg-neutral-900/50 px-0.5 pt-1">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-[180px] sm:h-[220px]"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Sales chart"
+      >
+        <defs>
+          <linearGradient id={fillId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#FF5400" stopOpacity="0.45" />
+            <stop offset="100%" stopColor="#FF5400" stopOpacity="0.04" />
+          </linearGradient>
+          <linearGradient id={lineId} x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stopColor="#FF5400" />
+            <stop offset="100%" stopColor="#ff8a4c" />
+          </linearGradient>
+          <clipPath id={solidId}>
+            <rect x={pL} y={0} width={Math.max(0, splitX - pL)} height={H} />
+          </clipPath>
+          <clipPath id={remId}>
+            <rect x={Math.max(pL, splitX - 1)} y={0} width={W} height={H} />
+          </clipPath>
+        </defs>
+        {yTicks.map((v, i) => (
+          <g key={i}>
+            <line
+              x1={pL}
+              y1={yOf(v)}
+              x2={W - pR}
+              y2={yOf(v)}
+              stroke="currentColor"
+              strokeWidth={i === 0 ? 1.25 : 0.75}
+              strokeDasharray={i > 0 ? "3 5" : "none"}
+              className="text-gray-200 dark:text-neutral-800"
+            />
+            <text
+              x={pL - 6}
+              y={yOf(v)}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fontSize="10"
+              fontWeight="600"
+              className="fill-gray-400 dark:fill-neutral-500"
+            >
+              {fmt(v)}
+            </text>
+          </g>
+        ))}
+        {useBars
+          ? data.map((d, i) => {
+              const barW = Math.max(8, iW / n - 4);
+              const x = xOf(i) - barW / 2;
+              const y = yOf(d.y);
+              const h = Math.max(0, pT + iH - y);
+              return (
+                <rect
+                  key={`bar-${i}`}
+                  x={x}
+                  y={y}
+                  width={barW}
+                  height={h}
+                  rx="3"
+                  fill={d.isRem ? "#d4d4d8" : i === peakIdx ? "#FF5400" : "#ff8a4c"}
+                  opacity={d.y > 0 ? (d.isRem ? 0.45 : 0.9) : 0.12}
+                />
+              );
+            })
+          : (
+            <>
+              {areaPath && (
+                <path
+                  d={areaPath}
+                  fill={`url(#${fillId})`}
+                  clipPath={`url(#${solidId})`}
+                />
+              )}
+              {linePath && (
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke={`url(#${lineId})`}
+                  strokeWidth="2.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  clipPath={`url(#${solidId})`}
+                />
+              )}
+              {linePath && splitIdx >= 0 && (
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeDasharray="5 6"
+                  strokeLinecap="round"
+                  clipPath={`url(#${remId})`}
+                  className="text-gray-300 dark:text-neutral-600"
+                />
+              )}
+            </>
+          )}
+        {data[peakIdx]?.y > 0 && (
+          <g>
+            <circle
+              cx={xOf(peakIdx)}
+              cy={yOf(data[peakIdx].y)}
+              r="4"
+              fill="#FF5400"
+              stroke="#fff"
+              strokeWidth="2"
+            />
+            <text
+              x={Math.min(Math.max(xOf(peakIdx), pL + 28), W - pR - 28)}
+              y={Math.max(14, yOf(data[peakIdx].y) - 10)}
+              textAnchor="middle"
+              fontSize="10"
+              fontWeight="700"
+              className="fill-primary"
+            >
+              {fmtMoney(data[peakIdx].y)}
+            </text>
+          </g>
+        )}
+        {data.map((d, i) =>
+          d.show && d.label ? (
+            <text
+              key={i}
+              x={xOf(i)}
+              y={H - 8}
+              textAnchor="middle"
+              fontSize="10"
+              fontWeight="600"
+              className={
+                d.isRem
+                  ? "fill-gray-300 dark:fill-neutral-600"
+                  : "fill-gray-500 dark:fill-neutral-400"
+              }
+            >
+              {d.label}
+            </text>
+          ) : null,
+        )}
+      </svg>
+    </div>
   );
 }
 
 // ── Map distribution keys to display labels and colors ────────────────────────
-const typeColors = {
-  DINE_IN: "#f97316",
-  TAKEAWAY: "#22c55e",
-  DELIVERY: "#3b82f6",
-};
-const typeLabels = {
-  DINE_IN: "Dine-in",
-  TAKEAWAY: "Takeaway",
-  DELIVERY: "Delivery",
-};
 const productColors = ["#f97316", "#3b82f6", "#22c55e", "#6366f1", "#eab308"];
 const MONTH_NAMES = [
   "Jan",
@@ -449,16 +443,6 @@ const MONTH_NAMES = [
   "Nov",
   "Dec",
 ];
-
-function buildSegments(distribution, labels, colors) {
-  return Object.entries(distribution)
-    .filter(([, v]) => v > 0)
-    .map(([key, value]) => ({
-      label: labels[key] || key,
-      value,
-      color: colors[key] || "#9ca3af",
-    }));
-}
 
 function normalizeHourlySales(input) {
   if (Array.isArray(input)) {
@@ -796,6 +780,27 @@ export default function OverviewPage() {
     nextReservationTime: null,
   });
 
+  const [staffKpis, setStaffKpis] = useState({
+    total: 0,
+    activeToday: 0,
+    waiters: 0,
+    kitchen: 0,
+    riders: 0,
+    neverLoggedIn: 0,
+    inactive: 0,
+  });
+  const [staffLoading, setStaffLoading] = useState(true);
+
+  const [poKpis, setPoKpis] = useState({
+    total: 0,
+    draft: 0,
+    sent: 0,
+    partial: 0,
+    received: 0,
+    openValue: 0,
+  });
+  const [poLoading, setPoLoading] = useState(true);
+
   const [suspended, setSuspended] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [periodReport, setPeriodReport] = useState({
@@ -836,6 +841,40 @@ export default function OverviewPage() {
   const [plData, setPlData] = useState(null);
   const [plLoading, setPlLoading] = useState(true);
   const [plSetup, setPlSetup] = useState(true);
+  /** Active subscription module keys from billing summary. */
+  const [activeModuleKeys, setActiveModuleKeys] = useState(null);
+  const modulesLoaded = activeModuleKeys != null;
+  const isModuleActive = (key) =>
+    modulesLoaded ? activeModuleKeys.has(key) : false;
+  const accountingUnlocked = isModuleActive("accounting");
+  const whatsappUnlocked = isModuleActive("aiReceptionist");
+  const inventoryUnlocked = isModuleActive("inventory");
+  const kdsUnlocked = isModuleActive("kds");
+  const websiteAnalyticsUnlocked = isModuleActive("websiteAnalytics");
+  const reservationsUnlocked = isModuleActive("reservations");
+
+  useEffect(() => {
+    let cancelled = false;
+    getTenantSubscriptionSummary()
+      .then((response) => {
+        if (cancelled) return;
+        const modules = response?.summary?.billing?.modules;
+        const activeKeys = new Set(
+          Array.isArray(modules)
+            ? modules
+                .filter((m) => m?.active && m?.key)
+                .map((m) => String(m.key))
+            : [],
+        );
+        setActiveModuleKeys(activeKeys);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveModuleKeys(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1319,6 +1358,98 @@ export default function OverviewPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setStaffLoading(true);
+    getUsers()
+      .then((users) => {
+        if (cancelled) return;
+        const list = Array.isArray(users) ? users : [];
+        const todayKey = localISODate(new Date());
+        const lastActive = (u) => u?.lastActiveAt || u?.lastLoginAt || null;
+        const isToday = (iso) => {
+          if (!iso) return false;
+          const d = new Date(iso);
+          if (Number.isNaN(d.getTime())) return false;
+          return localISODate(d) === todayKey;
+        };
+        const active = list.filter((u) => u.isActive !== false);
+        setStaffKpis({
+          total: active.length,
+          activeToday: active.filter((u) => isToday(lastActive(u))).length,
+          waiters: active.filter((u) => u.role === "order_taker").length,
+          kitchen: active.filter((u) => u.role === "kitchen_staff").length,
+          riders: active.filter((u) => u.role === "delivery_rider").length,
+          neverLoggedIn: active.filter((u) => !lastActive(u)).length,
+          inactive: list.filter((u) => u.isActive === false).length,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStaffKpis({
+            total: 0,
+            activeToday: 0,
+            waiters: 0,
+            kitchen: 0,
+            riders: 0,
+            neverLoggedIn: 0,
+            inactive: 0,
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setStaffLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPoLoading(true);
+    getPurchaseOrders()
+      .then((data) => {
+        if (cancelled) return;
+        const orders = Array.isArray(data?.orders) ? data.orders : [];
+        const draft = orders.filter((o) => o.status === "draft").length;
+        const sent = orders.filter((o) => o.status === "sent").length;
+        const partial = orders.filter(
+          (o) => o.status === "partially_received",
+        ).length;
+        const received = orders.filter((o) => o.status === "received").length;
+        const openValue = orders
+          .filter((o) => ["draft", "sent", "partially_received"].includes(o.status))
+          .reduce((sum, o) => sum + Number(o.totalEstimatedCost || 0), 0);
+        setPoKpis({
+          total: orders.length,
+          draft,
+          sent,
+          partial,
+          received,
+          openValue,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPoKpis({
+            total: 0,
+            draft: 0,
+            sent: 0,
+            partial: 0,
+            received: 0,
+            openValue: 0,
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentBranch?.id, inventoryUnlocked]);
+
+  useEffect(() => {
     (async () => {
       try {
         const todayStr = (() => {
@@ -1329,8 +1460,9 @@ export default function OverviewPage() {
           getTables(),
           getReservations({ date: todayStr }),
         ]);
-        const occupied = tables.filter((t) => t.status === "occupied").length;
-        const available = tables.filter((t) => t.status === "available").length;
+        const tableList = Array.isArray(tables) ? tables : [];
+        const occupied = tableList.filter((t) => t.status === "occupied").length;
+        const available = tableList.filter((t) => t.status === "available").length;
         const active = reservations.filter((r) =>
           ["pending", "confirmed", "seated"].includes(r.status),
         );
@@ -1570,9 +1702,6 @@ export default function OverviewPage() {
 
   // Computed values
   const hasOrders = (periodReport.totalOrders ?? 0) > 0;
-  const salesTypeSegments = hasOrders
-    ? buildSegments(stats.salesTypeDistribution, typeLabels, typeColors)
-    : [];
   const paymentRows = (periodReport.paymentRows || []).filter(
     (row) => row && row.method && row.method !== "Total",
   );
@@ -1614,24 +1743,6 @@ export default function OverviewPage() {
     },
   );
 
-  const pendingCollection = paymentRows.reduce(
-    (acc, row) => {
-      const key = String(row.method || "")
-        .trim()
-        .toUpperCase();
-      if (
-        key === "TO BE PAID" ||
-        key === "PENDING" ||
-        key === "UNPAID" ||
-        key === "PENDING PAYMENT"
-      ) {
-        acc.amount += Number(row.amount || 0);
-        acc.orders += Number(row.orders || 0);
-      }
-      return acc;
-    },
-    { amount: 0, orders: 0 },
-  );
   const upcomingPayments = periodReport.upcomingPayments || {
     rows: [],
     totalCount: 0,
@@ -1806,6 +1917,18 @@ export default function OverviewPage() {
     ? Math.round(viewTotalRevenue / viewTotalOrders)
     : 0;
 
+  const peakHourSource =
+    reportPeriod === "yesterday"
+      ? yesterdayHourlyBase
+      : reportPeriod === "monthly"
+        ? monthlyHourlySales
+        : baseHourlySales;
+  const peakHourIdx = peakHourSource.reduce(
+    (best, v, i) => (Number(v) > Number(peakHourSource[best] || 0) ? i : best),
+    0,
+  );
+  const peakHourAmount = Number(peakHourSource[peakHourIdx] || 0);
+
   // Inventory health stats
   const invFiltered = invItems.filter((i) => i.hasBranchRecord !== false);
   const invTotal = invFiltered.length;
@@ -1836,9 +1959,6 @@ export default function OverviewPage() {
           ? `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)}`
           : `${MONTH_NAMES[viewingMonthIndex]} ${viewingYear}`
         : "Today";
-
-  const profitSubLabel =
-    periodAccountingPl != null ? `${periodLabel} · ledger P&L` : periodLabel;
 
   return (
     <AdminLayout title="Overview" suspended={suspended}>
@@ -1980,202 +2100,473 @@ export default function OverviewPage() {
             <OverviewPeriodContentSkeleton />
           ) : (
             <>
-              {/* ─── KPI strip ───────────────────────────────────────────────── */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-3 sm:mb-4">
-                {[
-                  {
-                    label: "Revenue",
-                    sub:
-                      periodReport.deliveryFees > 0
-                        ? `${currencySymbol} ${Math.round(periodReport.salesAmount).toLocaleString()} food · ${currencySymbol} ${Math.round(periodReport.deliveryFees).toLocaleString()} delivery`
-                        : `Paid & delivered · ${periodLabel}`,
-                    value: `${currencySymbol} ${Math.round(viewTotalRevenue).toLocaleString()}`,
-                    icon: DollarSign,
-                    color: "text-primary",
-                    gradient: "from-orange-500 to-primary",
-                    shadow: "shadow-orange-500/30",
-                    prominent: true,
-                  },
-                  {
-                    label: "Orders",
-                    sub: `Paid & delivered · ${periodLabel}`,
-                    value: viewTotalOrders.toLocaleString(),
-                    icon: ShoppingBag,
-                    color: "text-violet-600 dark:text-violet-400",
-                    gradient: "from-violet-500 to-violet-600",
-                    shadow: "shadow-violet-500/30",
-                    prominent: true,
-                  },
-                  {
-                    label: "Net Profit",
-                    sub: profitSubLabel,
-                    value: `${currencySymbol} ${Math.round(viewTotalProfit).toLocaleString()}`,
-                    icon: TrendingUp,
-                    color: "text-emerald-600 dark:text-emerald-400",
-                    gradient: "from-emerald-500 to-teal-600",
-                    shadow: "shadow-emerald-500/30",
-                  },
-                  {
-                    label: "Avg Order",
-                    sub: periodLabel,
-                    value: `${currencySymbol} ${viewAvgOrder.toLocaleString()}`,
-                    icon: Activity,
-                    color: "text-sky-600 dark:text-sky-400",
-                    gradient: "from-sky-500 to-blue-600",
-                    shadow: "shadow-sky-500/30",
-                  },
-                  {
-                    label: "Active Now",
-                    sub: "live orders",
-                    value: viewPendingOrders.toLocaleString(),
-                    icon: Zap,
-                    color: "text-amber-600 dark:text-amber-400",
-                    gradient: "from-amber-500 to-orange-500",
-                    shadow: "shadow-amber-500/30",
-                    pulse: viewPendingOrders > 0,
-                    fullRowMobile: true,
-                  },
-                ].map(
-                  ({
-                    label,
-                    sub,
-                    value,
-                    icon: Icon,
-                    color,
-                    gradient,
-                    shadow,
-                    pulse,
-                    prominent,
-                    fullRowMobile,
-                  }) => (
-                    <div
-                      key={label}
-                      className={`group relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-3.5 sm:p-4 overflow-hidden hover:shadow-md transition-all ${
-                        fullRowMobile ? "col-span-2 sm:col-span-1" : ""
-                      }`}
-                    >
-                      {/* Colored top accent */}
-                      <div
-                        className={`absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r ${gradient} opacity-80`}
-                      />
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md ${shadow} flex-shrink-0 h-9 w-9 sm:h-10 sm:w-10 rounded-xl`}
-                        >
-                          <Icon className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-white" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none">
-                              {label}
-                            </p>
-                            {pulse && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
-                            )}
-                          </div>
-                          <p
-                            className={`${prominent ? "text-[15px] sm:text-lg" : "text-sm sm:text-base"} font-extrabold leading-tight ${color}`}
-                          >
-                            {value}
-                          </p>
-                          <p className="text-[10px] text-gray-400 dark:text-neutral-600 mt-0.5 leading-tight">
-                            {sub}
-                          </p>
-                        </div>
+              {/* Money band: Accounts | Sales+Floor | Inventory */}
+              <div className="mb-3 grid gap-3 sm:mb-4 lg:grid-cols-12 lg:items-stretch">
+              {/* ─── Accounts hero (main) — sales-report RevenueHero layout ── */}
+              <div className="order-1 relative flex h-full overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950 lg:col-span-5 lg:row-span-2 lg:row-start-1">
+                <div className="flex w-full flex-col justify-between bg-gradient-to-br from-primary/[0.08] via-transparent to-transparent px-4 py-4 sm:px-6 sm:py-5">
+                  {!modulesLoaded ||
+                  (accountingUnlocked &&
+                    plLoading &&
+                    periodAccountingPl == null) ? (
+                    <div className="space-y-4">
+                      <div className="flex justify-between gap-2">
+                        <div className="h-8 w-28 animate-pulse rounded bg-gray-100 dark:bg-neutral-800" />
+                        <div className="h-8 w-36 animate-pulse rounded-full bg-gray-100 dark:bg-neutral-800" />
                       </div>
+                      <div className="h-10 w-48 animate-pulse rounded bg-gray-100 dark:bg-neutral-800" />
+                      <div className="h-2.5 w-full animate-pulse rounded-full bg-gray-100 dark:bg-neutral-800" />
+                      <div className="h-3 w-64 animate-pulse rounded bg-gray-100 dark:bg-neutral-800" />
                     </div>
-                  ),
-                )}
+                  ) : accountingUnlocked === false ? (
+                    <>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                              Accounts
+                            </p>
+                            <span className="inline-flex items-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-300">
+                              <Crown className="h-3 w-3" />
+                              Premium
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-400">
+                            Ledger · revenue vs expenses
+                          </p>
+                        </div>
+                        <Link
+                          href="/subscription"
+                          className="text-[11px] font-semibold text-primary hover:underline"
+                        >
+                          Profit and loss statement →
+                        </Link>
+                      </div>
+
+                      <p className="mt-4 text-[2rem] font-black leading-none tracking-tight text-gray-900 dark:text-white sm:text-4xl">
+                        —
+                      </p>
+                      <p className="mt-1.5 text-xs font-medium text-gray-500 dark:text-neutral-400">
+                        Net profit
+                      </p>
+
+                      <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800" />
+
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-gray-600 dark:text-neutral-300">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-primary" />
+                            Revenue —
+                          </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-sky-400" />
+                            Expenses —
+                          </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-violet-400" />
+                            Unpaid —
+                          </span>
+                        </div>
+                        <Link
+                          href="/subscription"
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-md shadow-amber-500/30 transition hover:-translate-y-0.5"
+                        >
+                          Unlock
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </div>
+                    </>
+                  ) : periodAccountingPl != null || plData ? (
+                    (() => {
+                      const revenue = Math.max(
+                        0,
+                        periodAccountingPl?.grossRevenue ??
+                          plData?.grossRevenue ??
+                          viewTotalRevenue ??
+                          0,
+                      );
+                      const expenses = Math.max(
+                        0,
+                        periodAccountingPl?.totalExpenses ??
+                          plData?.totalExpenses ??
+                          0,
+                      );
+                      const net =
+                        periodAccountingPl?.netProfit ??
+                        plData?.netProfit ??
+                        viewTotalProfit ??
+                        0;
+                      const mixBase = revenue + expenses;
+                      const revenueShare =
+                        mixBase > 0
+                          ? Math.round((revenue / mixBase) * 100)
+                          : 0;
+                      const expenseShare = Math.max(0, 100 - revenueShare);
+                      const marginPct =
+                        revenue > 0
+                          ? Math.round((net / revenue) * 100)
+                          : 0;
+                      const plHref =
+                        periodAccountingPl != null || plSetup
+                          ? "/accounting/reports/profit-loss"
+                          : "/accounting";
+                      const fmtAmt = (n) =>
+                        `${currencySymbol} ${Math.round(n).toLocaleString()}`;
+                      return (
+                        <>
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                                Accounts
+                              </p>
+                              <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-400">
+                                {periodAccountingPl != null
+                                  ? "Ledger P&L · revenue vs expenses"
+                                  : "Estimated from sales"}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="rounded-full border border-gray-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-300">
+                                Margin {marginPct}% · Unpaid{" "}
+                                {fmtAmt(totalUnpaidExposure)}
+                              </div>
+                              <Link
+                                href={plHref}
+                                className="text-[11px] font-semibold text-primary hover:underline"
+                              >
+                                Profit and loss statement →
+                              </Link>
+                            </div>
+                          </div>
+
+                          <p
+                            className={`mt-4 text-[2rem] font-black tabular-nums leading-none tracking-tight sm:text-4xl ${
+                              net >= 0
+                                ? "text-gray-900 dark:text-white"
+                                : "text-rose-600 dark:text-rose-400"
+                            }`}
+                          >
+                            {net < 0 ? "−" : ""}
+                            {fmtAmt(Math.abs(net))}
+                          </p>
+                          <p className="mt-1.5 text-xs font-medium text-gray-500 dark:text-neutral-400">
+                            Net {net >= 0 ? "profit" : "loss"}
+                          </p>
+
+                          <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                            <div className="flex h-full w-full">
+                              <div
+                                className="h-full bg-primary transition-all duration-700"
+                                style={{ width: `${revenueShare}%` }}
+                                title="Revenue"
+                              />
+                              <div
+                                className="h-full bg-sky-400 transition-all duration-700"
+                                style={{ width: `${expenseShare}%` }}
+                                title="Expenses"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-gray-600 dark:text-neutral-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-primary" />
+                              Revenue {fmtAmt(revenue)} ({revenueShare}%)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-sky-400" />
+                              Expenses {fmtAmt(expenses)} ({expenseShare}%)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-violet-400" />
+                              Unpaid {fmtAmt(totalUnpaidExposure)}
+                            </span>
+                          </div>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                            Accounts
+                          </p>
+                          <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-400">
+                            Ledger P&amp;L · cash &amp; payables
+                          </p>
+                        </div>
+                        <Link
+                          href="/accounting"
+                          className="text-[11px] font-semibold text-primary hover:underline"
+                        >
+                          Set up Accounts →
+                        </Link>
+                      </div>
+                      <p className="mt-4 text-[2rem] font-black leading-none tracking-tight text-gray-900 dark:text-white sm:text-4xl">
+                        —
+                      </p>
+                      <p className="mt-1.5 text-xs font-medium text-gray-500 dark:text-neutral-400">
+                        Net profit
+                      </p>
+                      <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800" />
+                      <p className="mt-3 text-[11px] font-medium text-gray-500 dark:text-neutral-400">
+                        Finish Accounts setup to see live P&amp;L for this period.
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
 
-              {/* ─── Today's Floor (Tables + Reservations merged) ───────────── */}
-              <div className="bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl mb-3 sm:mb-4 overflow-hidden">
-                <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-neutral-800">
-                  {/* Tables */}
-                  <div className="flex items-center gap-2.5 p-3">
-                    <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center flex-shrink-0">
-                      <Utensils className="w-3.5 h-3.5 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none mb-0.5">
-                        Tables
+              {/* Sales — middle column, top */}
+              <Link
+                href="/sales-report"
+                className="order-3 group flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:border-primary/35 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:border-primary/40 lg:col-span-3 lg:col-start-6 lg:row-start-1"
+              >
+                <div className="flex h-full flex-col justify-between bg-gradient-to-br from-primary/[0.08] via-transparent to-transparent px-4 py-3.5 sm:px-4 sm:py-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                        Sales
                       </p>
-                      <p className="text-xs font-bold text-gray-900 dark:text-white leading-snug">
-                        <span className="text-red-500 dark:text-red-400">
-                          {floorSummary.occupied} occ
-                        </span>
-                        <span className="text-gray-300 dark:text-neutral-700 mx-1">
-                          ·
-                        </span>
-                        <span className="text-emerald-600 dark:text-emerald-400">
-                          {floorSummary.available} free
-                        </span>
+                      <p className="mt-0.5 text-[11px] text-gray-500 dark:text-neutral-400">
+                        {periodLabel}
                       </p>
-                      <a
-                        href="/dashboard/tables"
-                        className="text-[10px] font-semibold text-primary hover:underline"
-                      >
-                        View Tables →
-                      </a>
                     </div>
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-primary opacity-80 transition group-hover:opacity-100">
+                      Details
+                      <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                    </span>
                   </div>
-                  {/* Reservations */}
-                  <div className="flex items-center gap-2.5 p-3">
-                    <div className="w-8 h-8 rounded-lg bg-violet-50 dark:bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                      <CalendarClock className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide leading-none mb-0.5">
+                  <div className="mt-3">
+                    <p className="text-[1.75rem] font-black tabular-nums leading-none tracking-tight text-gray-900 dark:text-white sm:text-3xl">
+                      {currencySymbol}{" "}
+                      {Math.round(viewTotalRevenue).toLocaleString()}
+                    </p>
+                    <p className="mt-1.5 text-xs font-medium text-gray-500 dark:text-neutral-400">
+                      {viewTotalOrders.toLocaleString()} orders
+                      {viewPendingOrders > 0
+                        ? ` · ${viewPendingOrders} live`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+
+              {/* Floor — Tables + Reservations — under sales */}
+              <div className="order-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950 lg:col-span-3 lg:col-start-6 lg:row-start-2">
+                <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-neutral-800">
+                  <div className="px-3 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Tables
+                    </p>
+                    <p className="mt-1 text-sm font-extrabold text-gray-900 dark:text-white">
+                      <span className="text-red-500">{floorSummary.occupied} occ</span>
+                      <span className="mx-1 text-gray-300 dark:text-neutral-700">·</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        {floorSummary.available} free
+                      </span>
+                    </p>
+                    <Link
+                      href="/tables"
+                      className="mt-0.5 inline-block text-[10px] font-semibold text-primary hover:underline"
+                    >
+                      View tables →
+                    </Link>
+                  </div>
+                  <div className="px-3 py-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
                         Reservations
                       </p>
-                      <p className="text-xs font-bold text-gray-900 dark:text-white leading-snug">
-                        {floorSummary.todayReservations === 0 ? (
-                          <span className="text-gray-400 dark:text-neutral-600 font-normal">
-                            None today
-                          </span>
-                        ) : (
-                          <>
-                            <span>{floorSummary.todayReservations} today</span>
-                            {floorSummary.nextReservationTime && (
-                              <span className="text-violet-600 dark:text-violet-400 font-semibold block text-[10px]">
-                                next {floorSummary.nextReservationTime}
-                              </span>
-                            )}
-                          </>
-                        )}
-                      </p>
-                      <a
-                        href="/dashboard/reservations"
-                        className="text-[10px] font-semibold text-violet-600 dark:text-violet-400 hover:underline"
-                      >
-                        View →
-                      </a>
+                      {modulesLoaded && !reservationsUnlocked && (
+                        <span className="inline-flex items-center gap-0.5 rounded border border-amber-300/80 bg-amber-50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-300">
+                          <Crown className="h-2.5 w-2.5" />
+                          Premium
+                        </span>
+                      )}
                     </div>
+                    {reservationsUnlocked ? (
+                      <>
+                        <p className="mt-1 text-sm font-extrabold text-gray-900 dark:text-white">
+                          {floorSummary.todayReservations === 0
+                            ? "None today"
+                            : `${floorSummary.todayReservations} today`}
+                        </p>
+                        <Link
+                          href="/reservations"
+                          className="mt-0.5 inline-block text-[10px] font-semibold text-violet-600 dark:text-violet-400 hover:underline"
+                        >
+                          View →
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-sm font-extrabold text-gray-900 dark:text-white">
+                          —
+                        </p>
+                        <Link
+                          href="/subscription"
+                          className="mt-0.5 inline-block text-[10px] font-semibold text-amber-600 hover:underline dark:text-amber-400"
+                        >
+                          Unlock →
+                        </Link>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* ─── Main: chart (2/3) + breakdown (1/3) ────────────────────── */}
-              <div className="grid lg:grid-cols-3 gap-3 sm:gap-5 mb-3 sm:mb-5">
-                {/* Sales area chart */}
-                <div className="lg:col-span-2 relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
-                  <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-orange-500 to-primary opacity-80" />
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
+              {/* Inventory — desktop right of Sales / Floor */}
+              <div className="order-5 flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950 lg:col-span-4 lg:col-start-9 lg:row-span-2 lg:row-start-1">
+                <div className="flex h-full flex-col bg-gradient-to-br from-violet-500/[0.07] via-transparent to-transparent px-3.5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Inventory Health
+                      </h3>
+                      {modulesLoaded && !inventoryUnlocked && (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-300">
+                          <Crown className="h-3 w-3" />
+                          Premium
+                        </span>
+                      )}
+                    </div>
+                    {inventoryUnlocked ? (
+                      <Link
+                        href="/dashboard/inventory"
+                        className="text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-400"
+                      >
+                        View all →
+                      </Link>
+                    ) : (
+                      <Link
+                        href="/subscription"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-md shadow-amber-500/30"
+                      >
+                        Unlock
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    )}
+                  </div>
+
+                  {!modulesLoaded || (inventoryUnlocked && invLoading) ? (
+                    <div className="mt-2.5 grid flex-1 grid-cols-2 gap-2">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <Skeleton
+                          key={`inv-top-sk-${i}`}
+                          className="h-full min-h-[3.25rem] rounded-xl"
+                        />
+                      ))}
+                    </div>
+                  ) : !inventoryUnlocked ? (
+                    <div className="mt-2.5 grid flex-1 grid-cols-2 gap-2">
+                      {["Total", "Healthy", "Low", "Out"].map((label) => (
+                        <div
+                          key={label}
+                          className="flex flex-col items-center justify-center rounded-xl bg-gray-50 px-2 py-2 dark:bg-neutral-900/70"
+                        >
+                          <p className="text-lg font-black tabular-nums leading-none text-gray-900 dark:text-white">
+                            —
+                          </p>
+                          <p className="mt-1 text-[10px] font-semibold text-gray-500 dark:text-neutral-400">
+                            {label}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : invTotal === 0 ? (
+                    <p className="mt-6 flex-1 text-center text-xs text-gray-400 dark:text-neutral-600">
+                      No inventory items found
+                    </p>
+                  ) : (
+                    <>
+                      <div className="mt-2.5 grid flex-1 grid-cols-2 gap-2">
+                        {[
+                          {
+                            label: "Total",
+                            value: invTotal,
+                            color: "text-blue-700 dark:text-blue-400",
+                            bg: "bg-blue-50 dark:bg-blue-500/10",
+                          },
+                          {
+                            label: "Healthy",
+                            value: invHealthy,
+                            color: "text-emerald-700 dark:text-emerald-400",
+                            bg: "bg-emerald-50 dark:bg-emerald-500/10",
+                          },
+                          {
+                            label: "Low",
+                            value: invLow,
+                            color: "text-orange-700 dark:text-orange-400",
+                            bg: "bg-orange-50 dark:bg-orange-500/10",
+                          },
+                          {
+                            label: "Out",
+                            value: invOut,
+                            color: "text-red-700 dark:text-red-400",
+                            bg: "bg-red-50 dark:bg-red-500/10",
+                          },
+                        ].map(({ label, value, color, bg }) => (
+                          <div
+                            key={label}
+                            className={`flex flex-col items-center justify-center rounded-xl px-2 py-2 ${bg}`}
+                          >
+                            <p
+                              className={`text-lg font-black tabular-nums leading-none ${color}`}
+                            >
+                              {value}
+                            </p>
+                            <p className="mt-1 text-[10px] font-semibold text-gray-500 dark:text-neutral-400">
+                              {label}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      {invNeedAttn.length > 0 && (
+                        <div className="mt-2.5 border-t border-gray-100 pt-2 dark:border-neutral-800">
+                          <div className="flex flex-wrap gap-1">
+                            {invNeedAttn.slice(0, 4).map((item) => {
+                              const isOut = (item.currentStock ?? 0) <= 0;
+                              return (
+                                <span
+                                  key={item.id}
+                                  className={`inline-flex max-w-[9.5rem] truncate rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                                    isOut
+                                      ? "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"
+                                      : "bg-orange-100 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400"
+                                  }`}
+                                >
+                                  {item.name}
+                                </span>
+                              );
+                            })}
+                            {invNeedAttn.length > 4 && (
+                              <span className="self-center text-[10px] text-gray-400">
+                                +{invNeedAttn.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+              </div>
+
+              {/* ─── Second row: Sales Overview + WhatsApp ─────────────── */}
+              <div className="mb-3 grid gap-3 sm:mb-4 lg:grid-cols-3 lg:items-stretch">
+                <div className="lg:col-span-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+                  <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-neutral-800 sm:px-5">
+                    <div className="min-w-0">
                       <h3 className="text-sm font-bold text-gray-900 dark:text-white">
                         Sales Overview
                       </h3>
-                      <p className="text-xs text-gray-400 dark:text-neutral-500 mt-0.5 hidden sm:block">
-                        {reportPeriod === "monthly"
-                          ? monthlyChartMode === "trend"
-                            ? `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)} · by day (${rangeDaysCount} days)`
-                            : `${fmtRangeDate(reportCustomFrom)} – ${fmtRangeDate(reportCustomTo)} · 2-hour peaks (${rangeDaysCount} days) · ${chartTimeLabel}`
-                          : reportPeriod === "yesterday"
-                            ? `Yesterday · by hour · ${chartTimeLabel}`
-                            : `Today · by hour · ${chartTimeLabel}`}
-                        {(splitIdx) =>
-                          splitIdx > 0 ? " · dashed = remaining" : ""
-                        }
+                      <p className="mt-0.5 text-[11px] text-gray-400 dark:text-neutral-500">
+                        {peakHourAmount > 0
+                          ? `Peak ${formatHourLabel12(peakHourIdx)} · ${chartTimeLabel}`
+                          : chartTimeLabel}
                       </p>
                       {reportPeriod === "monthly" && (
                         <div className="mt-2 inline-flex rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-0.5">
@@ -2185,7 +2576,7 @@ export default function OverviewPage() {
                             className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
                               monthlyChartMode === "peaks"
                                 ? "bg-white dark:bg-neutral-800 text-primary shadow-sm"
-                                : "text-gray-500 dark:text-neutral-400 hover:text-gray-800 dark:hover:text-neutral-200"
+                                : "text-gray-500 dark:text-neutral-400"
                             }`}
                           >
                             Peak Hours
@@ -2196,7 +2587,7 @@ export default function OverviewPage() {
                             className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
                               monthlyChartMode === "trend"
                                 ? "bg-white dark:bg-neutral-800 text-primary shadow-sm"
-                                : "text-gray-500 dark:text-neutral-400 hover:text-gray-800 dark:hover:text-neutral-200"
+                                : "text-gray-500 dark:text-neutral-400"
                             }`}
                           >
                             Ups & Downs
@@ -2205,16 +2596,13 @@ export default function OverviewPage() {
                       )}
                       {(reportPeriod !== "monthly" ||
                         monthlyChartMode === "peaks") && (
-                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 p-1">
-                          <span className="px-1 text-[11px] font-semibold text-gray-500 dark:text-neutral-400">
-                            Time
-                          </span>
+                        <div className="mt-2 inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-neutral-700 dark:bg-neutral-900">
                           <select
                             value={chartStartHour}
                             onChange={(e) =>
                               setChartStartHour(Number(e.target.value))
                             }
-                            className="h-7 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 text-[11px] font-semibold text-gray-700 dark:text-neutral-200"
+                            className="h-7 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-gray-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
                           >
                             {Array.from({ length: 24 }, (_, h) => (
                               <option key={`start-${h}`} value={h}>
@@ -2222,13 +2610,13 @@ export default function OverviewPage() {
                               </option>
                             ))}
                           </select>
-                          <span className="text-[11px] text-gray-400 dark:text-neutral-500">
-                            →
-                          </span>
+                          <span className="text-[11px] text-gray-400">→</span>
                           <select
                             value={chartEndHour}
-                            onChange={(e) => setChartEndHour(Number(e.target.value))}
-                            className="h-7 rounded-md border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 text-[11px] font-semibold text-gray-700 dark:text-neutral-200"
+                            onChange={(e) =>
+                              setChartEndHour(Number(e.target.value))
+                            }
+                            className="h-7 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold text-gray-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
                           >
                             {Array.from({ length: 24 }, (_, h) => (
                               <option key={`end-${h}`} value={h}>
@@ -2239,16 +2627,17 @@ export default function OverviewPage() {
                         </div>
                       )}
                     </div>
-                    <div className="text-right">
-                      <p className="text-base sm:text-xl font-bold text-gray-900 dark:text-white">
+                    <div className="shrink-0 text-right">
+                      <p className="text-base font-bold tabular-nums text-gray-900 dark:text-white sm:text-lg">
                         {currencySymbol}{" "}
                         {Math.round(viewTotalRevenue).toLocaleString()}
                       </p>
-                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 hidden sm:block">
-                        total revenue
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                        {viewTotalOrders.toLocaleString()} orders
                       </p>
                     </div>
                   </div>
+                  <div className="px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
                   {reportPeriod === "monthly" ? (
                     monthlyChartMode === "trend" ? (
                       monthlyHasTrendData ? (
@@ -2257,6 +2646,7 @@ export default function OverviewPage() {
                           dailySales={monthlyDailyTrendSales}
                           hourlySales={null}
                           remainingHoursStart={null}
+                          currencySymbol={currencySymbol}
                         />
                       ) : (
                         <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">
@@ -2272,6 +2662,7 @@ export default function OverviewPage() {
                           remainingHoursStart={24}
                           hourBucketSize={2}
                           hourStartHours={monthlyPeakBucketStartHours}
+                          currencySymbol={currencySymbol}
                         />
                       ) : (
                         <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">
@@ -2287,6 +2678,7 @@ export default function OverviewPage() {
                         hourlySales={yesterdayHourlyWindowSales}
                         remainingHoursStart={24}
                         hourStartHours={hourWindowHours}
+                        currencySymbol={currencySymbol}
                       />
                     ) : (
                       <div className="h-64 flex items-center justify-center text-sm text-gray-400 dark:text-neutral-600">
@@ -2300,88 +2692,191 @@ export default function OverviewPage() {
                       hourlySales={dayHourlyWindowSales}
                       remainingHoursStart={remainingHoursStart}
                       hourStartHours={hourWindowHours}
+                      currencySymbol={currencySymbol}
                     />
                   )}
+                  </div>
                 </div>
-
-                {/* Right panel: Profit + Order Types */}
-                <div className="flex flex-row sm:flex-col gap-3">
-                  {/* Profit card */}
-                  <div className="flex-1 sm:flex-none bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-3 sm:p-5 text-white flex items-center gap-2 sm:gap-4">
-                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                      <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-emerald-100 text-[10px] sm:text-xs font-medium">
-                        {reportPeriod === "yesterday"
-                          ? "Yesterday's"
-                          : reportPeriod === "monthly"
-                            ? "Monthly"
-                            : "Today's"}{" "}
-                        Profit
-                        {periodAccountingPl != null ? " (ledger)" : ""}
-                      </p>
-                      <p className="text-white text-base sm:text-2xl font-bold leading-tight">
-                        {currencySymbol}{" "}
-                        {Math.round(viewTotalProfit).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Order types donut */}
-                  <div className="flex-1 sm:flex-none relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-3 sm:p-5 overflow-hidden">
-                    <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-violet-500 to-violet-600 opacity-80" />
-                    <h4 className="text-[10px] sm:text-xs font-bold text-gray-700 dark:text-neutral-300 uppercase tracking-wider mb-2 sm:mb-4">
-                      Order Types
-                    </h4>
-                    {salesTypeSegments.length > 0 ? (
-                      <div className="flex items-center gap-2 sm:gap-4">
-                        <DonutChart segments={salesTypeSegments} size={64} />
-                        <div className="flex-1 space-y-1.5 sm:space-y-2 min-w-0">
-                          {salesTypeSegments.map((s) => {
-                            const total = salesTypeSegments.reduce(
-                              (a, b) => a + b.value,
-                              0,
-                            );
-                            const pct =
-                              total > 0
-                                ? Math.round((s.value / total) * 100)
-                                : 0;
-                            return (
-                              <div
-                                key={s.label}
-                                className="flex items-center gap-1.5 sm:gap-2"
-                              >
-                                <span
-                                  className="w-2 h-2 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: s.color }}
-                                />
-                                <span className="flex-1 text-[10px] sm:text-xs text-gray-600 dark:text-neutral-400 truncate">
-                                  {s.label}
-                                </span>
-                                <span className="text-[10px] sm:text-xs font-bold text-gray-900 dark:text-white">
-                                  {pct}%
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-6">
-                        <BarChart3 className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-1" />
-                        <p className="text-xs text-gray-400 dark:text-neutral-600">
-                          No order data
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                <div className="h-full min-h-0">
+                  <PremiumModuleCard
+                    moduleKey="aiReceptionist"
+                    unlocked={whatsappUnlocked}
+                  />
                 </div>
               </div>
 
-              {/* ─── Sales by channel + Received + Upcoming + Top Items ───────── */}
-              <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-5 mb-3 sm:mb-5">
-                {/* Orders by source (website vs POS vs Foodpanda) */}
+              {/* Payments + Source + Top Selling */}
+              <div className="mb-3 grid gap-3 sm:mb-4 sm:grid-cols-2 xl:grid-cols-4 xl:items-stretch">
+                {/* Received Payments */}
+                <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+                  <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 to-blue-600 opacity-80" />
+                  <div className="flex items-center gap-2.5 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-500/30">
+                      <CreditCard className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Received Payments
+                      </h3>
+                      <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                        {periodLabel}
+                      </p>
+                    </div>
+                    <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+                      {currencySymbol}{" "}
+                      {Math.round(totalReceivedAmount).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="space-y-2.5 p-4">
+                    {hasOrders ? (
+                      <>
+                        {receivedRows.map((row) => {
+                          const pct =
+                            totalReceivedAmount > 0
+                              ? Math.round(
+                                  (Number(row.amount || 0) /
+                                    totalReceivedAmount) *
+                                    100,
+                                )
+                              : 0;
+                          return (
+                            <div key={row.key}>
+                              <div className="mb-1 flex items-center justify-between gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                    style={{ backgroundColor: row.color }}
+                                  />
+                                  <span className="text-xs text-gray-700 dark:text-neutral-300">
+                                    {row.label}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {Number(row.orders || 0).toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold tabular-nums text-gray-900 dark:text-white">
+                                    {currencySymbol}{" "}
+                                    {Math.round(
+                                      Number(row.amount || 0),
+                                    ).toLocaleString()}
+                                  </span>
+                                  <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                    {pct}%
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                                <div
+                                  className="h-full rounded-full transition-all duration-700"
+                                  style={{
+                                    width: `${pct}%`,
+                                    backgroundColor: row.color,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {paymentAccountRows.length > 0 && (
+                          <div className="border-t border-gray-100 pt-2.5 dark:border-neutral-800">
+                            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                              Online accounts
+                            </p>
+                            <div className="max-h-24 space-y-1 overflow-auto">
+                              {paymentAccountRows.map((row) => (
+                                <div
+                                  key={row.accountName}
+                                  className="flex items-center justify-between gap-2 text-[11px]"
+                                >
+                                  <span className="truncate text-gray-600 dark:text-neutral-300">
+                                    {row.accountName}
+                                  </span>
+                                  <span className="shrink-0 font-semibold text-gray-900 dark:text-white">
+                                    {currencySymbol}{" "}
+                                    {Number(row.amount || 0).toLocaleString()}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="py-4 text-center text-xs text-gray-400">
+                        No payment data
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Upcoming Payments */}
+                <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+                  <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-amber-500 to-orange-500 opacity-80" />
+                  <div className="flex items-center gap-2.5 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 shadow-md shadow-amber-500/30">
+                      <Clock className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Upcoming Payments
+                      </h3>
+                      <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                        Unpaid orders
+                      </p>
+                    </div>
+                    <p className="text-sm font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                      {currencySymbol}{" "}
+                      {Math.round(totalUnpaidExposure).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="space-y-1 p-4">
+                    {hasOrders ? (
+                      <>
+                        {(upcomingPayments.rows || []).map((row) => (
+                          <div
+                            key={row.label}
+                            className="flex items-center justify-between border-b border-gray-50 py-1.5 dark:border-neutral-800/80"
+                          >
+                            <span className="text-[11px] text-gray-600 dark:text-neutral-400">
+                              {row.label} · {row.count.toLocaleString()}
+                            </span>
+                            <p className="text-[11px] font-semibold tabular-nums text-gray-900 dark:text-white">
+                              {currencySymbol}{" "}
+                              {Math.round(row.amount || 0).toLocaleString()}
+                            </p>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between border-b border-gray-50 py-1.5 dark:border-neutral-800/80">
+                          <span className="text-[11px] text-gray-600 dark:text-neutral-400">
+                            Delivered · pending ·{" "}
+                            {deliveredUnpaid.count.toLocaleString()}
+                          </span>
+                          <p className="text-[11px] font-semibold tabular-nums text-gray-900 dark:text-white">
+                            {currencySymbol}{" "}
+                            {Math.round(
+                              deliveredUnpaid.amount || 0,
+                            ).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-dashed border-gray-200 pt-2 dark:border-neutral-700">
+                          <span className="text-[11px] font-semibold text-gray-700 dark:text-neutral-300">
+                            Total unpaid
+                          </span>
+                          <p className="text-[11px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                            {currencySymbol}{" "}
+                            {Math.round(totalUnpaidExposure).toLocaleString()}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="py-4 text-center text-xs text-gray-400">
+                        No upcoming payment data
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {/* Orders by source */}
                 <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
                   <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-fuchsia-500 to-pink-600 opacity-80" />
                   <div className="flex items-center gap-2.5 mb-3">
@@ -2479,222 +2974,29 @@ export default function OverviewPage() {
                   )}
                 </div>
 
-                {/* Received Payments */}
-                <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
-                  <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-sky-500 to-blue-600 opacity-80" />
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-500/30 flex items-center justify-center flex-shrink-0">
-                      <CreditCard className="w-4 h-4 text-white" />
-                    </div>
-                    <div className="flex items-center justify-between w-full flex-1">
-                      <div>
-                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                          Received Payments
-                        </h3>
-                        <p className="text-[11px] text-gray-500 dark:text-neutral-400 hidden sm:block">
-                          Received in {periodLabel.toLowerCase()}
-                        </p>
-                      </div>
-                      <h2 className="font-bold text-sm text-gray-900 dark:text-white">
-                        {currencySymbol}{" "}
-                        {Math.round(totalReceivedAmount).toLocaleString()}
-                      </h2>
-                    </div>
-                  </div>
-
-                  {hasOrders ? (
-                    <div className="space-y-4">
-                      <div className="space-y-2.5">
-                        {receivedRows.map((row) => {
-                          const pct =
-                            totalReceivedAmount > 0
-                              ? Math.round(
-                                  (Number(row.amount || 0) /
-                                    totalReceivedAmount) *
-                                    100,
-                                )
-                              : 0;
-                          return (
-                            <div key={row.key}>
-                              <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span
-                                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                                    style={{ backgroundColor: row.color }}
-                                  />
-                                  <span className="text-xs text-gray-700 dark:text-neutral-300">
-                                    {row.label}
-                                  </span>
-                                  <span className="text-[10px] text-gray-400 dark:text-neutral-500">
-                                    {Number(row.orders || 0).toLocaleString()}{" "}
-                                    orders
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold text-gray-900 dark:text-white">
-                                    {currencySymbol}{" "}
-                                    {Math.round(
-                                      Number(row.amount || 0),
-                                    ).toLocaleString()}
-                                  </span>
-                                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
-                                    {pct}%
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="h-1.5 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all duration-700"
-                                  style={{
-                                    width: `${pct}%`,
-                                    backgroundColor: row.color,
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div className="pt-3 border-t border-gray-100 dark:border-neutral-800">
-                        <p className="text-[11px] font-semibold text-gray-600 dark:text-neutral-400 mb-2">
-                          Online payment accounts
-                        </p>
-                        {paymentAccountRows.length === 0 ? (
-                          <p className="text-[11px] text-gray-400 dark:text-neutral-600">
-                            No online payments in this period.
-                          </p>
-                        ) : (
-                          <div className="space-y-1.5 max-h-32 overflow-auto pr-1">
-                            {paymentAccountRows.map((row) => (
-                              <div
-                                key={row.accountName}
-                                className="flex items-center justify-between text-[11px]"
-                              >
-                                <span className="text-gray-600 dark:text-neutral-300 truncate pr-2">
-                                  {row.accountName}
-                                </span>
-                                <span className="text-gray-900 dark:text-white font-semibold">
-                                  {currencySymbol}{" "}
-                                  {Number(row.amount || 0).toLocaleString()}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-8">
-                      <CreditCard className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-2" />
-                      <p className="text-xs text-gray-400 dark:text-neutral-600">
-                        No payment data
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Upcoming Payments */}
-                <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-3 overflow-hidden">
-                  <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-amber-500 to-orange-500 opacity-80" />
-                  {hasOrders ? (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 mb-2 pb-1.5 border-b border-gray-100 dark:border-neutral-800">
-                        <div className="w-7 h-7 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 shadow-md shadow-amber-500/30 flex items-center justify-center shrink-0">
-                          <Clock className="w-3.5 h-3.5 text-white" />
-                        </div>
-                        <div className="flex items-center justify-between w-full min-w-0 gap-2">
-                          <div className="min-w-0">
-                            <h3 className="font-bold text-sm text-gray-900 dark:text-white leading-tight">
-                              Upcoming
-                            </h3>
-                            <p className="text-[10px] text-gray-500 dark:text-neutral-400 leading-tight mt-0.5">
-                              All unpaid orders
-                            </p>
-                          </div>
-                          <h2 className="font-bold text-sm text-gray-900 dark:text-white shrink-0">
-                            {currencySymbol}{" "}
-                            {Math.round(totalUnpaidExposure).toLocaleString()}
-                          </h2>
-                        </div>
-                      </div>
-
-                      {(upcomingPayments.rows || []).map((row) => (
-                        <div
-                          key={row.label}
-                          className="flex items-center justify-between py-0.5 border-b border-gray-100/80 dark:border-neutral-800/80"
-                        >
-                          <span className="text-[10px] text-gray-600 dark:text-neutral-400 leading-tight">
-                            {row.label} · {row.count.toLocaleString()} orders
-                          </span>
-                          <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
-                            {currencySymbol}{" "}
-                            {Math.round(row.amount || 0).toLocaleString()}
-                          </p>
-                        </div>
-                      ))}
-
-                      <div className="flex items-center justify-between py-0.5 border-b border-gray-100/80 dark:border-neutral-800/80">
-                        <span className="text-[10px] text-gray-600 dark:text-neutral-400 leading-tight">
-                          Delivered · payment pending ·{" "}
-                          {deliveredUnpaid.count.toLocaleString()} orders
-                        </span>
-                        <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
-                          Rs{" "}
-                          {Math.round(
-                            deliveredUnpaid.amount || 0,
-                          ).toLocaleString()}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 border-t border-dashed border-gray-200 dark:border-neutral-700">
-                        <span className="text-[10px] font-semibold text-gray-700 dark:text-neutral-300 leading-tight">
-                          Total unpaid
-                        </span>
-                        <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 tabular-nums">
-                          {currencySymbol}{" "}
-                          {Math.round(totalUnpaidExposure).toLocaleString()}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-0.5">
-                        <span className="text-[10px] font-semibold text-gray-700 dark:text-neutral-300 leading-tight">
-                          Pending collection ·{" "}
-                          {pendingCollection.orders.toLocaleString()} orders
-                        </span>
-                        <p className="text-[10px] font-semibold text-gray-900 dark:text-white tabular-nums">
-                          {currencySymbol}{" "}
-                          {Math.round(
-                            pendingCollection.amount,
-                          ).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-8">
-                      <Clock className="w-7 h-7 text-gray-200 dark:text-neutral-700 mb-2" />
-                      <p className="text-xs text-gray-400 dark:text-neutral-600">
-                        No upcoming payment data
-                      </p>
-                    </div>
-                  )}
-                </div>
-
                 {/* Top Selling Items */}
                 <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
                   <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-orange-500 to-primary opacity-80" />
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
+                  <div className="flex items-center justify-between mb-3 gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-primary shadow-md shadow-orange-500/30 flex items-center justify-center">
                         <ShoppingBag className="w-4 h-4 text-white" />
                       </div>
-                      <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                        Top Selling
-                      </h3>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                          Top Selling
+                        </h3>
+                        <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                          {periodLabel}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-500 dark:text-neutral-400">
-                      {periodLabel}
-                    </span>
+                    <Link
+                      href="/sales-report/#top-selling-items"
+                      className="shrink-0 text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      View All →
+                    </Link>
                   </div>
                   {displayTopItems.length > 0 ? (
                     <div className="space-y-1">
@@ -2742,232 +3044,152 @@ export default function OverviewPage() {
                   )}
                 </div>
               </div>
-            </>
-          )}
 
-          {/* ─── Inventory Health + P&L side by side ─────────────────────── */}
-          <div className="grid sm:grid-cols-2 gap-3 sm:gap-5 mb-3 sm:mb-5">
-            {/* ─── Inventory Health ────────────────────────────────────────── */}
-            <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 overflow-hidden">
-              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-violet-500 to-violet-600 opacity-80" />
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-violet-600 shadow-md shadow-violet-500/30 flex items-center justify-center flex-shrink-0">
-                    <Package className="w-4 h-4 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                      Inventory Health
-                    </h3>
-                    <p className="text-xs text-gray-400 dark:text-neutral-500 hidden sm:block">
-                      Stock status overview
-                    </p>
-                  </div>
-                </div>
-                <a
-                  href="/dashboard/inventory"
-                  className="text-xs font-semibold text-primary hover:underline"
-                >
-                  View all →
-                </a>
-              </div>
+              {/* 4th row: Kitchen + Website Analytics + Purchase Orders */}
+              <div className="mb-3 grid gap-3 sm:mb-4 sm:grid-cols-2 lg:grid-cols-3 lg:items-stretch">
+                <PremiumModuleCard moduleKey="kds" unlocked={kdsUnlocked} />
+                <PremiumModuleCard
+                  moduleKey="websiteAnalytics"
+                  unlocked={websiteAnalyticsUnlocked}
+                />
 
-              {invLoading ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton
-                      key={`inv-sk-${i}`}
-                      className="h-[72px] rounded-xl"
-                    />
-                  ))}
-                </div>
-              ) : invTotal === 0 ? (
-                <p className="text-xs text-gray-400 dark:text-neutral-600 text-center py-6">
-                  No inventory items found
-                </p>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      {
-                        label: "Total Items",
-                        value: invTotal,
-                        color: "text-blue-700 dark:text-blue-400",
-                        bg: "bg-blue-50 dark:bg-blue-500/10",
-                        border: "border-blue-100 dark:border-blue-500/20",
-                      },
-                      {
-                        label: "Healthy",
-                        value: invHealthy,
-                        color: "text-emerald-700 dark:text-emerald-400",
-                        bg: "bg-emerald-50 dark:bg-emerald-500/10",
-                        border: "border-emerald-100 dark:border-emerald-500/20",
-                      },
-                      {
-                        label: "Low Stock",
-                        value: invLow,
-                        color: "text-orange-700 dark:text-orange-400",
-                        bg: "bg-orange-50 dark:bg-orange-500/10",
-                        border: "border-orange-100 dark:border-orange-500/20",
-                      },
-                      {
-                        label: "Out of Stock",
-                        value: invOut,
-                        color: "text-red-700 dark:text-red-400",
-                        bg: "bg-red-50 dark:bg-red-500/10",
-                        border: "border-red-100 dark:border-red-500/20",
-                      },
-                    ].map(({ label, value, color, bg, border }) => (
-                      <div
-                        key={label}
-                        className={`flex flex-col items-center justify-center p-3 rounded-xl border ${bg} ${border}`}
-                      >
-                        <p
-                          className={`text-2xl font-black tabular-nums leading-tight ${color}`}
-                        >
-                          {value}
-                        </p>
-                        <p className="text-[11px] font-semibold text-gray-500 dark:text-neutral-400 mt-0.5 text-center">
-                          {label}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {invNeedAttn.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-neutral-800">
-                      <p className="text-[11px] font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mb-2">
-                        Needs Attention
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {invNeedAttn.slice(0, 8).map((item) => {
-                          const isOut = (item.currentStock ?? 0) <= 0;
-                          return (
-                            <span
-                              key={item.id}
-                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold ${
-                                isOut
-                                  ? "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400"
-                                  : "bg-orange-100 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400"
-                              }`}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${isOut ? "bg-red-500" : "bg-orange-400"}`}
-                              />
-                              {item.name}
-                              <span className="opacity-60">
-                                {isOut ? "· out" : "· low"}
-                              </span>
-                            </span>
-                          );
-                        })}
-                        {invNeedAttn.length > 8 && (
-                          <span className="text-xs text-gray-400 dark:text-neutral-500 self-center">
-                            +{invNeedAttn.length - 8} more
+                {/* Purchase Orders report */}
+                <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+                  <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-orange-500 to-amber-500 opacity-80" />
+                  <div className="flex items-center gap-2.5 border-b border-gray-100 px-3.5 py-3 dark:border-neutral-800 sm:px-4">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 shadow-md shadow-orange-500/25">
+                      <ClipboardList className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                          Purchase Orders
+                        </h3>
+                        {modulesLoaded && !inventoryUnlocked && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-300">
+                            <Crown className="h-3 w-3" />
+                            Premium
                           </span>
                         )}
                       </div>
+                      <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                        Open POs &amp; receiving
+                      </p>
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* ─── Accounting P&L widget ────────────────────────────────────── */}
-            <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
-              <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-emerald-500 to-teal-600 opacity-80" />
-              <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/30 flex items-center justify-center">
-                    <TrendingUp className="w-3.5 h-3.5 text-white" />
+                    <Link
+                      href={
+                        inventoryUnlocked
+                          ? "/inventory/purchase-orders"
+                          : "/subscription"
+                      }
+                      className="text-[11px] font-semibold text-orange-600 hover:underline dark:text-orange-400"
+                    >
+                      {inventoryUnlocked ? "View all →" : "Unlock →"}
+                    </Link>
                   </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-gray-900 dark:text-white">
-                      This Month — P&amp;L
-                    </h3>
-                    <p className="text-[11px] text-gray-400 dark:text-neutral-500">
-                      Profit & Loss from accounting ledger
-                    </p>
+                  <div className="flex flex-1 flex-col p-3.5 sm:p-4">
+                    {!modulesLoaded || (inventoryUnlocked && poLoading) ? (
+                      <div className="grid flex-1 grid-cols-2 gap-2">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <Skeleton
+                            key={`po-sk-${i}`}
+                            className="h-14 rounded-xl"
+                          />
+                        ))}
+                      </div>
+                    ) : !inventoryUnlocked ? (
+                      <div className="grid flex-1 grid-cols-2 gap-2">
+                        {["Draft", "Sent", "Partial", "Received"].map(
+                          (label) => (
+                            <div
+                              key={label}
+                              className="rounded-xl bg-gray-50 px-2.5 py-2 dark:bg-neutral-900/70"
+                            >
+                              <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                                {label}
+                              </p>
+                              <p className="mt-0.5 text-lg font-extrabold tabular-nums leading-none text-gray-900 dark:text-white">
+                                —
+                              </p>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            {
+                              label: "Draft",
+                              value: poKpis.draft,
+                              tone: "text-gray-900 dark:text-white",
+                              bg: "bg-gray-50 dark:bg-neutral-900/70",
+                            },
+                            {
+                              label: "Sent",
+                              value: poKpis.sent,
+                              tone: "text-sky-700 dark:text-sky-400",
+                              bg: "bg-sky-50 dark:bg-sky-500/10",
+                            },
+                            {
+                              label: "Partial",
+                              value: poKpis.partial,
+                              tone: "text-amber-700 dark:text-amber-400",
+                              bg: "bg-amber-50 dark:bg-amber-500/10",
+                            },
+                            {
+                              label: "Received",
+                              value: poKpis.received,
+                              tone: "text-emerald-700 dark:text-emerald-400",
+                              bg: "bg-emerald-50 dark:bg-emerald-500/10",
+                            },
+                          ].map(({ label, value, tone, bg }) => (
+                            <div
+                              key={label}
+                              className={`rounded-xl px-2.5 py-2 ${bg}`}
+                            >
+                              <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                                {label}
+                              </p>
+                              <p
+                                className={`mt-0.5 text-lg font-extrabold tabular-nums leading-none ${tone}`}
+                              >
+                                {value}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-gray-600 dark:text-neutral-300">
+                          <span>
+                            Total{" "}
+                            <span className="font-bold text-gray-900 dark:text-white">
+                              {poKpis.total}
+                            </span>
+                          </span>
+                          <span>
+                            Open value{" "}
+                            <span className="font-bold text-gray-900 dark:text-white">
+                              {currencySymbol}{" "}
+                              {Math.round(poKpis.openValue).toLocaleString()}
+                            </span>
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-                {plSetup && (
-                  <a
-                    href="/accounting/reports/profit-loss"
-                    className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
-                  >
-                    View Full Report →
-                  </a>
-                )}
               </div>
-              <div className="px-4 py-4">
-                {plLoading ? (
-                  <div className="grid grid-cols-3 gap-3">
-                    {[1, 2, 3].map((i) => (
-                      <div
-                        key={i}
-                        className="h-12 rounded-lg bg-gray-100 dark:bg-neutral-800 animate-pulse"
-                      />
-                    ))}
-                  </div>
-                ) : !plSetup ? (
-                  <a
-                    href="/accounting"
-                    className="flex items-center gap-2 text-sm text-orange-500 dark:text-orange-400 hover:underline"
-                  >
-                    Set up Accounting to see P&amp;L →
-                  </a>
-                ) : plData ? (
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      {
-                        label: "Revenue",
-                        value: plData.grossRevenue,
-                        color: "text-emerald-600 dark:text-emerald-400",
-                      },
-                      {
-                        label: "Expenses",
-                        value: plData.totalExpenses,
-                        color: "text-gray-700 dark:text-neutral-300",
-                      },
-                      {
-                        label:
-                          plData.netProfit >= 0 ? "Net Profit" : "Net Loss",
-                        value: plData.netProfit,
-                        color:
-                          plData.netProfit >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-red-600 dark:text-red-400",
-                      },
-                    ].map((c) => (
-                      <div
-                        key={c.label}
-                        className="rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 p-3"
-                      >
-                        <p className="text-[10px] text-gray-400 dark:text-neutral-500 uppercase tracking-wide font-semibold mb-0.5">
-                          {c.label}
-                        </p>
-                        <p
-                          className={`text-sm font-bold tabular-nums ${c.color}`}
-                        >
-                          {c.value < 0
-                            ? `(${currencySymbol} ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })})`
-                            : `${currencySymbol} ${Math.abs(c.value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400 dark:text-neutral-500 py-2">
-                    No accounting data for this month yet.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          {/* end grid: Inventory + P&L */}
 
-          {/* ─── Currency Counter ─────────────────────────────────────────── */}
-          <div className="relative bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
+              {/* ─── Locked premium modules — report previews ──────────────── */}
+              <PremiumModulesPanel />
+
+
+            </>
+          )}
+
+          {/* ─── Currency | Cleanliness + Staff ───────────────────────────── */}
+          <div className="mb-3 grid gap-3 sm:mb-5 lg:grid-cols-2 lg:items-start">
+          <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
             <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-emerald-500 to-teal-600 opacity-80" />
             <div className="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -3233,7 +3455,7 @@ export default function OverviewPage() {
                       type="button"
                       onClick={handleOpenDrawer}
                       disabled={drawerOpening}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-200 text-[11px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-60"
+                      className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-200 text-[11px] font-semibold hover:bg-gray-50 dark:hover:bg-neutral-900 transition-colors disabled:opacity-60"
                     >
                       {drawerOpening ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3246,6 +3468,208 @@ export default function OverviewPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {/* Cleanliness & maintenance report */}
+            <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-cyan-500 to-sky-600 opacity-80" />
+              <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-neutral-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-sky-600 shadow-md shadow-cyan-500/30">
+                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <h3 className="text-xs font-bold text-gray-900 dark:text-white">
+                        Cleanliness Report
+                      </h3>
+                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-300">
+                        <Crown className="h-3 w-3" />
+                        Premium
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                      Hygiene &amp; maintenance
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/subscription"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-md shadow-amber-500/30"
+                >
+                  Unlock
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+              <div className="space-y-3 p-4">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                      Hygiene score
+                    </p>
+                    <p className="mt-0.5 text-2xl font-black tabular-nums text-gray-900 dark:text-white">
+                      —
+                    </p>
+                  </div>
+                  <p className="inline-flex items-center gap-1 pb-1 text-[11px] font-medium text-gray-500 dark:text-neutral-400">
+                    <Wrench className="h-3.5 w-3.5" />
+                    Last inspection —
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "Due today", value: "—" },
+                    { label: "Open issues", value: "—" },
+                    { label: "Completed", value: "—" },
+                  ].map(({ label, value }) => (
+                    <div
+                      key={label}
+                      className="rounded-xl bg-cyan-50/80 px-2.5 py-2 dark:bg-cyan-500/10"
+                    >
+                      <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                        {label}
+                      </p>
+                      <p className="mt-0.5 text-base font-extrabold tabular-nums leading-none text-gray-900 dark:text-white">
+                        {value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t border-gray-100 pt-2.5 dark:border-neutral-800">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                    Areas
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      "Kitchen",
+                      "Washrooms",
+                      "Dining",
+                      "Storage",
+                      "Equipment",
+                    ].map((area) => (
+                      <span
+                        key={area}
+                        className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:bg-neutral-800 dark:text-neutral-300"
+                      >
+                        {area}
+                        <span className="text-gray-400">—</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Staff KPIs — under cleanliness */}
+            <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-slate-500 to-slate-700 opacity-80" />
+              <div className="flex items-center gap-2.5 border-b border-gray-100 px-3.5 py-3 dark:border-neutral-800 sm:px-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 shadow-md shadow-slate-500/25">
+                  <Users className="h-4 w-4 text-white" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Staff
+                  </h3>
+                  <p className="text-[11px] text-gray-400 dark:text-neutral-500">
+                    Team KPIs
+                  </p>
+                </div>
+                <Link
+                  href="/users"
+                  className="text-[11px] font-semibold text-primary hover:underline"
+                >
+                  Manage →
+                </Link>
+              </div>
+              <div className="p-3.5 sm:p-4">
+                {staffLoading ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton
+                        key={`staff-sk-${i}`}
+                        className="h-14 rounded-xl"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        {
+                          label: "Total",
+                          value: staffKpis.total,
+                          tone: "text-gray-900 dark:text-white",
+                          bg: "bg-slate-50 dark:bg-neutral-900/70",
+                        },
+                        {
+                          label: "Active today",
+                          value: staffKpis.activeToday,
+                          tone: "text-emerald-700 dark:text-emerald-400",
+                          bg: "bg-emerald-50 dark:bg-emerald-500/10",
+                        },
+                        {
+                          label: "Waiters",
+                          value: staffKpis.waiters,
+                          tone: "text-teal-700 dark:text-teal-400",
+                          bg: "bg-teal-50 dark:bg-teal-500/10",
+                        },
+                        {
+                          label: "Kitchen",
+                          value: staffKpis.kitchen,
+                          tone: "text-amber-700 dark:text-amber-400",
+                          bg: "bg-amber-50 dark:bg-amber-500/10",
+                        },
+                      ].map(({ label, value, tone, bg }) => (
+                        <div
+                          key={label}
+                          className={`rounded-xl px-2.5 py-2 ${bg}`}
+                        >
+                          <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 dark:text-neutral-500">
+                            {label}
+                          </p>
+                          <p
+                            className={`mt-0.5 text-lg font-extrabold tabular-nums leading-none ${tone}`}
+                          >
+                            {value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-gray-600 dark:text-neutral-300">
+                      <span>
+                        Riders{" "}
+                        <span className="font-bold text-gray-900 dark:text-white">
+                          {staffKpis.riders}
+                        </span>
+                      </span>
+                      <span>
+                        Never logged in{" "}
+                        <span
+                          className={`font-bold ${
+                            staffKpis.neverLoggedIn > 0
+                              ? "text-rose-600 dark:text-rose-400"
+                              : "text-gray-900 dark:text-white"
+                          }`}
+                        >
+                          {staffKpis.neverLoggedIn}
+                        </span>
+                      </span>
+                      {staffKpis.inactive > 0 && (
+                        <span>
+                          Inactive{" "}
+                          <span className="font-bold text-rose-600 dark:text-rose-400">
+                            {staffKpis.inactive}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
           </div>
         </>
       )}

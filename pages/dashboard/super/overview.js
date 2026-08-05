@@ -3,7 +3,6 @@ import Link from "next/link";
 import AdminLayout from "../../../components/layout/AdminLayout";
 import SuperPageGate from "../../../components/super/SuperPageGate";
 import { usePlatformPermissionGate } from "../../../hooks/usePlatformPermissionGate";
-import DataTable from "../../../components/ui/DataTable";
 import {
   getLeadStatsForSuperAdmin,
   getSuperInvoices,
@@ -12,13 +11,11 @@ import {
 } from "../../../lib/apiClient";
 import {
   Activity,
-  AlertCircle,
   AlertTriangle,
   ArrowUpRight,
   Building2,
   Clock,
   CreditCard,
-  FileText,
   LayoutDashboard,
   Loader2,
   MessageCircle,
@@ -26,16 +23,14 @@ import {
   Store,
   TrendingUp,
   Users,
-  UtensilsCrossed,
-  Zap,
 } from "lucide-react";
 
 const ENGAGEMENT_COLORS = {
   active: "#10b981",
   quiet: "#f59e0b",
   new: "#0ea5e9",
-  configured: "#8b5cf6",
-  dormant: "#71717a",
+  configured: "#a78bfa",
+  dormant: "#9ca3af",
 };
 
 const ENGAGEMENT_STYLES = {
@@ -59,12 +54,6 @@ const SUB_STATUS_COLORS = {
   SUSPENDED: "#71717a",
 };
 
-const PLAN_COLORS = {
-  ENTERPRISE: "#FF5400",
-  PROFESSIONAL: "#0ea5e9",
-  ESSENTIAL: "#64748b",
-};
-
 function formatDate(iso) {
   if (!iso) return "—";
   try {
@@ -74,19 +63,6 @@ function formatDate(iso) {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
-}
-
-function formatShortDate(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
     });
   } catch {
     return "—";
@@ -130,10 +106,10 @@ function subscriptionEnd(sub = {}) {
   );
 }
 
-function DonutChart({ segments, size = 148, centerLabel, centerValue }) {
+function DonutChart({ segments, size = 132, centerLabel, centerValue }) {
   const total = segments.reduce((s, g) => s + g.value, 0) || 1;
   const r = Math.round(size * 0.36);
-  const sw = Math.round(size * 0.16);
+  const sw = Math.round(size * 0.14);
   const c = size / 2;
   const circ = 2 * Math.PI * r;
   let acc = 0;
@@ -145,9 +121,9 @@ function DonutChart({ segments, size = 148, centerLabel, centerValue }) {
           cy={c}
           r={r}
           fill="none"
-          stroke="#e5e7eb"
+          stroke="currentColor"
           strokeWidth={sw}
-          className="dark:stroke-neutral-800"
+          className="text-gray-100 dark:text-neutral-800"
         />
         {segments.map((seg, i) => {
           const frac = seg.value / total;
@@ -178,12 +154,12 @@ function DonutChart({ segments, size = 148, centerLabel, centerValue }) {
       {(centerLabel || centerValue != null) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           {centerValue != null && (
-            <span className="text-xl font-bold text-gray-900 dark:text-white tabular-nums leading-none">
+            <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums leading-none">
               {centerValue}
             </span>
           )}
           {centerLabel && (
-            <span className="text-[10px] font-medium text-gray-500 dark:text-neutral-500 mt-1">
+            <span className="text-[10px] font-medium text-gray-500 dark:text-neutral-500 mt-1 uppercase tracking-wide">
               {centerLabel}
             </span>
           )}
@@ -193,55 +169,21 @@ function DonutChart({ segments, size = 148, centerLabel, centerValue }) {
   );
 }
 
-function HBar({ items, maxValue }) {
-  const max = maxValue || Math.max(...items.map((i) => i.value), 1);
-  return (
-    <div className="space-y-2.5">
-      {items.map((item) => (
-        <div key={item.label}>
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="text-xs font-medium text-gray-600 dark:text-neutral-400 truncate">
-              {item.label}
-            </span>
-            <span className="text-xs font-bold tabular-nums text-gray-900 dark:text-white shrink-0">
-              {item.value}
-              {item.suffix ? (
-                <span className="font-medium text-gray-400 dark:text-neutral-500 ml-1">
-                  {item.suffix}
-                </span>
-              ) : null}
-            </span>
-          </div>
-          <div className="h-1.5 rounded-full bg-gray-100 dark:bg-neutral-800 overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width: `${Math.max(2, (item.value / max) * 100)}%`,
-                backgroundColor: item.color || "#FF5400",
-              }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Panel({ title, description, action, children, className = "" }) {
+function SectionCard({ title, description, action, children, className = "" }) {
   return (
     <section
-      className={`bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl ${className}`}
+      className={`rounded-2xl border border-black/5 bg-white/90 shadow-sm backdrop-blur-sm dark:border-white/10 dark:bg-neutral-950/90 ${className}`}
     >
       {(title || action) && (
-        <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3 border-b border-gray-100 dark:border-neutral-900">
+        <div className="flex items-start justify-between gap-3 border-b border-black/5 px-5 py-4 dark:border-white/10">
           <div className="min-w-0">
             {title && (
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+              <h3 className="text-sm font-bold tracking-tight text-gray-900 dark:text-white">
                 {title}
               </h3>
             )}
             {description && (
-              <p className="text-xs text-gray-500 dark:text-neutral-500 mt-0.5">
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-neutral-500">
                 {description}
               </p>
             )}
@@ -254,99 +196,30 @@ function Panel({ title, description, action, children, className = "" }) {
   );
 }
 
-function MetricTile({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  tone = "neutral",
-  href,
-}) {
+function StatPill({ label, value, hint, tone = "default" }) {
   const tones = {
-    neutral: {
-      icon: "bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300",
-      value: "text-gray-900 dark:text-white",
-    },
-    primary: {
-      icon: "bg-primary/10 text-primary",
-      value: "text-primary",
-    },
-    emerald: {
-      icon: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
-      value: "text-emerald-700 dark:text-emerald-400",
-    },
-    amber: {
-      icon: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400",
-      value: "text-amber-700 dark:text-amber-400",
-    },
-    rose: {
-      icon: "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400",
-      value: "text-rose-700 dark:text-rose-400",
-    },
-    sky: {
-      icon: "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400",
-      value: "text-sky-700 dark:text-sky-400",
-    },
+    default: "text-gray-900 dark:text-white",
+    good: "text-emerald-600 dark:text-emerald-400",
+    warn: "text-amber-600 dark:text-amber-400",
+    bad: "text-rose-600 dark:text-rose-400",
+    brand: "text-[#FF5400]",
   };
-  const t = tones[tone] || tones.neutral;
-  const inner = (
-    <>
-      <div className="flex items-center justify-between mb-3">
-        <div
-          className={`w-9 h-9 rounded-xl flex items-center justify-center ${t.icon}`}
-        >
-          <Icon className="w-4 h-4" />
-        </div>
-        {href && <ArrowUpRight className="w-3.5 h-3.5 text-gray-400" />}
-      </div>
-      <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500 mb-0.5">
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500">
         {label}
       </p>
-      <p className={`text-xl font-bold leading-tight tabular-nums ${t.value}`}>
+      <p
+        className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${tones[tone] || tones.default}`}
+      >
         {value}
       </p>
-      {sub && (
-        <p className="text-[10px] text-gray-400 dark:text-neutral-600 mt-1 leading-snug">
-          {sub}
+      {hint && (
+        <p className="mt-1 text-[11px] leading-snug text-gray-400 dark:text-neutral-600">
+          {hint}
         </p>
       )}
-    </>
-  );
-  const cls =
-    "bg-white dark:bg-neutral-950 border border-gray-200 dark:border-neutral-800 rounded-2xl p-4 h-full";
-  if (href) {
-    return (
-      <Link href={href} className={`${cls} hover:border-primary/40 transition-colors`}>
-        {inner}
-      </Link>
-    );
-  }
-  return <div className={cls}>{inner}</div>;
-}
-
-function AttentionRow({ title, meta, href, severity = "warn" }) {
-  const dot =
-    severity === "critical"
-      ? "bg-rose-500"
-      : severity === "info"
-        ? "bg-sky-500"
-        : "bg-amber-500";
-  return (
-    <Link
-      href={href}
-      className="flex items-start gap-3 py-2.5 border-b border-gray-100 dark:border-neutral-900 last:border-0 hover:bg-gray-50/80 dark:hover:bg-neutral-900/40 -mx-1 px-1 rounded-lg transition-colors"
-    >
-      <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-          {title}
-        </p>
-        <p className="text-[11px] text-gray-500 dark:text-neutral-500 truncate">
-          {meta}
-        </p>
-      </div>
-      <ArrowUpRight className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" />
-    </Link>
+    </div>
   );
 }
 
@@ -358,8 +231,6 @@ export default function SuperOverviewPage() {
   const [waStats, setWaStats] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sortKey, setSortKey] = useState("ordersLast30Days");
-  const [sortDir, setSortDir] = useState("desc");
 
   async function load() {
     setLoading(true);
@@ -415,6 +286,7 @@ export default function SuperOverviewPage() {
   }, [hasAccess]);
 
   const restaurants = data?.restaurants || [];
+  const s = data?.summary;
 
   const insights = useMemo(() => {
     const now = Date.now();
@@ -426,13 +298,13 @@ export default function SuperOverviewPage() {
     let ordersLife = 0;
     let revenue30 = 0;
     let websiteOrders30 = 0;
-    let branches = 0;
-    let menuItems = 0;
-    let team = 0;
     let signed7 = 0;
     let signed30 = 0;
     let pendingApproval = 0;
     let expiringSoon = 0;
+    let activeSubs = 0;
+    let trialSubs = 0;
+    let problemSubs = 0;
 
     const byEngagement = {
       active: 0,
@@ -443,8 +315,6 @@ export default function SuperOverviewPage() {
     };
     const byStatus = {};
     const byPlan = {};
-    const bySource = {};
-
     const attention = [];
 
     for (const r of restaurants) {
@@ -458,9 +328,6 @@ export default function SuperOverviewPage() {
       ordersLife += a.ordersLifetime || 0;
       revenue30 += a.revenueLast30Days || 0;
       websiteOrders30 += a.websiteOrdersLast30Days || 0;
-      branches += a.branchesCount || 0;
-      menuItems += a.menuItemsCount || 0;
-      team += a.teamMembersCount || 0;
 
       const created = r.createdAt ? new Date(r.createdAt).getTime() : 0;
       if (created >= d7) signed7 += 1;
@@ -471,8 +338,11 @@ export default function SuperOverviewPage() {
       const plan = String(sub.plan || "ESSENTIAL").toUpperCase();
       byPlan[plan] = (byPlan[plan] || 0) + 1;
 
-      const source = r.createdSource || "unknown";
-      bySource[source] = (bySource[source] || 0) + 1;
+      if (status === "ACTIVE") activeSubs += 1;
+      else if (status === "TRIAL") trialSubs += 1;
+      else if (["PAST_DUE", "EXPIRED", "SUSPENDED", "GRACE"].includes(status)) {
+        problemSubs += 1;
+      }
 
       if (r.approvalStatus === "pending") {
         pendingApproval += 1;
@@ -510,7 +380,7 @@ export default function SuperOverviewPage() {
           id: `${r.id}-quiet`,
           severity: "warn",
           title: r.website?.name || "Untitled",
-          meta: "Quiet — had orders, none in 30 days",
+          meta: "Quiet — no orders in 30 days",
           href: `/super/restaurants/${r.id}`,
           rank: 5,
         });
@@ -525,7 +395,7 @@ export default function SuperOverviewPage() {
           id: `${r.id}-never`,
           severity: "info",
           title: r.website?.name || "Untitled",
-          meta: "Signed up 14+ days ago · no orders yet",
+          meta: "14+ days · still no orders",
           href: `/super/restaurants/${r.id}`,
           rank: 4,
         });
@@ -536,15 +406,31 @@ export default function SuperOverviewPage() {
     const seen = new Set();
     const attentionUnique = [];
     for (const item of attention) {
-      const key = item.href;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (seen.has(item.href)) continue;
+      seen.add(item.href);
       attentionUnique.push(item);
-      if (attentionUnique.length >= 8) break;
+      if (attentionUnique.length >= 6) break;
     }
 
     const total = restaurants.length || 1;
     const engaged = byEngagement.active || 0;
+
+    const topByRevenue = [...restaurants]
+      .sort(
+        (a, b) =>
+          (b.activity?.revenueLast30Days || 0) -
+          (a.activity?.revenueLast30Days || 0),
+      )
+      .filter((r) => (r.activity?.revenueLast30Days || 0) > 0)
+      .slice(0, 8);
+
+    const quietList = [...restaurants]
+      .filter((r) => r.engagement?.key === "quiet")
+      .sort(
+        (a, b) =>
+          (b.activity?.ordersLifetime || 0) - (a.activity?.ordersLifetime || 0),
+      )
+      .slice(0, 5);
 
     return {
       orders7,
@@ -553,93 +439,23 @@ export default function SuperOverviewPage() {
       revenue30,
       websiteOrders30,
       websiteShare: pct(websiteOrders30, orders30),
-      branches,
-      menuItems,
-      team,
       signed7,
       signed30,
       pendingApproval,
       expiringSoon,
+      activeSubs,
+      trialSubs,
+      problemSubs,
       activeRate: pct(engaged, total),
-      avgOrdersActive:
-        engaged > 0 ? Math.round(orders30 / engaged) : 0,
+      avgOrdersActive: engaged > 0 ? Math.round(orders30 / engaged) : 0,
       byEngagement,
       byStatus,
       byPlan,
-      bySource,
       attention: attentionUnique,
+      topByRevenue,
+      quietList,
     };
   }, [restaurants]);
-
-  const sortedRows = useMemo(() => {
-    const rows = [...restaurants];
-    const mult = sortDir === "asc" ? 1 : -1;
-    rows.sort((a, b) => {
-      let va;
-      let vb;
-      switch (sortKey) {
-        case "name":
-          va = (a.website?.name || "").toLowerCase();
-          vb = (b.website?.name || "").toLowerCase();
-          return va < vb ? -mult : va > vb ? mult : 0;
-        case "createdAt":
-          return (
-            (new Date(a.createdAt).getTime() -
-              new Date(b.createdAt).getTime()) *
-            mult
-          );
-        case "ordersLast7Days":
-          return (
-            ((a.activity?.ordersLast7Days ?? 0) -
-              (b.activity?.ordersLast7Days ?? 0)) *
-            mult
-          );
-        case "ordersLast30Days":
-          return (
-            ((a.activity?.ordersLast30Days ?? 0) -
-              (b.activity?.ordersLast30Days ?? 0)) *
-            mult
-          );
-        case "revenueLast30Days":
-          return (
-            ((a.activity?.revenueLast30Days ?? 0) -
-              (b.activity?.revenueLast30Days ?? 0)) *
-            mult
-          );
-        case "ordersLifetime":
-          return (
-            ((a.activity?.ordersLifetime ?? 0) -
-              (b.activity?.ordersLifetime ?? 0)) *
-            mult
-          );
-        case "lastOrderAt": {
-          const ta = a.activity?.lastOrderAt
-            ? new Date(a.activity.lastOrderAt).getTime()
-            : 0;
-          const tb = b.activity?.lastOrderAt
-            ? new Date(b.activity.lastOrderAt).getTime()
-            : 0;
-          return (ta - tb) * mult;
-        }
-        case "engagement": {
-          const order = {
-            active: 5,
-            quiet: 4,
-            new: 3,
-            configured: 2,
-            dormant: 1,
-          };
-          return (
-            ((order[a.engagement?.key] ?? 0) - (order[b.engagement?.key] ?? 0)) *
-            mult
-          );
-        }
-        default:
-          return 0;
-      }
-    });
-    return rows;
-  }, [restaurants, sortKey, sortDir]);
 
   const engagementSegments = useMemo(
     () =>
@@ -651,698 +467,652 @@ export default function SuperOverviewPage() {
     [insights.byEngagement],
   );
 
-  const statusBars = useMemo(() => {
+  const statusRows = useMemo(() => {
     const order = ["ACTIVE", "TRIAL", "PAST_DUE", "GRACE", "EXPIRED", "SUSPENDED"];
     const keys = [
       ...order.filter((k) => insights.byStatus[k]),
       ...Object.keys(insights.byStatus).filter((k) => !order.includes(k)),
     ];
+    const max = Math.max(...keys.map((k) => insights.byStatus[k] || 0), 1);
     return keys.map((k) => ({
       label: k.replace(/_/g, " "),
       value: insights.byStatus[k] || 0,
       color: SUB_STATUS_COLORS[k] || "#94a3b8",
-      suffix: `${pct(insights.byStatus[k] || 0, restaurants.length)}%`,
+      pct: pct(insights.byStatus[k] || 0, restaurants.length),
+      width: Math.max(6, ((insights.byStatus[k] || 0) / max) * 100),
     }));
   }, [insights.byStatus, restaurants.length]);
 
-  const planBars = useMemo(
-    () =>
-      ["ENTERPRISE", "PROFESSIONAL", "ESSENTIAL"]
-        .filter((k) => insights.byPlan[k])
-        .map((k) => ({
-          label: k.charAt(0) + k.slice(1).toLowerCase(),
-          value: insights.byPlan[k] || 0,
-          color: PLAN_COLORS[k],
-          suffix: `${pct(insights.byPlan[k] || 0, restaurants.length)}%`,
-        })),
-    [insights.byPlan, restaurants.length],
+  const maxTopRevenue = Math.max(
+    ...insights.topByRevenue.map((r) => r.activity?.revenueLast30Days || 0),
+    1,
   );
 
-  const sourceBars = useMemo(() => {
-    const labels = {
-      self_signup: "Self signup",
-      super_admin: "Created by admin",
-      lead_convert: "Lead convert",
-      unknown: "Unknown",
-    };
-    return Object.entries(insights.bySource)
-      .sort((a, b) => b[1] - a[1])
-      .map(([k, v]) => ({
-        label: labels[k] || k,
-        value: v,
-        color: "#FF5400",
-        suffix: `${pct(v, restaurants.length)}%`,
-      }));
-  }, [insights.bySource, restaurants.length]);
-
-  const s = data?.summary;
-  const SORT_OPTIONS = [
-    { key: "ordersLast30Days", label: "30-day orders" },
-    { key: "revenueLast30Days", label: "30-day revenue" },
-    { key: "ordersLifetime", label: "All-time orders" },
-    { key: "ordersLast7Days", label: "7-day orders" },
-    { key: "engagement", label: "Health" },
-    { key: "name", label: "Name" },
-    { key: "lastOrderAt", label: "Last order" },
-    { key: "createdAt", label: "Signed up" },
-  ];
+  const alertCount =
+    insights.pendingApproval +
+    insights.expiringSoon +
+    (invoiceStats?.overdueCount || 0) +
+    insights.quietList.length;
 
   return (
     <AdminLayout
       title="Platform Overview"
-      subtitle="Live health, revenue, subscriptions, and ops across every tenant."
+      subtitle="Your fleet pulse — volume, money, health, and risk."
     >
       <SuperPageGate permission="platform.overview.view">
         {loading && !data ? (
-          <div className="flex flex-col items-center justify-center min-h-[60vh]">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-              <LayoutDashboard className="w-8 h-8 text-primary animate-pulse" />
+          <div className="flex min-h-[60vh] flex-col items-center justify-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FF5400]/10">
+              <LayoutDashboard className="h-8 w-8 animate-pulse text-[#FF5400]" />
             </div>
             <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <Loader2 className="h-4 w-4 animate-spin text-[#FF5400]" />
               <p className="text-sm font-semibold text-gray-600 dark:text-neutral-400">
-                Loading platform console…
+                Loading platform stats…
               </p>
             </div>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="relative space-y-5">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 -top-6 h-72 rounded-3xl bg-[radial-gradient(ellipse_at_top,_rgba(255,84,0,0.14),_transparent_60%)] dark:bg-[radial-gradient(ellipse_at_top,_rgba(255,84,0,0.18),_transparent_55%)]"
+            />
+
             {/* Toolbar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    Live snapshot
-                  </span>
-                </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  Live
+                </span>
                 {data?.generatedAt && (
                   <span className="text-xs text-gray-500 dark:text-neutral-500">
                     Updated {formatDate(data.generatedAt)}
                   </span>
                 )}
-                {insights.pendingApproval > 0 && (
-                  <Link
-                    href="/super/restaurants"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-xs font-semibold text-rose-700 dark:text-rose-400"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    {insights.pendingApproval} pending approval
-                  </Link>
+                {alertCount > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                    <AlertTriangle className="h-3 w-3" />
+                    {alertCount} need attention
+                  </span>
                 )}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => load()}
                   disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm font-medium text-gray-700 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
                 >
                   {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <RefreshCw className="w-4 h-4" />
+                    <RefreshCw className="h-4 w-4" />
                   )}
                   Refresh
                 </button>
                 <Link
                   href="/super/restaurants"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#FF5400] px-3.5 text-sm font-semibold text-white shadow-sm shadow-orange-500/25 hover:brightness-105"
                 >
-                  Manage restaurants
-                  <ArrowUpRight className="w-4 h-4" />
+                  Restaurants
+                  <ArrowUpRight className="h-4 w-4" />
                 </Link>
               </div>
             </div>
 
             {error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+              <div className="relative rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
                 {error}
               </div>
             )}
 
-            {/* Hero volume strip */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="col-span-2 lg:col-span-1 rounded-2xl bg-gradient-to-br from-[#FF5400] to-[#ff7a33] p-5 text-white shadow-sm">
-                <p className="text-xs font-medium text-white/80">
-                  Platform GMV · 30 days
-                </p>
-                <p className="text-3xl font-bold tabular-nums mt-1 tracking-tight">
-                  {formatMoney(insights.revenue30)}
-                </p>
-                <p className="text-[11px] text-white/75 mt-2">
-                  Across {s?.engagedLast30Days ?? 0} active tenants
-                </p>
+            {/* Hero — platform volume */}
+            <section className="relative overflow-hidden rounded-3xl bg-[#1a1410] text-white shadow-xl shadow-orange-900/10">
+              <div
+                aria-hidden
+                className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,_rgba(255,84,0,0.45),_transparent_50%),radial-gradient(ellipse_at_90%_80%,_rgba(255,140,60,0.2),_transparent_45%)]"
+              />
+              <div
+                aria-hidden
+                className="absolute inset-0 opacity-[0.07]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
+                  backgroundSize: "28px 28px",
+                }}
+              />
+              <div className="relative grid gap-6 p-5 sm:p-7 lg:grid-cols-[1.3fr_1fr] lg:items-end">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-orange-200/80">
+                    Platform GMV · 30 days
+                  </p>
+                  <p className="mt-2 text-4xl font-bold tracking-tight tabular-nums sm:text-5xl">
+                    {formatMoney(insights.revenue30)}
+                  </p>
+                  <p className="mt-3 max-w-md text-sm text-white/65">
+                    Across {s?.engagedLast30Days ?? 0} active restaurants ·{" "}
+                    {insights.websiteShare}% from website orders · avg{" "}
+                    {insights.avgOrdersActive} orders / active
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 sm:gap-4">
+                  {[
+                    {
+                      label: "Orders · 30d",
+                      value: formatCompact(insights.orders30),
+                      hint: `${formatCompact(insights.orders7)} last 7d`,
+                    },
+                    {
+                      label: "All-time orders",
+                      value: formatCompact(insights.ordersLife),
+                      hint: `${s?.totalRestaurants ?? 0} restaurants`,
+                    },
+                    {
+                      label: "Active rate",
+                      value: `${insights.activeRate}%`,
+                      hint: `${s?.engagedLast30Days ?? 0} ordered in 30d`,
+                    },
+                  ].map((m) => (
+                    <div
+                      key={m.label}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm"
+                    >
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-white/50">
+                        {m.label}
+                      </p>
+                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight sm:text-2xl">
+                        {m.value}
+                      </p>
+                      <p className="mt-1 text-[10px] text-white/45">{m.hint}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <MetricTile
-                label="Orders · 30 days"
-                value={formatCompact(insights.orders30)}
-                sub={`${formatCompact(insights.orders7)} in last 7 days · ${formatCompact(insights.ordersLife)} all-time`}
-                icon={Activity}
-                tone="emerald"
-              />
-              <MetricTile
-                label="Active rate"
-                value={`${insights.activeRate}%`}
-                sub={`${s?.engagedLast30Days ?? 0} of ${s?.totalRestaurants ?? 0} ordered in 30d · avg ${insights.avgOrdersActive}/active`}
-                icon={TrendingUp}
-                tone="primary"
-              />
-              <MetricTile
-                label="New tenants · 30 days"
-                value={insights.signed30}
-                sub={`${insights.signed7} signed up this week`}
-                icon={Store}
-                tone="sky"
+            </section>
+
+            {/* Money + growth */}
+            <div className="relative grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Link
+                href="/super/invoices"
+                className="rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm transition hover:border-[#FF5400]/35 dark:border-white/10 dark:bg-neutral-950/90"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                    <CreditCard className="h-4 w-4" />
+                  </span>
+                  <ArrowUpRight className="h-3.5 w-3.5 text-gray-400" />
+                </div>
+                <StatPill
+                  label="Invoices paid"
+                  value={formatMoney(invoiceStats?.paidAmount || 0)}
+                  hint={`${invoiceStats?.paidCount ?? 0} paid invoices`}
+                  tone="good"
+                />
+              </Link>
+              <Link
+                href="/super/invoices"
+                className="rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm transition hover:border-rose-300/50 dark:border-white/10 dark:bg-neutral-950/90"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+                  <ArrowUpRight className="h-3.5 w-3.5 text-gray-400" />
+                </div>
+                <StatPill
+                  label="Overdue billing"
+                  value={formatMoney(invoiceStats?.overdueAmount || 0)}
+                  hint={`${invoiceStats?.overdueCount ?? 0} overdue · ${formatMoney(invoiceStats?.pendingAmount || 0)} pending`}
+                  tone={invoiceStats?.overdueCount ? "bad" : "default"}
+                />
+              </Link>
+              <Link
+                href="/super/leads"
+                className="rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm transition hover:border-sky-300/50 dark:border-white/10 dark:bg-neutral-950/90"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400">
+                    <Users className="h-4 w-4" />
+                  </span>
+                  <ArrowUpRight className="h-3.5 w-3.5 text-gray-400" />
+                </div>
+                <StatPill
+                  label="Open leads"
+                  value={leadsStats?.openCount ?? 0}
+                  hint={`${leadsStats?.overdueFollowUps ?? 0} overdue follow-ups · ${leadsStats?.winRate ?? 0}% win`}
+                  tone="default"
+                />
+              </Link>
+              <Link
                 href="/super/restaurants"
-              />
+                className="rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm transition hover:border-[#FF5400]/35 dark:border-white/10 dark:bg-neutral-950/90"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#FF5400]/10 text-[#FF5400]">
+                    <Store className="h-4 w-4" />
+                  </span>
+                  <ArrowUpRight className="h-3.5 w-3.5 text-gray-400" />
+                </div>
+                <StatPill
+                  label="New restaurants · 30d"
+                  value={insights.signed30}
+                  hint={`${insights.signed7} this week · ${insights.pendingApproval} pending approval`}
+                  tone="brand"
+                />
+              </Link>
             </div>
 
-            {/* Tenant health KPIs */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <MetricTile
-                label="Total restaurants"
-                value={s?.totalRestaurants ?? 0}
-                sub="Non-deleted tenants"
-                icon={Building2}
-                tone="primary"
-                href="/super/restaurants"
-              />
-              <MetricTile
-                label="Active (30 days)"
-                value={s?.engagedLast30Days ?? 0}
-                sub="≥1 order in last 30 days"
-                icon={TrendingUp}
-                tone="emerald"
-              />
-              <MetricTile
-                label="Ever ordered"
-                value={s?.everHadOrders ?? 0}
-                sub="Lifetime order count > 0"
-                icon={Zap}
-                tone="sky"
-              />
-              <MetricTile
-                label="No orders yet"
-                value={s?.neverHadOrders ?? 0}
-                sub="Signed up but never ordered"
-                icon={AlertCircle}
-                tone="amber"
-              />
-              <MetricTile
-                label="Quiet"
-                value={s?.quietHadOrdersBefore ?? 0}
-                sub="Had orders, none in 30d"
-                icon={Clock}
-                tone="rose"
-              />
+            {/* Fleet snapshot */}
+            <div className="relative grid grid-cols-2 gap-3 lg:grid-cols-5">
+              {[
+                {
+                  label: "Total restaurants",
+                  value: s?.totalRestaurants ?? 0,
+                  hint: "Non-deleted tenants",
+                  icon: Building2,
+                  href: "/super/restaurants",
+                },
+                {
+                  label: "Active · 30d",
+                  value: s?.engagedLast30Days ?? 0,
+                  hint: "≥1 order in 30 days",
+                  icon: Activity,
+                  tone: "text-emerald-600 dark:text-emerald-400",
+                },
+                {
+                  label: "Quiet",
+                  value: s?.quietHadOrdersBefore ?? 0,
+                  hint: "Had orders, none in 30d",
+                  icon: Clock,
+                  tone: "text-amber-600 dark:text-amber-400",
+                },
+                {
+                  label: "Never ordered",
+                  value: s?.neverHadOrders ?? 0,
+                  hint: "Signed up, zero orders",
+                  icon: TrendingUp,
+                },
+                {
+                  label: "Subscriptions",
+                  value: insights.activeSubs,
+                  hint: `${insights.trialSubs} trial · ${insights.problemSubs} at risk`,
+                  icon: CreditCard,
+                  tone: "text-[#FF5400]",
+                  className: "col-span-2 lg:col-span-1",
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                const body = (
+                  <>
+                    <div className="mb-2 flex items-center gap-2">
+                      <Icon className="h-3.5 w-3.5 text-gray-400" />
+                      <p className="text-[11px] font-medium text-gray-500 dark:text-neutral-500">
+                        {item.label}
+                      </p>
+                    </div>
+                    <p
+                      className={`text-2xl font-bold tabular-nums tracking-tight ${item.tone || "text-gray-900 dark:text-white"}`}
+                    >
+                      {item.value}
+                    </p>
+                    <p className="mt-1 text-[10px] text-gray-400 dark:text-neutral-600">
+                      {item.hint}
+                    </p>
+                  </>
+                );
+                const cls = `rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-neutral-950/90 ${item.className || ""}`;
+                return item.href ? (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={`${cls} transition hover:border-[#FF5400]/35`}
+                  >
+                    {body}
+                  </Link>
+                ) : (
+                  <div key={item.label} className={cls}>
+                    {body}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Analytics row */}
-            <div className="grid lg:grid-cols-3 gap-4">
-              <Panel
-                title="Engagement breakdown"
-                description="Health labels across the fleet"
+            {/* Health · Billing risk · Attention */}
+            <div className="relative grid gap-4 lg:grid-cols-3">
+              <SectionCard
+                title="Fleet health"
+                description="Engagement across every restaurant"
               >
                 <div className="flex flex-wrap items-center gap-5">
                   <DonutChart
                     segments={engagementSegments}
                     centerValue={s?.totalRestaurants ?? 0}
-                    centerLabel="tenants"
+                    centerLabel="total"
                   />
-                  <div className="flex flex-col gap-2 min-w-[150px] flex-1">
+                  <div className="min-w-[140px] flex-1 space-y-2">
                     {engagementSegments.map((seg) => (
                       <div key={seg.label} className="flex items-center gap-2">
                         <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
                           style={{ backgroundColor: seg.color }}
                         />
-                        <span className="text-xs text-gray-600 dark:text-neutral-400 flex-1">
+                        <span className="flex-1 text-xs text-gray-600 dark:text-neutral-400">
                           {seg.label}
                         </span>
                         <span className="text-xs font-bold tabular-nums text-gray-900 dark:text-white">
                           {seg.value}
                         </span>
-                        <span className="text-[10px] tabular-nums text-gray-400 w-8 text-right">
+                        <span className="w-8 text-right text-[10px] tabular-nums text-gray-400">
                           {pct(seg.value, restaurants.length)}%
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
-              </Panel>
+              </SectionCard>
 
-              <Panel
-                title="Subscription lifecycle"
-                description="Plan status across tenants"
+              <SectionCard
+                title="Subscriptions"
+                description="Plan status across the fleet"
               >
-                {statusBars.length ? (
-                  <HBar items={statusBars} />
+                {statusRows.length ? (
+                  <div className="space-y-3">
+                    {statusRows.map((row) => (
+                      <div key={row.label}>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-gray-600 dark:text-neutral-400">
+                            {row.label}
+                          </span>
+                          <span className="text-xs font-bold tabular-nums text-gray-900 dark:text-white">
+                            {row.value}
+                            <span className="ml-1 font-medium text-gray-400">
+                              {row.pct}%
+                            </span>
+                          </span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${row.width}%`,
+                              backgroundColor: row.color,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    {insights.expiringSoon > 0 && (
+                      <p className="flex items-center gap-1.5 pt-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {insights.expiringSoon} ending within 14 days
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <p className="text-sm text-gray-500">No subscription data</p>
                 )}
-                {insights.expiringSoon > 0 && (
-                  <p className="mt-4 text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    {insights.expiringSoon} ending within 14 days
-                  </p>
-                )}
-              </Panel>
+              </SectionCard>
 
-              <Panel
+              <SectionCard
                 title="Needs attention"
-                description="Approvals, churn risk, onboarding gaps"
+                description="Approvals, churn risk, billing"
                 action={
                   <Link
                     href="/super/restaurants"
-                    className="text-xs font-semibold text-primary hover:underline"
+                    className="text-xs font-semibold text-[#FF5400] hover:underline"
                   >
                     View all
                   </Link>
                 }
               >
-                {insights.attention.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-6 text-center">
-                    <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center mb-2">
-                      <TrendingUp className="w-5 h-5 text-emerald-600" />
+                {(invoiceStats?.overdueCount || 0) > 0 && (
+                  <Link
+                    href="/super/invoices"
+                    className="mb-3 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5 dark:border-rose-900/40 dark:bg-rose-950/30"
+                  >
+                    <CreditCard className="h-4 w-4 shrink-0 text-rose-600" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-rose-800 dark:text-rose-300">
+                        {invoiceStats.overdueCount} overdue invoice
+                        {invoiceStats.overdueCount === 1 ? "" : "s"}
+                      </p>
+                      <p className="text-[11px] text-rose-700/80">
+                        {formatMoney(invoiceStats.overdueAmount)}
+                      </p>
+                    </div>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-rose-500" />
+                  </Link>
+                )}
+                {insights.attention.length === 0 &&
+                !(invoiceStats?.overdueCount > 0) ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-500/10">
+                      <TrendingUp className="h-5 w-5 text-emerald-600" />
                     </div>
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
                       All clear
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="mt-1 text-xs text-gray-500">
                       No urgent tenant issues right now
                     </p>
                   </div>
                 ) : (
-                  <div>
+                  <div className="divide-y divide-gray-100 dark:divide-neutral-900">
                     {insights.attention.map((item) => (
-                      <AttentionRow
+                      <Link
                         key={item.id}
-                        title={item.title}
-                        meta={item.meta}
                         href={item.href}
-                        severity={item.severity}
-                      />
+                        className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0 hover:opacity-80"
+                      >
+                        <span
+                          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                            item.severity === "critical"
+                              ? "bg-rose-500"
+                              : item.severity === "info"
+                                ? "bg-sky-500"
+                                : "bg-amber-500"
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                            {item.title}
+                          </p>
+                          <p className="truncate text-[11px] text-gray-500">
+                            {item.meta}
+                          </p>
+                        </div>
+                        <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-gray-400" />
+                      </Link>
                     ))}
                   </div>
                 )}
-              </Panel>
+              </SectionCard>
             </div>
 
-            {/* Footprint + mix */}
-            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-              <Panel title="Platform footprint" description="Aggregate setup depth">
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    {
-                      label: "Branches",
-                      value: insights.branches,
-                      icon: Building2,
-                    },
-                    {
-                      label: "Menu items",
-                      value: insights.menuItems,
-                      icon: UtensilsCrossed,
-                    },
-                    {
-                      label: "Team seats",
-                      value: insights.team,
-                      icon: Users,
-                    },
-                    {
-                      label: "Website orders · 30d",
-                      value: insights.websiteOrders30,
-                      icon: Store,
-                    },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 p-3"
-                    >
-                      <item.icon className="w-3.5 h-3.5 text-gray-400 mb-2" />
-                      <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">
-                        {formatCompact(item.value)}
-                      </p>
-                      <p className="text-[10px] text-gray-500 mt-0.5">
-                        {item.label}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[11px] text-gray-500 dark:text-neutral-500 mt-3">
-                  Website is {insights.websiteShare}% of 30-day order volume
-                </p>
-              </Panel>
-
-              <Panel title="Plan mix" description="Commercial packaging">
-                {planBars.length ? (
-                  <HBar items={planBars} />
-                ) : (
-                  <p className="text-sm text-gray-500">No plan data</p>
-                )}
-              </Panel>
-
-              <Panel title="Acquisition source" description="How tenants joined">
-                {sourceBars.length ? (
-                  <HBar items={sourceBars} />
-                ) : (
-                  <p className="text-sm text-gray-500">No source data</p>
-                )}
-              </Panel>
-
-              <Panel title="Ops pulse" description="Billing, pipeline & WhatsApp">
-                <div className="space-y-2">
-                  <Link
-                    href="/super/invoices"
-                    className="flex items-center gap-3 rounded-xl border border-gray-100 dark:border-neutral-800 px-3 py-2.5 hover:border-primary/30 transition-colors"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-amber-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-white">
-                        Invoices
-                      </p>
-                      <p className="text-[11px] text-gray-500 truncate">
-                        {invoiceStats
-                          ? `${invoiceStats.overdueCount} overdue · ${invoiceStats.paidCount} paid`
-                          : "Open billing console"}
-                      </p>
-                    </div>
-                    {invoiceStats?.overdueCount > 0 && (
-                      <span className="text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">
-                        {invoiceStats.overdueCount}
-                      </span>
-                    )}
-                  </Link>
-                  <Link
-                    href="/super/leads"
-                    className="flex items-center gap-3 rounded-xl border border-gray-100 dark:border-neutral-800 px-3 py-2.5 hover:border-primary/30 transition-colors"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-500/10 flex items-center justify-center">
-                      <Users className="w-4 h-4 text-sky-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-white">
-                        Leads
-                      </p>
-                      <p className="text-[11px] text-gray-500 truncate">
-                        {leadsStats
-                          ? `${leadsStats.openCount ?? 0} open · ${leadsStats.winRate ?? 0}% win`
-                          : "Open sales pipeline"}
-                      </p>
-                    </div>
-                    {(leadsStats?.overdueFollowUps ?? 0) > 0 && (
-                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
-                        {leadsStats.overdueFollowUps}
-                      </span>
-                    )}
-                  </Link>
-                  <Link
-                    href="/super/whatsapp"
-                    className="flex items-center gap-3 rounded-xl border border-gray-100 dark:border-neutral-800 px-3 py-2.5 hover:border-primary/30 transition-colors"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
-                      <MessageCircle className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-white">
-                        WhatsApp
-                      </p>
-                      <p className="text-[11px] text-gray-500 truncate">
-                        {waStats
-                          ? `${waStats.totalActive ?? 0} live · ${waStats.conversationsToday ?? 0} chats today`
-                          : "Open WhatsApp ops"}
-                      </p>
-                    </div>
-                    {(waStats?.totalPending ?? 0) > 0 && (
-                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
-                        {waStats.totalPending}
-                      </span>
-                    )}
-                  </Link>
-                  {invoiceStats && (
-                    <div className="pt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                      Paid {formatMoney(invoiceStats.paidAmount)} · pending{" "}
-                      {formatMoney(invoiceStats.pendingAmount)}
-                      {invoiceStats.overdueAmount > 0
-                        ? ` · overdue ${formatMoney(invoiceStats.overdueAmount)}`
-                        : ""}
-                    </div>
-                  )}
-                </div>
-              </Panel>
-            </div>
-
-            {/* Leaderboard */}
-            <Panel
-              title="Top performing restaurants"
-              description="Ranked by current sort · click a row destination from Restaurants"
-              className="overflow-hidden"
-              action={
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={sortKey}
-                    onChange={(e) => {
-                      const k = e.target.value;
-                      setSortKey(k);
-                      setSortDir(
-                        k === "name" || k === "createdAt" ? "asc" : "desc",
-                      );
-                    }}
-                    className="h-9 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 text-xs font-medium text-gray-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.key} value={opt.key}>
-                        Sort by {opt.label}
-                      </option>
-                    ))}
-                  </select>
+            {/* Top performers + quiet */}
+            <div className="relative grid gap-4 lg:grid-cols-5">
+              <SectionCard
+                className="lg:col-span-3"
+                title="Top restaurants · 30 days"
+                description="Ranked by GMV on your platform"
+                action={
                   <Link
                     href="/super/restaurants"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#FF5400] hover:underline"
                   >
                     Full list
-                    <ArrowUpRight className="w-3.5 h-3.5" />
+                    <ArrowUpRight className="h-3.5 w-3.5" />
                   </Link>
-                </div>
-              }
-            >
-              <div className="-mx-5 -mb-5 overflow-hidden rounded-b-2xl">
-                <DataTable
-                  rows={sortedRows.slice(0, 12)}
-                  getRowId={(row) => row.id}
-                  emptyMessage="No restaurants found."
-                  onRowClick={(row) => {
-                    if (typeof window !== "undefined") {
-                      window.location.href = `/super/restaurants/${row.id}`;
-                    }
-                  }}
-                  columns={[
-                    {
-                      key: "rank",
-                      header: "#",
-                      render: (_, __, idx) => (
-                        <span className="text-xs font-bold text-gray-400 tabular-nums">
-                          {idx + 1}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "name",
-                      header: "Restaurant",
-                      render: (_, row) => {
-                        const w = row.website || {};
-                        return (
-                          <div className="min-w-0">
-                            <span
-                              className="font-semibold text-gray-900 dark:text-white truncate block max-w-[200px]"
-                              title={w.name}
-                            >
-                              {w.name || "Untitled"}
+                }
+              >
+                {insights.topByRevenue.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-gray-500">
+                    No revenue in the last 30 days yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {insights.topByRevenue.map((row, idx) => {
+                      const rev = row.activity?.revenueLast30Days || 0;
+                      const eg = row.engagement || {};
+                      return (
+                        <Link
+                          key={row.id}
+                          href={`/super/restaurants/${row.id}`}
+                          className="group block rounded-xl border border-transparent px-2 py-2 transition hover:border-black/5 hover:bg-gray-50 dark:hover:border-white/10 dark:hover:bg-neutral-900/60"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="w-5 text-center text-xs font-bold tabular-nums text-gray-400">
+                              {idx + 1}
                             </span>
-                            <span className="font-mono text-[10px] text-gray-400">
-                              {w.subdomain || "—"}
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                                  {row.website?.name || "Untitled"}
+                                </p>
+                                <span
+                                  className={`shrink-0 rounded-full border px-1.5 py-px text-[10px] font-semibold ${ENGAGEMENT_STYLES[eg.key] || ENGAGEMENT_STYLES.dormant}`}
+                                >
+                                  {eg.label || "—"}
+                                </span>
+                              </div>
+                              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+                                <div
+                                  className="h-full rounded-full bg-[#FF5400]"
+                                  style={{
+                                    width: `${Math.max(4, (rev / maxTopRevenue) * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+                                {formatMoney(rev)}
+                              </p>
+                              <p className="text-[10px] tabular-nums text-gray-400">
+                                {row.activity?.ordersLast30Days ?? 0} orders
+                              </p>
+                            </div>
                           </div>
-                        );
-                      },
-                    },
-                    {
-                      key: "planStatus",
-                      header: "Plan / status",
-                      hideOnMobile: true,
-                      render: (_, row) => {
-                        const sub = row.subscription || {};
-                        return (
-                          <span className="text-xs">
-                            <span className="text-gray-500 dark:text-neutral-500">
-                              {sub.plan || "—"}
-                            </span>
-                            <span className="text-gray-300 dark:text-neutral-700 mx-1">
-                              ·
-                            </span>
-                            <span
-                              className={
-                                sub.status === "ACTIVE"
-                                  ? "text-emerald-600 dark:text-emerald-400 font-semibold"
-                                  : sub.status === "SUSPENDED" ||
-                                      sub.status === "EXPIRED"
-                                    ? "text-rose-600 dark:text-rose-400 font-semibold"
-                                    : "text-amber-600 dark:text-amber-400 font-semibold"
-                              }
-                            >
-                              {sub.status || "—"}
-                            </span>
-                          </span>
-                        );
-                      },
-                    },
-                    {
-                      key: "ordersLast7Days",
-                      header: "7d",
-                      align: "right",
-                      render: (_, row) => (
-                        <span className="tabular-nums text-gray-700 dark:text-neutral-300">
-                          {row.activity?.ordersLast7Days ?? 0}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "ordersLast30Days",
-                      header: "30d",
-                      align: "right",
-                      render: (_, row) => (
-                        <span className="tabular-nums font-semibold text-gray-900 dark:text-white">
-                          {row.activity?.ordersLast30Days ?? 0}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "revenueLast30Days",
-                      header: "Revenue 30d",
-                      align: "right",
-                      hideOnTablet: true,
-                      render: (_, row) => {
-                        const a = row.activity?.revenueLast30Days;
-                        return (
-                          <span className="tabular-nums text-xs text-gray-600 dark:text-neutral-400">
-                            {a != null && a > 0 ? formatMoney(a) : "—"}
-                          </span>
-                        );
-                      },
-                    },
-                    {
-                      key: "ordersLifetime",
-                      header: "All-time",
-                      align: "right",
-                      hideOnMobile: true,
-                      render: (_, row) => (
-                        <span className="tabular-nums">
-                          {row.activity?.ordersLifetime ?? 0}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "webShare",
-                      header: "Web 30d",
-                      align: "right",
-                      hideOnTablet: true,
-                      render: (_, row) => (
-                        <span className="tabular-nums text-xs text-gray-500">
-                          {row.activity?.websiteOrdersLast30Days ?? 0}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "setup",
-                      header: "Setup",
-                      hideOnTablet: true,
-                      render: (_, row) => (
-                        <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap">
-                          {row.activity?.menuItemsCount ?? 0}m ·{" "}
-                          {row.activity?.branchesCount ?? 0}b ·{" "}
-                          {row.activity?.teamMembersCount ?? 0}t
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "lastOrderAt",
-                      header: "Last order",
-                      hideOnTablet: true,
-                      render: (_, row) => (
-                        <span className="text-xs text-gray-500 dark:text-neutral-400 whitespace-nowrap">
-                          {formatDate(row.activity?.lastOrderAt)}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "engagement",
-                      header: "Health",
-                      render: (_, row) => {
-                        const eg = row.engagement || {};
-                        const badgeClass =
-                          ENGAGEMENT_STYLES[eg.key] || ENGAGEMENT_STYLES.dormant;
-                        return (
-                          <span
-                            className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${badgeClass}`}
-                            title={eg.description}
-                          >
-                            {eg.label}
-                          </span>
-                        );
-                      },
-                    },
-                  ]}
-                />
-              </div>
-            </Panel>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </SectionCard>
 
-            {/* Billing highlight if overdue */}
-            {(invoiceStats?.overdueCount > 0 || insights.expiringSoon > 0) && (
-              <div className="grid sm:grid-cols-2 gap-3">
-                {invoiceStats?.overdueCount > 0 && (
-                  <Link
-                    href="/super/invoices"
-                    className="flex items-center gap-4 rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/80 dark:bg-rose-950/20 px-5 py-4 hover:border-rose-300 transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center">
-                      <CreditCard className="w-5 h-5 text-rose-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-rose-800 dark:text-rose-300">
-                        {invoiceStats.overdueCount} overdue invoice
-                        {invoiceStats.overdueCount === 1 ? "" : "s"}
-                      </p>
-                      <p className="text-xs text-rose-700/80 dark:text-rose-400/80">
-                        {formatMoney(invoiceStats.overdueAmount)} outstanding
-                      </p>
-                    </div>
-                    <ArrowUpRight className="w-4 h-4 text-rose-500" />
-                  </Link>
+              <SectionCard
+                className="lg:col-span-2"
+                title="Going quiet"
+                description="Were live — no orders in 30 days"
+              >
+                {insights.quietList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      No quiet restaurants
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Everyone who ordered before is still active
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {insights.quietList.map((row) => (
+                      <Link
+                        key={row.id}
+                        href={`/super/restaurants/${row.id}`}
+                        className="flex items-center gap-3 rounded-xl px-2 py-2.5 hover:bg-amber-50/80 dark:hover:bg-amber-950/20"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+                          <Clock className="h-3.5 w-3.5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                            {row.website?.name || "Untitled"}
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            {formatCompact(row.activity?.ordersLifetime || 0)}{" "}
+                            all-time · last{" "}
+                            {row.activity?.lastOrderAt
+                              ? formatDate(row.activity.lastOrderAt)
+                              : "—"}
+                          </p>
+                        </div>
+                        <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                      </Link>
+                    ))}
+                  </div>
                 )}
-                {insights.expiringSoon > 0 && (
-                  <Link
-                    href="/super/restaurants"
-                    className="flex items-center gap-4 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/20 px-5 py-4 hover:border-amber-300 transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-amber-700" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-amber-900 dark:text-amber-300">
-                        {insights.expiringSoon} subscription
-                        {insights.expiringSoon === 1 ? "" : "s"} ending soon
-                      </p>
-                      <p className="text-xs text-amber-800/80 dark:text-amber-400/80">
-                        Within the next 14 days
-                      </p>
-                    </div>
-                    <ArrowUpRight className="w-4 h-4 text-amber-600" />
-                  </Link>
-                )}
-              </div>
-            )}
+              </SectionCard>
+            </div>
+
+            {/* Ops pulse */}
+            <div className="relative grid gap-3 sm:grid-cols-3">
+              <Link
+                href="/super/whatsapp"
+                className="flex items-center gap-3 rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm transition hover:border-emerald-300/40 dark:border-white/10 dark:bg-neutral-950/90"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                  <MessageCircle className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-gray-500">WhatsApp</p>
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    {waStats
+                      ? `${waStats.totalActive ?? 0} live`
+                      : "Open console"}
+                  </p>
+                  <p className="truncate text-[11px] text-gray-400">
+                    {waStats
+                      ? `${waStats.conversationsToday ?? 0} chats today · ${waStats.totalPending ?? 0} pending`
+                      : "Messaging ops"}
+                  </p>
+                </div>
+              </Link>
+              <Link
+                href="/super/invoices"
+                className="flex items-center gap-3 rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm transition hover:border-[#FF5400]/35 dark:border-white/10 dark:bg-neutral-950/90"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FF5400]/10 text-[#FF5400]">
+                  <CreditCard className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-gray-500">Billing</p>
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    {invoiceStats
+                      ? `${invoiceStats.pendingCount} open`
+                      : "Open invoices"}
+                  </p>
+                  <p className="truncate text-[11px] text-gray-400">
+                    {invoiceStats
+                      ? `${formatMoney(invoiceStats.pendingAmount)} outstanding`
+                      : "Platform invoices"}
+                  </p>
+                </div>
+              </Link>
+              <Link
+                href="/super/leads"
+                className="flex items-center gap-3 rounded-2xl border border-black/5 bg-white/90 p-4 shadow-sm transition hover:border-sky-300/40 dark:border-white/10 dark:bg-neutral-950/90"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400">
+                  <Users className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-gray-500">Pipeline</p>
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    {leadsStats
+                      ? `${leadsStats.openCount ?? 0} open leads`
+                      : "Open leads"}
+                  </p>
+                  <p className="truncate text-[11px] text-gray-400">
+                    {leadsStats
+                      ? `${leadsStats.winRate ?? 0}% win rate`
+                      : "Sales pipeline"}
+                  </p>
+                </div>
+              </Link>
+            </div>
           </div>
         )}
       </SuperPageGate>
