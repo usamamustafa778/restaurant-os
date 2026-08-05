@@ -22,7 +22,7 @@ import {
   getCurrencySymbol,
   getModifierGroups,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, Sparkles, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check, Layers } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, ShoppingCart, Copy, Flame, Star, Sparkles, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check, Layers } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -1400,6 +1400,47 @@ export default function MenuItemsPage() {
     );
   }
 
+  async function handleBulkSetUpsell(enabled) {
+    if (!selectedItemIds.length) return;
+    const selectedSet = new Set(selectedItemIds);
+    const targets = items.filter((item) => selectedSet.has(item.id));
+    let updatedCount = 0;
+    let failed = 0;
+    const updatedById = new Map();
+
+    await handleAsyncAction(
+      async () => {
+        for (const item of targets) {
+          try {
+            const updated = await updateItem(item.id, {
+              excludeFromUpsell: !enabled,
+            });
+            updatedById.set(item.id, updated);
+            updatedCount++;
+          } catch {
+            failed++;
+          }
+        }
+        if (updatedById.size) {
+          setData((prev) => ({
+            ...prev,
+            items: prev.items.map((i) => updatedById.get(i.id) || i),
+          }));
+        }
+        setSelectedItemIds([]);
+      },
+      {
+        loading: enabled
+          ? "Adding selected items to cart suggestions..."
+          : "Removing selected items from cart suggestions...",
+        success: enabled
+          ? `${updatedCount} item(s) will be suggested in cart${failed ? `, ${failed} failed` : ""}`
+          : `Removed ${updatedCount} item(s) from cart suggestions${failed ? `, ${failed} failed` : ""}`,
+        error: "Failed to update selected items",
+      },
+    );
+  }
+
   async function handleBulkSetAvailability(enabled) {
     if (!selectedItemIds.length) return;
     const selectedSet = new Set(selectedItemIds);
@@ -2176,6 +2217,26 @@ export default function MenuItemsPage() {
               >
                 <span className="hidden sm:inline">Remove New Item</span>
                 <span className="sm:hidden">Clear New</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkSetUpsell(true)}
+                title='Suggest these items under "Complete your meal" in the cart'
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-primary/30 bg-white px-3 text-sm font-semibold text-primary transition-all hover:bg-primary/5 dark:bg-neutral-900 dark:hover:bg-primary/10"
+              >
+                <ShoppingCart className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Suggest In Cart</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkSetUpsell(false)}
+                title='Stop suggesting these items under "Complete your meal" in the cart'
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <span className="hidden sm:inline">
+                  Remove from cart suggestion
+                </span>
+                <span className="sm:hidden">Clear cart suggestion</span>
               </button>
               <button
                 type="button"

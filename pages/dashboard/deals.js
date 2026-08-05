@@ -2178,13 +2178,13 @@ export default function DealsPage() {
 
         {/* Toolbar */}
         <div className="flex flex-col gap-3 mb-6">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search deals..."
-              className="flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+              className="w-full sm:flex-1 h-10 px-4 rounded-xl bg-white dark:bg-neutral-950 border-2 border-gray-200 dark:border-neutral-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
             />
             <ViewToggle viewMode={viewMode} onChange={setViewMode} />
             <button
@@ -2208,7 +2208,7 @@ export default function DealsPage() {
                 onClick={() => setExportMenuOpen((o) => !o)}
                 disabled={filtered.length === 0}
                 title="Export deals"
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
               >
                 <FileDown className="h-4 w-4 shrink-0" />
                 <span className="hidden sm:inline">Export</span>
@@ -2261,7 +2261,7 @@ export default function DealsPage() {
                     ? "Select a branch in the header first"
                     : "Import deals"
                 }
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
               >
                 {importLoading ? (
                   <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -2317,7 +2317,7 @@ export default function DealsPage() {
               <button
                 type="button"
                 onClick={() => setCategoriesPanelOpen((open) => !open)}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-all ${
+                className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-all ${
                   categoriesPanelOpen
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
@@ -2335,7 +2335,7 @@ export default function DealsPage() {
               <button
                 type="button"
                 onClick={startCreate}
-                className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
+                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 h-10 px-5 rounded-xl bg-gradient-to-r from-primary to-secondary text-white text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-0.5 transition-all whitespace-nowrap flex-shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 New Deal
@@ -2375,8 +2375,8 @@ export default function DealsPage() {
                 )}
               </button>
             ))}
-            <div className="w-px h-4 bg-gray-200 dark:bg-neutral-700 mx-1" />
-            <span className="text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mr-1">
+            <div className="hidden sm:block w-px h-4 bg-gray-200 dark:bg-neutral-700 mx-1" />
+            <span className="hidden sm:inline text-xs font-semibold text-gray-400 dark:text-neutral-500 uppercase tracking-wide mr-1">
               Sort:
             </span>
             <div className="relative">
@@ -2869,50 +2869,48 @@ export default function DealsPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-2 backdrop-blur-sm sm:p-4">
             <div className="relative flex max-h-[95dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950 sm:max-h-[92vh]">
               {/* Header */}
-              <div className="flex shrink-0 flex-col gap-2.5 border-b border-gray-100 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-950 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-3.5">
-                <div className="min-w-0">
-                  <h2 className="truncate text-base font-bold tracking-tight text-gray-900 dark:text-white sm:text-lg">
-                    {form.id ? "Edit deal" : "Create New Deal."}
-                  </h2>
-                </div>
-                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end sm:gap-3">
-                  <div className="flex items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-950 sm:gap-3 sm:px-5 sm:py-3.5">
+                <h2 className="min-w-0 flex-1 truncate text-base font-bold tracking-tight text-gray-900 dark:text-white sm:text-lg">
+                  {form.id ? "Edit deal" : "Create New Deal."}
+                </h2>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span
+                    className={`text-[11px] font-semibold ${
+                      form.isActive
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-gray-400 dark:text-neutral-500"
+                    }`}
+                  >
+                    {form.isActive ? "Active" : "Inactive"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm((f) => ({ ...f, isActive: !f.isActive }))
+                    }
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${
+                      form.isActive
+                        ? "bg-emerald-500"
+                        : "bg-gray-300 dark:bg-neutral-600"
+                    }`}
+                    aria-label={
+                      form.isActive ? "Set deal inactive" : "Set deal active"
+                    }
+                  >
                     <span
-                      className={`text-[11px] font-semibold ${
-                        form.isActive
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-gray-400 dark:text-neutral-500"
+                      className={`inline-block h-4 w-4 translate-y-0.5 transform rounded-full bg-white shadow-sm transition ${
+                        form.isActive ? "translate-x-4" : "translate-x-0.5"
                       }`}
-                    >
-                      {form.isActive ? "Active" : "Inactive"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm((f) => ({ ...f, isActive: !f.isActive }))
-                      }
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${
-                        form.isActive
-                          ? "bg-emerald-500"
-                          : "bg-gray-300 dark:bg-neutral-600"
-                      }`}
-                      aria-label={
-                        form.isActive ? "Set deal inactive" : "Set deal active"
-                      }
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 translate-y-0.5 transform rounded-full bg-white shadow-sm transition ${
-                          form.isActive ? "translate-x-4" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
+                    />
+                  </button>
+                </div>
+                <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
                   <Button
                     type="button"
                     variant="ghost"
                     onClick={() => setIsModalOpen(false)}
                     disabled={isLoading}
-                    className="h-9 rounded-xl px-3 text-xs sm:px-4"
+                    className="h-9 flex-1 rounded-xl px-3 text-xs sm:flex-none sm:px-4"
                   >
                     Cancel
                   </Button>
@@ -2920,7 +2918,7 @@ export default function DealsPage() {
                     type="submit"
                     form="deal-form"
                     disabled={isLoading}
-                    className="h-9 gap-1.5 rounded-xl bg-gradient-to-r from-primary to-secondary px-3 text-xs font-semibold shadow-md shadow-primary/20 sm:px-5"
+                    className="h-9 flex-1 gap-1.5 rounded-xl bg-gradient-to-r from-primary to-secondary px-3 text-xs font-semibold shadow-md shadow-primary/20 sm:flex-none sm:px-5"
                   >
                     {isLoading ? (
                       <>
@@ -2982,7 +2980,7 @@ export default function DealsPage() {
               >
                 <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
                   {/* Left — main */}
-                  <div className="min-h-0 min-w-0 flex-1 px-4 py-4 sm:px-5 sm:py-5 lg:overflow-y-auto">
+                  <div className="min-w-0 shrink-0 px-4 py-4 sm:px-5 sm:py-5 lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-y-auto">
                     <div className="space-y-5">
                       <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -3346,7 +3344,7 @@ export default function DealsPage() {
                   </div>
 
                   {/* Right — price, photo, dates, description */}
-                  <aside className="flex min-h-0 w-full shrink-0 flex-col border-t border-gray-100 bg-gray-50 dark:border-neutral-800 dark:bg-neutral-900/50 lg:w-80 lg:overflow-y-auto lg:border-l lg:border-t-0 xl:w-[22rem]">
+                  <aside className="flex w-full shrink-0 flex-col border-t border-gray-100 bg-gray-50 dark:border-neutral-800 dark:bg-neutral-900/50 lg:min-h-0 lg:w-80 lg:overflow-y-auto lg:border-l lg:border-t-0 xl:w-[22rem]">
                     <div className="space-y-3 p-4">
                       <div className="rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
                         <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
