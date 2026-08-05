@@ -134,15 +134,24 @@ function escapeCSVField(s) {
 }
 
 function exportCategoriesToCSV(categories, items) {
-  const header = ["name", "description", "item_count"];
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const header = ["name", "description", "parent"];
   const lines = [header.join(",")];
-  for (const c of categories) {
-    const count = items.filter((i) => i.categoryId === c.id).length;
+  // Parents first, then subcategories — matches import order expectations.
+  const ordered = [
+    ...categories.filter((c) => !c.parentId),
+    ...categories.filter((c) => c.parentId),
+  ];
+  for (const c of ordered) {
+    const parentName =
+      c.parentName ||
+      (c.parentId ? byId.get(c.parentId)?.name : "") ||
+      "";
     lines.push(
       [
         escapeCSVField(c.name),
         escapeCSVField(c.description || ""),
-        String(count),
+        escapeCSVField(parentName),
       ].join(","),
     );
   }
@@ -653,48 +662,104 @@ export default function CategoriesPage() {
       toast.error("CSV is empty");
       return;
     }
+
+    const normHeader = (h) =>
+      String(h ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
     let start = 0;
-    const firstCells = parseCSVLine(lines[0]).map((c) => c.toLowerCase());
-    if (firstCells[0] === "name" || firstCells.includes("name")) {
+    let col = { name: 0, description: 1, parent: null };
+    const firstCells = parseCSVLine(lines[0]);
+    const firstNorm = firstCells.map(normHeader);
+    if (firstNorm.includes("name")) {
       start = 1;
+      col = { name: null, description: null, parent: null };
+      firstNorm.forEach((k, i) => {
+        if (k === "name" || k === "category") col.name = i;
+        else if (k === "description" || k === "desc") col.description = i;
+        else if (
+          k === "parent" ||
+          k === "parent category" ||
+          k === "parent name" ||
+          k === "subcategory of"
+        ) {
+          col.parent = i;
+        }
+      });
+      if (col.name == null) {
+        toast.error("CSV needs a name column.");
+        return;
+      }
     }
-    const existingLower = new Set(
-      categories.map((c) => c.name.trim().toLowerCase()),
-    );
+
     const rows = [];
     for (let i = start; i < lines.length; i++) {
       const cols = parseCSVLine(lines[i]);
-      const name = (cols[0] || "").trim();
+      const name = String(cols[col.name] ?? "").trim();
       if (!name) continue;
-      const description = (cols[1] || "").trim();
-      rows.push({ name, description });
+      const description =
+        col.description != null
+          ? String(cols[col.description] ?? "").trim()
+          : "";
+      const parentName =
+        col.parent != null ? String(cols[col.parent] ?? "").trim() : "";
+      rows.push({ name, description, parentName });
     }
     if (!rows.length) {
       toast.error("No category rows found in CSV");
       return;
     }
+
+    // Parents before children so subcategory rows can resolve parent names.
+    rows.sort((a, b) => {
+      const ap = a.parentName ? 1 : 0;
+      const bp = b.parentName ? 1 : 0;
+      return ap - bp;
+    });
+
     setImportLoading(true);
     let created = 0;
     let skipped = 0;
+    const failReasons = [];
     const newCats = [];
-    const seen = new Set(existingLower);
+    const catByLower = new Map(
+      categories.map((c) => [c.name.trim().toLowerCase(), c]),
+    );
+
     for (const row of rows) {
       const key = row.name.toLowerCase();
-      if (seen.has(key)) {
+      if (catByLower.has(key)) {
         skipped++;
         continue;
       }
-      seen.add(key);
+      let parentId = null;
+      if (row.parentName) {
+        const parent = catByLower.get(row.parentName.toLowerCase());
+        if (!parent) {
+          skipped++;
+          failReasons.push(
+            `Unknown parent “${row.parentName}” for “${row.name}”`,
+          );
+          continue;
+        }
+        parentId = parent.id;
+      }
       try {
-        const cat = await createCategory({
+        const payload = {
           name: row.name,
           description: row.description,
           branchId: currentBranch.id,
-        });
+        };
+        if (parentId) payload.parentId = parentId;
+        const cat = await createCategory(payload);
         newCats.push(cat);
+        catByLower.set(key, cat);
         created++;
-      } catch {
+      } catch (err) {
         skipped++;
+        failReasons.push(`${row.name}: ${err?.message || "failed"}`);
       }
     }
     setImportLoading(false);
@@ -710,9 +775,13 @@ export default function CategoriesPage() {
           skipped ? ` · ${skipped} skipped` : ""
         }`,
       );
+      if (failReasons.length) {
+        toast.error(failReasons.slice(0, 3).join(" · "), { duration: 6000 });
+      }
     } else if (skipped > 0) {
       toast.error(
-        `No new categories added (${skipped} duplicate or failed).`,
+        failReasons[0] ||
+          `No new categories added (${skipped} duplicate or failed).`,
       );
     } else {
       toast.error("Nothing to import");
@@ -985,7 +1054,7 @@ export default function CategoriesPage() {
                 <>
                   <p className="text-xs text-gray-400 dark:text-neutral-500 mb-4 text-center max-w-sm px-4">
                     Create your first category or import a CSV (name,
-                    description columns).
+                    description, parent columns).
                   </p>
                   <button
                     type="button"

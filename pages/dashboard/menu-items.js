@@ -22,7 +22,7 @@ import {
   getCurrencySymbol,
   getModifierGroups,
 } from "../../lib/apiClient";
-import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check, Layers } from "lucide-react";
+import { Plus, Trash2, Edit2, ToggleLeft, ToggleRight, Upload, Link, Loader2, X, ShoppingBag, Copy, Flame, Star, Sparkles, FileDown, FileText, Printer, ChevronDown, ChevronUp, Search, Building2, RefreshCw, SlidersHorizontal, AlertTriangle, Check, Layers } from "lucide-react";
 import { useConfirmDialog } from "../../contexts/ConfirmDialogContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { usePermissions } from "../../contexts/PermissionContext";
@@ -356,6 +356,7 @@ export default function MenuItemsPage() {
     availableAtAllBranches: true,
     isTrending: false,
     isMustTry: false,
+    isNewItem: false,
     excludeFromUpsell: false,
     hasModifiers: false,
     modifierGroups: [],
@@ -655,6 +656,7 @@ export default function MenuItemsPage() {
       availableAtAllBranches: true,
       isTrending: false,
       isMustTry: false,
+      isNewItem: false,
       excludeFromUpsell: false,
       hasModifiers: false,
       modifierGroups: [],
@@ -686,6 +688,7 @@ export default function MenuItemsPage() {
       availableAtAllBranches: item.availableAtAllBranches ?? true,
       isTrending: item.isTrending ?? false,
       isMustTry: item.isMustTry ?? false,
+      isNewItem: item.isNewItem ?? false,
       excludeFromUpsell: item.excludeFromUpsell === true,
       hasModifiers: item.hasModifiers || false,
       modifierGroups: item.modifierGroups || [],
@@ -768,6 +771,7 @@ export default function MenuItemsPage() {
             availableAtAllBranches: form.availableAtAllBranches,
             isTrending: form.isTrending,
             isMustTry: form.isMustTry,
+            isNewItem: form.isNewItem,
             excludeFromUpsell: form.excludeFromUpsell === true,
             ...modifierPayload,
           });
@@ -787,6 +791,7 @@ export default function MenuItemsPage() {
             availableAtAllBranches: form.availableAtAllBranches,
             isTrending: form.isTrending,
             isMustTry: form.isMustTry,
+            isNewItem: form.isNewItem,
             excludeFromUpsell: form.excludeFromUpsell === true,
             ...(currentBranch?.id && { branchId: currentBranch.id }),
             ...modifierPayload,
@@ -1283,7 +1288,7 @@ export default function MenuItemsPage() {
       ["Branch", branchName],
       ["Generated", date],
       [],
-      ["Name", "Category", "Price", "Dietary", "Status", "Trending", "Must Try", "Image URL"],
+      ["Name", "Category", "Price", "Dietary", "Status", "Trending", "Must Try", "New Item", "Image URL"],
       ...targetItems.map((item) => {
         const cat = categories.find((c) => c.id === item.categoryId)?.name || "Uncategorized";
         const price = item.finalPrice ?? item.price ?? 0;
@@ -1297,6 +1302,7 @@ export default function MenuItemsPage() {
           available,
           item.isTrending ? "Yes" : "No",
           item.isMustTry ? "Yes" : "No",
+          item.isNewItem ? "Yes" : "No",
           item.imageUrl || "",
         ];
       }),
@@ -1477,6 +1483,13 @@ export default function MenuItemsPage() {
         else if (k === "available") col.available = i;
         else if (k === "trending" || k === "is trending") col.trending = i;
         else if (k === "must try" || k === "musttry") col.mustTry = i;
+        else if (
+          k === "new item" ||
+          k === "newitem" ||
+          k === "is new item" ||
+          k === "new arrival"
+        )
+          col.newItem = i;
         else if (k === "description") col.description = i;
         else if (
           k === "image url" ||
@@ -1542,6 +1555,7 @@ export default function MenuItemsPage() {
         availableRaw: col.available != null ? cells[col.available] : undefined,
         trendingRaw: col.trending != null ? cells[col.trending] : undefined,
         mustTryRaw: col.mustTry != null ? cells[col.mustTry] : undefined,
+        newItemRaw: col.newItem != null ? cells[col.newItem] : undefined,
         description:
           col.description != null
             ? String(cells[col.description] ?? "").trim()
@@ -1632,6 +1646,10 @@ export default function MenuItemsPage() {
             isMustTry:
               row.mustTryRaw !== undefined && row.mustTryRaw !== ""
                 ? parseYesNoCell(row.mustTryRaw)
+                : false,
+            isNewItem:
+              row.newItemRaw !== undefined && row.newItemRaw !== ""
+                ? parseYesNoCell(row.newItemRaw)
                 : false,
             branchId: currentBranch.id,
           });
@@ -2686,6 +2704,7 @@ export default function MenuItemsPage() {
                           <div className="h-5 w-px shrink-0 bg-gray-200 dark:bg-neutral-700" aria-hidden="true" />
                           <div className="flex shrink-0 flex-nowrap gap-1.5">
                             {[
+                              { key: "isNewItem", icon: Sparkles, label: "New Item", color: "text-emerald-500" },
                               { key: "isTrending", icon: Flame, label: "Trending", color: "text-orange-500" },
                               { key: "isMustTry", icon: Star, label: "Must try", color: "text-blue-500" },
                             ].map(({ key, icon: Icon, label, color }) => {
