@@ -338,8 +338,8 @@ function DealInlineMenuSearch({
       ) : null}
 
       <div className="relative" ref={searchRootRef}>
-        <div className="flex items-end gap-2">
-          <div className="relative min-w-0 flex-1">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="relative min-w-0 flex-1 basis-full sm:basis-auto">
             <label className="mb-1 block text-[11px] font-medium text-gray-600 dark:text-neutral-400">
               Select item
             </label>
@@ -361,7 +361,10 @@ function DealInlineMenuSearch({
             </div>
           </div>
 
-          <div className="relative w-[9.5rem] shrink-0" ref={categoryBoxRef}>
+          <div
+            className="relative min-w-[7.5rem] flex-1 sm:w-[9.5rem] sm:flex-none sm:shrink-0"
+            ref={categoryBoxRef}
+          >
             <label className="mb-1 block text-[11px] font-medium text-gray-600 dark:text-neutral-400">
               Category
             </label>
@@ -2863,16 +2866,16 @@ export default function DealsPage() {
 
         {/* Deal Modal */}
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm sm:p-4">
-            <div className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-2 backdrop-blur-sm sm:p-4">
+            <div className="relative flex max-h-[95dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-950 sm:max-h-[92vh]">
               {/* Header */}
-              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 bg-white px-5 py-3.5 dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="flex shrink-0 flex-col gap-2.5 border-b border-gray-100 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-950 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-3.5">
                 <div className="min-w-0">
-                  <h2 className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">
+                  <h2 className="truncate text-base font-bold tracking-tight text-gray-900 dark:text-white sm:text-lg">
                     {form.id ? "Edit deal" : "Create New Deal."}
                   </h2>
                 </div>
-                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end sm:gap-3">
                   <div className="flex items-center gap-2">
                     <span
                       className={`text-[11px] font-semibold ${
@@ -2935,14 +2938,14 @@ export default function DealsPage() {
               </div>
 
               {modalError && (
-                <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2 text-xs text-red-700 sm:mx-5 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>{modalError}</span>
                 </div>
               )}
 
               {staleDealIssues.length > 0 && (
-                <div className="mx-5 mt-3 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
+                <div className="mx-4 mt-3 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2.5 text-xs text-red-800 sm:mx-5 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
                   <p className="flex items-center gap-1.5 font-semibold">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                     Outdated variation references
@@ -2977,9 +2980,9 @@ export default function DealsPage() {
                 className="flex min-h-0 flex-1 flex-col"
                 autoComplete="off"
               >
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
                   {/* Left — main */}
-                  <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-5">
+                  <div className="min-h-0 min-w-0 flex-1 px-4 py-4 sm:px-5 sm:py-5 lg:overflow-y-auto">
                     <div className="space-y-5">
                       <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/40">
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -3343,7 +3346,7 @@ export default function DealsPage() {
                   </div>
 
                   {/* Right — price, photo, dates, description */}
-                  <aside className="flex min-h-0 w-full shrink-0 flex-col overflow-y-auto border-t border-gray-100 bg-gray-50 dark:border-neutral-800 dark:bg-neutral-900/50 lg:w-80 lg:border-l lg:border-t-0 xl:w-[22rem]">
+                  <aside className="flex min-h-0 w-full shrink-0 flex-col border-t border-gray-100 bg-gray-50 dark:border-neutral-800 dark:bg-neutral-900/50 lg:w-80 lg:overflow-y-auto lg:border-l lg:border-t-0 xl:w-[22rem]">
                     <div className="space-y-3 p-4">
                       <div className="rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
                         <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
@@ -3526,7 +3529,7 @@ export default function DealsPage() {
                         <label className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
                           Valid dates
                         </label>
-                        <div className="grid grid-cols-1 gap-2">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
                           <div>
                             <span className="mb-1 block text-[10px] font-medium text-gray-400">
                               Start

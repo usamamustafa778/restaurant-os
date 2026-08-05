@@ -1361,6 +1361,98 @@ export default function MenuItemsPage() {
     );
   }
 
+  async function handleBulkSetNewItem(enabled) {
+    if (!selectedItemIds.length) return;
+    const selectedSet = new Set(selectedItemIds);
+    const targets = items.filter((item) => selectedSet.has(item.id));
+    let updatedCount = 0;
+    let failed = 0;
+    const updatedById = new Map();
+
+    await handleAsyncAction(
+      async () => {
+        for (const item of targets) {
+          try {
+            const updated = await updateItem(item.id, { isNewItem: enabled });
+            updatedById.set(item.id, updated);
+            updatedCount++;
+          } catch {
+            failed++;
+          }
+        }
+        if (updatedById.size) {
+          setData((prev) => ({
+            ...prev,
+            items: prev.items.map((i) => updatedById.get(i.id) || i),
+          }));
+        }
+        setSelectedItemIds([]);
+      },
+      {
+        loading: enabled
+          ? "Marking selected items as New Item..."
+          : "Removing New Item badge...",
+        success: enabled
+          ? `Marked ${updatedCount} item(s) as New Item${failed ? `, ${failed} failed` : ""}`
+          : `Removed New Item from ${updatedCount} item(s)${failed ? `, ${failed} failed` : ""}`,
+        error: "Failed to update selected items",
+      },
+    );
+  }
+
+  async function handleBulkSetAvailability(enabled) {
+    if (!selectedItemIds.length) return;
+    const selectedSet = new Set(selectedItemIds);
+    const targets = items.filter((item) => selectedSet.has(item.id));
+    let updatedCount = 0;
+    let failed = 0;
+
+    await handleAsyncAction(
+      async () => {
+        for (const item of targets) {
+          try {
+            if (currentBranch) {
+              await updateBranchMenuItem(item.id, { available: enabled });
+            } else {
+              await updateItem(item.id, { available: enabled });
+            }
+            updatedCount++;
+          } catch {
+            failed++;
+          }
+        }
+        setData((prev) => ({
+          ...prev,
+          items: prev.items.map((i) => {
+            if (!selectedSet.has(i.id)) return i;
+            if (currentBranch) {
+              return {
+                ...i,
+                finalAvailable: enabled,
+                branchAvailable: enabled,
+              };
+            }
+            return {
+              ...i,
+              available: enabled,
+              finalAvailable: enabled,
+            };
+          }),
+        }));
+        setSelectedItemIds([]);
+      },
+      {
+        loading: enabled
+          ? "Enabling selected items..."
+          : "Disabling selected items...",
+        success: enabled
+          ? `Enabled ${updatedCount} item(s)${failed ? `, ${failed} failed` : ""}`
+          : `Disabled ${updatedCount} item(s)${failed ? `, ${failed} failed` : ""}`,
+        error: "Failed to update selected items",
+      },
+    );
+  }
+
   function buildMenuHTML(title, extraStyle = "") {
     const date = new Date().toLocaleDateString("en-PK", { year: "numeric", month: "long", day: "numeric" });
     const branchName = currentBranch?.name || "All Branches";
@@ -1728,8 +1820,9 @@ export default function MenuItemsPage() {
         </div>
       )}
 
-      {/* Toolbar: search grows; filters + view + export + import + add */}
-      <div className="menu-items-no-print mb-6 flex w-full min-w-0 flex-wrap items-center gap-2">
+      {/* Toolbar: row 1 = search/filters/view/import; row 2 = selection actions */}
+      <div className="menu-items-no-print mb-6 flex w-full min-w-0 flex-col gap-2">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor="menu-items-search">
           Search menu items
         </label>
@@ -1907,43 +2000,6 @@ export default function MenuItemsPage() {
 
         <ViewToggle viewMode={viewMode} onChange={setViewMode} />
 
-        <button
-          type="button"
-          onClick={toggleSelectAllVisible}
-          disabled={!filtered.length}
-          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-          title="Select all visible items"
-        >
-          {allVisibleSelected ? <Check className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0" />}
-          <span className="hidden sm:inline">{allVisibleSelected ? "Clear selection" : "Select all"}</span>
-        </button>
-
-        {selectedItemIds.length > 0 && (
-          <>
-            <span className="inline-flex h-9 items-center rounded-xl bg-primary/10 px-3 text-xs font-semibold text-primary">
-              {selectedItemIds.length} selected
-            </span>
-            <button
-              type="button"
-              onClick={() => exportCSV(selectedItems)}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-            >
-              <FileDown className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">Export selected</span>
-            </button>
-            {hasPermission("menu.manage") && (
-            <button
-              type="button"
-              onClick={handleBulkDelete}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-red-200 px-3 text-sm font-semibold text-red-600 transition-all hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
-            >
-              <Trash2 className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">Delete selected</span>
-            </button>
-            )}
-          </>
-        )}
-
         <div className="relative" ref={exportMenuRef}>
           <button
             type="button"
@@ -2068,6 +2124,71 @@ export default function MenuItemsPage() {
           <span className="sm:hidden">Add</span>
         </button>
         )}
+      </div>
+
+      {selectedItemIds.length > 0 && (
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2 dark:border-primary/20 dark:bg-primary/10">
+          <span className="inline-flex h-9 items-center text-xs font-semibold text-primary">
+            Selected {selectedItems.length} of {filtered.length} items
+          </span>
+          <span
+            className="hidden h-5 w-px bg-primary/20 sm:block"
+            aria-hidden
+          />
+          <button
+            type="button"
+            onClick={() => exportCSV(selectedItems)}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          >
+            <FileDown className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">Export selected</span>
+          </button>
+          {hasPermission("menu.manage") && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleBulkSetAvailability(true)}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700 transition-all hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-neutral-900 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+              >
+                <ToggleRight className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Enable</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkSetAvailability(false)}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-amber-200 bg-white px-3 text-sm font-semibold text-amber-700 transition-all hover:bg-amber-50 dark:border-amber-500/30 dark:bg-neutral-900 dark:text-amber-400 dark:hover:bg-amber-500/10"
+              >
+                <ToggleLeft className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Disable</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkSetNewItem(true)}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700 transition-all hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-neutral-900 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+              >
+                <Sparkles className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Mark New Item</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkSetNewItem(false)}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              >
+                <span className="hidden sm:inline">Remove New Item</span>
+                <span className="sm:hidden">Clear New</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border-2 border-red-200 bg-white px-3 text-sm font-semibold text-red-600 transition-all hover:bg-red-50 dark:border-red-500/30 dark:bg-neutral-900 dark:text-red-400 dark:hover:bg-red-500/10"
+              >
+                <Trash2 className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Delete selected</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
       </div>
 
       {pageLoading ? (
