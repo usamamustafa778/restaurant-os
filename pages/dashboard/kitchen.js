@@ -20,6 +20,7 @@ import {
   formatReceiptItemsForBill,
   formatOrderItemDisplayName,
   getDealDisplayItems,
+  getOrderItemModifierSubtexts,
 } from "../../lib/orderDisplay.js";
 import {
   User, ChefHat, Loader2, CheckCircle2, RefreshCw,
@@ -257,27 +258,33 @@ function OrderCard({ order, column, isUpdating, onAdvance, onDismiss, onRecall, 
     metaBits.push({ key: "walkin", Icon: User, text: "Walk-in", cls: "text-gray-500 dark:text-neutral-500" });
   }
 
-  function itemExtrasInline(item) {
-    const parts = [];
-    if (item.variantLabel || item.size) parts.push(item.variantLabel || item.size);
-    (item.modifierSelections || []).forEach((sel) => {
-      (sel.options || []).forEach((opt) => {
-        if (opt.name) parts.push(opt.name);
-      });
-    });
-    if (item.note) parts.push(item.note);
-    if (parts.length === 0) return null;
+  function itemExtrasBlock(item) {
+    const subtexts = getOrderItemModifierSubtexts(item);
+    const note = String(item.note || "").trim();
+    if (!subtexts.length && !note) return null;
     return (
-      <span className="text-[10px] leading-tight text-orange-500/90 dark:text-orange-400/90 font-medium truncate">
-        {parts.join(" · ")}
-      </span>
+      <div className="mt-0.5 space-y-0.5">
+        {subtexts.map((line, i) => (
+          <div
+            key={i}
+            className="text-[10px] leading-tight text-orange-500/90 dark:text-orange-400/90 font-medium"
+          >
+            {line}
+          </div>
+        ))}
+        {note ? (
+          <div className="text-[10px] leading-tight italic text-amber-600 dark:text-amber-400 font-medium">
+            📝 {note}
+          </div>
+        ) : null}
+      </div>
     );
   }
 
   function renderKitchenItemLine(item, idx) {
     const st = getItemStatus(item, order.status);
     const qty = item.qty ?? item.quantity ?? 1;
-    const extras = itemExtrasInline(item);
+    const extras = itemExtrasBlock(item);
     const isCookedMixed = hasMixed && st === "COOKED";
     const isNewMixed = hasMixed && st === "NEW";
 

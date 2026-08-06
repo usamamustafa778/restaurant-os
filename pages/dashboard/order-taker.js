@@ -475,7 +475,7 @@ function WaiterOrderItemRow({
       {subtexts.map((line, si) => (
         <div
           key={si}
-          className="ml-2 text-[10px] leading-tight text-gray-400 dark:text-neutral-500"
+          className="ml-2 text-[10px] leading-tight font-medium text-orange-500/90 dark:text-orange-400/90"
         >
           {line}
         </div>

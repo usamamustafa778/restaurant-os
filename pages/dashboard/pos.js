@@ -4159,11 +4159,16 @@ function OrderItemRow({ item }) {
       {subtexts.map((line, si) => (
         <div
           key={si}
-          className="text-[10px] text-gray-400 dark:text-neutral-500 ml-2 leading-tight"
+          className="text-[10px] text-orange-500/90 dark:text-orange-400/90 ml-2 leading-tight font-medium"
         >
           {line}
         </div>
       ))}
+      {item.note ? (
+        <p className="mt-0.5 ml-2 text-[10px] italic text-amber-700 dark:text-amber-400">
+          📝 {item.note}
+        </p>
+      ) : null}
     </div>
   );
 }
