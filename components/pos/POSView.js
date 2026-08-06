@@ -477,6 +477,8 @@ export default function POSView({
   const [tableName, setTableName] = useState("");
   const [tables, setTables] = useState([]);
   const [itemNotes, setItemNotes] = useState({}); // { cartKey: "note text" }
+  /** Cart keys whose note input is expanded (empty notes stay collapsed until opened). */
+  const [openItemNoteKeys, setOpenItemNoteKeys] = useState({});
   const [modifierPickerItem, setModifierPickerItem] = useState(null);
   const [modifierSelections, setModifierSelections] = useState({});
   const [recentOrders, setRecentOrders] = useState([]);
@@ -2120,6 +2122,13 @@ export default function POSView({
   const removeFromCart = (cartKey) => {
     if (!isPrivilegedEditor) return;
     setCart(cart.filter((item) => (item._cartKey || item.id) !== cartKey));
+    setItemNotes((prev) => {
+      if (!(cartKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[cartKey];
+      return next;
+    });
+    closeNoteEditorForCartItem(cartKey);
   };
 
   const changeCartItemVariation = (cartKey, groupId, optionId) => {
@@ -2187,6 +2196,14 @@ export default function POSView({
         return next;
       });
     }
+    setOpenItemNoteKeys((prev) => {
+      if (!prev[cartKey] && !prev[line.cartKey]) return prev;
+      const next = { ...prev };
+      const wasOpen = Boolean(next[cartKey]);
+      delete next[cartKey];
+      if (wasOpen || note) next[line.cartKey] = true;
+      return next;
+    });
   };
 
   const getCartItemVariationGroups = (cartItem) => {
@@ -2334,6 +2351,7 @@ export default function POSView({
     setCart([]);
     setShowCheckout(false);
     setItemNotes({});
+    setOpenItemNoteKeys({});
     setTableNumber("");
     setTableName("");
     setSelectedWaiter("");
@@ -2355,6 +2373,23 @@ export default function POSView({
         return next;
       }
       return { ...prev, [itemId]: note };
+    });
+  };
+
+  const openNoteEditorForCartItem = (itemId) => {
+    if (!itemId) return;
+    setOpenItemNoteKeys((prev) =>
+      prev[itemId] ? prev : { ...prev, [itemId]: true },
+    );
+  };
+
+  const closeNoteEditorForCartItem = (itemId) => {
+    if (!itemId) return;
+    setOpenItemNoteKeys((prev) => {
+      if (!prev[itemId]) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
     });
   };
 
@@ -2711,6 +2746,7 @@ export default function POSView({
       });
       setCart([]);
       setItemNotes({});
+      setOpenItemNoteKeys({});
       setCustomerName("");
       setCustomerPhone("");
       setCustomerAddress("");
@@ -4013,6 +4049,10 @@ export default function POSView({
                   item.quantity,
                 );
                 const variationGroups = getCartItemVariationGroups(item);
+                const noteValue = itemNotes[cartKey] || "";
+                const noteOpen =
+                  Boolean(openItemNoteKeys[cartKey]) ||
+                  Boolean(String(noteValue).trim());
                 return (
                   <div
                     key={item.id}
@@ -4142,7 +4182,7 @@ export default function POSView({
                           </div>
                         )}
 
-                        {/* Quantity + note */}
+                        {/* Quantity + add-note control */}
                         <div className="mt-0.5 flex items-center gap-2">
                           <div
                             className="flex shrink-0 items-center gap-1 rounded-md bg-gray-100 p-0.5 dark:bg-neutral-900"
@@ -4182,32 +4222,45 @@ export default function POSView({
                               <Plus className="w-3 h-3 dark:text-neutral-400" />
                             </button>
                           </div>
+                          {!noteOpen ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openNoteEditorForCartItem(cartKey);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+                            >
+                              <FileText className="h-3 w-3" />
+                              Add note
+                            </button>
+                          ) : null}
                         </div>
 
-                        {/* Inline note */}
-                        <div
-                          className="mt-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="text"
-                            value={itemNotes[item._cartKey || item.id] || ""}
-                            onChange={(e) =>
-                              setNoteForCartItem(
-                                item._cartKey || item.id,
-                                e.target.value,
-                              )
-                            }
-                            onBlur={(e) =>
-                              setNoteForCartItem(
-                                item._cartKey || item.id,
-                                e.target.value.trim(),
-                              )
-                            }
-                            placeholder="Add note…"
-                            className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-primary focus:ring-1 focus:ring-primary/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
-                          />
-                        </div>
+                        {noteOpen ? (
+                          <div
+                            className="mt-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="text"
+                              autoFocus={!String(noteValue).trim()}
+                              value={noteValue}
+                              onChange={(e) =>
+                                setNoteForCartItem(cartKey, e.target.value)
+                              }
+                              onBlur={(e) => {
+                                const trimmed = e.target.value.trim();
+                                setNoteForCartItem(cartKey, trimmed);
+                                if (!trimmed) {
+                                  closeNoteEditorForCartItem(cartKey);
+                                }
+                              }}
+                              placeholder="Add note…"
+                              className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-primary focus:ring-1 focus:ring-primary/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
