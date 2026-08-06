@@ -7655,9 +7655,7 @@ export default function POSView({
                                   ? isAttached
                                     ? `+Rs ${option.price.toLocaleString()}`
                                     : `Rs ${option.price.toLocaleString()}`
-                                  : isAttached
-                                    ? "Included"
-                                    : "Free"}
+                                  : null}
                               </span>
                             </button>
                           );

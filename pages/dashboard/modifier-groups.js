@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import PermissionGate from "../../components/PermissionGate";
 import Button from "../../components/ui/Button";
+import AsyncCombobox from "../../components/accounting/AsyncCombobox";
 import {
   createModifierGroup,
   deleteModifierGroup,
@@ -47,6 +48,20 @@ function formatMaxSelect(value) {
   return n === 0 ? "Unlimited" : String(n);
 }
 
+function menuItemToComboboxOption(item) {
+  if (!item?.id) return null;
+  const price = Number(item.finalPrice ?? item.price);
+  const priceLabel = Number.isFinite(price)
+    ? ` · Rs ${price.toLocaleString()}`
+    : "";
+  return {
+    id: item.id,
+    name: item.name || "",
+    label: `${item.name || "Item"}${priceLabel}`,
+    price: Number.isFinite(price) ? price : 0,
+  };
+}
+
 export default function ModifierGroupsPage() {
   const { currentBranch } = useBranch();
   const { confirm } = useConfirmDialog();
@@ -90,6 +105,28 @@ export default function ModifierGroupsPage() {
     loadMenuItems();
   }, [loadMenuItems]);
 
+  const menuItemOptions = useMemo(
+    () =>
+      menuItems
+        .map(menuItemToComboboxOption)
+        .filter(Boolean)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    [menuItems],
+  );
+
+  const fetchMenuItemOptions = useCallback(
+    async (query) => {
+      const needle = String(query || "").trim().toLowerCase();
+      if (!needle) return menuItemOptions;
+      return menuItemOptions.filter(
+        (o) =>
+          o.name.toLowerCase().includes(needle) ||
+          o.label.toLowerCase().includes(needle),
+      );
+    },
+    [menuItemOptions],
+  );
+
   const sortedGroups = useMemo(
     () =>
       [...groups].sort(
@@ -130,13 +167,22 @@ export default function ModifierGroupsPage() {
   function updateOption(index, field, value) {
     setForm((prev) => {
       const options = [...prev.options];
-      options[index] = { ...options[index], [field]: value };
-      if (field === "menuItemRef" && value) {
-        const item = menuItems.find((m) => m.id === value);
-        if (item && !options[index].name.trim()) {
-          options[index].name = item.name;
+      const current = { ...options[index], [field]: value };
+
+      if (field === "menuItemRef") {
+        if (value) {
+          const item = menuItems.find((m) => m.id === value);
+          if (item) {
+            current.name = item.name || "";
+            const prevPrice = Number(options[index].price);
+            if (!Number.isFinite(prevPrice) || prevPrice === 0) {
+              current.price = String(item.finalPrice ?? item.price ?? 0);
+            }
+          }
         }
       }
+
+      options[index] = current;
       return { ...prev, options };
     });
   }
@@ -175,12 +221,20 @@ export default function ModifierGroupsPage() {
       maxSelect: Math.max(0, Number(form.maxSelect) || 0),
       displayOrder: Number(form.displayOrder) || 0,
       isActive: form.isActive,
-      options: form.options.map((o) => ({
-        name: o.name.trim() || undefined,
-        price: Math.max(0, Number(o.price) || 0),
-        menuItemRef: o.menuItemRef || undefined,
-        isActive: o.isActive !== false,
-      })),
+      options: form.options.map((o) => {
+        const linked = o.menuItemRef
+          ? menuItems.find((m) => m.id === o.menuItemRef)
+          : null;
+        return {
+          name: (o.name.trim() || linked?.name || "").trim() || undefined,
+          // Linked prices come from the menu item at save + order time
+          price: linked
+            ? Math.max(0, Number(linked.finalPrice ?? linked.price) || 0)
+            : Math.max(0, Number(o.price) || 0),
+          menuItemRef: o.menuItemRef || undefined,
+          isActive: o.isActive !== false,
+        };
+      }),
     };
 
     setSaving(true);
@@ -295,8 +349,13 @@ export default function ModifierGroupsPage() {
                             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-900 px-2.5 py-1 text-xs text-gray-700 dark:text-neutral-300"
                           >
                             {opt.name}
-                            {Number(opt.price) > 0 ? (
-                              <span className="text-primary font-semibold">+Rs {Number(opt.price).toLocaleString()}</span>
+                            {Number(opt.price) > 0 || opt.menuItemRef ? (
+                              <span className="text-primary font-semibold">
+                                +Rs {Number(opt.price).toLocaleString()}
+                                {opt.menuItemRef ? (
+                                  <span className="text-[10px] font-normal text-gray-400"> · live</span>
+                                ) : null}
+                              </span>
                             ) : (
                               <span className="text-gray-400">Free</span>
                             )}
@@ -417,7 +476,12 @@ export default function ModifierGroupsPage() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="font-medium text-gray-700 dark:text-neutral-300">Options</label>
+                    <div>
+                      <label className="font-medium text-gray-700 dark:text-neutral-300">Options</label>
+                      <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-0.5">
+                        Choose a menu item, or type a custom name
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={addOption}
@@ -427,7 +491,11 @@ export default function ModifierGroupsPage() {
                     </button>
                   </div>
 
-                  {form.options.map((opt, index) => (
+                  {form.options.map((opt, index) => {
+                    const linkedItem = opt.menuItemRef
+                      ? menuItems.find((m) => m.id === opt.menuItemRef)
+                      : null;
+                    return (
                     <div
                       key={opt.id}
                       className="rounded-xl border border-gray-200 dark:border-neutral-700 p-3 space-y-2 bg-gray-50/50 dark:bg-neutral-900/40"
@@ -445,38 +513,76 @@ export default function ModifierGroupsPage() {
                           </button>
                         ) : null}
                       </div>
-                      <input
-                        type="text"
-                        value={opt.name}
-                        onChange={(e) => updateOption(index, "name", e.target.value)}
-                        placeholder="Option name"
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900"
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={opt.price}
-                          onChange={(e) => updateOption(index, "price", e.target.value)}
-                          placeholder="Price"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900"
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                          Menu item
+                        </label>
+                        <AsyncCombobox
+                          placeholder="Search menu item…"
+                          fetchFn={fetchMenuItemOptions}
+                          value={opt.menuItemRef || null}
+                          valueObj={
+                            opt.menuItemRef
+                              ? menuItemOptions.find((o) => o.id === opt.menuItemRef) ||
+                                (linkedItem
+                                  ? menuItemToComboboxOption(linkedItem)
+                                  : null)
+                              : null
+                          }
+                          onChange={(id) =>
+                            updateOption(index, "menuItemRef", id || "")
+                          }
+                          displayFn={(o) => o.label}
+                          keyFn={(o) => o.id}
                         />
-                        <select
-                          value={opt.menuItemRef}
-                          onChange={(e) => updateOption(index, "menuItemRef", e.target.value)}
-                          className="w-full px-2 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900"
-                        >
-                          <option value="">Link menu item (optional)</option>
-                          {menuItems.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                            </option>
-                          ))}
-                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                            {linkedItem ? "Display name" : "Name"}
+                            {linkedItem ? (
+                              <span className="font-normal text-gray-400"> (optional)</span>
+                            ) : null}
+                          </label>
+                          <input
+                            type="text"
+                            value={opt.name}
+                            onChange={(e) => updateOption(index, "name", e.target.value)}
+                            placeholder={
+                              linkedItem
+                                ? linkedItem.name
+                                : "e.g. Extra cheese"
+                            }
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                            Price (Rs)
+                            {linkedItem ? (
+                              <span className="font-normal text-gray-400"> · from menu item</span>
+                            ) : null}
+                          </label>
+                          {linkedItem ? (
+                            <div className="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                              {Number(linkedItem.finalPrice ?? linkedItem.price ?? 0).toLocaleString()}
+                            </div>
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={opt.price}
+                              onChange={(e) => updateOption(index, "price", e.target.value)}
+                              placeholder="0"
+                              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900"
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
