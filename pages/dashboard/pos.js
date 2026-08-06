@@ -474,9 +474,22 @@ function getStatusAdvancePermission(primaryNext, order) {
     const s = orderStatusForTab(order?.status);
     // Counter Mark Delivered for out-for-delivery orders (not Mark Served)
     if (s === "OUT_FOR_DELIVERY") return "orders.mark_delivered";
+    if (getOrderTypeLabel(order) === "Takeaway") {
+      return "pos.handover_to_customer";
+    }
     return "pos.mark_served";
   }
   return "orders.edit";
+}
+
+/** Takeaway handover accepts the new key, or legacy Mark Served during transition. */
+function canUseStatusAdvancePermission(hasPermission, permKey) {
+  if (!permKey || typeof hasPermission !== "function") return false;
+  if (hasPermission(permKey)) return true;
+  if (permKey === "pos.handover_to_customer") {
+    return hasPermission("pos.mark_served");
+  }
+  return false;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -4300,7 +4313,9 @@ function OrderCard({
       })
     : null;
   const canAdvanceWithPermission =
-    canAdvanceStatus && statusAdvancePerm && hasPermission(statusAdvancePerm);
+    canAdvanceStatus &&
+    statusAdvancePerm &&
+    canUseStatusAdvancePermission(hasPermission, statusAdvancePerm);
   const showAssignRiderPerm =
     showAssignRider && hasPermission("orders.assign_rider");
   const showChangeRiderPerm =
@@ -4310,7 +4325,7 @@ function OrderCard({
   const showOutForDeliveryMarkDeliveredPerm =
     showOutForDeliveryMarkDelivered &&
     statusAdvancePerm &&
-    hasPermission(statusAdvancePerm);
+    canUseStatusAdvancePermission(hasPermission, statusAdvancePerm);
   const showRiderReassignPerm =
     showRiderReassignOutForDelivery && hasPermission("orders.reassign_rider");
   const showCollectFromRiderPerm =
