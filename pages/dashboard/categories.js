@@ -26,6 +26,7 @@ import {
   Upload,
   Search,
   ChevronDown,
+  ChevronUp,
   Building2,
   FileText,
   Printer,
@@ -88,6 +89,7 @@ function openPrintableCategoriesHTML(html) {
 const isAdminRole = (role) => role === "restaurant_admin" || role === "admin";
 
 const SORT_OPTIONS = [
+  { value: "website_order", label: "Website order" },
   { value: "name_asc", label: "Name A–Z" },
   { value: "name_desc", label: "Name Z–A" },
   { value: "newest", label: "Newest first" },
@@ -195,8 +197,13 @@ function sortCategories(list, sortBy, categories, items) {
       case "items_desc":
         return countB - countA;
       case "name_asc":
-      default:
         return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      case "website_order":
+      default:
+        return (
+          (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        );
     }
   });
   return sorted;
@@ -223,8 +230,10 @@ export default function CategoriesPage() {
   const [parentPreset, setParentPreset] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("name_asc");
+  const [sortBy, setSortBy] = useState("website_order");
   const [itemFilter, setItemFilter] = useState("all");
+  const [reorderingId, setReorderingId] = useState(null);
+  const categoryOrderNormalizedRef = useRef(false);
   const [importLoading, setImportLoading] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -334,7 +343,125 @@ export default function CategoriesPage() {
 
   const categories = menuData?.categories || [];
   const items = menuData?.items || [];
-  const topLevelCategories = categories.filter((c) => !c.parentId);
+  const topLevelCategories = useMemo(
+    () =>
+      [...categories.filter((c) => !c.parentId)].sort(
+        (a, b) =>
+          (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      ),
+    [categories],
+  );
+
+  useEffect(() => {
+    categoryOrderNormalizedRef.current = false;
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
+    if (categoryOrderNormalizedRef.current || topLevelCategories.length < 2) return;
+    const orders = topLevelCategories.map((c) => c.displayOrder ?? 0);
+    const hasDuplicateOrders = new Set(orders).size !== orders.length;
+    if (!hasDuplicateOrders) return;
+
+    categoryOrderNormalizedRef.current = true;
+    const updates = topLevelCategories.map((cat, index) => ({
+      id: cat.id,
+      displayOrder: index,
+    }));
+
+    (async () => {
+      try {
+        await Promise.all(
+          updates.map((u) => updateCategory(u.id, { displayOrder: u.displayOrder })),
+        );
+        const orderById = new Map(updates.map((u) => [u.id, u.displayOrder]));
+        setMenuData((prev) => {
+          if (!prev?.categories) return prev;
+          return {
+            ...prev,
+            categories: prev.categories.map((c) =>
+              orderById.has(c.id)
+                ? { ...c, displayOrder: orderById.get(c.id) }
+                : c,
+            ),
+          };
+        });
+      } catch {
+        categoryOrderNormalizedRef.current = false;
+      }
+    })();
+  }, [topLevelCategories, setMenuData]);
+
+  async function moveCategory(categoryId, direction) {
+    const cat = categories.find((c) => c.id === categoryId);
+    if (!cat) return;
+
+    const siblings = [...categories]
+      .filter((c) =>
+        cat.parentId ? c.parentId === cat.parentId : !c.parentId,
+      )
+      .sort(
+        (a, b) =>
+          (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+
+    const index = siblings.findIndex((c) => c.id === categoryId);
+    if (index < 0) return;
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= siblings.length) return;
+
+    const reordered = [...siblings];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    const updates = reordered.map((c, order) => ({
+      id: c.id,
+      displayOrder: order,
+    }));
+    const orderById = new Map(updates.map((u) => [u.id, u.displayOrder]));
+
+    setReorderingId(categoryId);
+    setMenuData((prev) => {
+      if (!prev?.categories) return prev;
+      return {
+        ...prev,
+        categories: prev.categories.map((c) =>
+          orderById.has(c.id) ? { ...c, displayOrder: orderById.get(c.id) } : c,
+        ),
+      };
+    });
+
+    try {
+      await Promise.all(
+        updates.map((u) => updateCategory(u.id, { displayOrder: u.displayOrder })),
+      );
+    } catch (err) {
+      const refreshed = await getMenu(currentBranch?.id);
+      setMenuData(refreshed);
+      toast.error(err?.message || "Failed to reorder category");
+    } finally {
+      setReorderingId(null);
+    }
+  }
+
+  function getCategorySiblingMeta(categoryId) {
+    const cat = categories.find((c) => c.id === categoryId);
+    if (!cat) return { index: -1, total: 0 };
+    const siblings = [...categories]
+      .filter((c) =>
+        cat.parentId ? c.parentId === cat.parentId : !c.parentId,
+      )
+      .sort(
+        (a, b) =>
+          (a.displayOrder ?? 0) - (b.displayOrder ?? 0) ||
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+    return {
+      index: siblings.findIndex((c) => c.id === categoryId),
+      total: siblings.length,
+    };
+  }
 
   function resetForm() {
     setForm({ id: null, name: "", description: "", parentId: "" });
@@ -1323,12 +1450,38 @@ export default function CategoriesPage() {
                   key: "actions",
                   header: "Actions",
                   align: "right",
-                  className: "w-[13.5rem]",
-                  cellClassName: "w-[13.5rem] whitespace-nowrap",
+                  className: "w-[16rem]",
+                  cellClassName: "w-[16rem] whitespace-nowrap",
                   render: (_, row) => {
                     const isDeleting = deletingId === row.id;
+                    const isReordering = reorderingId === row.id;
+                    const { index, total } = getCategorySiblingMeta(row.id);
                     return (
                       <div className="inline-flex flex-nowrap items-center justify-end gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => moveCategory(row.id, -1)}
+                          disabled={index <= 0 || isDeleting || isReordering || !!reorderingId}
+                          className="shrink-0 p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary transition-colors disabled:opacity-30"
+                          title="Move up on website"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveCategory(row.id, 1)}
+                          disabled={
+                            index < 0 ||
+                            index >= total - 1 ||
+                            isDeleting ||
+                            isReordering ||
+                            !!reorderingId
+                          }
+                          className="shrink-0 p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary transition-colors disabled:opacity-30"
+                          title="Move down on website"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
                         {!row.parentId && (
                           <button
                             type="button"

@@ -379,11 +379,9 @@ export default function POSView({
   const { socket } = useSocket() || {};
   const { hasPermission } = usePermissions();
   const currentUser = getStoredAuth()?.user;
-  const isAdminRole = [
-    "restaurant_admin",
-    "admin",
-    "super_admin",
-  ].includes(currentUser?.role);
+  const isAdminRole = ["restaurant_admin", "admin", "super_admin"].includes(
+    currentUser?.role,
+  );
   const [menu, setMenu] = useState({ categories: [], items: [] });
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
@@ -705,9 +703,7 @@ export default function POSView({
             ? Math.max(0, Number(data.taxRate))
             : 0,
         );
-        setRestaurantTaxLabel(
-          String(data?.taxLabel || "Tax").trim() || "Tax",
-        );
+        setRestaurantTaxLabel(String(data?.taxLabel || "Tax").trim() || "Tax");
         setRestaurantTaxDelivery(data?.taxDelivery === true);
       })
       .catch(() => {
@@ -816,7 +812,9 @@ export default function POSView({
           {
             const n = Number(b?.posSoundVolume);
             setSoundVolume(
-              Number.isFinite(n) ? Math.min(100, Math.max(1, Math.round(n))) : 70,
+              Number.isFinite(n)
+                ? Math.min(100, Math.max(1, Math.round(n)))
+                : 70,
             );
           }
           setSoundBeep(normalizePosAddSoundId(b?.posSoundBeep));
@@ -1037,7 +1035,11 @@ export default function POSView({
         }
         const items = order.items || [];
         const menuItems = menu.items || [];
-        const cartItems = rebuildPosCartFromOrder(order, menuItems, availableDeals);
+        const cartItems = rebuildPosCartFromOrder(
+          order,
+          menuItems,
+          availableDeals,
+        );
 
         const initialNotes = {};
         cartItems.forEach((ci) => {
@@ -1393,7 +1395,9 @@ export default function POSView({
       if (editingOrderId) {
         // Edit mode: update the existing order's items first, then record payment on it
         await updateOrder(editingOrderId, {
-          items: cart.map((item) => mapPosCartLineToOrderUpdatePayload(item, itemNotes)),
+          items: cart.map((item) =>
+            mapPosCartLineToOrderUpdatePayload(item, itemNotes),
+          ),
           discountAmount: totalDiscount,
           ...buildPosDiscountApiFields(),
           customerName: customerName.trim(),
@@ -1716,7 +1720,9 @@ export default function POSView({
   const menuCategoryTabs = useMemo(() => {
     const seenNames = new Set(["deals"]);
     return (menu.categories || []).filter((cat) => {
-      const name = String(cat.name || "").trim().toLowerCase();
+      const name = String(cat.name || "")
+        .trim()
+        .toLowerCase();
       if (!name || seenNames.has(name)) return false;
       seenNames.add(name);
       return true;
@@ -1730,7 +1736,10 @@ export default function POSView({
     }
     const result = [];
     for (const item of allItemsForGrid) {
-      if ((!item.hasModifiers || !item.modifierGroups?.length) && !hasAttachedModifierGroups(item)) {
+      if (
+        (!item.hasModifiers || !item.modifierGroups?.length) &&
+        !hasAttachedModifierGroups(item)
+      ) {
         result.push(item);
         continue;
       }
@@ -2122,7 +2131,9 @@ export default function POSView({
     if (cartItem.isDeal || cartItem._isDeal) return;
 
     const template = resolveMenuItemForCartLine(cartItem, menu.items || []);
-    const groups = getPickerGroupsForItem(template).filter(isSingleSelectModifierGroup);
+    const groups = getPickerGroupsForItem(template).filter(
+      isSingleSelectModifierGroup,
+    );
     const group = groups.find((g) => String(g.id) === String(groupId));
     if (!group) return;
 
@@ -2256,7 +2267,12 @@ export default function POSView({
     playPosAddSound();
   };
 
-  const applyModifierOptionSelection = (group, option, isSelected, maxSelections) => {
+  const applyModifierOptionSelection = (
+    group,
+    option,
+    isSelected,
+    maxSelections,
+  ) => {
     const existing = modifierSelections[group.id] || [];
     let nextGroupSel = existing;
     let didSelect = false;
@@ -2329,11 +2345,17 @@ export default function POSView({
     setManagerDiscountPin("");
   };
 
-  const addNoteToItem = (itemId) => {
-    const note = prompt("Add special instructions for this item:");
-    if (note !== null) {
-      setItemNotes((prev) => ({ ...prev, [itemId]: note.trim() }));
-    }
+  const setNoteForCartItem = (itemId, note) => {
+    setItemNotes((prev) => {
+      const trimmed = String(note || "").trimStart();
+      if (!trimmed) {
+        if (!(itemId in prev)) return prev;
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      }
+      return { ...prev, [itemId]: note };
+    });
   };
 
   const subtotal = cart.reduce(
@@ -2396,12 +2418,11 @@ export default function POSView({
     : 0;
   const taxEnabledForOrder = restaurantTaxEnabled && normalizedTaxRate > 0;
   const taxableAmount = taxEnabledForOrder
-    ? Math.round(
-        (total + (restaurantTaxDelivery ? deliveryFee : 0)) * 100,
-      ) / 100
+    ? Math.round((total + (restaurantTaxDelivery ? deliveryFee : 0)) * 100) /
+      100
     : 0;
   const taxAmount = taxEnabledForOrder
-    ? Math.round((taxableAmount * normalizedTaxRate) / 100 * 100) / 100
+    ? Math.round(((taxableAmount * normalizedTaxRate) / 100) * 100) / 100
     : 0;
   const taxLabel = String(restaurantTaxLabel || "Tax").trim() || "Tax";
   const taxRateForDisplay = taxEnabledForOrder ? normalizedTaxRate : 0;
@@ -2728,7 +2749,9 @@ export default function POSView({
     const toastId = toast.loading("Updating order...");
     try {
       await updateOrder(editingOrderId, {
-        items: cart.map((item) => mapPosCartLineToOrderUpdatePayload(item, itemNotes)),
+        items: cart.map((item) =>
+          mapPosCartLineToOrderUpdatePayload(item, itemNotes),
+        ),
         discountAmount: totalDiscount,
         ...buildPosDiscountApiFields(),
         customerName: customerName.trim(),
@@ -3824,12 +3847,6 @@ export default function POSView({
               </button>
             </div>
           )}
-          {loadingEditOrder && (
-            <div className="px-3 py-4 flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-neutral-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading order...
-            </div>
-          )}
           {/* Order Header */}
           <div className="px-3 py-2.5 border-b border-gray-200 dark:border-neutral-800">
             {/* Back + order type + settings */}
@@ -3969,7 +3986,16 @@ export default function POSView({
 
           {/* Cart Items */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {cart.length === 0 ? (
+            {loadingEditOrder ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-2">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+                <p className="text-xs font-semibold text-gray-700 dark:text-neutral-300">
+                  Loading order...
+                </p>
+              </div>
+            ) : cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-12">
                 <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-neutral-900 flex items-center justify-center mb-2">
                   <ShoppingCart className="w-8 h-8 text-gray-300 dark:text-neutral-700" />
@@ -4021,7 +4047,7 @@ export default function POSView({
                         {/* Title Row with Remove Button */}
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
-                            <h4 className="text-base font-bold text-gray-900 dark:text-white line-clamp-1">
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-1">
                               {item.name}
                               {item.size && !item._selectedModifiers?.length ? (
                                 <span className="text-xs font-normal text-gray-500 dark:text-neutral-500">
@@ -4062,62 +4088,10 @@ export default function POSView({
                           )}
                         </div>
 
-                        {/* Quantity + note */}
-                        <div className="mt-2 flex items-center gap-2">
-                          <div
-                            className="flex shrink-0 items-center gap-1 rounded-md bg-gray-100 p-0.5 dark:bg-neutral-900"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!canDecrease) return;
-                                updateQuantity(item._cartKey || item.id, -1);
-                              }}
-                              disabled={!canDecrease}
-                              className={`w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors ${
-                                !canDecrease
-                                  ? "opacity-30 cursor-not-allowed"
-                                  : ""
-                              }`}
-                            >
-                              <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-400" />
-                            </button>
-                            <span className="w-8 scale-105 text-center text-xs font-semibold text-gray-900 dark:text-white">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!canModifyOrderItems) return;
-                                updateQuantity(item._cartKey || item.id, 1);
-                              }}
-                              disabled={!canModifyOrderItems}
-                              className={`w-4 h-4 flex items-center justify-center bg-primary hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors ${
-                                !canModifyOrderItems
-                                  ? "opacity-30 cursor-not-allowed"
-                                  : ""
-                              }`}
-                            >
-                              <Plus className="w-3 h-3 dark:text-neutral-400" />
-                            </button>
-                          </div>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              addNoteToItem(item._cartKey || item.id);
-                            }}
-                            className="ml-auto w-fit shrink-0 text-sm font-medium text-primary hover:underline"
-                          >
-                            Add Note
-                          </button>
-                        </div>
-
                         {/* Variations — own row so they don't crowd qty */}
                         {variationGroups.length > 0 && (
                           <div
-                            className={`mt-2 grid gap-2 ${
+                            className={` grid gap-2 ${
                               variationGroups.length === 1
                                 ? "grid-cols-1"
                                 : "grid-cols-1 sm:grid-cols-2"
@@ -4167,17 +4141,75 @@ export default function POSView({
                             })}
                           </div>
                         )}
+
+                        {/* Quantity + note */}
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <div
+                            className="flex shrink-0 items-center gap-1 rounded-md bg-gray-100 p-0.5 dark:bg-neutral-900"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!canDecrease) return;
+                                updateQuantity(item._cartKey || item.id, -1);
+                              }}
+                              disabled={!canDecrease}
+                              className={`w-4 h-4 flex items-center justify-center hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors ${
+                                !canDecrease
+                                  ? "opacity-30 cursor-not-allowed"
+                                  : ""
+                              }`}
+                            >
+                              <Minus className="w-3 h-3 text-gray-700 dark:text-neutral-400" />
+                            </button>
+                            <span className="w-8 scale-105 text-center text-xs font-semibold text-gray-900 dark:text-white">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!canModifyOrderItems) return;
+                                updateQuantity(item._cartKey || item.id, 1);
+                              }}
+                              disabled={!canModifyOrderItems}
+                              className={`w-4 h-4 flex items-center justify-center bg-primary hover:bg-neutral-700 text-white dark:hover:bg-neutral-800 rounded transition-colors ${
+                                !canModifyOrderItems
+                                  ? "opacity-30 cursor-not-allowed"
+                                  : ""
+                              }`}
+                            >
+                              <Plus className="w-3 h-3 dark:text-neutral-400" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Inline note */}
+                        <div
+                          className="mt-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            value={itemNotes[item._cartKey || item.id] || ""}
+                            onChange={(e) =>
+                              setNoteForCartItem(
+                                item._cartKey || item.id,
+                                e.target.value,
+                              )
+                            }
+                            onBlur={(e) =>
+                              setNoteForCartItem(
+                                item._cartKey || item.id,
+                                e.target.value.trim(),
+                              )
+                            }
+                            placeholder="Add note…"
+                            className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-900 outline-none placeholder:text-gray-400 focus:border-primary focus:ring-1 focus:ring-primary/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+                          />
+                        </div>
                       </div>
                     </div>
-
-                    {/* Note Display */}
-                    {itemNotes[item._cartKey || item.id] && (
-                      <div className="mt-3 p-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
-                        <p className="text-xs text-blue-700 dark:text-blue-400">
-                          📝 {itemNotes[item._cartKey || item.id]}
-                        </p>
-                      </div>
-                    )}
 
                     {/* Price Grid - Only shown when expanded */}
                     {isExpanded && (
@@ -6111,7 +6143,9 @@ export default function POSView({
                           step={5}
                           value={posSoundVolumeDraft}
                           onChange={(e) => {
-                            setPosSoundVolumeDraft(Number(e.target.value) || 70);
+                            setPosSoundVolumeDraft(
+                              Number(e.target.value) || 70,
+                            );
                           }}
                           onMouseUp={(e) =>
                             playPosAddSound(
@@ -7572,11 +7606,17 @@ export default function POSView({
 
             {/* Modifier groups */}
             <div className="p-5 space-y-6">
-              {(modifierPickerItem._pickerGroups ||
+              {(
+                modifierPickerItem._pickerGroups ||
                 modifierPickerItem.modifierGroups ||
-                [])
+                []
+              )
                 .slice()
-                .sort((a, b) => (a.sortOrder || a.displayOrder || 0) - (b.sortOrder || b.displayOrder || 0))
+                .sort(
+                  (a, b) =>
+                    (a.sortOrder || a.displayOrder || 0) -
+                    (b.sortOrder || b.displayOrder || 0),
+                )
                 .map((group) => (
                   <div key={group.id}>
                     {/* Group header */}

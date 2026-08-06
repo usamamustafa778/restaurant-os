@@ -98,6 +98,23 @@ function isMongoObjectId(value) {
   return typeof value === "string" && /^[a-f0-9]{24}$/i.test(value.trim());
 }
 
+/** Inline variation groups + shared/attached modifier groups on a menu item. */
+function getMenuItemModifierMeta(item) {
+  const inlineCount = item?.hasModifiers
+    ? (item.modifierGroups || []).filter((g) => g && (g.groupName || g.name)).length
+    : 0;
+  const attachedCount = (item?.attachedModifierGroups || []).filter(
+    (g) => g && (g.isActive !== false)
+  ).length;
+  const total = inlineCount + attachedCount;
+  return {
+    inlineCount,
+    attachedCount,
+    total,
+    hasAny: total > 0 || Boolean(item?.hasModifiers),
+  };
+}
+
 /** Include stable Mongo ids on save so backend preserves modifier group/option _ids. */
 function modifierGroupsForSave(groups) {
   return (groups || []).map((g, gi) => ({
@@ -2378,9 +2395,16 @@ export default function MenuItemsPage() {
                     
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                       <h3 className="font-bold text-gray-900 dark:text-white">{item.name}</h3>
-                      {item.hasModifiers && (
-                        <span className="inline-flex px-1.5 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 text-[10px] font-medium text-gray-500 dark:text-neutral-400">Variations</span>
-                      )}
+                      {(() => {
+                        const meta = getMenuItemModifierMeta(item);
+                        if (!meta.hasAny) return null;
+                        return (
+                          <span className="inline-flex px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-500/15 text-[10px] font-medium text-violet-700 dark:text-violet-300">
+                            Modifiers
+                            {meta.total > 0 ? ` · ${meta.total}` : ""}
+                          </span>
+                        );
+                      })()}
                     </div>
                     {item.description && (
                       <p className="text-xs text-gray-500 dark:text-neutral-500 mb-2 line-clamp-2 min-h-[2rem]">
@@ -2413,7 +2437,7 @@ export default function MenuItemsPage() {
                                 ) : null}
                                 <div className="font-bold text-gray-900 dark:text-white">
                                   {sym} {displayPrice?.toFixed(0)}
-                                  {item.hasModifiers ? "+" : ""}
+                                  {getMenuItemModifierMeta(item).hasAny ? "+" : ""}
                                 </div>
                               </div>
                               {cut != null ? (
@@ -2506,9 +2530,16 @@ export default function MenuItemsPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</span>
-                      {item.hasModifiers && (
-                        <span className="inline-flex px-1.5 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 text-[10px] font-medium text-gray-500 dark:text-neutral-400">Variations</span>
-                      )}
+                      {(() => {
+                        const meta = getMenuItemModifierMeta(item);
+                        if (!meta.hasAny) return null;
+                        return (
+                          <span className="inline-flex px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-500/15 text-[10px] font-medium text-violet-700 dark:text-violet-300">
+                            Modifiers
+                            {meta.total > 0 ? ` · ${meta.total}` : ""}
+                          </span>
+                        );
+                      })()}
                     </div>
                     {item.description && (
                       <div className="text-xs text-gray-500 dark:text-neutral-500 truncate max-w-[200px] mt-0.5">
@@ -2556,7 +2587,7 @@ export default function MenuItemsPage() {
                       ) : null}
                       <div className="font-bold text-gray-900 dark:text-white">
                         {sym} {displayPrice?.toFixed(0)}
-                        {item.hasModifiers ? "+" : ""}
+                        {getMenuItemModifierMeta(item).hasAny ? "+" : ""}
                       </div>
                     </div>
                     {cut != null ? (
