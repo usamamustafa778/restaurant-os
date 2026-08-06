@@ -4062,7 +4062,7 @@ export default function POSView({
                           )}
                         </div>
 
-                        {/* Quantity, variation, and add note */}
+                        {/* Quantity + note */}
                         <div className="mt-2 flex items-center gap-2">
                           <div
                             className="flex shrink-0 items-center gap-1 rounded-md bg-gray-100 p-0.5 dark:bg-neutral-900"
@@ -4103,57 +4103,70 @@ export default function POSView({
                             </button>
                           </div>
 
-                          <div className="ml-auto flex shrink-0 items-center gap-2">
-                            {variationGroups.length > 0 && (
-                              <div
-                                className="flex items-center gap-1.5"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {variationGroups.map((group) => {
-                                  const selected = getSelectedOptionIdForGroup(group, item);
-                                  return (
-                                    <select
-                                      key={group.id}
-                                      value={selected}
-                                      disabled={!canModifyOrderItems}
-                                      onChange={(e) =>
-                                        changeCartItemVariation(
-                                          cartKey,
-                                          group.id,
-                                          e.target.value,
-                                        )
-                                      }
-                                      aria-label={group.groupName || group.name}
-                                      className="w-fit max-w-[8rem] rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
-                                    >
-                                      {(group.options || [])
-                                        .filter((o) => o.isAvailable !== false)
-                                        .sort(
-                                          (a, b) =>
-                                            (a.sortOrder || 0) - (b.sortOrder || 0),
-                                        )
-                                        .map((opt) => (
-                                          <option key={opt.id} value={opt.id}>
-                                            {opt.name}
-                                          </option>
-                                        ))}
-                                    </select>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                addNoteToItem(item._cartKey || item.id);
-                              }}
-                              className="w-fit shrink-0 text-sm font-medium text-primary hover:underline"
-                            >
-                              Add Note
-                            </button>
-                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addNoteToItem(item._cartKey || item.id);
+                            }}
+                            className="ml-auto w-fit shrink-0 text-sm font-medium text-primary hover:underline"
+                          >
+                            Add Note
+                          </button>
                         </div>
+
+                        {/* Variations — own row so they don't crowd qty */}
+                        {variationGroups.length > 0 && (
+                          <div
+                            className={`mt-2 grid gap-2 ${
+                              variationGroups.length === 1
+                                ? "grid-cols-1"
+                                : "grid-cols-1 sm:grid-cols-2"
+                            }`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {variationGroups.map((group) => {
+                              const selected = getSelectedOptionIdForGroup(
+                                group,
+                                item,
+                              );
+                              const label =
+                                group.groupName || group.name || "Option";
+                              return (
+                                <div key={group.id} className="min-w-0">
+                                  <select
+                                    value={selected}
+                                    disabled={!canModifyOrderItems}
+                                    onChange={(e) =>
+                                      changeCartItemVariation(
+                                        cartKey,
+                                        group.id,
+                                        e.target.value,
+                                      )
+                                    }
+                                    aria-label={label}
+                                    className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 text-xs leading-none text-gray-900 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
+                                  >
+                                    {(group.options || [])
+                                      .filter((o) => o.isAvailable !== false)
+                                      .sort(
+                                        (a, b) =>
+                                          (a.sortOrder || 0) -
+                                          (b.sortOrder || 0),
+                                      )
+                                      .map((opt) => (
+                                        <option key={opt.id} value={opt.id}>
+                                          {opt.name}
+                                          {Number(opt.price) > 0
+                                            ? ` · Rs ${Number(opt.price).toLocaleString()}`
+                                            : ""}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
 
