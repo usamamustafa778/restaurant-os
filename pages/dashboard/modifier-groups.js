@@ -8,6 +8,7 @@ import {
   deleteModifierGroup,
   getMenu,
   getModifierGroups,
+  getInventoryIfAvailable,
   updateModifierGroup,
 } from "../../lib/apiClient";
 import { useBranch } from "../../contexts/BranchContext";
@@ -29,6 +30,7 @@ const emptyOption = () => ({
   name: "",
   price: "0",
   menuItemRef: "",
+  inventoryConsumptions: [],
   isActive: true,
 });
 
@@ -48,6 +50,17 @@ function formatMaxSelect(value) {
   return n === 0 ? "Unlimited" : String(n);
 }
 
+function suggestRecipeUnit(invUnitRaw) {
+  const invUnit = String(invUnitRaw || "").toLowerCase();
+  if (invUnit === "gram" || invUnit === "g" || invUnit === "kg" || invUnit === "kilogram") {
+    return "gram";
+  }
+  if (invUnit === "ml" || invUnit === "milliliter" || invUnit === "liter" || invUnit === "l") {
+    return "milliliter";
+  }
+  return "piece";
+}
+
 function menuItemToComboboxOption(item) {
   if (!item?.id) return null;
   const price = Number(item.finalPrice ?? item.price);
@@ -62,12 +75,23 @@ function menuItemToComboboxOption(item) {
   };
 }
 
+function inventoryToComboboxOption(item) {
+  if (!item?.id) return null;
+  return {
+    id: item.id,
+    name: item.name || "",
+    label: `${item.name || "Item"}${item.unit ? ` · ${item.unit}` : ""}`,
+    unit: item.unit || "piece",
+  };
+}
+
 export default function ModifierGroupsPage() {
   const { currentBranch } = useBranch();
   const { confirm } = useConfirmDialog();
 
   const [groups, setGroups] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -97,6 +121,15 @@ export default function ModifierGroupsPage() {
     }
   }, [currentBranch?.id]);
 
+  const loadInventory = useCallback(async () => {
+    try {
+      const list = await getInventoryIfAvailable();
+      setInventoryItems(Array.isArray(list) ? list : []);
+    } catch {
+      setInventoryItems([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadGroups();
   }, [loadGroups]);
@@ -105,6 +138,10 @@ export default function ModifierGroupsPage() {
     loadMenuItems();
   }, [loadMenuItems]);
 
+  useEffect(() => {
+    loadInventory();
+  }, [loadInventory]);
+
   const menuItemOptions = useMemo(
     () =>
       menuItems
@@ -112,6 +149,15 @@ export default function ModifierGroupsPage() {
         .filter(Boolean)
         .sort((a, b) => String(a.name).localeCompare(String(b.name))),
     [menuItems],
+  );
+
+  const inventoryOptions = useMemo(
+    () =>
+      inventoryItems
+        .map(inventoryToComboboxOption)
+        .filter(Boolean)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    [inventoryItems],
   );
 
   const fetchMenuItemOptions = useCallback(
@@ -125,6 +171,19 @@ export default function ModifierGroupsPage() {
       );
     },
     [menuItemOptions],
+  );
+
+  const fetchInventoryOptions = useCallback(
+    async (query) => {
+      const needle = String(query || "").trim().toLowerCase();
+      if (!needle) return inventoryOptions;
+      return inventoryOptions.filter(
+        (o) =>
+          o.name.toLowerCase().includes(needle) ||
+          o.label.toLowerCase().includes(needle),
+      );
+    },
+    [inventoryOptions],
   );
 
   const sortedGroups = useMemo(
@@ -157,6 +216,11 @@ export default function ModifierGroupsPage() {
         name: o.name || "",
         price: String(o.price ?? 0),
         menuItemRef: o.menuItemRef || "",
+        inventoryConsumptions: (o.inventoryConsumptions || []).map((c) => ({
+          inventoryItemId: c.inventoryItemId || "",
+          quantity: String(c.quantity ?? 1),
+          unit: c.unit || "piece",
+        })),
         isActive: o.isActive !== false,
       })),
     });
@@ -183,6 +247,51 @@ export default function ModifierGroupsPage() {
       }
 
       options[index] = current;
+      return { ...prev, options };
+    });
+  }
+
+  function addOptionInventoryRow(optionIndex) {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const opt = options[optionIndex];
+      options[optionIndex] = {
+        ...opt,
+        inventoryConsumptions: [
+          ...(opt.inventoryConsumptions || []),
+          { inventoryItemId: "", quantity: "1", unit: "piece" },
+        ],
+      };
+      return { ...prev, options };
+    });
+  }
+
+  function updateOptionInventory(optionIndex, rowIndex, field, value) {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const opt = options[optionIndex];
+      const rows = [...(opt.inventoryConsumptions || [])];
+      const row = { ...rows[rowIndex], [field]: value };
+      if (field === "inventoryItemId" && value) {
+        const inv = inventoryItems.find((i) => i.id === value);
+        if (inv) row.unit = suggestRecipeUnit(inv.unit);
+      }
+      rows[rowIndex] = row;
+      options[optionIndex] = { ...opt, inventoryConsumptions: rows };
+      return { ...prev, options };
+    });
+  }
+
+  function removeOptionInventory(optionIndex, rowIndex) {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const opt = options[optionIndex];
+      options[optionIndex] = {
+        ...opt,
+        inventoryConsumptions: (opt.inventoryConsumptions || []).filter(
+          (_, i) => i !== rowIndex,
+        ),
+      };
       return { ...prev, options };
     });
   }
@@ -227,11 +336,17 @@ export default function ModifierGroupsPage() {
           : null;
         return {
           name: (o.name.trim() || linked?.name || "").trim() || undefined,
-          // Linked prices come from the menu item at save + order time
           price: linked
             ? Math.max(0, Number(linked.finalPrice ?? linked.price) || 0)
             : Math.max(0, Number(o.price) || 0),
           menuItemRef: o.menuItemRef || undefined,
+          inventoryConsumptions: (o.inventoryConsumptions || [])
+            .filter((c) => c.inventoryItemId && Number(c.quantity) > 0)
+            .map((c) => ({
+              inventoryItemId: c.inventoryItemId,
+              quantity: Number(c.quantity) || 0,
+              unit: c.unit || "piece",
+            })),
           isActive: o.isActive !== false,
         };
       }),
@@ -362,6 +477,11 @@ export default function ModifierGroupsPage() {
                             {opt.menuItemRef ? (
                               <span className="text-[10px] text-gray-400">· linked item</span>
                             ) : null}
+                            {(opt.inventoryConsumptions || []).length > 0 ? (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                                · {(opt.inventoryConsumptions || []).length} stock
+                              </span>
+                            ) : null}
                           </span>
                         ))}
                       </div>
@@ -479,7 +599,7 @@ export default function ModifierGroupsPage() {
                     <div>
                       <label className="font-medium text-gray-700 dark:text-neutral-300">Options</label>
                       <p className="text-[10px] text-gray-400 dark:text-neutral-500 mt-0.5">
-                        Choose a menu item, or type a custom name
+                        Type a choice name (e.g. Puri) and optionally attach stock
                       </p>
                     </div>
                     <button
@@ -579,6 +699,81 @@ export default function ModifierGroupsPage() {
                             />
                           )}
                         </div>
+                      </div>
+
+                      <div className="rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 p-2 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-medium text-gray-500 dark:text-neutral-400">
+                            Uses stock (optional)
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => addOptionInventoryRow(index)}
+                            className="text-[10px] font-semibold text-primary hover:underline"
+                          >
+                            + Add ingredient
+                          </button>
+                        </div>
+                        {(opt.inventoryConsumptions || []).length === 0 ? (
+                          <p className="text-[10px] text-gray-400 dark:text-neutral-500">
+                            e.g. Puri Paratha → Puri × 1
+                          </p>
+                        ) : (
+                          (opt.inventoryConsumptions || []).map((row, ri) => {
+                            const invObj =
+                              inventoryOptions.find((i) => i.id === row.inventoryItemId) ||
+                              null;
+                            return (
+                              <div key={`${opt.id}-inv-${ri}`} className="flex items-center gap-1.5">
+                                <div className="min-w-0 flex-1">
+                                  <AsyncCombobox
+                                    placeholder="Search inventory…"
+                                    fetchFn={fetchInventoryOptions}
+                                    value={row.inventoryItemId || null}
+                                    valueObj={invObj}
+                                    onChange={(id) =>
+                                      updateOptionInventory(
+                                        index,
+                                        ri,
+                                        "inventoryItemId",
+                                        id || "",
+                                      )
+                                    }
+                                    displayFn={(o) => o.label}
+                                    keyFn={(o) => o.id}
+                                  />
+                                </div>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={row.quantity}
+                                  onChange={(e) =>
+                                    updateOptionInventory(
+                                      index,
+                                      ri,
+                                      "quantity",
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="w-16 shrink-0 px-2 py-2 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs"
+                                  placeholder="Qty"
+                                />
+                                <span className="w-12 shrink-0 text-[10px] text-gray-400 truncate">
+                                  {row.unit || "pcs"}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeOptionInventory(index, ri)}
+                                  className="p-1 text-red-500 hover:text-red-600"
+                                  aria-label="Remove ingredient"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                     );
