@@ -1234,6 +1234,7 @@ export default function CategoriesPage() {
           ) : (
             <DataTable
               variant="card"
+              tableClassName="table-fixed"
               columns={[
                 {
                   key: "_select",
@@ -1253,6 +1254,8 @@ export default function CategoriesPage() {
                     />
                   ),
                   align: "center",
+                  className: "w-12",
+                  cellClassName: "w-12",
                   render: (_, row) => (
                     <input
                       type="checkbox"
@@ -1266,6 +1269,8 @@ export default function CategoriesPage() {
                 {
                   key: "name",
                   header: "Category",
+                  className: "w-[36%]",
+                  cellClassName: "whitespace-normal",
                   render: (value, row) => (
                     <p
                       className={`font-semibold text-gray-900 dark:text-white ${
@@ -1282,9 +1287,11 @@ export default function CategoriesPage() {
                   key: "description",
                   header: "Description",
                   hideOnMobile: true,
+                  className: "w-[12rem]",
+                  cellClassName: "w-[12rem] max-w-[12rem] whitespace-nowrap",
                   render: (value) => (
-                    <p className="text-gray-600 dark:text-neutral-400 line-clamp-2">
-                      {value || ""}
+                    <p className="max-w-[12rem] truncate text-gray-600 dark:text-neutral-400" title={value || undefined}>
+                      {value || "—"}
                     </p>
                   ),
                 },
@@ -1292,6 +1299,8 @@ export default function CategoriesPage() {
                   key: "itemCount",
                   header: "Items",
                   align: "center",
+                  className: "w-20",
+                  cellClassName: "w-20",
                   render: (value) => (
                     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold ${value === 0 ? "bg-gray-100 dark:bg-neutral-800 text-gray-400 dark:text-neutral-500" : "bg-primary/10 text-primary"}`}>
                       {value}
@@ -1302,6 +1311,8 @@ export default function CategoriesPage() {
                   key: "createdAt",
                   header: "Created",
                   hideOnTablet: true,
+                  className: "w-24",
+                  cellClassName: "w-24",
                   render: (value) => (
                     <span className="text-gray-600 dark:text-neutral-400">
                       {value ? new Date(value).toLocaleDateString() : "—"}
@@ -1312,15 +1323,17 @@ export default function CategoriesPage() {
                   key: "actions",
                   header: "Actions",
                   align: "right",
+                  className: "w-[13.5rem]",
+                  cellClassName: "w-[13.5rem] whitespace-nowrap",
                   render: (_, row) => {
                     const isDeleting = deletingId === row.id;
                     return (
-                      <div className="inline-flex items-center gap-1 flex-wrap justify-end">
+                      <div className="inline-flex flex-nowrap items-center justify-end gap-0.5">
                         {!row.parentId && (
                           <button
                             type="button"
                             onClick={() => startCreateSubcategory(row)}
-                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-orange-500 hover:bg-orange-50 hover:text-orange-700 dark:hover:bg-orange-500/10 transition-colors"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-orange-500 hover:bg-orange-50 hover:text-orange-700 dark:hover:bg-orange-500/10 transition-colors"
                             title="Add subcategory"
                           >
                             <Plus className="w-3 h-3" />
@@ -1331,7 +1344,7 @@ export default function CategoriesPage() {
                           type="button"
                           onClick={() => startEdit(row)}
                           disabled={isDeleting}
-                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors disabled:opacity-50"
+                          className="shrink-0 p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-gray-100 dark:hover:bg-neutral-800 hover:text-primary dark:hover:text-secondary transition-colors disabled:opacity-50"
                           title="Edit"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -1340,7 +1353,7 @@ export default function CategoriesPage() {
                           type="button"
                           onClick={() => handleDelete(row.id)}
                           disabled={isDeleting}
-                          className="p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                          className="shrink-0 p-1.5 rounded-lg text-gray-400 dark:text-neutral-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400 transition-colors disabled:opacity-50"
                           title="Delete"
                         >
                           {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}

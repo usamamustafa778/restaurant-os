@@ -349,6 +349,7 @@ export default function MenuItemsPage() {
     id: null,
     name: "",
     price: "",
+    compareAtPrice: "",
     categoryId: "",
     dietaryType: "non_veg",
     imageUrl: "",
@@ -649,6 +650,7 @@ export default function MenuItemsPage() {
       id: null,
       name: "",
       price: "",
+      compareAtPrice: "",
       categoryId: "",
       dietaryType: "non_veg",
       imageUrl: "",
@@ -681,6 +683,10 @@ export default function MenuItemsPage() {
       id: item.id,
       name: item.name,
       price: String(item.price ?? ""),
+      compareAtPrice:
+        item.compareAtPrice != null && Number(item.compareAtPrice) > 0
+          ? String(item.compareAtPrice)
+          : "",
       categoryId: item.categoryId,
       dietaryType: item.dietaryType || "non_veg",
       imageUrl: item.imageUrl || "",
@@ -713,6 +719,28 @@ export default function MenuItemsPage() {
       setModalError("Price is required"); 
       toast.error("Price is required");
       return; 
+    }
+    if (form.compareAtPrice !== "") {
+      const cut = Number(form.compareAtPrice);
+      const sell = form.hasModifiers
+        ? (() => {
+            const rg = form.modifierGroups.filter((g) => g.required);
+            const prices = rg.flatMap((g) => (g.options || []).map((o) => Number(o.price) || 0));
+            return prices.length > 0 ? Math.min(...prices) : 0;
+          })()
+        : Number(form.price) || 0;
+      if (!Number.isFinite(cut) || cut <= 0) {
+        const msg = "Cut price must be a positive number";
+        setModalError(msg);
+        toast.error(msg);
+        return;
+      }
+      if (cut <= sell) {
+        const msg = "Cut price must be higher than the selling price";
+        setModalError(msg);
+        toast.error(msg);
+        return;
+      }
     }
     if (form.hasModifiers) {
       if (form.modifierGroups.length === 0) {
@@ -764,6 +792,7 @@ export default function MenuItemsPage() {
           const updated = await updateItem(form.id, {
             name: form.name,
             ...(form.hasModifiers ? {} : { price: parseFloat(form.price) }),
+            compareAtPrice: form.compareAtPrice === "" ? null : parseFloat(form.compareAtPrice),
             categoryId: form.categoryId,
             dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
@@ -784,6 +813,7 @@ export default function MenuItemsPage() {
           const created = await createItem({
             name: form.name,
             ...(form.hasModifiers ? {} : { price: parseFloat(form.price) }),
+            compareAtPrice: form.compareAtPrice === "" ? null : parseFloat(form.compareAtPrice),
             categoryId: form.categoryId,
             dietaryType: form.dietaryType,
             imageUrl: form.imageUrl,
@@ -2363,10 +2393,37 @@ export default function MenuItemsPage() {
                         {category ? category.name : "Uncategorized"}
                       </span>
                       <div className="text-right">
-                        <div className="font-bold text-gray-900 dark:text-white">
-                          {sym} {displayPrice?.toFixed(0)}{item.hasModifiers ? '+' : ''}
-                        </div>
-                        {/* Branch-specific special price UI removed */}
+                        {(() => {
+                          const cut =
+                            item.compareAtPrice != null &&
+                            Number(item.compareAtPrice) > Number(displayPrice || 0)
+                              ? Number(item.compareAtPrice)
+                              : null;
+                          const pct =
+                            cut != null
+                              ? Math.round(((cut - displayPrice) / cut) * 100)
+                              : null;
+                          return (
+                            <>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {pct != null ? (
+                                  <span className="inline-flex rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-500/15 dark:text-rose-400">
+                                    {pct}% off
+                                  </span>
+                                ) : null}
+                                <div className="font-bold text-gray-900 dark:text-white">
+                                  {sym} {displayPrice?.toFixed(0)}
+                                  {item.hasModifiers ? "+" : ""}
+                                </div>
+                              </div>
+                              {cut != null ? (
+                                <div className="text-[11px] text-gray-400 line-through">
+                                  {sym} {cut.toFixed(0)}
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                     
@@ -2480,11 +2537,33 @@ export default function MenuItemsPage() {
               align: "right",
               render: (_, item) => {
                 const displayPrice = item.finalPrice ?? item.price;
+                const cut =
+                  item.compareAtPrice != null &&
+                  Number(item.compareAtPrice) > Number(displayPrice || 0)
+                    ? Number(item.compareAtPrice)
+                    : null;
+                const pct =
+                  cut != null
+                    ? Math.round(((cut - displayPrice) / cut) * 100)
+                    : null;
                 return (
-                  <div>
-                    <div className="font-bold text-gray-900 dark:text-white">
-                      {sym} {displayPrice?.toFixed(0)}{item.hasModifiers ? '+' : ''}
+                  <div className="text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      {pct != null ? (
+                        <span className="inline-flex rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-500/15 dark:text-rose-400">
+                          {pct}% off
+                        </span>
+                      ) : null}
+                      <div className="font-bold text-gray-900 dark:text-white">
+                        {sym} {displayPrice?.toFixed(0)}
+                        {item.hasModifiers ? "+" : ""}
+                      </div>
                     </div>
+                    {cut != null ? (
+                      <div className="text-[11px] text-gray-400 line-through">
+                        {sym} {cut.toFixed(0)}
+                      </div>
+                    ) : null}
                   </div>
                 );
               }
@@ -2703,19 +2782,57 @@ export default function MenuItemsPage() {
                           )}
                           <div>
                             <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
-                              Category <span className="text-red-500">*</span>
+                              Cut price ({sym})
+                              <span className="ml-1 font-normal text-gray-400">(optional)</span>
                             </label>
-                            <AsyncCombobox
-                              placeholder="Select category…"
-                              fetchFn={fetchCategoryOptions}
-                              value={form.categoryId || null}
-                              valueObj={selectedCategoryObj}
-                              onChange={(id) => setForm((prev) => ({ ...prev, categoryId: id || "" }))}
-                              displayFn={(opt) => opt.label}
-                              keyFn={(opt) => opt.id}
-                              hasError={Boolean(modalError && !form.categoryId)}
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={form.compareAtPrice}
+                              onChange={(e) => setForm((prev) => ({ ...prev, compareAtPrice: e.target.value }))}
+                              placeholder="Was price"
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white"
                             />
+                            {(() => {
+                              const sell = form.hasModifiers
+                                ? (() => {
+                                    const rg = form.modifierGroups.filter((g) => g.required);
+                                    const prices = rg.flatMap((g) => (g.options || []).map((o) => Number(o.price) || 0));
+                                    return prices.length > 0 ? Math.min(...prices) : 0;
+                                  })()
+                                : Number(form.price) || 0;
+                              const cut = Number(form.compareAtPrice);
+                              if (!Number.isFinite(cut) || cut <= 0 || cut <= sell) return null;
+                              const pct = Math.round(((cut - sell) / cut) * 100);
+                              return (
+                                <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-neutral-400">
+                                  <span className="inline-flex rounded bg-rose-100 px-1.5 py-0.5 font-bold text-rose-700 dark:bg-rose-500/15 dark:text-rose-400">
+                                    {pct}% off
+                                  </span>
+                                  <span className="line-through">{sym} {cut.toLocaleString()}</span>
+                                  <span className="font-semibold text-gray-800 dark:text-white">
+                                    {sym} {sell.toLocaleString()}
+                                  </span>
+                                </p>
+                              );
+                            })()}
                           </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            Category <span className="text-red-500">*</span>
+                          </label>
+                          <AsyncCombobox
+                            placeholder="Select category…"
+                            fetchFn={fetchCategoryOptions}
+                            value={form.categoryId || null}
+                            valueObj={selectedCategoryObj}
+                            onChange={(id) => setForm((prev) => ({ ...prev, categoryId: id || "" }))}
+                            displayFn={(opt) => opt.label}
+                            keyFn={(opt) => opt.id}
+                            hasError={Boolean(modalError && !form.categoryId)}
+                          />
                         </div>
                         <div>
                           <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-neutral-300">

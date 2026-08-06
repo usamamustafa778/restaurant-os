@@ -22,6 +22,14 @@ import {
   canAddOrderItems,
   canRemoveOrderItems,
 } from "../../lib/orderEditPermissions";
+import {
+  buildModifierSelectionsForOrder,
+  computeItemUnitPrice,
+  flattenSelectedModifiers,
+  getPickerGroupsForItem,
+  isModifierSelectionComplete as isItemModifierSelectionComplete,
+  itemNeedsModifierPicker,
+} from "../../lib/modifier-pricing";
 import { useOrderNotifications } from "../../contexts/OrderNotificationContext";
 import WhatsAppNotificationBell from "../../components/whatsapp/WhatsAppNotificationBell";
 import {
@@ -977,9 +985,13 @@ export default function OrderTakerPage() {
         return;
       }
     }
-    // If item has modifiers, open picker instead of adding directly
-    if (item.hasModifiers && item.modifierGroups?.length > 0) {
-      setModifierPickerItem({ ...item, _pendingQty: qty });
+    // If item has modifiers (inline or attached reusable groups), open picker
+    if (itemNeedsModifierPicker(item)) {
+      setModifierPickerItem({
+        ...item,
+        _pendingQty: qty,
+        _pickerGroups: getPickerGroupsForItem(item),
+      });
       setModifierSelections({});
       return;
     }
@@ -1043,47 +1055,14 @@ export default function OrderTakerPage() {
     const cartKey =
       item.id + (selectionFingerprint ? "|" + selectionFingerprint : "");
 
-    const requiredGroups = (item.modifierGroups || []).filter(
-      (g) => g.required,
+    const unitPrice = computeItemUnitPrice(item, modifierSelections);
+    const selectedModifiers = flattenSelectedModifiers(item, modifierSelections);
+    const variantLabel =
+      selectedModifiers.map((m) => m.optionName).join(", ") || "Regular";
+    const modifierSelectionsForOrder = buildModifierSelectionsForOrder(
+      item,
+      modifierSelections,
     );
-    const optionalGroups = (item.modifierGroups || []).filter(
-      (g) => !g.required,
-    );
-    const requiredTotal = requiredGroups.reduce((sum, g) => {
-      const sel = modifierSelections[g.id] || [];
-      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
-    }, 0);
-    const optionalTotal = optionalGroups.reduce((sum, g) => {
-      const sel = modifierSelections[g.id] || [];
-      return sum + sel.reduce((s, o) => s + (o.price || 0), 0);
-    }, 0);
-    let unitPrice;
-    if (requiredGroups.length > 0 && requiredTotal > 0) {
-      unitPrice = requiredTotal + optionalTotal;
-    } else {
-      unitPrice = (item.finalPrice ?? item.price) + optionalTotal;
-    }
-
-    const allSelectedNames = Object.values(modifierSelections)
-      .flat()
-      .map((o) => o.name);
-    const variantLabel = allSelectedNames.join(", ") || "Regular";
-
-    const modifierSelectionsForOrder = (item.modifierGroups || [])
-      .map((g) => {
-        const selected = modifierSelections[g.id] || [];
-        if (selected.length === 0) return null;
-        return {
-          groupId: g.id,
-          groupName: g.groupName,
-          options: selected.map((o) => ({
-            optionId: o.optionId,
-            name: o.name,
-            price: o.price,
-          })),
-        };
-      })
-      .filter(Boolean);
 
     setCart((prev) => {
       const existing = prev.findIndex((c) => c._cartKey === cartKey);
@@ -1107,6 +1086,7 @@ export default function OrderTakerPage() {
           isDeal: false,
           size: variantLabel,
           modifierGroups: item.modifierGroups,
+          attachedModifierGroups: item.attachedModifierGroups,
           _modifierSelectionsForOrder: modifierSelectionsForOrder,
         },
       ];
@@ -1118,11 +1098,9 @@ export default function OrderTakerPage() {
 
   function isModifierSelectionComplete() {
     if (!modifierPickerItem) return false;
-    const requiredGroups = (modifierPickerItem.modifierGroups || []).filter(
-      (g) => g.required,
-    );
-    return requiredGroups.every(
-      (g) => (modifierSelections[g.id] || []).length > 0,
+    return isItemModifierSelectionComplete(
+      modifierPickerItem,
+      modifierSelections,
     );
   }
 
@@ -4874,14 +4852,20 @@ export default function OrderTakerPage() {
               </div>
             </div>
             <div className="p-5 space-y-6">
-              {(modifierPickerItem.modifierGroups || [])
+              {(modifierPickerItem._pickerGroups ||
+                getPickerGroupsForItem(modifierPickerItem) ||
+                [])
                 .slice()
-                .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                .sort(
+                  (a, b) =>
+                    (a.sortOrder || a.displayOrder || 0) -
+                    (b.sortOrder || b.displayOrder || 0),
+                )
                 .map((group) => (
                   <div key={group.id}>
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {group.groupName}
+                        {group.groupName || group.name}
                       </span>
                       <span
                         className={`text-xs font-medium px-2 py-0.5 rounded-full ${group.required ? "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400" : "bg-gray-100 text-gray-500 dark:bg-neutral-800 dark:text-neutral-400"}`}
@@ -4895,6 +4879,11 @@ export default function OrderTakerPage() {
                         .slice()
                         .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
                         .map((option) => {
+                          const maxSelections =
+                            group.maxSelections ??
+                            (group.maxSelect === 0
+                              ? 99
+                              : Math.max(1, group.maxSelect || 1));
                           const groupSel = modifierSelections[group.id] || [];
                           const isSelected = groupSel.some(
                             (s) => s.optionId === option.id,
@@ -4902,7 +4891,7 @@ export default function OrderTakerPage() {
                           const toggleOption = () => {
                             setModifierSelections((prev) => {
                               const existing = prev[group.id] || [];
-                              if (group.maxSelections === 1) {
+                              if (maxSelections === 1) {
                                 return {
                                   ...prev,
                                   [group.id]: isSelected
@@ -4923,7 +4912,7 @@ export default function OrderTakerPage() {
                                       (s) => s.optionId !== option.id,
                                     ),
                                   };
-                                else if (existing.length < group.maxSelections)
+                                else if (existing.length < maxSelections)
                                   return {
                                     ...prev,
                                     [group.id]: [
@@ -4964,7 +4953,7 @@ export default function OrderTakerPage() {
                               >
                                 {option.price === 0
                                   ? "Free"
-                                  : `Rs ${option.price.toLocaleString()}`}
+                                  : `Rs ${Number(option.price).toLocaleString()}`}
                               </span>
                             </button>
                           );
@@ -4975,40 +4964,17 @@ export default function OrderTakerPage() {
             </div>
             <div className="sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-gray-100 dark:border-neutral-800 p-5">
               {(() => {
-                const reqTotal = (modifierPickerItem.modifierGroups || [])
-                  .filter((g) => g.required)
-                  .reduce(
-                    (sum, g) =>
-                      sum +
-                      (modifierSelections[g.id] || []).reduce(
-                        (s, o) => s + o.price,
-                        0,
-                      ),
-                    0,
-                  );
-                const optTotal = (modifierPickerItem.modifierGroups || [])
-                  .filter((g) => !g.required)
-                  .reduce(
-                    (sum, g) =>
-                      sum +
-                      (modifierSelections[g.id] || []).reduce(
-                        (s, o) => s + o.price,
-                        0,
-                      ),
-                    0,
-                  );
-                const display =
-                  reqTotal > 0
-                    ? reqTotal + optTotal
-                    : (modifierPickerItem.finalPrice ??
-                        modifierPickerItem.price) + optTotal;
+                const display = computeItemUnitPrice(
+                  modifierPickerItem,
+                  modifierSelections,
+                );
                 return (
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm text-gray-500 dark:text-neutral-400">
                       Total
                     </span>
                     <span className="text-lg font-bold text-gray-900 dark:text-white">
-                      Rs {display.toLocaleString()}
+                      Rs {Number(display).toLocaleString()}
                     </span>
                   </div>
                 );
